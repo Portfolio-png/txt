@@ -131,14 +131,19 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
     return 'Properties selected';
   }
 
-  Future<void> _handleBarcodeSubmit(String code, SearchProvider provider) async {
+  Future<void> _handleBarcodeSubmit(
+    String code,
+    SearchProvider provider,
+  ) async {
     if (code.trim().isEmpty) return;
     setState(() => _isLookingUpBarcode = true);
     try {
       final result = await provider.lookupBarcode(code.trim());
       if (result == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Barcode not found')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Barcode not found')));
         }
       } else {
         if (mounted) {
@@ -157,7 +162,10 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Barcode Details', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Barcode Details',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,15 +173,30 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
             _detailRow('Item', result['item_name']?.toString() ?? 'Unknown'),
             _detailRow('Parent Code', result['parent_code']?.toString() ?? '-'),
             _detailRow('Child Code', result['child_code']?.toString() ?? '-'),
-            _detailRow('Order Origin', result['order_no']?.toString() ?? 'Unknown'),
-            _detailRow('Vendor', result['vendor_name']?.toString() ?? 'Unknown'),
-            _detailRow('Challan Type', result['challan_type']?.toString() ?? '-'),
-            _detailRow('Quantity / Weight', '${result['quantity_pcs'] ?? '-'} / ${result['weight'] ?? '-'}'),
+            _detailRow(
+              'Order Origin',
+              result['order_no']?.toString() ?? 'Unknown',
+            ),
+            _detailRow(
+              'Vendor',
+              result['vendor_name']?.toString() ?? 'Unknown',
+            ),
+            _detailRow(
+              'Challan Type',
+              result['challan_type']?.toString() ?? '-',
+            ),
+            _detailRow(
+              'Quantity / Weight',
+              '${result['quantity_pcs'] ?? '-'} / ${result['weight'] ?? '-'}',
+            ),
             _detailRow('Notes', result['note']?.toString() ?? '-'),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
@@ -185,7 +208,16 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
           Expanded(child: Text(value)),
         ],
       ),
@@ -359,14 +391,35 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                           TextField(
                                             controller: _barcodeController,
                                             decoration: InputDecoration(
-                                              hintText: 'Scan or type barcode...',
-                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                              hintText:
+                                                  'Scan or type barcode...',
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
                                               suffixIcon: _isLookingUpBarcode
-                                                  ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2))
-                                                  : const Icon(Icons.qr_code_scanner),
+                                                  ? const Padding(
+                                                      padding: EdgeInsets.all(
+                                                        12,
+                                                      ),
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                    )
+                                                  : const Icon(
+                                                      Icons.qr_code_scanner,
+                                                    ),
                                             ),
-                                            onSubmitted: (val) => _handleBarcodeSubmit(val, provider),
+                                            onSubmitted: (val) =>
+                                                _handleBarcodeSubmit(
+                                                  val,
+                                                  provider,
+                                                ),
                                           ),
                                           const SizedBox(height: 24),
                                           const Text(
@@ -472,6 +525,7 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                                     _selectedVariationValueNodeIds,
                                                 initialCustomVariationValues:
                                                     _customVariationValues,
+                                                useTilesForValues: true,
                                                 readOnly: false,
                                                 showHeaderAndFooter: false,
                                                 onChanged: (result) {

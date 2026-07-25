@@ -4,7 +4,9 @@ import '../core/theme/soft_erp_theme.dart';
 import '../core/widgets/app_button.dart';
 import '../core/widgets/searchable_select.dart';
 import '../features/items/domain/item_definition.dart';
+import '../features/items/domain/swg_gauge_table.dart';
 import '../features/items/presentation/providers/items_provider.dart';
+import '../features/items/presentation/utils/naming_format_helper.dart';
 
 class VariationStep {
   const VariationStep({
@@ -55,6 +57,7 @@ class VariationPathSelectorWidget extends StatefulWidget {
     this.initialCustomVariationValues = const {},
     this.onCreateValue,
     this.readOnly = false,
+    this.allowCustomValues = true,
     this.showHeaderAndFooter = false,
     this.useTilesForValues,
     this.onChanged,
@@ -70,13 +73,18 @@ class VariationPathSelectorWidget extends StatefulWidget {
   final Map<int, String> initialCustomVariationValues;
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
+
+  /// When false, the free-text "Custom" entry is hidden. Typed input still
+  /// happens through Numeric/Gauge step fields, which use the same storage.
+  final bool allowCustomValues;
   final bool showHeaderAndFooter;
   final bool? useTilesForValues;
   final ValueChanged<VariationPathSelectionResult>? onChanged;
   final ValueChanged<VariationPathSelectionResult>? onComplete;
   final VoidCallback? onCancel;
   final bool Function(VariationPathSelectionResult result)? isFavorite;
-  final void Function(VariationPathSelectionResult result, bool isFav)? onFavoriteToggled;
+  final void Function(VariationPathSelectionResult result, bool isFav)?
+  onFavoriteToggled;
 
   @override
   State<VariationPathSelectorWidget> createState() =>
@@ -189,24 +197,37 @@ class _VariationPathSelectorWidgetState
                       setState(() {});
                     },
                     icon: Icon(
-                      widget.isFavorite!(VariationPathSelectionResult(
-                        item: _item,
-                        rootPropertyId: _selectedRootPropertyId,
-                        valueNodeIds: List<int>.from(_selectedValueNodeIds),
-                        customVariationValues: Map.from(_customVariationValues),
-                        leaf: selectedLeaf,
-                        summaryLabel: _selectionSummaryLabel(),
-                      ))
+                      widget.isFavorite!(
+                            VariationPathSelectionResult(
+                              item: _item,
+                              rootPropertyId: _selectedRootPropertyId,
+                              valueNodeIds: List<int>.from(
+                                _selectedValueNodeIds,
+                              ),
+                              customVariationValues: Map.from(
+                                _customVariationValues,
+                              ),
+                              leaf: selectedLeaf,
+                              summaryLabel: _selectionSummaryLabel(),
+                            ),
+                          )
                           ? Icons.favorite_rounded
                           : Icons.favorite_border_rounded,
-                      color: widget.isFavorite!(VariationPathSelectionResult(
-                        item: _item,
-                        rootPropertyId: _selectedRootPropertyId,
-                        valueNodeIds: List<int>.from(_selectedValueNodeIds),
-                        customVariationValues: Map.from(_customVariationValues),
-                        leaf: selectedLeaf,
-                        summaryLabel: _selectionSummaryLabel(),
-                      ))
+                      color:
+                          widget.isFavorite!(
+                            VariationPathSelectionResult(
+                              item: _item,
+                              rootPropertyId: _selectedRootPropertyId,
+                              valueNodeIds: List<int>.from(
+                                _selectedValueNodeIds,
+                              ),
+                              customVariationValues: Map.from(
+                                _customVariationValues,
+                              ),
+                              leaf: selectedLeaf,
+                              summaryLabel: _selectionSummaryLabel(),
+                            ),
+                          )
                           ? Colors.red
                           : Colors.grey,
                       size: isTablet ? 28.0 : 24.0,
@@ -240,9 +261,7 @@ class _VariationPathSelectorWidgetState
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ..._buildStepsList(steps),
-                  ],
+                  children: [..._buildStepsList(steps)],
                 ),
               ),
             ),
@@ -310,6 +329,25 @@ class _VariationPathSelectorWidgetState
     final fieldKey = ValueKey<String>(
       'orders-variation-step-${step.property.id}',
     );
+    final typedInitialValue = step.selectedValueId == -step.property.id
+        ? _customVariationValues[step.property.id] ?? ''
+        : '';
+    if (step.property.inputType == 'Gauge') {
+      return _GaugeStepField(
+        key: ValueKey<String>('gauge-step-${step.property.id}'),
+        initialValue: typedInitialValue,
+        readOnly: widget.readOnly,
+        onValueChanged: (value) => _setTypedStepValue(step, value),
+      );
+    }
+    if (step.property.inputType == 'Numeric') {
+      return _NumericStepField(
+        key: ValueKey<String>('numeric-step-${step.property.id}'),
+        initialValue: typedInitialValue,
+        readOnly: widget.readOnly,
+        onValueChanged: (value) => _setTypedStepValue(step, value),
+      );
+    }
     if (widget.useTilesForValues == true) {
       final options = [
         ...step.values.map(
@@ -330,9 +368,17 @@ class _VariationPathSelectorWidgetState
       ];
 
       final showAddTile = widget.onCreateValue != null && !widget.readOnly;
-      
-      Widget buildTiles(List<SearchableSelectOption<int>> tileOptions, bool includeAddTile) {
-        final itemCount = tileOptions.length + (includeAddTile ? 1 : 0);
+      final showCustomTile = !widget.readOnly && widget.allowCustomValues;
+
+      Widget buildTiles(
+        List<SearchableSelectOption<int>> tileOptions,
+        bool includeAddTile,
+        bool includeCustomTile,
+      ) {
+        final itemCount =
+            tileOptions.length +
+            (includeAddTile ? 1 : 0) +
+            (includeCustomTile ? 1 : 0);
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -344,9 +390,13 @@ class _VariationPathSelectorWidgetState
           ),
           itemCount: itemCount,
           itemBuilder: (context, index) {
-            if (includeAddTile && index == tileOptions.length) {
+            if (index >= tileOptions.length) {
+              final isCustomTile =
+                  includeCustomTile && index == (itemCount - 1);
               return InkWell(
-                onTap: () => _promptCreateValue(step),
+                onTap: () => isCustomTile
+                    ? _promptCustomValue(step)
+                    : _promptCreateValue(step),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
                   alignment: Alignment.center,
@@ -356,12 +406,23 @@ class _VariationPathSelectorWidgetState
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: SoftErpTheme.border),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_rounded, size: 18, color: SoftErpTheme.textSecondary),
-                      SizedBox(width: 4),
-                      Text('New', style: TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w600, fontSize: 14)),
+                      Icon(
+                        isCustomTile ? Icons.edit_rounded : Icons.add_rounded,
+                        size: 18,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isCustomTile ? 'Custom' : 'New',
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -375,10 +436,9 @@ class _VariationPathSelectorWidgetState
                   ? null
                   : () {
                       setState(() {
-                        _replaceSelectionUnderProperty(
-                          step.property,
-                          <int>[option.value],
-                        );
+                        _replaceSelectionUnderProperty(step.property, <int>[
+                          option.value,
+                        ]);
                       });
                       _notifyChanges();
                     },
@@ -414,14 +474,15 @@ class _VariationPathSelectorWidgetState
           },
         );
       }
-      return buildTiles(options, showAddTile);
+
+      return buildTiles(options, showAddTile, showCustomTile);
     }
     return SearchableSelectField<int>(
       key: fieldKey,
       tapTargetKey: fieldKey,
       value: step.selectedValueId,
       fieldEnabled: !widget.readOnly,
-      keyboardType: step.property.inputType == 'Numeric' 
+      keyboardType: step.property.inputType == 'Numeric'
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.text,
       decoration: InputDecoration(
@@ -442,10 +503,11 @@ class _VariationPathSelectorWidgetState
       createOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) => 'Create value "$query"',
-      secondaryCreateOptionLabelBuilder: widget.readOnly
+      secondaryCreateOptionLabelBuilder:
+          widget.readOnly || !widget.allowCustomValues
           ? null
           : (query) => 'Enter custom value "$query"',
-      onSecondaryCreateOption: widget.readOnly
+      onSecondaryCreateOption: widget.readOnly || !widget.allowCustomValues
           ? null
           : (query) async {
               final text = query.trim();
@@ -524,6 +586,22 @@ class _VariationPathSelectorWidgetState
     );
   }
 
+  void _setTypedStepValue(VariationStep step, String value) {
+    final text = value.trim();
+    setState(() {
+      if (text.isEmpty) {
+        _customVariationValues.remove(step.property.id);
+        _replaceSelectionUnderProperty(step.property, const <int>[]);
+      } else {
+        _customVariationValues[step.property.id] = text;
+        _replaceSelectionUnderProperty(step.property, <int>[
+          -step.property.id,
+        ]);
+      }
+    });
+    _notifyChanges();
+  }
+
   Future<void> _promptCreateValue(VariationStep step) async {
     final controller = TextEditingController();
     final resultName = await showDialog<String>(
@@ -532,14 +610,17 @@ class _VariationPathSelectorWidgetState
         title: const Text('Create New Value'),
         content: TextField(
           controller: controller,
-          keyboardType: step.property.inputType == 'Numeric' 
-              ? const TextInputType.numberWithOptions(decimal: true) 
+          keyboardType: step.property.inputType == 'Numeric'
+              ? const TextInputType.numberWithOptions(decimal: true)
               : TextInputType.text,
-          autofocus: true,
+          autofocus: MediaQuery.of(ctx).size.width >= 600,
           decoration: InputDecoration(
             hintText: 'Enter value',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
           ),
           onSubmitted: (val) => Navigator.of(ctx).pop(val),
         ),
@@ -560,7 +641,7 @@ class _VariationPathSelectorWidgetState
       final propertyLabel = step.property.name.trim().isEmpty
           ? 'Property ${step.property.id}'
           : step.property.name.trim();
-          
+
       final result = await widget.onCreateValue!(
         item: _item,
         propertyNodeId: step.property.id,
@@ -572,8 +653,62 @@ class _VariationPathSelectorWidgetState
 
       setState(() {
         _item = result.item;
-        final refreshedProperty = _findNodeById(result.item.variationTree, step.property.id);
-        _replaceSelectionUnderProperty(refreshedProperty ?? step.property, result.selectedValueNodeIds);
+        final refreshedProperty = _findNodeById(
+          result.item.variationTree,
+          step.property.id,
+        );
+        _replaceSelectionUnderProperty(
+          refreshedProperty ?? step.property,
+          result.selectedValueNodeIds,
+        );
+      });
+      _notifyChanges();
+    }
+  }
+
+  Future<void> _promptCustomValue(VariationStep step) async {
+    final controller = TextEditingController(
+      text: step.selectedValueId == -step.property.id
+          ? _customVariationValues[step.property.id] ?? ''
+          : '',
+    );
+    final resultName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter Custom Value'),
+        content: TextField(
+          controller: controller,
+          keyboardType: step.property.inputType == 'Numeric'
+              ? const TextInputType.numberWithOptions(decimal: true)
+              : TextInputType.text,
+          autofocus: MediaQuery.of(ctx).size.width >= 600,
+          decoration: InputDecoration(
+            hintText: 'Enter custom value',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+          ),
+          onSubmitted: (val) => Navigator.of(ctx).pop(val),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Set Value'),
+          ),
+        ],
+      ),
+    );
+
+    if (resultName != null && resultName.trim().isNotEmpty && mounted) {
+      setState(() {
+        _customVariationValues[step.property.id] = resultName.trim();
+        _replaceSelectionUnderProperty(step.property, <int>[-step.property.id]);
       });
       _notifyChanges();
     }
@@ -589,20 +724,21 @@ class _VariationPathSelectorWidgetState
     final name = step.property.name.trim();
     return name.isEmpty ? 'Property ${step.property.id}' : name;
   }
+
   List<Widget> _buildStepsList(List<VariationStep> steps) {
     if (steps.isEmpty) return const [];
-    
+
     final groups = <String?, List<VariationStep>>{};
     for (final step in steps) {
       groups.putIfAbsent(step.groupName, () => []).add(step);
     }
-    
+
     final widgets = <Widget>[];
     var isFirstGroup = true;
     for (final groupEntry in groups.entries) {
       final groupName = groupEntry.key;
       final groupSteps = groupEntry.value;
-      
+
       if (groupName != null) {
         widgets.add(
           Padding(
@@ -627,7 +763,7 @@ class _VariationPathSelectorWidgetState
         for (var i = 0; i < groupSteps.length; i += 2) {
           final step1 = groupSteps[i];
           final step2 = i + 1 < groupSteps.length ? groupSteps[i + 1] : null;
-          
+
           widgets.add(
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -651,9 +787,9 @@ class _VariationPathSelectorWidgetState
                 ] else ...[
                   const SizedBox(width: 12),
                   const Spacer(),
-                ]
+                ],
               ],
-            )
+            ),
           );
           if (i + 2 < groupSteps.length || groupEntry.key != groups.keys.last) {
             widgets.add(const SizedBox(height: 12));
@@ -667,22 +803,22 @@ class _VariationPathSelectorWidgetState
               title: _variationStepTitle(step),
               isComplete: step.selectedValueId != null,
               child: _buildStepField(step),
-            )
+            ),
           );
-          if (i != groupSteps.length - 1 || groupEntry.key != groups.keys.last) {
+          if (i != groupSteps.length - 1 ||
+              groupEntry.key != groups.keys.last) {
             widgets.add(const SizedBox(height: 12));
           }
         }
       }
     }
-    
+
     if (widgets.isNotEmpty && widgets.last is SizedBox) {
       widgets.removeLast();
     }
-    
+
     return widgets;
   }
-
 
   Widget _buildStepRow({
     required String title,
@@ -741,7 +877,10 @@ class _VariationPathSelectorWidgetState
     }
     final steps = <VariationStep>[];
 
-    void traverse(ItemVariationNodeDefinition prop, [String? currentGroupName]) {
+    void traverse(
+      ItemVariationNodeDefinition prop, [
+      String? currentGroupName,
+    ]) {
       final subProps = prop.activeChildren
           .where((node) => node.kind == ItemVariationNodeKind.property)
           .toList(growable: false);
@@ -902,32 +1041,16 @@ class _VariationPathSelectorWidgetState
   }
 
   String _selectionSummaryLabel() {
-    final segments = <String>[];
-    for (final step in _allVariationSteps()) {
-      final selectedValue = step.values
-          .where((value) => value.id == step.selectedValueId)
-          .firstOrNull;
-      if (selectedValue == null) {
-        final tempId = -step.property.id;
-        if (step.selectedValueId == tempId) {
-          final val = _customVariationValues[step.property.id] ?? 'Custom';
-          final propertyName = step.property.name.trim();
-          segments.add(propertyName.isEmpty ? val : '$propertyName: $val');
-        }
-        continue;
-      }
-      final propertyName = step.property.name.trim();
-      final valueName = selectedValue.name.trim().isEmpty
-          ? selectedValue.displayName.trim()
-          : selectedValue.name.trim();
-      if (propertyName.isEmpty && valueName.isEmpty) {
-        continue;
-      }
-      segments.add(
-        valueName.isEmpty ? propertyName : '$propertyName: $valueName',
-      );
-    }
-    return segments.isEmpty ? _item.displayName : segments.join(' / ');
+    // Values-only combined name in the item's naming-format order
+    // ("Brass Half Hard 0.711mm 1st Sheet") — the item name is shown
+    // separately wherever this label appears.
+    final label = NamingFormatHelper.buildVariationSelectionLabel(
+      _item,
+      _selectedValueNodeIds,
+      _customVariationValues,
+      false,
+    );
+    return label.trim().isEmpty ? _item.displayName : label.trim();
   }
 
   void _notifyChanges() {
@@ -950,8 +1073,9 @@ class _VariationPathSelectorWidgetState
       _customVariationValues.clear();
 
       void traverse(ItemVariationNodeDefinition prop) {
-        final subProps = prop.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.property);
+        final subProps = prop.activeChildren.where(
+          (n) => n.kind == ItemVariationNodeKind.property,
+        );
         if (subProps.isNotEmpty) {
           for (final sp in subProps) {
             traverse(sp);
@@ -963,8 +1087,9 @@ class _VariationPathSelectorWidgetState
           if (values.isNotEmpty) {
             final firstValue = values.first;
             _selectedValueNodeIds.add(firstValue.id);
-            final nextProps = firstValue.activeChildren
-                .where((n) => n.kind == ItemVariationNodeKind.property);
+            final nextProps = firstValue.activeChildren.where(
+              (n) => n.kind == ItemVariationNodeKind.property,
+            );
             for (final np in nextProps) {
               traverse(np);
             }
@@ -994,6 +1119,369 @@ class _VariationPathSelectorWidgetState
   }
 }
 
+class _NumericStepField extends StatefulWidget {
+  const _NumericStepField({
+    super.key,
+    required this.initialValue,
+    required this.readOnly,
+    required this.onValueChanged,
+  });
+
+  final String initialValue;
+  final bool readOnly;
+  final ValueChanged<String> onValueChanged;
+
+  @override
+  State<_NumericStepField> createState() => _NumericStepFieldState();
+}
+
+class _NumericStepFieldState extends State<_NumericStepField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isTablet = MediaQuery.of(context).size.width >= 600;
+    return TextField(
+      controller: _controller,
+      enabled: !widget.readOnly,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: TextStyle(fontSize: isTablet ? 16.0 : 14.0),
+      decoration: InputDecoration(
+        hintText: 'Enter value',
+        hintStyle: TextStyle(fontSize: isTablet ? 16.0 : 14.0),
+        filled: true,
+        fillColor: Colors.white,
+        isDense: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: SoftErpTheme.border),
+        ),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isTablet ? 18.0 : 14.0,
+          vertical: isTablet ? 16.0 : 12.0,
+        ),
+      ),
+      onChanged: widget.onValueChanged,
+    );
+  }
+}
+
+/// Compact SWG gauge input: a gauge chip opening a 1-40 bottom-sheet grid, a
+/// numeric field, and mm/in/G unit chips. Picking a gauge fills the field
+/// from the SWG table in the active unit; hand-typed values are recorded
+/// verbatim (never converted between units) and clear the chip when they
+/// don't match the table.
+class _GaugeStepField extends StatefulWidget {
+  const _GaugeStepField({
+    super.key,
+    required this.initialValue,
+    required this.readOnly,
+    required this.onValueChanged,
+  });
+
+  final String initialValue;
+  final bool readOnly;
+  final ValueChanged<String> onValueChanged;
+
+  @override
+  State<_GaugeStepField> createState() => _GaugeStepFieldState();
+}
+
+class _GaugeStepFieldState extends State<_GaugeStepField> {
+  late final TextEditingController _controller;
+  GaugeUnit _unit = GaugeUnit.mm;
+  int? _gauge;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _restoreFromValue(widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _restoreFromValue(String value) {
+    final text = value.trim();
+    var number = text;
+    if (text.endsWith(GaugeUnit.mm.suffix)) {
+      _unit = GaugeUnit.mm;
+      number = text.substring(0, text.length - 2).trim();
+    } else if (text.endsWith(GaugeUnit.inch.suffix)) {
+      _unit = GaugeUnit.inch;
+      number = text.substring(0, text.length - 2).trim();
+    } else if (text.endsWith(GaugeUnit.gauge.suffix)) {
+      _unit = GaugeUnit.gauge;
+      number = text.substring(0, text.length - 1).trim();
+    }
+    _controller.text = number;
+    _gauge = _matchGauge(number);
+  }
+
+  int? _matchGauge(String numberText) {
+    final value = double.tryParse(numberText);
+    if (value == null) return null;
+    return swgEntryForValue(value, _unit)?.gauge;
+  }
+
+  void _emit() {
+    final text = _controller.text.trim();
+    widget.onValueChanged(text.isEmpty ? '' : '$text${_unit.suffix}');
+  }
+
+  void _pickGauge(int gauge) {
+    final entry = swgEntryForGauge(gauge);
+    if (entry == null) return;
+    setState(() {
+      _gauge = gauge;
+      _controller.text = swgFieldText(entry, _unit);
+    });
+    _emit();
+  }
+
+  void _switchUnit(GaugeUnit unit) {
+    if (unit == _unit) return;
+    setState(() {
+      _unit = unit;
+      final entry = _gauge == null ? null : swgEntryForGauge(_gauge!);
+      if (entry != null) {
+        _controller.text = swgFieldText(entry, unit);
+      }
+    });
+    _emit();
+  }
+
+  Future<void> _openGaugePicker() async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select Gauge (SWG)',
+                style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 8,
+                  mainAxisSpacing: 6,
+                  crossAxisSpacing: 6,
+                ),
+                itemCount: swgGaugeTable.length,
+                itemBuilder: (ctx2, index) {
+                  final entry = swgGaugeTable[index];
+                  final isSelected = entry.gauge == _gauge;
+                  return InkWell(
+                    onTap: () => Navigator.of(ctx).pop(entry.gauge),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? SoftErpTheme.accentSoft
+                            : SoftErpTheme.shellSurface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? SoftErpTheme.accent
+                              : SoftErpTheme.border,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Text(
+                        '${entry.gauge}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: isSelected
+                              ? SoftErpTheme.accent
+                              : SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null && mounted) {
+      _pickGauge(selected);
+    }
+  }
+
+  Widget _unitChip(GaugeUnit unit) {
+    final isSelected = _unit == unit;
+    final label = switch (unit) {
+      GaugeUnit.mm => 'mm',
+      GaugeUnit.inch => 'in',
+      GaugeUnit.gauge => 'G',
+    };
+    return InkWell(
+      onTap: widget.readOnly ? null : () => _switchUnit(unit),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? SoftErpTheme.accentSoft
+              : SoftErpTheme.shellSurface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isSelected ? SoftErpTheme.accent : SoftErpTheme.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected
+                ? SoftErpTheme.accent
+                : SoftErpTheme.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isTablet = MediaQuery.of(context).size.width >= 600;
+    final fontSize = isTablet ? 15.0 : 13.0;
+    final hasGauge = _gauge != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            InkWell(
+              onTap: widget.readOnly ? null : _openGaugePicker,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: hasGauge
+                      ? SoftErpTheme.accentSoft
+                      : SoftErpTheme.shellSurface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: hasGauge ? SoftErpTheme.accent : SoftErpTheme.border,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      hasGauge ? '${_gauge}G' : '—',
+                      style: TextStyle(
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w700,
+                        color: hasGauge
+                            ? SoftErpTheme.accent
+                            : SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_drop_down_rounded,
+                      size: 18,
+                      color: hasGauge
+                          ? SoftErpTheme.accent
+                          : SoftErpTheme.textSecondary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                enabled: !widget.readOnly,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: TextStyle(fontSize: fontSize),
+                decoration: InputDecoration(
+                  hintText: 'Value',
+                  hintStyle: TextStyle(fontSize: fontSize),
+                  filled: true,
+                  fillColor: Colors.white,
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: SoftErpTheme.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: SoftErpTheme.border),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+                onChanged: (text) {
+                  setState(() {
+                    _gauge = _matchGauge(text.trim());
+                  });
+                  _emit();
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (final unit in GaugeUnit.values) ...[
+              _unitChip(unit),
+              if (unit != GaugeUnit.values.last) const SizedBox(width: 6),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class VariationPathSelectorDialog extends StatelessWidget {
   const VariationPathSelectorDialog({
     super.key,
@@ -1003,6 +1491,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
     this.initialCustomVariationValues = const {},
     this.onCreateValue,
     this.readOnly = false,
+    this.allowCustomValues = true,
     this.useTilesForValues,
     this.isFavorite,
     this.onFavoriteToggled,
@@ -1014,15 +1503,18 @@ class VariationPathSelectorDialog extends StatelessWidget {
   final Map<int, String> initialCustomVariationValues;
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
+  final bool allowCustomValues;
   final bool? useTilesForValues;
   final bool Function(VariationPathSelectionResult result)? isFavorite;
-  final void Function(VariationPathSelectionResult result, bool isFav)? onFavoriteToggled;
+  final void Function(VariationPathSelectionResult result, bool isFav)?
+  onFavoriteToggled;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ItemsProvider>(
       builder: (context, provider, _) {
-        final currentItem = provider.items.where((i) => i.id == item.id).firstOrNull ?? item;
+        final currentItem =
+            provider.items.where((i) => i.id == item.id).firstOrNull ?? item;
 
         return VariationPathSelectorWidget(
           item: currentItem,
@@ -1031,6 +1523,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
           initialCustomVariationValues: initialCustomVariationValues,
           onCreateValue: onCreateValue,
           readOnly: readOnly,
+          allowCustomValues: allowCustomValues,
           useTilesForValues: useTilesForValues ?? true,
           showHeaderAndFooter: true,
           isFavorite: isFavorite,

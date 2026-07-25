@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/features/inventory/domain/variation_stock_record.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/presentation/utils/naming_format_helper.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
@@ -235,6 +237,26 @@ class _UseRawMaterialWizardScreenState extends State<UseRawMaterialWizardScreen>
 
   // --- Step 2: Items ---
 
+  /// Values-only variation name recomposed from the live item tree — stored
+  /// stock labels predate the values-only format and may still carry
+  /// "Property: value" prefixes or backend pipe-joined fallbacks.
+  String _recordVariationLabel(VariationStockRecord record) {
+    final item = context.read<ItemsProvider>().findById(record.itemId);
+    if (item == null) return record.variationPathLabel;
+    final customValues = <int, String>{
+      for (final entry in record.customVariationValues.entries)
+        if (int.tryParse(entry.key) != null)
+          int.parse(entry.key): entry.value,
+    };
+    final label = NamingFormatHelper.buildVariationSelectionLabel(
+      item,
+      record.variationPathNodeIds,
+      customValues,
+      false,
+    );
+    return label.trim().isEmpty ? record.variationPathLabel : label.trim();
+  }
+
   void _addLine(VariationStockRecord record, String qtyStr, String weightStr) {
     setState(() {
       _lines.add(
@@ -244,7 +266,7 @@ class _UseRawMaterialWizardScreenState extends State<UseRawMaterialWizardScreen>
           productionRunId: null,
           itemId: record.itemId,
           variationLeafNodeId: record.variationLeafNodeId,
-          variationPathLabel: record.variationPathLabel,
+          variationPathLabel: _recordVariationLabel(record),
           variationPathNodeIds: record.variationPathNodeIds,
           customVariationValues: record.customVariationValues.map(
             (k, v) => MapEntry(int.tryParse(k) ?? 0, v),
@@ -367,7 +389,7 @@ class _UseRawMaterialWizardScreenState extends State<UseRawMaterialWizardScreen>
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       leading: const Icon(Icons.inventory_2_rounded, color: SoftErpTheme.accent),
                       title: Text(r.itemName, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('${r.variationPathLabel}\nAvailable: ${r.quantity}$unitStr'),
+                      subtitle: Text('${_recordVariationLabel(r)}\nAvailable: ${r.quantity}$unitStr'),
                       trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
                       onTap: () => showPurchaseQuantitySheet(
                         context,

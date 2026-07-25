@@ -347,6 +347,8 @@ class DeliveryChallan {
     required this.vendorName,
     required this.vendorGstin,
     required this.sourceReference,
+    this.poNumber = '',
+    this.poDate,
     required this.companyProfileSnapshot,
     required this.notes,
     required this.maintainStocks,
@@ -380,6 +382,11 @@ class DeliveryChallan {
   final String vendorName;
   final String vendorGstin;
   final String sourceReference;
+
+  /// Vendor purchase order reference, captured on purchase (reception)
+  /// challans before the print preview.
+  final String poNumber;
+  final DateTime? poDate;
   final CompanyProfile? companyProfileSnapshot;
   final String notes;
   final bool maintainStocks;
@@ -472,6 +479,11 @@ class DeliveryChallan {
           json['sourceReference'] as String? ??
           json['source_reference'] as String? ??
           '',
+      poNumber:
+          json['poNumber'] as String? ?? json['po_number'] as String? ?? '',
+      poDate: DateTime.tryParse(
+        (json['poDate'] ?? json['po_date']) as String? ?? '',
+      ),
       companyProfileSnapshot: snapshot is Map<String, dynamic>
           ? CompanyProfile.fromJson(snapshot)
           : null,
@@ -527,6 +539,8 @@ class DeliveryChallan {
       vendorName: vendorName,
       vendorGstin: vendorGstin,
       sourceReference: sourceReference,
+      poNumber: poNumber,
+      poDate: poDate,
       companyProfileSnapshot: companyProfileSnapshot,
       notes: notes,
       maintainStocks: maintainStocks,

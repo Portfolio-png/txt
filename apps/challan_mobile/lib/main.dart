@@ -553,10 +553,14 @@ class MyApp extends StatelessWidget {
           ),
         ),
         // Challan attachment uploads (Purchase wizard photo step, editor camera).
-        // Mock mode: this backend has no generic upload-intent endpoint, so the
-        // service simulates the intent and the caller skips the real S3 PUT.
+        // Real presigned-S3 flow via POST /api/upload/generic; requires the
+        // backend to have S3 configured (PAPER_S3_BUCKET_NAME).
         Provider<GenericAssetService>(
-          create: (_) => GenericAssetService(baseUrl: apiUrl),
+          create: (context) => GenericAssetService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: apiUrl,
+            useMockResponses: false,
+          ),
         ),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProxyProvider<AuthProvider, SocketService>(

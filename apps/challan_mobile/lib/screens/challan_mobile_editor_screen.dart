@@ -411,13 +411,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                   initialRootPropertyId: null,
                   initialValueNodeIds: const [],
 
-                  onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
-                    return context.read<ItemsProvider>().appendVariationValue(
-                      itemId: item.id,
-                      propertyNodeId: propertyNodeId,
-                      valueName: valueName,
-                    );
-                  },
+                  allowCustomValues: false,
                   isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
                   onFavoriteToggled: (result, isFav) {
                     final dummyItem = DeliveryChallanItem(
@@ -498,7 +492,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                 item: selectedItem,
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
-
+                allowCustomValues: false,
                 isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   final dummyItem = DeliveryChallanItem(
@@ -575,14 +569,8 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               item: selectedItem,
               initialRootPropertyId: null,
               initialValueNodeIds: oldItem.variationPathNodeIds,
-
-              onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
-                return context.read<ItemsProvider>().appendVariationValue(
-                  itemId: item.id,
-                  propertyNodeId: propertyNodeId,
-                  valueName: valueName,
-                );
-              },
+              initialCustomVariationValues: oldItem.customVariationValues,
+              allowCustomValues: false,
               isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
               onFavoriteToggled: (result, isFav) {
                 final dummyItem = DeliveryChallanItem(
@@ -671,8 +659,17 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
           );
           
           // Upload to presigned URL
-          await http.put(intent.uploadUrl, headers: intent.headers, body: bytes);
-          
+          final response = await http.put(
+            intent.uploadUrl,
+            headers: intent.headers,
+            body: bytes,
+          );
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            throw Exception(
+              'Upload of ${img.name} rejected with HTTP ${response.statusCode}',
+            );
+          }
+
           genericAssets.add({
             'fileName': img.name,
             'contentType': contentType,

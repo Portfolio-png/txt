@@ -143,6 +143,15 @@ class ChallanPrintableDocument extends StatelessWidget {
                           Text('Challan No.: ${challan.challanNo}'),
                           const SizedBox(height: 8),
                           Text('Date: ${_formatDate(challan.date)}'),
+                          if (isReception &&
+                              challan.poNumber.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text('PO No.: ${challan.poNumber.trim()}'),
+                          ],
+                          if (isReception && challan.poDate != null) ...[
+                            const SizedBox(height: 8),
+                            Text('PO Date: ${_formatDate(challan.poDate!)}'),
+                          ],
                         ],
                       ),
                     ),
@@ -260,14 +269,16 @@ class ChallanPrintableDocument extends StatelessWidget {
   }
 
   String _itemParticulars(DeliveryChallanItem item) {
+    final label = item.variationPathLabel.trim();
+    // Custom values are already part of the variation label; only surface
+    // ones the label is missing (older records).
     final custom = item.customVariationValues.values
         .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
+        .where((value) => value.isNotEmpty && !label.contains(value))
         .join(' / ');
     return [
       item.particulars.trim().isEmpty ? 'Item' : item.particulars.trim(),
-      if (item.variationPathLabel.trim().isNotEmpty)
-        item.variationPathLabel.trim(),
+      if (label.isNotEmpty) label,
       if (custom.isNotEmpty) custom,
       if (item.note.trim().isNotEmpty) item.note.trim(),
     ].join('\n');

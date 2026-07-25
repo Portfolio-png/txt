@@ -42,6 +42,8 @@ import '../providers/challan_editor_command_provider.dart';
 import '../providers/delivery_challan_provider.dart';
 import '../widgets/challan_excel_view.dart';
 import 'challan_template_mapping_screen.dart';
+import '../../../items/presentation/utils/naming_format_helper.dart';
+import '../../../../core/domain/uploaded_asset.dart';
 
 const MethodChannel _nativePrintingChannel = MethodChannel(
   'paper/native_printing',
@@ -1609,6 +1611,10 @@ class _ChallanDetailPane extends StatelessWidget {
               children: [
                 _LineItemsPanel(challan: challan),
                 const SizedBox(height: 14),
+                if (challan.assets.isNotEmpty) ...[
+                  _ChallanPhotosPanel(challan: challan),
+                  const SizedBox(height: 14),
+                ],
                 _ChallanTemplatePreviewPane(challan: challan),
               ],
             ),
@@ -1653,6 +1659,146 @@ class _DetailLineCompact extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ChallanPhotosPanel extends StatelessWidget {
+  const _ChallanPhotosPanel({required this.challan});
+
+  final DeliveryChallan challan;
+
+  @override
+  Widget build(BuildContext context) {
+    final images = challan.assets
+        .where((asset) => asset.contentType.startsWith('image/'))
+        .toList(growable: false);
+    final files = challan.assets
+        .where((asset) => !asset.contentType.startsWith('image/'))
+        .toList(growable: false);
+    return SoftSurface(
+      padding: const EdgeInsets.all(12),
+      elevated: false,
+      color: SoftErpTheme.cardSurfaceAlt,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Photos (${challan.assets.length})',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final asset in images) _ChallanPhotoThumb(asset: asset),
+              for (final asset in files)
+                Chip(
+                  avatar: const Icon(Icons.attach_file_rounded, size: 16),
+                  label: Text(
+                    asset.fileName,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChallanPhotoThumb extends StatelessWidget {
+  const _ChallanPhotoThumb({required this.asset});
+
+  final UploadedAsset asset;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = asset.readUrl?.toString();
+    return InkWell(
+      onTap: url == null ? null : () => _openViewer(context, url),
+      borderRadius: BorderRadius.circular(10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 96,
+          height: 96,
+          color: SoftErpTheme.shellSurface,
+          child: url == null
+              ? _placeholder()
+              : Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => _placeholder(),
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return const Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.broken_image_outlined, color: SoftErpTheme.textSecondary),
+        SizedBox(height: 4),
+        Text(
+          'Unavailable',
+          style: TextStyle(fontSize: 10, color: SoftErpTheme.textSecondary),
+        ),
+      ],
+    );
+  }
+
+  void _openViewer(BuildContext context, String url) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(24),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                child: Center(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Text(
+                        'Photo unavailable — the link may have expired or the '
+                        'file was never uploaded.',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+              ),
+            ),
+            Positioned(
+              bottom: 12,
+              left: 16,
+              right: 16,
+              child: Text(
+                asset.fileName,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4918,129 +5064,11 @@ class _ItemsEditor extends StatelessWidget {
     List<int> valueNodeIds, [
     Map<int, String> customVariationValues = const {},
   ]) {
-    final itemName = item.displayName.trim().isEmpty
-        ? item.name
-        : item.displayName;
-    if (valueNodeIds.isEmpty) {
-      return itemName;
-    }
-
-    final selectedValueIds = valueNodeIds.toSet();
-    final propIdToValue = <int, String>{};
-
-    void extractValues(ItemVariationNodeDefinition prop) {
-      final subProps = prop.activeChildren.where(
-        (n) => n.kind == ItemVariationNodeKind.property,
-      );
-      if (subProps.isNotEmpty) {
-        for (final sp in subProps) extractValues(sp);
-        return;
-      }
-
-      final selectedValue = prop.activeChildren
-          .where((n) => n.kind == ItemVariationNodeKind.value)
-          .where((n) => selectedValueIds.contains(n.id))
-          .firstOrNull;
-
-      if (selectedValue == null) {
-        final tempId = -prop.id;
-        if (selectedValueIds.contains(tempId)) {
-          final valName = customVariationValues[prop.id];
-          if (valName != null) {
-            propIdToValue[prop.id] = valName;
-          }
-        }
-        return;
-      }
-
-      final valName = selectedValue.name.trim().isEmpty
-          ? selectedValue.displayName.trim()
-          : selectedValue.name.trim();
-      propIdToValue[prop.id] = valName;
-
-      final nextProps = selectedValue.activeChildren.where(
-        (n) => n.kind == ItemVariationNodeKind.property,
-      );
-      for (final np in nextProps) {
-        extractValues(np);
-      }
-    }
-
-    for (final root in item.topLevelProperties) {
-      extractValues(root);
-    }
-
-    String getCombinedValue(
-      ItemVariationNodeDefinition prop,
-      bool isDetailed,
-      bool isDimensions,
-    ) {
-      final subProps = prop.activeChildren.where(
-        (n) => n.kind == ItemVariationNodeKind.property,
-      );
-      if (subProps.isNotEmpty) {
-        final childVals = <String>[];
-        for (final sp in subProps) {
-          final val = getCombinedValue(sp, isDetailed, isDimensions);
-          if (val.isNotEmpty) childVals.add(val);
-        }
-        if (childVals.isEmpty) return '';
-        if (isDimensions) return childVals.join(' x ');
-        return childVals.join(isDetailed ? ', ' : ' ');
-      }
-
-      final val = propIdToValue[prop.id];
-      if (val == null || val.isEmpty) return '';
-      return isDetailed ? '${prop.name.trim()}: $val' : val;
-    }
-
-    final topProps = item.topLevelProperties;
-    final parts = <String>[];
-
-    final isDetailed = item.namingFormat.contains('__format:detailed');
-    final isDimensions = item.namingFormat.contains('__format:dimensions');
-    if (item.namingFormat.isNotEmpty) {
-      for (final token in item.namingFormat) {
-        if (token == 'name') {
-          parts.add(itemName);
-        } else if (token.startsWith('prop_')) {
-          final idx = int.tryParse(token.substring(5));
-          if (idx != null && idx >= 0 && idx < topProps.length) {
-            final prop = topProps[idx];
-            final combinedValue = getCombinedValue(
-              prop,
-              isDetailed,
-              isDimensions,
-            );
-            if (combinedValue.isNotEmpty) {
-              parts.add(combinedValue);
-            }
-          }
-        }
-      }
-    } else {
-      parts.add(itemName);
-      for (final root in item.topLevelProperties) {
-        final combinedValue = getCombinedValue(root, isDetailed, isDimensions);
-        if (combinedValue.isNotEmpty) {
-          parts.add(combinedValue);
-        }
-      }
-    }
-
-    if (isDimensions) {
-      final nameIndex = parts.indexOf(itemName);
-      if (nameIndex != -1) {
-        final variations = List<String>.from(parts)..removeAt(nameIndex);
-        if (variations.isNotEmpty) {
-          return '$itemName ${variations.join(' x ')}';
-        }
-      } else if (parts.isNotEmpty) {
-        return parts.join(' x ');
-      }
-    }
-
-    return parts.join(isDetailed ? ', ' : ' ');
+    return NamingFormatHelper.buildVariationSelectionLabel(
+      item,
+      valueNodeIds,
+      customVariationValues,
+    );
   }
 }
 

@@ -2166,9 +2166,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   ? () {
                                       setState(() {
                                         _rootNodes[index].inputType =
-                                            _rootNodes[index].inputType == 'Numeric'
-                                                ? 'Text'
-                                                : 'Numeric';
+                                            _nextVariationInputType(
+                                              _rootNodes[index].inputType,
+                                            );
                                       });
                                       _handleChange();
                                     }
@@ -2519,9 +2519,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               !child.isLockedInheritedProperty
           ? () {
               setState(() {
-                child.inputType = child.inputType == 'Numeric'
-                    ? 'Text'
-                    : 'Numeric';
+                child.inputType = _nextVariationInputType(child.inputType);
               });
               _handleChange();
             }
@@ -3741,36 +3739,9 @@ class _TreeNodeEditor extends StatelessWidget {
                       if (!readOnly) ...[
                         const SizedBox(width: 4),
                         if (onToggleInputType != null)
-                          InkWell(
-                            onTap: onToggleInputType,
-                            borderRadius: BorderRadius.circular(4),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: draft.inputType == 'Numeric'
-                                    ? Colors.blue.withValues(alpha: 0.1)
-                                    : Colors.grey.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: draft.inputType == 'Numeric'
-                                      ? Colors.blue.withValues(alpha: 0.3)
-                                      : Colors.grey.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Text(
-                                draft.inputType == 'Numeric' ? '1' : 'A',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: draft.inputType == 'Numeric'
-                                      ? Colors.blue[700]
-                                      : Colors.grey[700],
-                                ),
-                              ),
-                            ),
+                          _InputTypePill(
+                            inputType: draft.inputType,
+                            onTap: onToggleInputType!,
                           ),
                         if (onAddValue != null)
                           _TreeActionButton(
@@ -5055,6 +5026,66 @@ class _AddToCombinationGroupDialogState
         ),
         FilledButton(onPressed: _confirm, child: const Text('Add to group')),
       ],
+    );
+  }
+}
+
+String _nextVariationInputType(String current) {
+  switch (current) {
+    case 'Text':
+      return 'Numeric';
+    case 'Numeric':
+      return 'Gauge';
+    default:
+      return 'Text';
+  }
+}
+
+class _InputTypePill extends StatelessWidget {
+  const _InputTypePill({required this.inputType, required this.onTap});
+
+  final String inputType;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final MaterialColor color = inputType == 'Numeric'
+        ? Colors.blue
+        : inputType == 'Gauge'
+        ? Colors.purple
+        : Colors.grey;
+    final label = inputType == 'Numeric'
+        ? '1'
+        : inputType == 'Gauge'
+        ? 'G'
+        : 'A';
+    final tooltip = inputType == 'Numeric'
+        ? 'Numeric input — tap to change'
+        : inputType == 'Gauge'
+        ? 'Gauge input (SWG) — tap to change'
+        : 'Text input — tap to change';
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color[700],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

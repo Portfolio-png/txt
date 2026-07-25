@@ -2342,7 +2342,16 @@ function rowToAssetDto(row, readUrlPayload = null) {
 
 async function rowToUploadedAssetDto(row, includeReadUrls = true) {
   if (!row) return null;
-  const payload = includeReadUrls ? await assetReadUrlPayload(row.object_key) : null;
+  // A presign failure (S3 unconfigured, stale mock rows) must not take down
+  // the parent entity fetch; the asset just comes back without a readUrl.
+  let payload = null;
+  if (includeReadUrls) {
+    try {
+      payload = await assetReadUrlPayload(row.object_key);
+    } catch (error) {
+      console.warn(`Failed to presign read URL for asset ${row.object_key}: ${error.message}`);
+    }
+  }
   return rowToAssetDto(row, payload);
 }
 
@@ -4333,6 +4342,8 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'material_owner_client_name', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'material_owner_gstin', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'po_number', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'po_date', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
   await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('delivery_challans', 'used_in_report', 'INTEGER NOT NULL DEFAULT 0');
@@ -8431,6 +8442,8 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     material_owner_client_name: row.material_owner_client_name || '',
     material_owner_gstin: row.material_owner_gstin || '',
     source_reference: row.source_reference || '',
+    poNumber: row.po_number || '',
+    poDate: row.po_date || '',
     company_profile_snapshot: parseJsonObject(row.company_profile_snapshot, null),
     notes: row.notes || '',
     maintain_stocks: Number(row.maintain_stocks ?? 1) !== 0,
@@ -10510,6 +10523,12 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   const sourceReference = String(
     input.sourceReference ?? input.source_reference ?? existing?.source_reference ?? '',
   ).trim();
+  const poNumber = String(
+    input.poNumber ?? input.po_number ?? existing?.po_number ?? '',
+  ).trim();
+  const poDate = String(
+    input.poDate ?? input.po_date ?? existing?.po_date ?? '',
+  ).trim();
   let orders = [];
   let firstOrder = null;
   let orderSnapshotsById = new Map();
@@ -10732,7 +10751,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
             customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
             material_owner_client_id = ?, material_owner_client_name = ?, material_owner_gstin = ?,
-            source_reference = ?, notes = ?, maintain_stocks = ?, purpose = ?, internal_purpose = ?, updated_by = ?, updated_at = ?
+            source_reference = ?, po_number = ?, po_date = ?, notes = ?, maintain_stocks = ?, purpose = ?, internal_purpose = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -10751,6 +10770,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           materialOwnerClientName,
           materialOwnerGstin,
           sourceReference,
+          poNumber,
+          poDate,
           notes,
           maintainStocks ? 1 : 0,
           purpose,
@@ -10768,10 +10789,10 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         INSERT INTO delivery_challans (
           type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
           vendor_id, vendor_name, vendor_gstin, material_owner_client_id, material_owner_client_name,
-          material_owner_gstin, source_reference, notes, status,
+          material_owner_gstin, source_reference, po_number, po_date, notes, status,
           maintain_stocks, purpose, internal_purpose, created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanType,
@@ -10789,6 +10810,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           materialOwnerClientName,
           materialOwnerGstin,
           sourceReference,
+          poNumber,
+          poDate,
           notes,
           maintainStocks ? 1 : 0,
           purpose,

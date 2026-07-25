@@ -338,13 +338,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
 
-                onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
-                  return context.read<ItemsProvider>().appendVariationValue(
-                    itemId: item.id,
-                    propertyNodeId: propertyNodeId,
-                    valueName: valueName,
-                  );
-                },
+                allowCustomValues: false,
                 isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   final dummyItem = DeliveryChallanItem(
@@ -759,13 +753,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
 
-                onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
-                  return context.read<ItemsProvider>().appendVariationValue(
-                    itemId: item.id,
-                    propertyNodeId: propertyNodeId,
-                    valueName: valueName,
-                  );
-                },
+                allowCustomValues: false,
                 isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   // Create dummy item just for favorite toggling

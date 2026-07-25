@@ -48,6 +48,11 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
   final List<DeliveryChallanItem> _lines = [];
   final List<XFile> _photos = [];
   List<Map<String, dynamic>> _uploadedAssets = const [];
+
+  // Vendor PO details, collected before the preview step can render — the
+  // printed challan must carry them.
+  String _poNumber = '';
+  DateTime? _poDate;
   bool _uploading = false;
   bool _submitting = false;
   DeliveryChallan? _created;
@@ -112,7 +117,36 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
   void _jumpTo(int index) {
     if (_step == _Step.done) return;
     if (index < _Step.vendor.index || index > _Step.preview.index) return;
+    if (_Step.values[index] == _Step.preview) {
+      _openPreview();
+      return;
+    }
     setState(() => _step = _Step.values[index]);
+  }
+
+  // ------------------------------------------------------------------- PO
+
+  /// The preview renders the printable challan, which must show the vendor's
+  /// PO number and date — so both are collected before the step opens.
+  Future<void> _openPreview() async {
+    if (_poNumber.trim().isEmpty && !await _promptPoDetails()) return;
+    if (mounted) _goTo(_Step.preview);
+  }
+
+  Future<bool> _promptPoDetails() async {
+    final result = await showDialog<(String, DateTime)>(
+      context: context,
+      builder: (ctx) => _PoDetailsDialog(
+        initialPoNumber: _poNumber,
+        initialPoDate: _poDate ?? _date,
+      ),
+    );
+    if (result == null || !mounted) return false;
+    setState(() {
+      _poNumber = result.$1;
+      _poDate = result.$2;
+    });
+    return true;
   }
 
   Future<void> _addItem() async {
@@ -225,6 +259,8 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
       vendorName: _vendor?.name ?? '',
       vendorGstin: _vendor?.gstNumber ?? '',
       sourceReference: '',
+      poNumber: _poNumber,
+      poDate: _poDate,
       companyProfileSnapshot: null,
       notes: '',
       maintainStocks: true,
@@ -254,6 +290,8 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
       date: _date,
       location: _location,
       sourceReference: '',
+      poNumber: _poNumber,
+      poDate: _poDate,
       notes: '',
       maintainStocks: true,
       customerName: '',
@@ -408,13 +446,16 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
             _photos.removeAt(i);
             _uploadedAssets = const [];
           }),
-          onContinue: () => _goTo(_Step.preview),
-          onSkip: () => _goTo(_Step.preview),
+          onContinue: () => _openPreview(),
+          onSkip: () => _openPreview(),
         );
       case _Step.preview:
         return _PreviewStep(
           challan: _draftForPreview(),
           submitting: _submitting,
+          poNumber: _poNumber,
+          poDate: _poDate,
+          onEditPo: () => _promptPoDetails(),
           onSubmit: _submit,
         );
       case _Step.done:
@@ -702,13 +743,7 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
 
-                onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
-                  return context.read<ItemsProvider>().appendVariationValue(
-                        itemId: item.id,
-                        propertyNodeId: propertyNodeId,
-                        valueName: valueName,
-                      );
-                },
+                allowCustomValues: false,
                 isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   favProvider.toggleFavorite(
@@ -1163,11 +1198,17 @@ class _PreviewStep extends StatelessWidget {
   const _PreviewStep({
     required this.challan,
     required this.submitting,
+    required this.poNumber,
+    required this.poDate,
+    required this.onEditPo,
     required this.onSubmit,
   });
 
   final DeliveryChallan challan;
   final bool submitting;
+  final String poNumber;
+  final DateTime? poDate;
+  final VoidCallback onEditPo;
   final VoidCallback onSubmit;
 
   @override
@@ -1187,6 +1228,26 @@ class _PreviewStep extends StatelessWidget {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'PO: ${poNumber.trim().isEmpty ? '—' : poNumber.trim()}'
+                  '${poDate == null ? '' : ' · ${_formatPoDate(poDate!)}'}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onEditPo,
+                icon: const Icon(Icons.edit_rounded, size: 16),
+                label: const Text('Edit'),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: InteractiveViewer(
             minScale: 0.4,
@@ -1218,6 +1279,120 @@ class _PreviewStep extends StatelessWidget {
             icon: const Icon(Icons.check_circle_rounded),
             label: const Text('Submit Challan', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ================================================================ PO dialog
+
+String _formatPoDate(DateTime value) {
+  final day = value.day.toString().padLeft(2, '0');
+  final month = value.month.toString().padLeft(2, '0');
+  return '$day/$month/${value.year}';
+}
+
+class _PoDetailsDialog extends StatefulWidget {
+  const _PoDetailsDialog({
+    required this.initialPoNumber,
+    required this.initialPoDate,
+  });
+
+  final String initialPoNumber;
+  final DateTime initialPoDate;
+
+  @override
+  State<_PoDetailsDialog> createState() => _PoDetailsDialogState();
+}
+
+class _PoDetailsDialogState extends State<_PoDetailsDialog> {
+  late final TextEditingController _numberController;
+  late DateTime _poDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _numberController = TextEditingController(text: widget.initialPoNumber);
+    _numberController.addListener(() => setState(() {}));
+    _poDate = widget.initialPoDate;
+  }
+
+  @override
+  void dispose() {
+    _numberController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _poDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _poDate = picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canContinue = _numberController.text.trim().isNotEmpty;
+    return AlertDialog(
+      title: const Text('PO Details'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Enter the purchase order this challan is received against — it '
+            'appears on the printed challan.',
+            style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _numberController,
+            autofocus: true,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: 'PO Number',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: _pickDate,
+            borderRadius: BorderRadius.circular(12),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: 'PO Date',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: Text(_formatPoDate(_poDate))),
+                  const Icon(Icons.calendar_month_rounded, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: canContinue
+              ? () => Navigator.of(
+                  context,
+                ).pop((_numberController.text.trim(), _poDate))
+              : null,
+          child: const Text('Continue'),
         ),
       ],
     );

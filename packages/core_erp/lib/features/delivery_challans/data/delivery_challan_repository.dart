@@ -167,6 +167,8 @@ class ChallanDraftInput {
     required this.date,
     required this.location,
     required this.sourceReference,
+    this.poNumber = '',
+    this.poDate,
     required this.notes,
     required this.maintainStocks,
     required this.customerName,
@@ -191,6 +193,8 @@ class ChallanDraftInput {
   final DateTime date;
   final String location;
   final String sourceReference;
+  final String poNumber;
+  final DateTime? poDate;
   final String notes;
   final bool maintainStocks;
   final String customerName;
@@ -220,6 +224,9 @@ class ChallanDraftInput {
       'date': date.toIso8601String().substring(0, 10),
       'location': location.trim(),
       'source_reference': sourceReference.trim(),
+      if (poNumber.trim().isNotEmpty) 'po_number': poNumber.trim(),
+      if (poDate != null)
+        'po_date': poDate!.toIso8601String().substring(0, 10),
       'notes': notes.trim(),
       'maintain_stocks': maintainStocks,
       'customer_name': customerName.trim(),
