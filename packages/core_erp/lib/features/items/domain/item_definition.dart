@@ -15,6 +15,7 @@ class ItemVariationNodeDefinition {
     required this.updatedAt,
     required this.children,
     this.inputType = 'Text',
+    this.nameJoin = '',
   });
 
   final int id;
@@ -30,6 +31,10 @@ class ItemVariationNodeDefinition {
   final DateTime updatedAt;
   final List<ItemVariationNodeDefinition> children;
   final String inputType;
+
+  /// Separator between this property's combined child values in display
+  /// names ('x' → "14 x 48"); empty follows the item's display format.
+  final String nameJoin;
 
   bool get isLeafValue =>
       kind == ItemVariationNodeKind.value && activeChildren.isEmpty;

@@ -1918,6 +1918,12 @@ function requireApiWritePermission(req, res, next) {
       req.path.startsWith('/config')) {
     return next();
   }
+  // Generic asset staging/management routes enforce their own entity-aware
+  // guards (requireAssetEntityPermission / requireGenericUploadPermission);
+  // admin-gating them here would block first-time uploads by regular users.
+  if (req.path.startsWith('/assets/') || req.path.startsWith('/upload/')) {
+    return next();
+  }
 
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     next();
@@ -1943,6 +1949,79 @@ function requireApiWritePermission(req, res, next) {
   res.status(403).json({
     success: false,
     error: 'Users can request deletion, but cannot modify records directly.',
+  });
+}
+
+// Entity-aware guards for the generic asset routes (/assets/*, /upload/*).
+// These paths are excluded from the central module gate because their module
+// depends on the request body or the stored asset row, not the path. The fine
+// asset capabilities fall back to the coarse module right via
+// FINE_KEY_TO_COARSE_MAP (e.g. items.asset.upload -> items.update).
+const ASSET_ENTITY_PERMISSIONS = {
+  item: { write: 'items.asset.upload', read: 'items.asset.list' },
+  delivery_challan: { write: 'challans.asset.upload', read: 'challans.read' },
+  machine: { write: 'machines.update', read: 'machines.read' },
+  die: { write: 'dies.update', read: 'dies.read' },
+};
+
+function requireAssetEntityPermission(op, resolveEntityType) {
+  return async (req, res, next) => {
+    try {
+      const entityType = String((await resolveEntityType(req)) || '')
+        .trim()
+        .toLowerCase();
+      const key = ASSET_ENTITY_PERMISSIONS[entityType]?.[op];
+      // Unknown entity type or missing session/asset row: fall through so the
+      // handler returns its own 400/404 instead of a misleading 403.
+      if (!key || hasPermission(req, key)) {
+        next();
+        return;
+      }
+      res.status(403).json({
+        success: false,
+        error: 'You do not have permission to manage attachments for this record.',
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  };
+}
+
+function assetEntityTypeFromBody(req) {
+  return req.body?.entityType;
+}
+
+async function assetEntityTypeFromUploadSession(req) {
+  const row = await get(
+    'SELECT entity_type FROM asset_upload_sessions WHERE id = ?',
+    [String(req.body?.uploadSessionId || '')],
+  );
+  return row?.entity_type || null;
+}
+
+async function assetEntityTypeFromAssetId(req) {
+  const row = await get('SELECT entity_type FROM uploaded_assets WHERE id = ?', [
+    Number(req.params.id),
+  ]);
+  return row?.entity_type || null;
+}
+
+// /upload/generic stages files that have no owning record yet (photos picked
+// while creating a new entry), so it cannot be gated per-entity. Any user who
+// can create or update something may stage an upload; attaching the file to a
+// record is still gated by that record's own create/update route.
+const GENERIC_UPLOAD_PERMISSION_KEYS = PERMISSION_KEYS.filter((key) =>
+  /\.(create|update|upload)$/.test(key),
+);
+
+function requireGenericUploadPermission(req, res, next) {
+  if (GENERIC_UPLOAD_PERMISSION_KEYS.some((key) => hasPermission(req, key))) {
+    next();
+    return;
+  }
+  res.status(403).json({
+    success: false,
+    error: 'You do not have permission to upload files.',
   });
 }
 
@@ -4547,6 +4626,7 @@ async function initDb() {
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -6973,6 +7053,7 @@ async function getItemVariationTree(itemId) {
       code: row.code || '',
       displayName: row.display_name || '',
       inputType: row.input_type || 'Text',
+      nameJoin: row.name_join || '',
       position: row.position || 0,
       isArchived: Boolean(row.is_archived),
       createdAt: row.created_at,
@@ -14665,7 +14746,7 @@ async function saveItem({
           await run(
             `
             UPDATE item_variation_nodes
-            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, position = ?, updated_at = ?
+            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, name_join = ?, position = ?, updated_at = ?
             WHERE id = ?
             `,
             [
@@ -14674,6 +14755,7 @@ async function saveItem({
               node.code || '',
               node.displayName,
               node.inputType || 'Text',
+              node.nameJoin || '',
               node.position,
               now,
               nodeId,
@@ -14683,9 +14765,9 @@ async function saveItem({
           const result = await run(
             `
             INSERT INTO item_variation_nodes (
-              item_id, parent_node_id, kind, name, code, display_name, input_type, position,
+              item_id, parent_node_id, kind, name, code, display_name, input_type, name_join, position,
               is_archived, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             `,
             [
               itemId,
@@ -14695,6 +14777,7 @@ async function saveItem({
               node.code || '',
               node.displayName,
               node.inputType || 'Text',
+              node.nameJoin || '',
               node.position,
               now,
               now,
@@ -16592,6 +16675,7 @@ async function getMaterialGroupGovernance(materialId) {
       propertyKey: row.property_key || '',
       name: row.display_name || '',
       inputType: row.input_type || 'Text',
+      nameJoin: row.name_join || '',
       mandatory: Number(row.mandatory || 0) === 1,
       sourceType: row.source_type || 'manual',
       state: row.state || 'active',
@@ -22558,7 +22642,7 @@ app.post('/api/order-po-uploads/complete', requirePermission('config.write'), as
 });
 
 
-app.post('/api/upload/generic', requirePermission('config.write'), async (req, res) => {
+app.post('/api/upload/generic', requireGenericUploadPermission, async (req, res) => {
   try {
     const { fileName, contentType, sha256 } = req.body || {};
     if (!fileName || !contentType) {
@@ -22613,7 +22697,7 @@ app.post('/api/upload/generic', requirePermission('config.write'), async (req, r
   }
 });
 
-app.post('/api/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
+app.post('/api/assets/upload-intent', requireAssetEntityPermission('write', assetEntityTypeFromBody), async (req, res) => {
   try {
     const intent = await createAssetUploadIntent(req.body || {});
     res.status(intent.alreadyUploaded ? 200 : 201).json({
@@ -22779,7 +22863,7 @@ app.post('/api/items/:id/assets/upload-intent', requirePermission('config.write'
   }
 });
 
-app.post('/api/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
+app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', assetEntityTypeFromUploadSession), async (req, res) => {
   try {
     const asset = await completeAssetUpload(req.body || {});
     res.json({ success: true, asset, error: null });
@@ -22835,7 +22919,7 @@ app.get('/api/items/:id/assets', requirePermission('config.read'), async (req, r
   }
 });
 
-app.post('/api/assets/:id/read-url', requirePermission('config.read'), async (req, res) => {
+app.post('/api/assets/:id/read-url', requireAssetEntityPermission('read', assetEntityTypeFromAssetId), async (req, res) => {
   try {
     const payload = await createAssetReadUrl(Number(req.params.id));
     res.json({ success: true, ...payload, error: null });
@@ -22849,7 +22933,7 @@ app.post('/api/assets/:id/read-url', requirePermission('config.read'), async (re
   }
 });
 
-app.patch('/api/assets/:id/primary', requirePermission('config.write'), async (req, res) => {
+app.patch('/api/assets/:id/primary', requireAssetEntityPermission('write', assetEntityTypeFromAssetId), async (req, res) => {
   try {
     const asset = await setPrimaryAsset(Number(req.params.id));
     res.json({ success: true, asset, error: null });
@@ -22862,7 +22946,7 @@ app.patch('/api/assets/:id/primary', requirePermission('config.write'), async (r
   }
 });
 
-app.delete('/api/assets/:id', requirePermission('config.write'), async (req, res) => {
+app.delete('/api/assets/:id', requireAssetEntityPermission('write', assetEntityTypeFromAssetId), async (req, res) => {
   try {
     await deleteAsset(Number(req.params.id));
     res.json({ success: true, error: null });

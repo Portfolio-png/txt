@@ -26,6 +26,7 @@ class ItemVariationNodeDto {
     required this.updatedAt,
     required this.children,
     this.inputType = 'Text',
+    this.nameJoin = '',
   });
 
   final int id;
@@ -41,6 +42,7 @@ class ItemVariationNodeDto {
   final DateTime updatedAt;
   final List<ItemVariationNodeDto> children;
   final String inputType;
+  final String nameJoin;
 
   factory ItemVariationNodeDto.fromJson(Map<String, dynamic> json) {
     return ItemVariationNodeDto(
@@ -66,6 +68,7 @@ class ItemVariationNodeDto {
           )
           .toList(growable: false),
       inputType: json['inputType'] as String? ?? 'Text',
+      nameJoin: json['nameJoin'] as String? ?? '',
     );
   }
 
@@ -86,6 +89,7 @@ class ItemVariationNodeDto {
           .map((entry) => entry.toDomain())
           .toList(growable: false),
       inputType: inputType,
+      nameJoin: nameJoin,
     );
   }
 }
@@ -366,6 +370,7 @@ class ItemVariationNodeRequest {
     required this.code,
     required this.displayName,
     required this.inputType,
+    required this.nameJoin,
     required this.children,
   });
 
@@ -376,6 +381,7 @@ class ItemVariationNodeRequest {
   final String code;
   final String displayName;
   final String inputType;
+  final String nameJoin;
   final List<ItemVariationNodeRequest> children;
 
   factory ItemVariationNodeRequest.fromInput(ItemVariationNodeInput input) {
@@ -387,6 +393,7 @@ class ItemVariationNodeRequest {
       code: input.code,
       displayName: input.displayName,
       inputType: input.inputType,
+      nameJoin: input.nameJoin,
       children: input.children
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
@@ -402,6 +409,7 @@ class ItemVariationNodeRequest {
       'code': code,
       'displayName': displayName,
       'inputType': inputType,
+      'nameJoin': nameJoin,
       'children': children
           .map((entry) => entry.toJson())
           .toList(growable: false),

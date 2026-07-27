@@ -203,7 +203,32 @@ class NamingFormatHelper {
 
       final val = propIdToValue[prop.id];
       if (val == null || val.isEmpty) return '';
-      return isDetailed ? '${prop.name.trim()}: $val' : val;
+      final base = isDetailed ? '${prop.name.trim()}: $val' : val;
+
+      // Descend through the SELECTED value's own child properties (e.g.
+      // type=sheet → size) so nested values reach the name. Sibling child
+      // values combine with ' x ' in the Dimensions format ("sheet 14 x 48").
+      final selectedValue = prop.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.value)
+          .where((n) => selectedValueIds.contains(n.id))
+          .firstOrNull;
+      if (selectedValue == null) return base;
+      final nested = <String>[];
+      for (final np in selectedValue.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      )) {
+        final v = getCombinedValue(np, isDetailed, isDimensions);
+        if (v.isNotEmpty) nested.add(v);
+      }
+      if (nested.isEmpty) return base;
+      final joined = nested.join(
+        isDimensions
+            ? ' x '
+            : isDetailed
+            ? ', '
+            : ' ',
+      );
+      return '$base $joined';
     }
 
     final topProps = item.topLevelProperties;
@@ -244,18 +269,8 @@ class NamingFormatHelper {
       }
     }
 
-    if (isDimensions) {
-      final nameIndex = includeItemName ? parts.indexOf(itemName) : -1;
-      if (nameIndex != -1) {
-        final variations = List<String>.from(parts)..removeAt(nameIndex);
-        if (variations.isNotEmpty) {
-          return '$itemName ${variations.join(' x ')}';
-        }
-      } else if (parts.isNotEmpty) {
-        return parts.join(' x ');
-      }
-    }
-
+    // The Dimensions format scopes ' x ' to nested value groups (handled in
+    // getCombinedValue); top-level parts always join with plain spaces.
     return parts.join(isDetailed ? ', ' : ' ');
   }
 

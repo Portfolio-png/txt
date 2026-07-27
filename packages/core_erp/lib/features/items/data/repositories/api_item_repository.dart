@@ -693,6 +693,7 @@ class ApiItemRepository implements ItemRepository {
             updatedAt: timestamp,
             children: builtChildren,
             inputType: input.inputType,
+            nameJoin: input.nameJoin,
           );
         })
         .toList(growable: false);

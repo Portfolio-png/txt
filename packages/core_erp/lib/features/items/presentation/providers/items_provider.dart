@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
-import '../../data/models/item_api_models.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../../core/services/socket_service.dart';
@@ -255,24 +254,9 @@ class ItemsProvider extends ChangeNotifier {
       );
     }
 
-    final allPropertyNames = <String>[];
-    void collectPropertyNames(List<ItemVariationNodeInput> nodes) {
-      for (final node in nodes) {
-        if (node.kind == ItemVariationNodeKind.property) {
-          allPropertyNames.add(_normalize(node.name));
-        }
-        collectPropertyNames(node.children);
-      }
-    }
-    collectPropertyNames(variationTree);
-    
-    final uniquePropertyNames = allPropertyNames.toSet();
-    if (uniquePropertyNames.length < allPropertyNames.length) {
-      return const ItemDuplicateCheck(
-        blockingDuplicate: true,
-        warning: ItemDuplicateWarning.duplicatePropertyName,
-      );
-    }
+    // Property names only need to be unique among siblings (checked in
+    // _validateNode). Branches that can never be active together — e.g.
+    // sheet/coil/strip each carrying their own "size" — may reuse a name.
 
     for (final node in variationTree) {
       final result = _validateNode(

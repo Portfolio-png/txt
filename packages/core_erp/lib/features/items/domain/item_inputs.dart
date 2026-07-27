@@ -19,6 +19,7 @@ class ItemVariationNodeInput {
     this.code = '',
     this.displayName = '',
     this.inputType = 'Text',
+    this.nameJoin = '',
     this.children = const [],
   });
 
@@ -29,6 +30,7 @@ class ItemVariationNodeInput {
   final String code;
   final String displayName;
   final String inputType;
+  final String nameJoin;
   final List<ItemVariationNodeInput> children;
 }
 
