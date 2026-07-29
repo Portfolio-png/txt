@@ -550,7 +550,7 @@ function findFirstLeafVariation(nodes, currentPath = []) {
   for (const node of nodes) {
     const nextPath = node.kind === 'value' ? [...currentPath, node.id] : [...currentPath];
     if (node.kind === 'value' && (!node.children || node.children.length === 0)) {
-      return { id: node.id, displayName: node.displayName, path: nextPath };
+      return { id: node.id, displayName: node.displayName || node.name, path: nextPath };
     }
     const nested = findFirstLeafVariation(node.children || [], nextPath);
     if (nested) {

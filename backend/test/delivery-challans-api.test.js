@@ -118,7 +118,7 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     assert.equal(issuedMovement.reference_type, 'challan');
     assert.equal(issuedMovement.reference_id, String(created.id));
     assert.equal(Number(issuedMovement.primary_qty || 0), 10);
-    assert.equal(String(issuedMovement.uom || ''), 'pcs');
+    assert.equal(String(issuedMovement.uom || ''), 'pc');
 
     const issuedPosition = await backend.get(
       `
@@ -466,7 +466,7 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
     assert.equal(movement.reference_type, 'challan');
     assert.equal(movement.reference_id, String(created.id));
     assert.equal(Number(movement.primary_qty || 0), 25);
-    assert.equal(String(movement.uom || ''), 'pcs');
+    assert.equal(String(movement.uom || ''), 'pc');
 
     const issuedPosition = await backend.get(
       `

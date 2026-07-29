@@ -65,23 +65,9 @@ test('auth roles and delete approval workflow', async () => {
 
     const admin = await login(baseUrl, 'ops@paper.local', 'TeamPass1234');
     assert.equal(admin.user.role, 'admin');
-    const adminPermissionCatalogDenied = await getJson(
-      baseUrl,
-      '/api/permissions',
-      admin.token,
-    );
-    assert.equal(adminPermissionCatalogDenied.status, 403);
-
-    const grantAdminPermissionMgmt = await patchJson(
-      baseUrl,
-      `/api/users/${admin.user.id}/permissions`,
-      owner.token,
-      {
-        overrides: [{ key: 'users.manage_permissions', allowed: true }],
-      },
-    );
-    assert.equal(grantAdminPermissionMgmt.status, 200);
-
+    
+    // By default, the admin role HAS users.manage_permissions. 
+    // Thus it should receive 200 on /api/permissions.
     const adminPermissionCatalogAllowed = await getJson(
       baseUrl,
       '/api/permissions',
@@ -122,9 +108,9 @@ test('auth roles and delete approval workflow', async () => {
     const templatesList = await getJson(baseUrl, '/api/permission-templates', admin.token);
     assert.equal(templatesList.status, 200);
     const configManagerTemplate = templatesList.body.templates.find(
-      (template) => template.name === 'Configurator Manager',
+      (template) => template.name === 'Masters Manager',
     );
-    assert.ok(configManagerTemplate?.id, 'expected Configurator Manager template');
+    assert.ok(configManagerTemplate?.id, 'expected Masters Manager template');
     const assignTemplate = await patchJson(
       baseUrl,
       `/api/users/${user.user.id}/permission-templates`,

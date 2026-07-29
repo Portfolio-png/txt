@@ -18,7 +18,7 @@ async function runTests() {
     const compId = compRes.lastID;
     console.log('SUCCESS: Created Payroll Component');
 
-    const structRes = await run('INSERT INTO employee_salary_structures (user_id, effective_from) VALUES (1, ?)', [now]);
+    const structRes = await run('INSERT INTO employee_salary_structures (employee_id, effective_from) VALUES (1, ?)', [now]);
     const structId = structRes.lastID;
     console.log('SUCCESS: Created Salary Structure');
 

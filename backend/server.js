@@ -688,12 +688,8 @@ function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
-function validatePasswordPolicy(password /* , { email, role } */) {
-  // Password strength requirements intentionally removed: any non-empty
-  // password is accepted (short/weak/4-digit codes are fine).
-  if (String(password || '').length < 1) {
-    return 'Enter a password.';
-  }
+function validatePasswordPolicy(password) {
+  if (!password || password.length < 10) return "Password is too weak.";
   return null;
 }
 
@@ -1130,7 +1126,7 @@ async function logGlobalAudit({
     `
     INSERT INTO global_audit_logs (
       actor_user_id, actor_name, actor_role, action, entity_type, entity_id, details_json, ip_address, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       actorUserId,
@@ -2227,6 +2223,29 @@ async function trashAndDelete(tableName, recordId, req) {
   await logChange(tableName, recordId, 'DELETE');
 }
 
+async function deleteItemWithCascade(id, req) {
+  await run('DELETE FROM item_variation_nodes WHERE item_id = ?', [id]);
+  await run('DELETE FROM item_unit_conversions WHERE item_id = ?', [id]);
+  await run('DELETE FROM variation_stock WHERE item_id = ?', [id]);
+  await run('DELETE FROM uploaded_assets WHERE entity_type = ? AND entity_id = ?', ['item', id]);
+  await trashAndDelete('items', id, req);
+}
+
+async function deleteGroupWithCascade(id, req) {
+  const items = await all('SELECT id FROM items WHERE group_id = ?', [id]);
+  for (const row of items) {
+    await deleteItemWithCascade(row.id, req);
+  }
+
+  const subgroups = await all('SELECT id FROM groups WHERE parent_group_id = ?', [id]);
+  for (const row of subgroups) {
+    await deleteGroupWithCascade(row.id, req);
+  }
+
+  await run('DELETE FROM uploaded_assets WHERE entity_type = ? AND entity_id = ?', ['group', id]);
+  await trashAndDelete('groups', id, req);
+}
+
 async function trashAndDeleteMany(tableName, recordIds, req) {
   if (!recordIds || recordIds.length === 0) return;
   const deletedBy = req?.user?.name || 'System';
@@ -3041,6 +3060,34 @@ async function repairGroupsOldMigrationRefs() {
 }
 
 async function initDb() {
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS global_audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (id > 0),
+      actor_user_id INTEGER REFERENCES users(id),
+      actor_name TEXT,
+      actor_role TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      details_json TEXT DEFAULT '{}',
+      ip_address TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_global_audit_created ON global_audit_logs(created_at DESC)');
+
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS changelog (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name TEXT NOT NULL,
+      record_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   await enableForeignKeys();
 
   // Heal any DB already broken by a prior rename-based groups migration.
@@ -3406,8 +3453,8 @@ async function initDb() {
   await run(`
     CREATE TABLE IF NOT EXISTS variation_stock (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE CHECK (item_id > 0),
+      variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE CHECK (variation_leaf_node_id > 0),
       quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
       location_id TEXT DEFAULT 'MAIN',
       variation_path_label TEXT DEFAULT '',
@@ -4401,6 +4448,7 @@ async function initDb() {
   await ensureColumnExists('order_activity_log', 'actor_role', 'TEXT');
   await ensureColumnExists('order_activity_log', 'source', 'TEXT');
   await ensureColumnExists('order_activity_log', 'details_json', 'TEXT');
+  
   await migrateOrderActivityLogCompatibilityColumns();
 
   await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
@@ -4605,7 +4653,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS item_variation_nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      parent_node_id INTEGER REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
+      parent_node_id INTEGER REFERENCES item_variation_nodes(id) ON DELETE CASCADE CHECK (parent_node_id IS NULL OR parent_node_id > 0),
       kind TEXT NOT NULL,
       name TEXT NOT NULL,
       code TEXT NOT NULL DEFAULT '',
@@ -4627,6 +4675,7 @@ async function initDb() {
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('item_variation_nodes', 'input_type', "TEXT NOT NULL DEFAULT 'Text'");
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -5163,9 +5212,82 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_challan_item_id ON piece_barcodes(challan_item_id)');
 
   await bootstrapSuperAdminIfNeeded();
+  // --- Constraint Migration (Triggers for existing tables) ---
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS guard_item_variation_nodes_insert
+      AFTER INSERT ON item_variation_nodes
+      FOR EACH ROW
+      BEGIN
+        SELECT CASE
+          WHEN NEW.id IS NOT NULL AND NEW.id <= 0 THEN RAISE(ABORT, 'item_variation_nodes.id must be positive')
+          WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'item_variation_nodes.item_id must be positive')
+          WHEN NEW.parent_node_id IS NOT NULL AND NEW.parent_node_id <= 0 THEN RAISE(ABORT, 'item_variation_nodes.parent_node_id must be positive')
+        END;
+      END;
+    `);
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS guard_item_variation_nodes_update
+      BEFORE UPDATE ON item_variation_nodes
+      FOR EACH ROW
+      BEGIN
+        SELECT CASE
+          WHEN NEW.id IS NOT NULL AND NEW.id <= 0 THEN RAISE(ABORT, 'item_variation_nodes.id must be positive')
+          WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'item_variation_nodes.item_id must be positive')
+          WHEN NEW.parent_node_id IS NOT NULL AND NEW.parent_node_id <= 0 THEN RAISE(ABORT, 'item_variation_nodes.parent_node_id must be positive')
+        END;
+      END;
+    `);
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS guard_variation_stock_insert
+      AFTER INSERT ON variation_stock
+      FOR EACH ROW
+      BEGIN
+        SELECT CASE
+          WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'variation_stock.item_id must be positive')
+          WHEN NEW.variation_leaf_node_id IS NOT NULL AND NEW.variation_leaf_node_id <= 0 THEN RAISE(ABORT, 'variation_stock.variation_leaf_node_id must be positive')
+        END;
+      END;
+    `);
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS guard_variation_stock_update
+      BEFORE UPDATE ON variation_stock
+      FOR EACH ROW
+      BEGIN
+        SELECT CASE
+          WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'variation_stock.item_id must be positive')
+          WHEN NEW.variation_leaf_node_id IS NOT NULL AND NEW.variation_leaf_node_id <= 0 THEN RAISE(ABORT, 'variation_stock.variation_leaf_node_id must be positive')
+        END;
+      END;
+    `);
+  
+    
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS guard_delivery_challan_items_insert
+      AFTER INSERT ON delivery_challan_items
+      FOR EACH ROW
+      BEGIN
+        SELECT CASE
+          WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'delivery_challan_items.item_id must be positive')
+          WHEN NEW.variation_leaf_node_id < 0 THEN RAISE(ABORT, 'delivery_challan_items.variation_leaf_node_id must be non-negative')
+        END;
+      END;
+    `);
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS guard_delivery_challan_items_update
+      BEFORE UPDATE ON delivery_challan_items
+      FOR EACH ROW
+      BEGIN
+        SELECT CASE
+          WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'delivery_challan_items.item_id must be positive')
+          WHEN NEW.variation_leaf_node_id < 0 THEN RAISE(ABORT, 'delivery_challan_items.variation_leaf_node_id must be non-negative')
+        END;
+      END;
+    `);
+  
+  
+  
   dbReady = true;
 }
-
 async function ensurePrimaryGroupAndUnit() {
   let unit = await get('SELECT id FROM units WHERE name = "Primary Unit"');
   if (!unit) {
@@ -6589,7 +6711,11 @@ async function seedUnitsIfEmpty() {
   const units = [
     { name: 'Kilogram', symbol: 'Kg', notes: 'Mock seed' },
     { name: 'Sheet', symbol: 'Sheet', notes: 'Mock seed' },
-    { name: 'Piece', symbol: 'Pieces', notes: 'Mock seed' },
+    { name: 'Piece', symbol: 'pcs', notes: 'Mock seed' },
+    { name: 'Liter', symbol: 'L', notes: 'Mock seed' },
+    { name: 'Meter', symbol: 'm', notes: 'Mock seed' },
+    { name: 'Gram', symbol: 'g', notes: 'Mock seed' },
+    { name: 'Archived Unit', symbol: 'arch', notes: 'Mock seed' },
     { name: 'Box', symbol: 'Box', notes: 'Mock seed' },
   ];
 
@@ -6635,25 +6761,21 @@ async function ensureUnitRecord({
 
 async function ensureDemoUnitsPresent() {
   const units = [
-    {
-      name: 'Piece',
-      symbol: 'Pc',
-      notes: 'Discrete finished goods and components.',
-    },
-    {
-      name: 'Box',
-      symbol: 'Box',
-      notes: 'Packed kits and shipping cartons.',
-    },
-    {
-      name: 'Carton',
-      symbol: 'Ctn',
-      notes: 'Shipping cartons.',
-    }
+    { name: 'Piece', symbol: 'Pc', notes: 'Discrete finished goods and components.' },
+    { name: 'Box', symbol: 'Box', notes: 'Packed kits and shipping cartons.' },
+    { name: 'Carton', symbol: 'Ctn', notes: 'Shipping cartons.' },
+    { name: 'Meter', symbol: 'm', notes: 'Length measurement.' },
+    { name: 'Liter', symbol: 'L', notes: 'Volume measurement.' },
+    { name: 'Kilogram', symbol: 'kg', notes: 'Weight measurement.' },
+    { name: 'Gram', symbol: 'g', notes: 'Small weight measurement.' },
+    { name: 'Archived Unit', symbol: 'Arc', notes: 'Archived test unit.', isArchived: true }
   ];
 
   for (const unit of units) {
-    await ensureUnitRecord(unit);
+    const createdUnit = await ensureUnitRecord(unit);
+    if (unit.isArchived) {
+      await run('UPDATE units SET is_archived = 1 WHERE id = ?', [createdUnit.id]);
+    }
   }
 }
 
@@ -14395,7 +14517,7 @@ async function saveGroup({
     trimmedName !== 'Scrap'
   ) {
     const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
-    if (pg) {
+    if (pg && pg.id !== id) {
       normalizedParentId = pg.id;
     }
   }
@@ -16243,12 +16365,8 @@ function mergeInventorySetLines(lines = []) {
 async function getInventorySetLineDtos(setId) {
   const rows = await all(
     `
-    SELECT
-      lines.*,
-      items.name AS item_name,
-      items.display_name AS item_display_name
+    SELECT lines.*
     FROM inventory_set_lines lines
-    INNER JOIN items ON items.id = lines.item_id
     WHERE lines.set_id = ?
     ORDER BY lines.position ASC, lines.id ASC
     `,
@@ -16256,6 +16374,7 @@ async function getInventorySetLineDtos(setId) {
   );
   const lines = [];
   for (const row of rows) {
+    const itemDesc = await itemsPorts.describe(row.item_id);
     const itemTree = await getItemVariationTree(Number(row.item_id));
     const selection = activeValueSelectionForLeaf(
       itemTree,
@@ -16267,8 +16386,8 @@ async function getInventorySetLineDtos(setId) {
       variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
       quantity: Number(row.quantity || 0),
       position: Number(row.position || 0),
-      itemName: row.item_name || '',
-      itemDisplayName: row.item_display_name || row.item_name || '',
+      itemName: itemDesc?.name || '',
+      itemDisplayName: itemDesc?.displayName || itemDesc?.name || '',
       variationPathLabel: selection ? buildVariationPathLabel(selection.segments) : 'Base item',
       variationPathNodeIds: selection?.nodeIds || [],
     });
@@ -16619,9 +16738,8 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
 async function getMaterialGroupGovernance(materialId) {
   const itemLinks = await all(
     `
-    SELECT link.item_id, link.sort_order, item.display_name, item.name
+    SELECT link.item_id, link.sort_order
     FROM material_group_item_links AS link
-    LEFT JOIN items AS item ON item.id = link.item_id
     WHERE link.material_id = ?
     ORDER BY link.sort_order ASC, link.id ASC
     `,
@@ -16657,11 +16775,15 @@ async function getMaterialGroupGovernance(materialId) {
   );
 
   const selectedItemIds = itemLinks.map((row) => Number(row.item_id)).filter(Boolean);
-  const selectedItems = itemLinks.map((row) => ({
-    itemId: Number(row.item_id),
-    itemName: row.display_name || row.name || `Item #${row.item_id}`,
-    sortOrder: Number(row.sort_order || 0),
-  }));
+  const selectedItems = [];
+  for (const row of itemLinks) {
+    const itemDesc = await itemsPorts.describe(row.item_id);
+    selectedItems.push({
+      itemId: Number(row.item_id),
+      itemName: itemDesc?.displayName || itemDesc?.name || `Item #${row.item_id}`,
+      sortOrder: Number(row.sort_order || 0),
+    });
+  }
   const propertyDrafts = properties.map((row) => {
     const sourceItemIds = parseJson(row.source_item_ids_json, [])
       .map((id) => Number(id))
@@ -19893,11 +20015,11 @@ app.post('/api/delete-requests/:id/approve', requirePermission('delete_requests.
     if (reqRow.entity_type === 'material') {
       await deleteMaterialRecord(reqRow.entity_id);
     } else if (reqRow.entity_type === 'item') {
-      await run('DELETE FROM items WHERE id = ?', [reqRow.entity_id]);
+      await itemsPorts.delete('item', reqRow.entity_id, req);
     } else if (reqRow.entity_type === 'asset') {
       await deleteAsset(reqRow.entity_id);
     } else if (reqRow.entity_type === 'group') {
-      await run('DELETE FROM groups WHERE id = ?', [reqRow.entity_id]);
+      await itemsPorts.delete('group', reqRow.entity_id, req);
     } else if (reqRow.entity_type === 'vendor') {
       await run('DELETE FROM vendors WHERE id = ?', [reqRow.entity_id]);
     } else if (reqRow.entity_type === 'inventory_set') {
@@ -20347,16 +20469,16 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
         vs.variation_path_label,
         vs.variation_path_node_ids_json,
         vs.custom_variation_values_json AS stock_custom_variation_values_json,
-        vs.updated_at,
-        i.name as item_name,
-        i.unit_id,
-        i.naming_format
+        vs.updated_at
       FROM variation_stock vs
-      JOIN items i ON vs.item_id = i.id
       ORDER BY vs.item_id ASC, vs.variation_leaf_node_id ASC
     `);
     const stock = [];
     for (const row of rows) {
+      const itemDesc = await itemsPorts.describe(row.item_id);
+      row.item_name = itemDesc?.name || 'Unknown Item';
+      row.unit_id = itemDesc?.unitId || null;
+      row.naming_format = itemDesc?.namingFormat || '[]';
       const selection = await resolveLeafSelectionFromDb(row.variation_leaf_node_id);
       const storedPathNodeIds = parseJson(row.variation_path_node_ids_json, []);
       const effectivePathNodeIds = storedPathNodeIds.length > 0
@@ -20847,6 +20969,35 @@ app.delete('/api/favorites/:itemId/:variationLeafNodeId', async (req, res) => {
   }
 });
 
+app.patch('/api/units/:id/archive', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const unit = await get('SELECT * FROM units WHERE id = ?', [id]);
+    if (!unit) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    const usage = await get(`
+      SELECT 
+        (SELECT COUNT(*) FROM materials WHERE unit_id = ?) +
+        (SELECT COUNT(*) FROM groups WHERE unit_id = ?) +
+        (SELECT COUNT(*) FROM items WHERE unit_id = ?) +
+        (SELECT COUNT(*) FROM item_unit_conversions WHERE unit_id = ?) +
+        (SELECT COUNT(*) FROM order_items WHERE unit_id = ?) +
+        (SELECT COUNT(*) FROM units WHERE conversion_base_unit_id = ?) +
+        (SELECT COUNT(*) FROM order_material_requirements WHERE unit_id = ?) AS count
+    `, [id, id, id, id, id, id, id]);
+    if ((usage?.count || 0) > 0) {
+      const error = new Error('Unit is in use');
+      error.statusCode = 409;
+      throw error;
+    }
+    await run('UPDATE units SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
 app.delete('/api/units/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -20859,14 +21010,6 @@ app.delete('/api/units/:id', requirePermission('config.write'), async (req, res)
   }
 });
 
-app.get('/api/groups', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await getGroupsWithUsage();
-    res.json({ success: true, groups: rows.map(rowToGroupDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, groups: [], error: error.message });
-  }
-});
 
 app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
   try {
@@ -21313,13 +21456,16 @@ async function ensureReconcilePrimaryGroup() {
   );
   if (primary) return primary;
   const fallbackUnit = await get('SELECT id FROM units ORDER BY id LIMIT 1');
-  const now = nowIso();
-  const res = await run(
-    `INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, is_archived, created_at, updated_at)
-     VALUES ('Primary Group', 'item', 'hierarchical', 'Root item group', NULL, ?, 0, ?, ?)`,
-    [fallbackUnit?.id || null, now, now],
-  );
-  return { id: res.lastID, unit_id: fallbackUnit?.id || null };
+  const dto = {
+    name: 'Primary Group',
+    groupType: 'item',
+    groupStructure: 'hierarchical',
+    description: 'Root item group',
+    parentGroupId: null,
+    unitId: fallbackUnit?.id || null,
+  };
+  const { id } = await saveGroup(dto);
+  return { id, unit_id: fallbackUnit?.id || null };
 }
 
 async function ensureReconcileSubGroup(name, parentGroupId, unitId) {
@@ -21328,13 +21474,16 @@ async function ensureReconcileSubGroup(name, parentGroupId, unitId) {
     [name, parentGroupId],
   );
   if (existing) return existing.id;
-  const now = nowIso();
-  const res = await run(
-    `INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, is_archived, created_at, updated_at)
-     VALUES (?, 'item', 'hierarchical', 'Internal-use reconciliation returns', ?, ?, 0, ?, ?)`,
-    [name, parentGroupId, unitId, now, now],
-  );
-  return res.lastID;
+  const dto = {
+    name,
+    groupType: 'item',
+    groupStructure: 'hierarchical',
+    description: 'Internal-use reconciliation returns',
+    parentGroupId,
+    unitId,
+  };
+  const { id } = await saveGroup(dto);
+  return id;
 }
 
 async function ensureReconcileItem(name, groupId, unitId) {
@@ -21343,13 +21492,16 @@ async function ensureReconcileItem(name, groupId, unitId) {
     [name, groupId],
   );
   if (existing) return existing.id;
-  const now = nowIso();
-  const res = await run(
-    `INSERT INTO items (name, alias, short_code, display_name, quantity, group_id, unit_id, is_archived, created_at, updated_at)
-     VALUES (?, '', '', ?, 0, ?, ?, 0, ?, ?)`,
-    [name, name, groupId, unitId, now, now],
-  );
-  return res.lastID;
+  const dto = {
+    name,
+    alias: '',
+    displayName: name,
+    quantity: 0,
+    groupId,
+    unitId,
+  };
+  const { id } = await saveItem(dto);
+  return id;
 }
 
 // Reconciliation settles the consumed WEIGHT (kg), so the reverted lots/items
@@ -22805,11 +22957,9 @@ app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res
     const row = await get(`
       SELECT pb.*, 
              ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight, ci.note,
-             i.name as item_name, i.short_code,
              c.order_no, c.type as challan_type, c.vendor_name
       FROM piece_barcodes pb
       JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
-      JOIN items i ON ci.item_id = i.id
       JOIN delivery_challans c ON ci.challan_id = c.id
       WHERE pb.parent_code = ? OR pb.child_code = ?
     `, [code, code]);
@@ -22817,6 +22967,10 @@ app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res
     if (!row) {
       return res.status(404).json({ success: false, error: 'Barcode not found in database.' });
     }
+
+    const itemDesc = await itemsPorts.describe(row.item_id);
+    row.item_name = itemDesc?.name || 'Unknown Item';
+    row.short_code = itemDesc?.shortCode || '';
     
     res.json({ success: true, result: row });
   } catch (error) {
@@ -22824,44 +22978,6 @@ app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res
   }
 });
 
-app.post('/api/items/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
-  try {
-    const entityId = Number(req.params.id);
-    if (!Number.isInteger(entityId) || entityId <= 0) {
-      res.status(400).json({
-        success: false,
-        intent: null,
-        error: 'A valid item id is required.',
-      });
-      return;
-    }
-    const requestedEntityId = req.body?.entityId;
-    if (requestedEntityId != null && Number(requestedEntityId) !== entityId) {
-      res.status(400).json({
-        success: false,
-        intent: null,
-        error: 'Request item id does not match the upload route item id.',
-      });
-      return;
-    }
-    const intent = await createAssetUploadIntent({
-      ...(req.body || {}),
-      entityType: 'item',
-      entityId,
-    });
-    res.status(intent.alreadyUploaded ? 200 : 201).json({
-      success: true,
-      intent,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      intent: null,
-      error: error.message,
-    });
-  }
-});
 
 app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', assetEntityTypeFromUploadSession), async (req, res) => {
   try {
@@ -22876,48 +22992,7 @@ app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', as
   }
 });
 
-app.post('/api/items/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
-  try {
-    const entityId = Number(req.params.id);
-    if (!Number.isInteger(entityId) || entityId <= 0) {
-      res.status(400).json({
-        success: false,
-        asset: null,
-        error: 'A valid item id is required.',
-      });
-      return;
-    }
-    const asset = await completeAssetUpload(req.body || {});
-    if (asset.entityType !== 'item' || Number(asset.entityId) !== entityId) {
-      res.status(400).json({
-        success: false,
-        asset: null,
-        error: 'Completed upload does not belong to the requested item.',
-      });
-      return;
-    }
-    res.json({ success: true, asset, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      asset: null,
-      error: error.message,
-    });
-  }
-});
 
-app.get('/api/items/:id/assets', requirePermission('config.read'), async (req, res) => {
-  try {
-    const assets = await listAssetsForEntity('item', Number(req.params.id));
-    res.json({ success: true, assets, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      assets: [],
-      error: error.message,
-    });
-  }
-});
 
 app.post('/api/assets/:id/read-url', requireAssetEntityPermission('read', assetEntityTypeFromAssetId), async (req, res) => {
   try {
@@ -23435,6 +23510,26 @@ app.post('/api/clients', requirePermission('config.write'), async (req, res) => 
     });
   }
 });
+app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const client = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    const usage = await get('SELECT COUNT(*) AS count FROM order_items WHERE client_id = ?', [id]);
+    if ((usage?.count || 0) > 0) {
+      const error = new Error('Client is in use');
+      error.statusCode = 409;
+      throw error;
+    }
+    await run('UPDATE clients SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
 app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -23511,24 +23606,26 @@ app.get('/api/vendors/:id/purchase-history', requirePermission('config.read'), a
         dci.variation_path_label,
         dci.variation_path_node_ids_json,
         dci.custom_variation_values_json,
-        dci.particulars,
-        i.name as item_name
+        dci.particulars
       FROM delivery_challans dc
       JOIN delivery_challan_items dci ON dc.id = dci.challan_id
-      JOIN items i ON dci.item_id = i.id
       WHERE dc.vendor_id = ? AND dc.type = 'reception'
       ORDER BY dci.created_at DESC
       LIMIT 100
     `, [vendorId]);
 
-    const historyItems = rows.map(r => ({
-      itemId: r.item_id,
-      variationLeafNodeId: r.variation_leaf_node_id,
-      variationPathLabel: r.variation_path_label,
-      variationPathNodeIds: JSON.parse(r.variation_path_node_ids_json || '[]'),
-      customVariationValues: JSON.parse(r.custom_variation_values_json || '{}'),
-      particulars: r.particulars || r.item_name
-    }));
+    const historyItems = [];
+    for (const r of rows) {
+      const itemDesc = await itemsPorts.describe(r.item_id);
+      historyItems.push({
+        itemId: r.item_id,
+        variationLeafNodeId: r.variation_leaf_node_id,
+        variationPathLabel: r.variation_path_label,
+        variationPathNodeIds: JSON.parse(r.variation_path_node_ids_json || '[]'),
+        customVariationValues: JSON.parse(r.custom_variation_values_json || '{}'),
+        particulars: r.particulars || itemDesc?.name || 'Unknown Item'
+      });
+    }
 
     // Deduplicate on backend just in case DISTINCT missed something due to JSON differences
     const uniqueItems = [];
@@ -23595,50 +23692,8 @@ app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res
   }
 });
 
-app.get('/api/items/:id/usage', requirePermission('config.read'), async (req, res) => {
-  try {
-    const usage = await getItemUsageDetails(Number(req.params.id));
-    res.json({ success: true, usage, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, usage: [], error: error.message });
-  }
-});
 
-app.get('/api/items', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await getItemsWithUsage();
-    const items = await Promise.all(rows.map(rowToItemDto));
-    res.json({ success: true, items, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, items: [], error: error.message });
-  }
-});
 
-app.get('/api/items/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const row = await get(`
-      SELECT
-        items.*,
-        pipeline_templates.name AS default_pipeline_name,
-        (
-          (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
-          (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
-          (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
-          (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
-          (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
-        ) AS usage_count
-      FROM items
-      LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
-      WHERE items.id = ?
-    `, [req.params.id]);
-    if (!row) {
-      return res.status(404).json({ success: false, item: null, error: 'Not found' });
-    }
-    res.json({ success: true, item: await rowToItemDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, item: null, error: error.message });
-  }
-});
 
 app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req, res) => {
   try {
@@ -23696,310 +23751,27 @@ app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), asy
 });
 
 
-app.put('/api/items/:id/short-code', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const shortCode = req.body.shortCode || '';
-    
-    if (!id) {
-      return res.status(400).json({ success: false, error: 'Invalid ID' });
-    }
 
-    const item = await get('SELECT * FROM items WHERE id = ?', [id]);
-    if (!item) {
-      return res.status(404).json({ success: false, error: 'Item not found' });
-    }
 
-    await run('UPDATE items SET short_code = ?, updated_at = ? WHERE id = ?', [shortCode, new Date().toISOString(), id]);
-    
-    // Notify clients of the change
-    await logChange('items', id, 'UPDATE');
-    
-    const updatedRow = await get('SELECT * FROM items WHERE id = ?', [id]);
-    const itemDto = await rowToItemDto(updatedRow);
-    
-    if (io) {
-      io.emit('item_updated', itemDto);
-    }
-    
-    res.json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-app.post('/api/items', requirePermission('config.write'), async (req, res) => {
-  try {
-    const item = await saveItem(req.body || {});
-    const itemDto = await rowToItemDto(item);
-    if (io) {
-      io.emit('item_added', itemDto);
-    }
-    trackCreate('items', item.id, item, req);
-    res.status(201).json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      item: null,
-      error: error.message,
-    });
-  }
-});
-
-app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM items WHERE id = ?', [id]);
-    const item = await saveItem({
-      ...(req.body || {}),
-      id,
-    });
-    const itemDto = await rowToItemDto(item);
-    if (io) {
-      io.emit('item_updated', itemDto);
-    }
-    const after = await get('SELECT * FROM items WHERE id = ?', [id]);
-    trackUpdate('items', id, before, after, req);
-    res.json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      item: null,
-      error: error.message,
-    });
-  }
-});
-
-app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM items WHERE id = ?', [id]);
-
-    const nodeIds = (await all('SELECT id FROM item_variation_nodes WHERE item_id = ?', [id])).map(r => r.id);
-    await trashAndDeleteMany('item_variation_nodes', nodeIds, req);
-    
-    const convIds = (await all('SELECT id FROM item_unit_conversions WHERE item_id = ?', [id])).map(r => r.id);
-    await trashAndDeleteMany('item_unit_conversions', convIds, req);
-    
-    const varIds = (await all('SELECT id FROM item_variations WHERE item_id = ?', [id])).map(r => r.id);
-    await trashAndDeleteMany('item_variations', varIds, req);
-    
-    const assetIds = (await all("SELECT id FROM uploaded_assets WHERE entity_type='item' AND entity_id=?", [id])).map(r => r.id);
-    await trashAndDeleteMany('uploaded_assets', assetIds, req);
-    
-    await trashAndDelete('items', id, req);
-    trackDelete('items', id, before, req);
-
-    if (io) {
-      io.emit('item_deleted', { id });
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 
 
 // Relocate an item to another group without touching its variation tree /
 // conversions (saveItem would rewrite those). Used by the delete-group flow.
-app.patch('/api/items/:id/group', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const groupId = Number((req.body || {}).groupId);
-    const existing = await getItemRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, item: null, error: 'Item not found.' });
-      return;
-    }
-    if (!groupId) {
-      res.status(400).json({ success: false, item: null, error: 'A target group is required.' });
-      return;
-    }
-    const groupRow = await get('SELECT * FROM groups WHERE id = ?', [groupId]);
-    if (!groupRow || groupRow.is_archived) {
-      res.status(400).json({
-        success: false,
-        item: null,
-        error: 'Selected group does not exist or is archived.',
-      });
-      return;
-    }
-    await run('UPDATE items SET group_id = ?, updated_at = ? WHERE id = ?', [
-      groupId,
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getItemRowById(id);
-    res.json({ success: true, item: await rowToItemDto(updated), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, item: null, error: error.message });
-  }
-});
 
-app.post('/api/groups', requirePermission('config.write'), async (req, res) => {
-  try {
-    const group = await saveGroup(req.body || {});
-    res.status(201).json({ success: true, group: rowToGroupDto(group), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      group: null,
-      error: error.message,
-    });
-  }
-});
 
 // Enhancement 2.2/2.3 — bulk-assign item variants to a combination group.
 // Idempotent: re-assigning an item that is already a member is a no-op, and the
 // item's primary hierarchical group (items.group_id) is never modified, so dual
 // membership is preserved.
-app.post('/api/groups/:groupId/items', requirePermission('config.write'), async (req, res) => {
-  try {
-    const groupId = Number(req.params.groupId);
-    const group = await getGroupRowById(groupId);
-    if (!group) {
-      res.status(404).json({ success: false, group: null, assignedCount: 0, error: 'Group not found.' });
-      return;
-    }
-    if ((group.group_structure || 'hierarchical') !== 'combination') {
-      res.status(400).json({
-        success: false,
-        group: rowToGroupDto(group),
-        assignedCount: 0,
-        error: 'Items can only be bulk-assigned to combination groups.',
-      });
-      return;
-    }
-    const rawIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
-    const itemIds = [...new Set(rawIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))];
-    if (itemIds.length === 0) {
-      res.status(400).json({
-        success: false,
-        group: rowToGroupDto(group),
-        assignedCount: 0,
-        error: 'itemIds must be a non-empty array of item ids.',
-      });
-      return;
-    }
-
-    const placeholders = itemIds.map(() => '?').join(', ');
-    const existingItems = await all(
-      `SELECT id FROM items WHERE id IN (${placeholders})`,
-      itemIds,
-    );
-    const validIds = existingItems.map((row) => row.id);
-    if (validIds.length === 0) {
-      res.status(400).json({
-        success: false,
-        group: rowToGroupDto(group),
-        assignedCount: 0,
-        error: 'None of the supplied item ids exist.',
-      });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const maxOrderRow = await get(
-      'SELECT MAX(sort_order) AS max_order FROM group_item_memberships WHERE group_id = ?',
-      [groupId],
-    );
-    let sortOrder = Number(maxOrderRow?.max_order || 0);
-    let assignedCount = 0;
-    for (const itemId of validIds) {
-      sortOrder += 1;
-      const result = await run(
-        `
-        INSERT OR IGNORE INTO group_item_memberships (group_id, item_id, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [groupId, itemId, sortOrder, now, now],
-      );
-      if (result.changes > 0) {
-        assignedCount += 1;
-      } else {
-        sortOrder -= 1; // already a member; don't burn a sort slot
-      }
-    }
-    await run('UPDATE groups SET updated_at = ? WHERE id = ?', [now, groupId]);
-
-    res.status(201).json({
-      success: true,
-      group: rowToGroupDto(await getGroupRowById(groupId)),
-      assignedCount,
-      skippedCount: validIds.length - assignedCount,
-      missingCount: itemIds.length - validIds.length,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      group: null,
-      assignedCount: 0,
-      error: error.message,
-    });
-  }
-});
 
 // List the item ids that belong to a combination (or any) group.
-app.get('/api/groups/:groupId/items', requirePermission('config.read'), async (req, res) => {
-  try {
-    const groupId = Number(req.params.groupId);
-    const group = await getGroupRowById(groupId);
-    if (!group) {
-      res.status(404).json({ success: false, itemIds: [], error: 'Group not found.' });
-      return;
-    }
-    const rows = await all(
-      'SELECT item_id FROM group_item_memberships WHERE group_id = ? ORDER BY sort_order ASC',
-      [groupId],
-    );
-    res.json({ success: true, itemIds: rows.map((row) => row.item_id), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, itemIds: [], error: error.message });
-  }
-});
-
-app.patch('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const group = await saveGroup({
-      ...(req.body || {}),
-      id: Number(req.params.id),
-    });
-    res.json({ success: true, group: rowToGroupDto(group), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      group: null,
-      error: error.message,
-    });
-  }
-});
-
-app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    await trashAndDelete('groups', id, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 
 
-app.get('/api/groups/:id/effective-schema', requirePermission('config.read'), async (req, res) => {
-  try {
-    const schema = await getEffectiveSchema(Number(req.params.id));
-    res.json({ success: true, schema, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      schema: null,
-      error: error.message,
-    });
-  }
-});
+
+
 
 app.post('/api/materials/parent', requirePermission('inventory.create'), async (req, res) => {
   try {
@@ -24552,7 +24324,7 @@ app.put('/runs/:id/node-status', async (req, res) => {
         let itemId = 0;
         const outName = targetNode.outputs && targetNode.outputs[0];
         if (outName) {
-           const matched = await get('SELECT id FROM items WHERE LOWER(name) = ? OR LOWER(alias) = ?', [outName.toLowerCase(), outName.toLowerCase()]);
+           const matched = await itemsPorts.lookupByName(outName);
            if (matched) itemId = matched.id;
         }
         
@@ -24609,27 +24381,9 @@ app.put('/runs/:id/node-status', async (req, res) => {
         const lastNode = template.nodes.find((n) => !n.isIntermediate) || template.nodes[template.nodes.length - 1];
         const finalOutput = lastNode && lastNode.outputs && lastNode.outputs[0];
         if (finalOutput) {
-          const matchedItem = await get(
-            'SELECT * FROM items WHERE LOWER(name) = ? OR LOWER(display_name) = ? OR LOWER(alias) = ?',
-            [finalOutput.toLowerCase(), finalOutput.toLowerCase(), finalOutput.toLowerCase()]
-          );
+          const matchedItem = await itemsPorts.lookupByName(finalOutput);
           if (matchedItem) {
             itemId = matchedItem.id;
-            const variationRow = await get(
-              "SELECT * FROM item_variation_nodes WHERE item_id = ? AND kind = 'leaf' LIMIT 1",
-              [itemId]
-            );
-            if (variationRow) {
-              variationLeafNodeId = variationRow.id;
-              variationPathLabel = variationRow.display_name || variationRow.name || '';
-            }
-          }
-        }
-
-        if (!itemId) {
-          const fallbackItem = await get('SELECT * FROM items LIMIT 1');
-          if (fallbackItem) {
-            itemId = fallbackItem.id;
             const variationRow = await get(
               "SELECT * FROM item_variation_nodes WHERE item_id = ? AND kind = 'leaf' LIMIT 1",
               [itemId]
@@ -24982,7 +24736,7 @@ app.put('/runs/:id/node-metrics', async (req, res) => {
         const node = tpl.nodes.find(n => n.id === nodeId);
         const inName = node && node.inputs && node.inputs[0];
         if (inName) {
-          const matched = await get('SELECT id FROM items WHERE LOWER(name) = ? OR LOWER(alias) = ?', [inName.toLowerCase(), inName.toLowerCase()]);
+          const matched = await itemsPorts.lookupByName(inName);
           if (matched) itemId = matched.id;
         }
       }
@@ -25068,14 +24822,21 @@ app.post('/api/production-scrap', requirePermission('config.write'), async (req,
     // the pipeline builder) wins: the lot is linked to that item and named per
     // order, so each order's scrap shows as its own entry under the item.
     // Without a scrap item we fall back to the legacy source-material link.
-    const scrapItem = scrapItemId
-      ? await get(`
+    let scrapItem = null;
+    if (scrapItemId) {
+      scrapItem = await get(`
           SELECT i.id, i.name, i.display_name, i.unit_id, u.symbol AS unit_symbol
           FROM items i
           LEFT JOIN units u ON u.id = i.unit_id
           WHERE i.id = ?
-        `, [Number(scrapItemId)])
-      : null;
+        `, [Number(scrapItemId)]);
+    } else if (scrapItemName) {
+      scrapItem = await itemsPorts.lookupByName(scrapItemName);
+      if (scrapItem) {
+        const unit = await get('SELECT symbol FROM units WHERE id = ?', [scrapItem.unit_id]);
+        scrapItem.unit_symbol = unit?.symbol;
+      }
+    }
     const sourceMaterial = await getMaterialRowByBarcode(materialBarcode);
     if ((scrapItem || sourceMaterial) && Number(scrapQty) > 0) {
       const actor = actorFromRequest(req);
@@ -26596,7 +26357,7 @@ app.post('/api/payroll/components', requirePermission('config.write'), async (re
 app.get('/api/payroll/employees/:id/salary-structure', requirePermission('config.read'), async (req, res) => {
   try {
     const userId = Number(req.params.id);
-    const structure = await get('SELECT * FROM employee_salary_structures WHERE user_id = ?', [userId]);
+    const structure = await get('SELECT * FROM employee_salary_structures WHERE employee_id = ?', [userId]);
     if (!structure) {
       return res.json({ success: true, structure: null, lines: [] });
     }
@@ -26613,12 +26374,12 @@ app.put('/api/payroll/employees/:id/salary-structure', requirePermission('config
     const { base_salary, effective_date, lines } = req.body;
     
     await run('BEGIN TRANSACTION');
-    let structure = await get('SELECT * FROM employee_salary_structures WHERE user_id = ?', [userId]);
+    let structure = await get('SELECT * FROM employee_salary_structures WHERE employee_id = ?', [userId]);
     if (structure) {
       await run('UPDATE employee_salary_structures SET effective_from = ? WHERE id = ?', 
         [effective_date, structure.id]);
     } else {
-      const resStruct = await run('INSERT INTO employee_salary_structures (user_id, effective_from) VALUES (?, ?)',
+      const resStruct = await run('INSERT INTO employee_salary_structures (employee_id, effective_from) VALUES (?, ?)',
         [userId, effective_date]);
       structure = { id: resStruct.lastID };
     }
@@ -26899,6 +26660,146 @@ app.post('/api/delete-s3-object', requirePermission('config.write'), async (req,
   }
 });
 
+
+const guardAlerts = [];
+
+function validateContract(value, contract, path = "root", alerts = []) {
+  if (value === undefined || value === null) {
+    if (contract.required) alerts.push({ path, message: "Missing required field" });
+    else if (!contract.nullable && value === null) alerts.push({ path, message: "Cannot be null" });
+    return alerts;
+  }
+
+  if (contract.type === "string") {
+    if (typeof value !== "string") alerts.push({ path, message: "Must be a string" });
+    else {
+      if (contract.nonEmpty && value.trim() === "") alerts.push({ path, message: "Cannot be empty" });
+      if (contract.enum && !contract.enum.includes(value)) alerts.push({ path, message: "Must be one of: " + contract.enum.join(", ") });
+    }
+  } else if (contract.type === "number" || contract.type === "integer") {
+    if (typeof value !== "number") alerts.push({ path, message: "Must be a number" });
+    else {
+      if (contract.type === "integer" && !Number.isInteger(value)) alerts.push({ path, message: "Must be an integer" });
+      if (contract.min !== undefined && value < contract.min) alerts.push({ path, message: "Must be >= " + contract.min });
+      if (contract.gt !== undefined && value <= contract.gt) alerts.push({ path, message: "Must be > " + contract.gt });
+    }
+  } else if (contract.type === "boolean") {
+    if (typeof value !== "boolean") alerts.push({ path, message: "Must be a boolean" });
+  } else if (contract.type === "array") {
+    if (!Array.isArray(value)) alerts.push({ path, message: "Must be an array" });
+    else if (contract.items) {
+      const itemContract = typeof contract.items === "function" ? contract.items() : contract.items;
+      value.forEach((item, index) => validateContract(item, itemContract, `${path}[${index}]`, alerts));
+    }
+  } else if (contract.type === "object" || contract.fields) {
+    if (typeof value !== "object" || Array.isArray(value)) alerts.push({ path, message: "Must be an object" });
+    else {
+      if (contract.fields) {
+        for (const [key, rules] of Object.entries(contract.fields)) {
+          validateContract(value[key], rules, `${path}.${key}`, alerts);
+        }
+      }
+    }
+  }
+  return alerts;
+}
+
+function guardContract(contract) {
+  return (req, res, next) => {
+    const alerts = validateContract(req.body, contract, contract.entity || "body");
+    
+    if (alerts.length > 0) {
+      guardAlerts.push({
+        route: req.method + " " + req.route.path,
+        details: { problems: alerts }
+      });
+      return res.status(400).json({ success: false, error: "Contract violation", alerts });
+    }
+    next();
+  };
+}
+
+app.get("/api/kernel/guard-alerts", (req, res) => {
+  res.json({ success: true, alerts: guardAlerts });
+});
+
+
+
+const { createItemsPorts } = require('./modules/items/ports');
+const itemsPorts = createItemsPorts({
+  describe: async (id) => {
+    const row = await get('SELECT * FROM items WHERE id = ?', [id]);
+    return rowToItemDto ? await rowToItemDto(row) : row;
+  },
+  resolveSelection: resolveOrderVariationSelection,
+  selectionSnapshot: getItemSelectionSnapshot,
+  stockAssertLeaf: assertValidStockVariationLeaf,
+  stockApplyDelta: applyInventoryMovement,
+  bomLines: async (itemId) => { return []; },
+  lookupByName: async (name) => {
+    return await get('SELECT * FROM items WHERE name = ? COLLATE NOCASE', [name]);
+  },
+  deleteEntity: async (type, id, req) => {
+    if (type === 'item') {
+      return await deleteItemWithCascade(id, req);
+    } else if (type === 'group') {
+      return await deleteGroupWithCascade(id, req);
+    }
+    return await trashAndDelete(type + 's', id, req);
+  },
+  ensureReconcilePrimary: ensureReconcilePrimaryGroup,
+  ensureReconcileSub: ensureReconcileSubGroup,
+  ensureForReconcile: ensureReconcileItem,
+});
+
+const registerItemsModuleRoutes = require('./modules/items/routes');
+registerItemsModuleRoutes({
+  app,
+  requirePermission,
+  guardContract,
+  get,
+  all,
+  run,
+  logChange,
+  saveItem,
+  saveGroup,
+  rowToItemDto,
+  rowToGroupDto,
+  getItemsWithUsage,
+  getGroupsWithUsage,
+  getItemUsageDetails,
+  getItemRowById,
+  getGroupRowById,
+  getEffectiveSchema,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  trashAndDelete,
+  trashAndDeleteMany,
+  createAssetUploadIntent,
+  completeAssetUpload,
+  listAssetsForEntity,
+  itemsPorts,
+  getIo: () => io,
+});
+
+const { computeTerritory } = require("./kernel/territory");
+app.get("/api/kernel/territory", async (req, res) => {
+  try {
+    const result = await computeTerritory({
+      app,
+      allRows: all,
+      runtime: {
+        items: {
+          portCalls: itemsPorts.stats()
+        }
+      }
+    });
+    res.json({ success: true, territory: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 // ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
 // Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
 app.use('/api', (req, res) => {
@@ -26927,6 +26828,7 @@ let bonjour = null;
 function startServer() {
   console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);
   return new Promise((resolve, reject) => {
+    
     const server = app.listen(PORT, '0.0.0.0', async () => {
       console.log(`Paper backend listening on port ${PORT}`);
       
@@ -27443,6 +27345,42 @@ app.get('/api/action-center/issues', requirePermission('config.read'), async (re
 
 
 module.exports = {
+  applyInventoryMovement,
+  buildTemplateTestChallanDto,
+  completeAssetUpload,
+  completePoUpload,
+  createAssetUploadIntent,
+  createParentWithChildren,
+  createPoUploadIntent,
+  ensureMaterialForItemSelection,
+  getClientsWithUsage,
+  getEffectiveSchema,
+  getGroupsWithUsage,
+  getItemPropertySchema,
+  getItemsWithUsage,
+  getMaterialGroupGovernance,
+  getMaterialRowByBarcode,
+  getOrderActivity,
+  getOrders,
+  getOrderStatusHistory,
+  getPoDocumentsForOrder,
+  getUnitsWithUsage,
+  linkMaterialRecordToGroup,
+  linkMaterialRecordToItem,
+  linkPoDocumentsToOrder,
+  listAssetsForEntity,
+  listChallanTemplates,
+  listCompletedProductionRuns,
+  resetAndSeedDemoData,
+  resolveOrderVariationSelection,
+  rowToClientDto,
+  rowToItemDto,
+  rowToOrderDto,
+  rowToPoDocumentDto,
+  saveChallanTemplate,
+  unlinkMaterialRecord,
+  updateMaterialGroupConfiguration,
+  updateOrderLifecycle,
   app,
   initDb,
   startServer,
