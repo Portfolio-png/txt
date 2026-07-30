@@ -12,6 +12,10 @@ class UnitDto {
     required this.conversionFactor,
     required this.conversionBaseUnitId,
     required this.conversionBaseUnitName,
+    required this.conversionType,
+    required this.precision,
+    required this.unitGroupDimension,
+    required this.unitGroupBaseUnitId,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -27,6 +31,10 @@ class UnitDto {
   final double conversionFactor;
   final int? conversionBaseUnitId;
   final String? conversionBaseUnitName;
+  final String conversionType;
+  final int? precision;
+  final String? unitGroupDimension;
+  final int? unitGroupBaseUnitId;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;
@@ -43,6 +51,10 @@ class UnitDto {
       conversionFactor: (json['conversionFactor'] as num? ?? 1).toDouble(),
       conversionBaseUnitId: json['conversionBaseUnitId'] as int?,
       conversionBaseUnitName: json['conversionBaseUnitName'] as String?,
+      conversionType: json['conversionType'] as String? ?? 'linear',
+      precision: json['precision'] as int?,
+      unitGroupDimension: json['unitGroupDimension'] as String?,
+      unitGroupBaseUnitId: json['unitGroupBaseUnitId'] as int?,
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
       createdAt:
@@ -65,6 +77,10 @@ class UnitDto {
       conversionFactor: conversionFactor,
       conversionBaseUnitId: conversionBaseUnitId,
       conversionBaseUnitName: conversionBaseUnitName,
+      conversionType: conversionType,
+      precision: precision,
+      unitGroupDimension: unitGroupDimension,
+      unitGroupBaseUnitId: unitGroupBaseUnitId,
       isArchived: isArchived,
       usageCount: usageCount,
       createdAt: createdAt,

@@ -74,6 +74,10 @@ class ApiUnitRepository implements UnitRepository {
         conversionBaseUnitName: _mockResolveBaseUnitName(
           input.unitGroupName.trim(),
         ),
+        conversionType: 'linear',
+        precision: 4,
+        unitGroupDimension: null,
+        unitGroupBaseUnitId: null,
         isArchived: false,
         usageCount: 0,
         createdAt: DateTime.now(),
@@ -135,8 +139,11 @@ class ApiUnitRepository implements UnitRepository {
         ),
         conversionBaseUnitName: _mockResolveBaseUnitName(
           input.unitGroupName.trim(),
-          excludeId: current.id,
         ),
+        conversionType: current.conversionType,
+        precision: current.precision,
+        unitGroupDimension: current.unitGroupDimension,
+        unitGroupBaseUnitId: current.unitGroupBaseUnitId,
         isArchived: current.isArchived,
         usageCount: current.usageCount,
         createdAt: current.createdAt,
@@ -183,6 +190,24 @@ class ApiUnitRepository implements UnitRepository {
     }
   }
 
+  @override
+  Future<List<ConversionPoint>> getGaugePoints() async {
+    if (useMockResponses) {
+      return []; // Return empty for mock or seed if needed
+    }
+
+    final uri = Uri.parse('$baseUrl/api/units/gauge-table');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    
+    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+      throw UnitApiException(payload['error'] as String? ?? 'Failed to fetch gauge points.');
+    }
+    
+    final pointsList = payload['points'] as List<dynamic>? ?? [];
+    return pointsList.map((p) => ConversionPoint.fromJson(p as Map<String, dynamic>)).toList();
+  }
+
   void _seedMockStoreIfNeeded() {
     if (_mockSeeded) {
       return;
@@ -202,6 +227,10 @@ class ApiUnitRepository implements UnitRepository {
           conversionFactor: 1,
           conversionBaseUnitId: null,
           conversionBaseUnitName: null,
+          conversionType: 'linear',
+          precision: null,
+          unitGroupDimension: null,
+          unitGroupBaseUnitId: null,
           isArchived: false,
           usageCount: 3,
           createdAt: now,
@@ -217,6 +246,10 @@ class ApiUnitRepository implements UnitRepository {
           conversionFactor: 1,
           conversionBaseUnitId: null,
           conversionBaseUnitName: null,
+          conversionType: 'linear',
+          precision: null,
+          unitGroupDimension: null,
+          unitGroupBaseUnitId: null,
           isArchived: false,
           usageCount: 2,
           createdAt: now,

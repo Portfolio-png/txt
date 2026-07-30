@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/config_service.dart';
 import '../../data/repositories/unit_repository.dart';
 import '../../domain/unit_definition.dart';
 import '../../domain/unit_inputs.dart';
@@ -106,8 +107,9 @@ class UnitsProvider extends ChangeNotifier {
     if (groupUnit == null || candidate == null) {
       return false;
     }
-    return groupUnit.unitGroupId != null &&
-        groupUnit.unitGroupId == candidate.unitGroupId;
+    final groupBaseId = groupUnit.conversionBaseUnitId ?? groupUnit.id;
+    final candidateBaseId = candidate.conversionBaseUnitId ?? candidate.id;
+    return groupBaseId == candidateBaseId;
   }
 
   List<UnitDefinition> compatibleActiveUnitsForGroupUnitId(int? groupUnitId) {
@@ -121,6 +123,86 @@ class UnitsProvider extends ChangeNotifier {
     return activeUnits
         .where((unit) => areUnitsCompatible(groupUnitId, unit.id))
         .toList(growable: false);
+  }
+
+  List<UnitDefinition> includedUnitsFor(int? familyBaseUnitId, String context, {int? currentUnitId}) {
+    if (familyBaseUnitId == null) {
+      return activeUnits;
+    }
+    
+    final familyBase = findById(familyBaseUnitId);
+    if (familyBase == null) return activeUnits;
+    final dimension = familyBase.unitGroupDimension?.toLowerCase() ?? '';
+    
+    final config = ConfigService.instance.config;
+    final familiesConfig = config['units']?['families'];
+    
+    if (familiesConfig == null || familiesConfig is! Map) {
+      return compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
+    }
+    
+    final dimensionConfig = familiesConfig[dimension];
+    if (dimensionConfig == null || dimensionConfig is! Map) {
+      return compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
+    }
+    
+    final contextList = dimensionConfig[context];
+    if (contextList == null || contextList is! List) {
+      return compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
+    }
+    
+    final includedIds = contextList.map((e) => e as int).toSet();
+    
+    final candidates = compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
+    return candidates.where((unit) {
+      if (currentUnitId != null && unit.id == currentUnitId) {
+        return true; 
+      }
+      return includedIds.contains(unit.id);
+    }).toList(growable: false);
+  }
+
+  String? convertValue(dynamic value, int? fromUnitId, int? toUnitId) {
+    if (fromUnitId == null || toUnitId == null || value == null) return null;
+    if (fromUnitId == toUnitId) return value.toString();
+    
+    final from = findById(fromUnitId);
+    final to = findById(toUnitId);
+    
+    if (from == null || to == null) return null;
+    
+    final fromBaseId = from.conversionBaseUnitId ?? from.id;
+    final toBaseId = to.conversionBaseUnitId ?? to.id;
+    if (fromBaseId != toBaseId) {
+      return null;
+    }
+    
+    double valInBase = 0.0;
+    final valStr = value.toString().trim();
+    
+    if (from.conversionType == 'table') {
+      final point = from.conversionPoints.where((p) => p.pointKey.toLowerCase() == valStr.toLowerCase()).firstOrNull;
+      if (point != null) {
+        valInBase = point.baseValue;
+      } else {
+        valInBase = double.tryParse(valStr) ?? 0.0;
+      }
+    } else {
+      final numVal = double.tryParse(valStr) ?? 0.0;
+      valInBase = numVal * from.conversionFactor;
+    }
+    
+    if (to.conversionType == 'table') {
+      final tolerance = 0.0005; // 0.0005 mm tolerance as per spec
+      // assuming table values are exact within tolerance
+      final point = to.conversionPoints.where((p) => (p.baseValue - valInBase).abs() < tolerance).firstOrNull;
+      if (point != null) {
+        return point.pointKey;
+      }
+      return valInBase.toString();
+    } else {
+      return (valInBase / to.conversionFactor).toString();
+    }
   }
 
   Future<void> initialize() async {
@@ -138,6 +220,39 @@ class UnitsProvider extends ChangeNotifier {
     try {
       await _repository.init();
       final units = await _repository.getUnits();
+      final gaugePoints = await _repository.getGaugePoints();
+      
+      final pointsByUnitId = <int, List<ConversionPoint>>{};
+      for (final p in gaugePoints) {
+        pointsByUnitId.putIfAbsent(p.unitId, () => []).add(p);
+      }
+      
+      for (var i = 0; i < units.length; i++) {
+        if (units[i].conversionType == 'table') {
+          final points = pointsByUnitId[units[i].id] ?? [];
+          units[i] = UnitDefinition(
+            id: units[i].id,
+            name: units[i].name,
+            symbol: units[i].symbol,
+            notes: units[i].notes,
+            unitGroupId: units[i].unitGroupId,
+            unitGroupName: units[i].unitGroupName,
+            conversionFactor: units[i].conversionFactor,
+            conversionBaseUnitId: units[i].conversionBaseUnitId,
+            conversionBaseUnitName: units[i].conversionBaseUnitName,
+            conversionType: units[i].conversionType,
+            precision: units[i].precision,
+            unitGroupDimension: units[i].unitGroupDimension,
+            unitGroupBaseUnitId: units[i].unitGroupBaseUnitId,
+            conversionPoints: points,
+            isArchived: units[i].isArchived,
+            usageCount: units[i].usageCount,
+            createdAt: units[i].createdAt,
+            updatedAt: units[i].updatedAt,
+          );
+        }
+      }
+
       units.sort((a, b) {
         if (a.isArchived != b.isArchived) {
           return a.isArchived ? 1 : -1;

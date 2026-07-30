@@ -60,6 +60,7 @@ class ConfigService {
     "catalog": {"purchaseItems": true},
     "purchase": {"flowV2": true},
     "update": {"channel": "stable", "latest_version": "1.0.0"},
+    "units": {"families": true},
   };
 
   Future<void> init(

@@ -4975,17 +4975,15 @@ class _ItemsEditor extends StatelessWidget {
     }
 
     final parts = <String>[];
-    final val = double.tryParse(draft.enteredValue.trim());
-    if (val != null && val > 0) {
-      final selectedUnit = units.firstWhere(
-        (u) => u.id == draft.selectedUnitId,
-        orElse: () => units.first,
-      );
-      final primaryVal = val * selectedUnit.factorToPrimary;
-
+    final valStr = draft.enteredValue.trim();
+    if (valStr.isNotEmpty && draft.selectedUnitId != null) {
       for (final u in units) {
-        final converted = primaryVal / u.factorToPrimary;
-        parts.add('${draft.formatDouble(converted)} ${u.symbol}');
+        final convertedStr = unitsProvider.convertValue(valStr, draft.selectedUnitId, u.id);
+        if (convertedStr != null) {
+          final convertedNum = double.tryParse(convertedStr);
+          final displayStr = convertedNum != null ? draft.formatDouble(convertedNum) : convertedStr;
+          parts.add('$displayStr ${u.symbol}');
+        }
       }
     }
 
@@ -5225,28 +5223,22 @@ class _ItemDraft {
   ) {
     final list = <ItemUnitOption>[];
     final primary = unitsProvider.findById(item.unitId);
+    
     if (primary != null) {
-      list.add(
-        ItemUnitOption(
-          id: primary.id,
-          name: primary.name,
-          symbol: primary.symbol,
-          factorToPrimary: 1.0,
-          isPrimary: true,
-        ),
-      );
-    }
-    for (final conv in item.unitConversions) {
-      if (conv.unitId == item.unitId) continue;
-      list.add(
-        ItemUnitOption(
-          id: conv.unitId,
-          name: conv.unitName,
-          symbol: conv.unitSymbol,
-          factorToPrimary: conv.factorToPrimary,
-          isPrimary: false,
-        ),
-      );
+      final familyBaseId = primary.conversionBaseUnitId ?? primary.id;
+      final includedUnits = unitsProvider.includedUnitsFor(familyBaseId, 'sales', currentUnitId: item.unitId);
+      
+      for (final unit in includedUnits) {
+        list.add(
+          ItemUnitOption(
+            id: unit.id,
+            name: unit.name,
+            symbol: unit.symbol,
+            factorToPrimary: unit.conversionFactor,
+            isPrimary: unit.id == item.unitId,
+          ),
+        );
+      }
     }
     return list;
   }
@@ -5321,20 +5313,12 @@ class _ItemDraft {
     final units = getAvailableUnits(item, unitsProvider);
     if (units.isEmpty) return;
 
-    selectedUnitId ??= units.first.id;
-
-    final val = double.tryParse(enteredValue.trim());
-    if (val == null || val <= 0) {
+    final valStr = enteredValue.trim();
+    if (valStr.isEmpty || selectedUnitId == null) {
       quantityPcs = '';
       weight = '';
       return;
     }
-
-    final selectedUnit = units.firstWhere(
-      (u) => u.id == selectedUnitId,
-      orElse: () => units.first,
-    );
-    final primaryVal = val * selectedUnit.factorToPrimary;
 
     ItemUnitOption? wtOpt;
     for (final u in units) {
@@ -5352,47 +5336,27 @@ class _ItemDraft {
     }
 
     if (wtOpt != null) {
-      final wtVal = primaryVal / wtOpt.factorToPrimary;
-      weight = formatDouble(wtVal);
-    } else {
-      final primaryUnit = unitsProvider.findById(item.unitId);
-      if (primaryUnit != null &&
-          isWeightUnit(
-            ItemUnitOption(
-              id: primaryUnit.id,
-              name: primaryUnit.name,
-              symbol: primaryUnit.symbol,
-              factorToPrimary: 1.0,
-              isPrimary: true,
-            ),
-          )) {
-        weight = formatDouble(primaryVal);
+      final converted = unitsProvider.convertValue(valStr, selectedUnitId, wtOpt.id);
+      if (converted != null) {
+        final numVal = double.tryParse(converted);
+        weight = numVal != null ? formatDouble(numVal) : converted;
       } else {
         weight = '';
       }
+    } else {
+      weight = '';
     }
 
     if (qtyOpt != null) {
-      final qtyVal = primaryVal / qtyOpt.factorToPrimary;
-      quantityPcs = formatDouble(qtyVal);
-    } else {
-      final primaryUnit = unitsProvider.findById(item.unitId);
-      if (primaryUnit != null &&
-          isQtyUnit(
-            ItemUnitOption(
-              id: primaryUnit.id,
-              name: primaryUnit.name,
-              symbol: primaryUnit.symbol,
-              factorToPrimary: 1.0,
-              isPrimary: true,
-            ),
-          )) {
-        quantityPcs = formatDouble(primaryVal);
-      } else if (wtOpt == null) {
-        quantityPcs = formatDouble(primaryVal);
+      final converted = unitsProvider.convertValue(valStr, selectedUnitId, qtyOpt.id);
+      if (converted != null) {
+        final numVal = double.tryParse(converted);
+        quantityPcs = numVal != null ? formatDouble(numVal) : converted;
       } else {
         quantityPcs = '';
       }
+    } else {
+      quantityPcs = '';
     }
   }
 

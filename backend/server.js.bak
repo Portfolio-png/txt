@@ -688,12 +688,8 @@ function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
-function validatePasswordPolicy(password /* , { email, role } */) {
-  // Password strength requirements intentionally removed: any non-empty
-  // password is accepted (short/weak/4-digit codes are fine).
-  if (String(password || '').length < 1) {
-    return 'Enter a password.';
-  }
+function validatePasswordPolicy(password) {
+  if (!password || password.length < 10) return "Password is too weak.";
   return null;
 }
 
@@ -2183,29 +2179,11 @@ function rowToUnitDto(row) {
     notes: row.notes || '',
     unitGroupId: row.unit_group_id || null,
     unitGroupName: row.unit_group_name || null,
-    unitGroupDimension: row.unit_group_dimension || null,
-    unitGroupBaseUnitId: row.unit_group_base_unit_id || null,
     conversionFactor: Number(row.conversion_factor || 1),
     conversionBaseUnitId: row.conversion_base_unit_id || null,
     conversionBaseUnitName: row.conversion_base_unit_name || null,
-    conversionType: row.conversion_type || 'linear',
-    precision: row.precision != null ? Number(row.precision) : null,
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToUnitGroupDto(row) {
-  if (!row) {
-    return null;
-  }
-  return {
-    id: row.id,
-    name: row.name || '',
-    dimension: row.dimension || null,
-    baseUnitId: row.base_unit_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -4645,6 +4623,7 @@ async function initDb() {
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('item_variation_nodes', 'input_type', "TEXT NOT NULL DEFAULT 'Text'");
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -5138,9 +5117,6 @@ async function initDb() {
     "update": {
       "channel": "stable",
       "latest_version": "1.0.0"
-    },
-    "units": {
-      "families": true
     }
   };
 
@@ -6610,7 +6586,11 @@ async function seedUnitsIfEmpty() {
   const units = [
     { name: 'Kilogram', symbol: 'Kg', notes: 'Mock seed' },
     { name: 'Sheet', symbol: 'Sheet', notes: 'Mock seed' },
-    { name: 'Piece', symbol: 'Pieces', notes: 'Mock seed' },
+    { name: 'Piece', symbol: 'pcs', notes: 'Mock seed' },
+    { name: 'Liter', symbol: 'L', notes: 'Mock seed' },
+    { name: 'Meter', symbol: 'm', notes: 'Mock seed' },
+    { name: 'Gram', symbol: 'g', notes: 'Mock seed' },
+    { name: 'Archived Unit', symbol: 'arch', notes: 'Mock seed' },
     { name: 'Box', symbol: 'Box', notes: 'Mock seed' },
   ];
 
@@ -6656,25 +6636,21 @@ async function ensureUnitRecord({
 
 async function ensureDemoUnitsPresent() {
   const units = [
-    {
-      name: 'Piece',
-      symbol: 'Pc',
-      notes: 'Discrete finished goods and components.',
-    },
-    {
-      name: 'Box',
-      symbol: 'Box',
-      notes: 'Packed kits and shipping cartons.',
-    },
-    {
-      name: 'Carton',
-      symbol: 'Ctn',
-      notes: 'Shipping cartons.',
-    }
+    { name: 'Piece', symbol: 'Pc', notes: 'Discrete finished goods and components.' },
+    { name: 'Box', symbol: 'Box', notes: 'Packed kits and shipping cartons.' },
+    { name: 'Carton', symbol: 'Ctn', notes: 'Shipping cartons.' },
+    { name: 'Meter', symbol: 'm', notes: 'Length measurement.' },
+    { name: 'Liter', symbol: 'L', notes: 'Volume measurement.' },
+    { name: 'Kilogram', symbol: 'kg', notes: 'Weight measurement.' },
+    { name: 'Gram', symbol: 'g', notes: 'Small weight measurement.' },
+    { name: 'Archived Unit', symbol: 'Arc', notes: 'Archived test unit.', isArchived: true }
   ];
 
   for (const unit of units) {
-    await ensureUnitRecord(unit);
+    const createdUnit = await ensureUnitRecord(unit);
+    if (unit.isArchived) {
+      await run('UPDATE units SET is_archived = 1 WHERE id = ?', [createdUnit.id]);
+    }
   }
 }
 
@@ -6988,8 +6964,6 @@ async function getUnitRowById(id) {
     SELECT
       units.*,
       unit_groups.name AS unit_group_name,
-      unit_groups.dimension AS unit_group_dimension,
-      unit_groups.base_unit_id AS unit_group_base_unit_id,
       base_unit.name AS conversion_base_unit_name,
       (
         (SELECT COUNT(*) FROM materials WHERE materials.unit_id = units.id) +
@@ -14070,7 +14044,6 @@ async function saveOrder({
             end_date = ?,
             custom_variation_values_json = ?,
             sub_contractor_id = ?,
-            factor_to_primary_at_creation = ?,
             updated_at = ?
         WHERE id = ?
         `,
@@ -14093,7 +14066,6 @@ async function saveOrder({
           normalizedEndDate,
           normalizedCustomVariationValuesJson,
           normalizedSubContractorId,
-          factorToPrimary,
           now,
           existing.id,
         ],
@@ -14135,9 +14107,9 @@ async function saveOrder({
           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
           unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
           custom_variation_values_json, sub_contractor_id,
-          created_at, updated_at, start_date, end_date, factor_to_primary_at_creation
+          created_at, updated_at, start_date, end_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -14163,7 +14135,6 @@ async function saveOrder({
           now,
           normalizedStartDate,
           normalizedEndDate,
-          factorToPrimary,
         ],
       );
       orderId = result.lastID;
@@ -14421,7 +14392,7 @@ async function saveGroup({
     trimmedName !== 'Scrap'
   ) {
     const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
-    if (pg) {
+    if (pg && pg.id !== id) {
       normalizedParentId = pg.id;
     }
   }
@@ -15640,8 +15611,6 @@ async function getUnitsWithUsage() {
     SELECT
       units.*,
       unit_groups.name AS unit_group_name,
-      unit_groups.dimension AS unit_group_dimension,
-      unit_groups.base_unit_id AS unit_group_base_unit_id,
       base_unit.name AS conversion_base_unit_name,
       (
         (SELECT COUNT(*) FROM materials WHERE materials.unit_id = units.id) +
@@ -15680,8 +15649,6 @@ async function saveUnit({
   notes = '',
   unitGroupName = '',
   conversionFactor = 1,
-  conversionType = 'linear',
-  precision = null,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -15712,8 +15679,8 @@ async function saveUnit({
   if (id == null) {
     const result = await run(
       `
-      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, conversion_type, precision, notes, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, notes, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
       [
         trimmedName,
@@ -15721,14 +15688,11 @@ async function saveUnit({
         resolvedUnitGroupId,
         resolvedConversion.conversionFactor,
         resolvedConversion.conversionBaseUnitId,
-        conversionType,
-        precision,
         trimmedNotes,
         now,
         now,
       ],
     );
-    if (typeof buildUnitGraph === 'function') buildUnitGraph(); // Invalidates cache
     return getUnitRowById(result.lastID);
   }
 
@@ -15744,8 +15708,7 @@ async function saveUnit({
       normalizeUnitValue(existing.symbol) !== normalizeUnitValue(trimmedSymbol) ||
       (existing.unit_group_id || null) !== (resolvedUnitGroupId || null) ||
       Number(existing.conversion_factor || 1) !== Number(resolvedConversion.conversionFactor || 1) ||
-      (existing.conversion_base_unit_id || null) !== (resolvedConversion.conversionBaseUnitId || null) ||
-      (existing.conversion_type || 'linear') !== conversionType;
+      (existing.conversion_base_unit_id || null) !== (resolvedConversion.conversionBaseUnitId || null);
     if (detailsChanged) {
       const error = new Error('Used units cannot change identity or conversion details.');
       error.statusCode = 409;
@@ -15754,21 +15717,18 @@ async function saveUnit({
   }
 
   await run(
-    'UPDATE units SET name = ?, symbol = ?, unit_group_id = ?, conversion_factor = ?, conversion_base_unit_id = ?, conversion_type = ?, precision = ?, notes = ?, updated_at = ? WHERE id = ?',
+    'UPDATE units SET name = ?, symbol = ?, unit_group_id = ?, conversion_factor = ?, conversion_base_unit_id = ?, notes = ?, updated_at = ? WHERE id = ?',
     [
       trimmedName,
       trimmedSymbol,
       resolvedUnitGroupId,
       resolvedConversion.conversionFactor,
       resolvedConversion.conversionBaseUnitId,
-      conversionType,
-      precision,
       trimmedNotes,
       now,
       id,
     ],
   );
-  if (typeof buildUnitGraph === 'function') buildUnitGraph(); // Invalidates cache
   return getUnitRowById(id);
 }
 
@@ -15781,37 +15741,6 @@ async function getUnitGroupRowByName(name) {
   return rows.find((row) => normalizeUnitValue(row.name) === normalized) || null;
 }
 
-async function saveUnitGroup({ name, dimension = null, baseUnitId = null, id = null }) {
-  const trimmedName = String(name || '').trim();
-  if (!trimmedName) throw new Error('name is required');
-
-  const existing = await getUnitGroupRowByName(trimmedName);
-  if (existing && existing.id !== id) {
-    const error = new Error('A unit family with this name already exists.');
-    error.statusCode = 409;
-    throw error;
-  }
-  
-  const now = new Date().toISOString();
-  if (id == null) {
-    const result = await run(
-      'INSERT INTO unit_groups (name, dimension, base_unit_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [trimmedName, dimension, baseUnitId, now, now]
-    );
-    if (typeof buildUnitGraph === 'function') buildUnitGraph();
-    const rows = await all('SELECT * FROM unit_groups WHERE id = ?', [result.lastID]);
-    return rows[0];
-  } else {
-    await run(
-      'UPDATE unit_groups SET name = ?, dimension = ?, base_unit_id = ?, updated_at = ? WHERE id = ?',
-      [trimmedName, dimension, baseUnitId, now, id]
-    );
-    if (typeof buildUnitGraph === 'function') buildUnitGraph();
-    const rows = await all('SELECT * FROM unit_groups WHERE id = ?', [id]);
-    return rows[0];
-  }
-}
-
 async function resolveUnitGroupId(unitGroupName) {
   const trimmed = String(unitGroupName || '').trim();
   if (!trimmed) {
@@ -15821,126 +15750,12 @@ async function resolveUnitGroupId(unitGroupName) {
   if (existing) {
     return existing.id;
   }
-  const group = await saveUnitGroup({ name: trimmed });
-  return group.id;
-}
-
-let unitGraphCache = {
-  unitsBySymbol: {},
-  unitsById: {},
-  families: {},
-  gaugePoints: {},
-};
-
-async function buildUnitGraph() {
-  const units = await all('SELECT * FROM units');
-  const unitGroups = await all('SELECT * FROM unit_groups');
-  const points = await all('SELECT * FROM unit_conversion_points');
-  
-  const cache = {
-    unitsBySymbol: {},
-    unitsById: {},
-    families: {},
-    gaugePoints: {}
-  };
-  
-  for (const group of unitGroups) {
-    if (group.base_unit_id) {
-      cache.families[group.base_unit_id] = { id: group.id, name: group.name, dimension: group.dimension, baseUnitId: group.base_unit_id, members: [] };
-    }
-  }
-  
-  for (const u of units) {
-    const dto = rowToUnitDto(u);
-    cache.unitsById[u.id] = dto;
-    if (u.symbol) cache.unitsBySymbol[u.symbol.toLowerCase()] = dto;
-    if (u.conversion_base_unit_id && cache.families[u.conversion_base_unit_id]) {
-      cache.families[u.conversion_base_unit_id].members.push(dto);
-    }
-  }
-  
-  for (const pt of points) {
-    if (!cache.gaugePoints[pt.unit_id]) cache.gaugePoints[pt.unit_id] = [];
-    cache.gaugePoints[pt.unit_id].push({ key: pt.point_key, baseValue: pt.base_value });
-  }
-  
-  unitGraphCache = cache;
-}
-
-function parseQualifiedValue(valueStr, unitGraph = unitGraphCache) {
-  if (!Number.isNaN(Number(valueStr))) {
-    return { value: Number(valueStr), unit: null, isGauge: false };
-  }
-  const str = String(valueStr).trim();
-  const match = str.match(/^([0-9/.]+)([a-zA-Z]+)$/);
-  if (match) {
-    const rawVal = match[1];
-    const symbol = match[2].toLowerCase();
-    const unit = unitGraph.unitsBySymbol[symbol];
-    if (unit) {
-      if (unit.conversionType === 'table') {
-        return { value: rawVal, unit, isGauge: true };
-      }
-      return { value: Number(rawVal), unit, isGauge: false };
-    }
-  }
-  return { value: valueStr, unit: null, isGauge: false };
-}
-
-function convertValue(value, fromUnitId, toUnitId, unitGraph = unitGraphCache) {
-  if (fromUnitId === toUnitId) return value;
-  
-  const from = unitGraph.unitsById[fromUnitId];
-  const to = unitGraph.unitsById[toUnitId];
-  
-  if (!from || !to) throw new Error(`Unit not found: ${fromUnitId} -> ${toUnitId}`);
-  
-  const base1 = from.conversionBaseUnitId || from.id;
-  const base2 = to.conversionBaseUnitId || to.id;
-  
-  if (base1 !== base2) {
-    const err = new Error(`Cannot convert across different unit families (${from.symbol} and ${to.symbol})`);
-    err.statusCode = 400;
-    throw err;
-  }
-  
-  let baseValue;
-  if (from.conversionType === 'table') {
-    const points = unitGraph.gaugePoints[from.id] || [];
-    const pt = points.find(p => String(p.key).toLowerCase() === String(value).toLowerCase());
-    if (!pt) {
-      const err = new Error(`Unknown table value ${value} for unit ${from.symbol}`);
-      err.statusCode = 400;
-      throw err;
-    }
-    baseValue = pt.baseValue;
-  } else {
-    baseValue = Number(value) * from.conversionFactor;
-  }
-  
-  let result;
-  if (to.conversionType === 'table') {
-    const points = unitGraph.gaugePoints[to.id] || [];
-    let closest = null;
-    let minDiff = Infinity;
-    for (const p of points) {
-      const diff = Math.abs(p.baseValue - baseValue);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = p;
-      }
-    }
-    if (!closest || minDiff > 0.0001) {
-      const err = new Error(`Cannot convert precisely to table unit ${to.symbol} from ${baseValue}`);
-      err.statusCode = 400;
-      throw err;
-    }
-    result = closest.key;
-  } else {
-    result = baseValue / to.conversionFactor;
-  }
-  
-  return result;
+  const now = new Date().toISOString();
+  const result = await run(
+    'INSERT INTO unit_groups (name, created_at, updated_at) VALUES (?, ?, ?)',
+    [trimmed, now, now],
+  );
+  return result.lastID;
 }
 
 async function resolveUnitConversion({
@@ -21029,83 +20844,6 @@ app.delete('/api/favorites/:itemId/:variationLeafNodeId', async (req, res) => {
   }
 });
 
-app.get('/api/unit-groups', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await all('SELECT * FROM unit_groups');
-    res.json({ success: true, unitGroups: rows.map(rowToUnitGroupDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, unitGroups: [], error: error.message });
-  }
-});
-
-app.post('/api/unit-groups', requirePermission('config.write'), async (req, res) => {
-  try {
-    const group = await saveUnitGroup(req.body || {});
-    res.status(201).json({ success: true, unitGroup: rowToUnitGroupDto(group), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/unit-groups/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const group = await saveUnitGroup({ ...(req.body || {}), id });
-    res.json({ success: true, unitGroup: rowToUnitGroupDto(group), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/unit-groups/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    await run('DELETE FROM unit_groups WHERE id = ?', [id]);
-    if (typeof buildUnitGraph === 'function') buildUnitGraph();
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/units/gauge-table', requirePermission('config.read'), async (req, res) => {
-  try {
-    const points = await all('SELECT * FROM unit_conversion_points');
-    res.json({ success: true, points, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, points: [], error: error.message });
-  }
-});
-
-app.post('/api/units/convert-batch', requirePermission('config.read'), (req, res) => {
-  try {
-    const { conversions = [] } = req.body;
-    const results = conversions.map((conv) => {
-      try {
-        let fromUnitId = conv.fromUnitId;
-        const toUnitId = conv.toUnitId;
-        
-        let value = conv.value;
-        if (typeof value === 'string') {
-          const parsed = parseQualifiedValue(value);
-          value = parsed.value; 
-          if (!fromUnitId && parsed.unit) {
-            fromUnitId = parsed.unit.id;
-          }
-        }
-        
-        const converted = convertValue(value, fromUnitId, toUnitId);
-        return { success: true, value: converted };
-      } catch (err) {
-        return { success: false, error: err.message };
-      }
-    });
-    res.json({ success: true, results });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 app.delete('/api/units/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -21118,14 +20856,6 @@ app.delete('/api/units/:id', requirePermission('config.write'), async (req, res)
   }
 });
 
-app.get('/api/groups', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await getGroupsWithUsage();
-    res.json({ success: true, groups: rows.map(rowToGroupDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, groups: [], error: error.message });
-  }
-});
 
 app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
   try {
@@ -23083,44 +22813,6 @@ app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res
   }
 });
 
-app.post('/api/items/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
-  try {
-    const entityId = Number(req.params.id);
-    if (!Number.isInteger(entityId) || entityId <= 0) {
-      res.status(400).json({
-        success: false,
-        intent: null,
-        error: 'A valid item id is required.',
-      });
-      return;
-    }
-    const requestedEntityId = req.body?.entityId;
-    if (requestedEntityId != null && Number(requestedEntityId) !== entityId) {
-      res.status(400).json({
-        success: false,
-        intent: null,
-        error: 'Request item id does not match the upload route item id.',
-      });
-      return;
-    }
-    const intent = await createAssetUploadIntent({
-      ...(req.body || {}),
-      entityType: 'item',
-      entityId,
-    });
-    res.status(intent.alreadyUploaded ? 200 : 201).json({
-      success: true,
-      intent,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      intent: null,
-      error: error.message,
-    });
-  }
-});
 
 app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', assetEntityTypeFromUploadSession), async (req, res) => {
   try {
@@ -23135,48 +22827,7 @@ app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', as
   }
 });
 
-app.post('/api/items/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
-  try {
-    const entityId = Number(req.params.id);
-    if (!Number.isInteger(entityId) || entityId <= 0) {
-      res.status(400).json({
-        success: false,
-        asset: null,
-        error: 'A valid item id is required.',
-      });
-      return;
-    }
-    const asset = await completeAssetUpload(req.body || {});
-    if (asset.entityType !== 'item' || Number(asset.entityId) !== entityId) {
-      res.status(400).json({
-        success: false,
-        asset: null,
-        error: 'Completed upload does not belong to the requested item.',
-      });
-      return;
-    }
-    res.json({ success: true, asset, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      asset: null,
-      error: error.message,
-    });
-  }
-});
 
-app.get('/api/items/:id/assets', requirePermission('config.read'), async (req, res) => {
-  try {
-    const assets = await listAssetsForEntity('item', Number(req.params.id));
-    res.json({ success: true, assets, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      assets: [],
-      error: error.message,
-    });
-  }
-});
 
 app.post('/api/assets/:id/read-url', requireAssetEntityPermission('read', assetEntityTypeFromAssetId), async (req, res) => {
   try {
@@ -23854,50 +23505,8 @@ app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res
   }
 });
 
-app.get('/api/items/:id/usage', requirePermission('config.read'), async (req, res) => {
-  try {
-    const usage = await getItemUsageDetails(Number(req.params.id));
-    res.json({ success: true, usage, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, usage: [], error: error.message });
-  }
-});
 
-app.get('/api/items', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await getItemsWithUsage();
-    const items = await Promise.all(rows.map(rowToItemDto));
-    res.json({ success: true, items, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, items: [], error: error.message });
-  }
-});
 
-app.get('/api/items/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const row = await get(`
-      SELECT
-        items.*,
-        pipeline_templates.name AS default_pipeline_name,
-        (
-          (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
-          (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
-          (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
-          (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
-          (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
-        ) AS usage_count
-      FROM items
-      LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
-      WHERE items.id = ?
-    `, [req.params.id]);
-    if (!row) {
-      return res.status(404).json({ success: false, item: null, error: 'Not found' });
-    }
-    res.json({ success: true, item: await rowToItemDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, item: null, error: error.message });
-  }
-});
 
 app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req, res) => {
   try {
@@ -23955,310 +23564,27 @@ app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), asy
 });
 
 
-app.put('/api/items/:id/short-code', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const shortCode = req.body.shortCode || '';
-    
-    if (!id) {
-      return res.status(400).json({ success: false, error: 'Invalid ID' });
-    }
 
-    const item = await get('SELECT * FROM items WHERE id = ?', [id]);
-    if (!item) {
-      return res.status(404).json({ success: false, error: 'Item not found' });
-    }
 
-    await run('UPDATE items SET short_code = ?, updated_at = ? WHERE id = ?', [shortCode, new Date().toISOString(), id]);
-    
-    // Notify clients of the change
-    await logChange('items', id, 'UPDATE');
-    
-    const updatedRow = await get('SELECT * FROM items WHERE id = ?', [id]);
-    const itemDto = await rowToItemDto(updatedRow);
-    
-    if (io) {
-      io.emit('item_updated', itemDto);
-    }
-    
-    res.json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-app.post('/api/items', requirePermission('config.write'), async (req, res) => {
-  try {
-    const item = await saveItem(req.body || {});
-    const itemDto = await rowToItemDto(item);
-    if (io) {
-      io.emit('item_added', itemDto);
-    }
-    trackCreate('items', item.id, item, req);
-    res.status(201).json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      item: null,
-      error: error.message,
-    });
-  }
-});
-
-app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM items WHERE id = ?', [id]);
-    const item = await saveItem({
-      ...(req.body || {}),
-      id,
-    });
-    const itemDto = await rowToItemDto(item);
-    if (io) {
-      io.emit('item_updated', itemDto);
-    }
-    const after = await get('SELECT * FROM items WHERE id = ?', [id]);
-    trackUpdate('items', id, before, after, req);
-    res.json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      item: null,
-      error: error.message,
-    });
-  }
-});
-
-app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM items WHERE id = ?', [id]);
-
-    const nodeIds = (await all('SELECT id FROM item_variation_nodes WHERE item_id = ?', [id])).map(r => r.id);
-    await trashAndDeleteMany('item_variation_nodes', nodeIds, req);
-    
-    const convIds = (await all('SELECT id FROM item_unit_conversions WHERE item_id = ?', [id])).map(r => r.id);
-    await trashAndDeleteMany('item_unit_conversions', convIds, req);
-    
-    const varIds = (await all('SELECT id FROM item_variations WHERE item_id = ?', [id])).map(r => r.id);
-    await trashAndDeleteMany('item_variations', varIds, req);
-    
-    const assetIds = (await all("SELECT id FROM uploaded_assets WHERE entity_type='item' AND entity_id=?", [id])).map(r => r.id);
-    await trashAndDeleteMany('uploaded_assets', assetIds, req);
-    
-    await trashAndDelete('items', id, req);
-    trackDelete('items', id, before, req);
-
-    if (io) {
-      io.emit('item_deleted', { id });
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 
 
 // Relocate an item to another group without touching its variation tree /
 // conversions (saveItem would rewrite those). Used by the delete-group flow.
-app.patch('/api/items/:id/group', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const groupId = Number((req.body || {}).groupId);
-    const existing = await getItemRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, item: null, error: 'Item not found.' });
-      return;
-    }
-    if (!groupId) {
-      res.status(400).json({ success: false, item: null, error: 'A target group is required.' });
-      return;
-    }
-    const groupRow = await get('SELECT * FROM groups WHERE id = ?', [groupId]);
-    if (!groupRow || groupRow.is_archived) {
-      res.status(400).json({
-        success: false,
-        item: null,
-        error: 'Selected group does not exist or is archived.',
-      });
-      return;
-    }
-    await run('UPDATE items SET group_id = ?, updated_at = ? WHERE id = ?', [
-      groupId,
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getItemRowById(id);
-    res.json({ success: true, item: await rowToItemDto(updated), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, item: null, error: error.message });
-  }
-});
 
-app.post('/api/groups', requirePermission('config.write'), async (req, res) => {
-  try {
-    const group = await saveGroup(req.body || {});
-    res.status(201).json({ success: true, group: rowToGroupDto(group), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      group: null,
-      error: error.message,
-    });
-  }
-});
 
 // Enhancement 2.2/2.3 — bulk-assign item variants to a combination group.
 // Idempotent: re-assigning an item that is already a member is a no-op, and the
 // item's primary hierarchical group (items.group_id) is never modified, so dual
 // membership is preserved.
-app.post('/api/groups/:groupId/items', requirePermission('config.write'), async (req, res) => {
-  try {
-    const groupId = Number(req.params.groupId);
-    const group = await getGroupRowById(groupId);
-    if (!group) {
-      res.status(404).json({ success: false, group: null, assignedCount: 0, error: 'Group not found.' });
-      return;
-    }
-    if ((group.group_structure || 'hierarchical') !== 'combination') {
-      res.status(400).json({
-        success: false,
-        group: rowToGroupDto(group),
-        assignedCount: 0,
-        error: 'Items can only be bulk-assigned to combination groups.',
-      });
-      return;
-    }
-    const rawIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
-    const itemIds = [...new Set(rawIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))];
-    if (itemIds.length === 0) {
-      res.status(400).json({
-        success: false,
-        group: rowToGroupDto(group),
-        assignedCount: 0,
-        error: 'itemIds must be a non-empty array of item ids.',
-      });
-      return;
-    }
-
-    const placeholders = itemIds.map(() => '?').join(', ');
-    const existingItems = await all(
-      `SELECT id FROM items WHERE id IN (${placeholders})`,
-      itemIds,
-    );
-    const validIds = existingItems.map((row) => row.id);
-    if (validIds.length === 0) {
-      res.status(400).json({
-        success: false,
-        group: rowToGroupDto(group),
-        assignedCount: 0,
-        error: 'None of the supplied item ids exist.',
-      });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const maxOrderRow = await get(
-      'SELECT MAX(sort_order) AS max_order FROM group_item_memberships WHERE group_id = ?',
-      [groupId],
-    );
-    let sortOrder = Number(maxOrderRow?.max_order || 0);
-    let assignedCount = 0;
-    for (const itemId of validIds) {
-      sortOrder += 1;
-      const result = await run(
-        `
-        INSERT OR IGNORE INTO group_item_memberships (group_id, item_id, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        `,
-        [groupId, itemId, sortOrder, now, now],
-      );
-      if (result.changes > 0) {
-        assignedCount += 1;
-      } else {
-        sortOrder -= 1; // already a member; don't burn a sort slot
-      }
-    }
-    await run('UPDATE groups SET updated_at = ? WHERE id = ?', [now, groupId]);
-
-    res.status(201).json({
-      success: true,
-      group: rowToGroupDto(await getGroupRowById(groupId)),
-      assignedCount,
-      skippedCount: validIds.length - assignedCount,
-      missingCount: itemIds.length - validIds.length,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      group: null,
-      assignedCount: 0,
-      error: error.message,
-    });
-  }
-});
 
 // List the item ids that belong to a combination (or any) group.
-app.get('/api/groups/:groupId/items', requirePermission('config.read'), async (req, res) => {
-  try {
-    const groupId = Number(req.params.groupId);
-    const group = await getGroupRowById(groupId);
-    if (!group) {
-      res.status(404).json({ success: false, itemIds: [], error: 'Group not found.' });
-      return;
-    }
-    const rows = await all(
-      'SELECT item_id FROM group_item_memberships WHERE group_id = ? ORDER BY sort_order ASC',
-      [groupId],
-    );
-    res.json({ success: true, itemIds: rows.map((row) => row.item_id), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, itemIds: [], error: error.message });
-  }
-});
-
-app.patch('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const group = await saveGroup({
-      ...(req.body || {}),
-      id: Number(req.params.id),
-    });
-    res.json({ success: true, group: rowToGroupDto(group), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      group: null,
-      error: error.message,
-    });
-  }
-});
-
-app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    await trashAndDelete('groups', id, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 
 
-app.get('/api/groups/:id/effective-schema', requirePermission('config.read'), async (req, res) => {
-  try {
-    const schema = await getEffectiveSchema(Number(req.params.id));
-    res.json({ success: true, schema, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      schema: null,
-      error: error.message,
-    });
-  }
-});
+
+
 
 app.post('/api/materials/parent', requirePermission('inventory.create'), async (req, res) => {
   try {
@@ -25492,9 +24818,6 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
       "update": {
         "channel": "stable",
         "latest_version": "1.0.0"
-      },
-      "units": {
-        "families": true
       }
     });
   } catch (error) {
@@ -27161,6 +26484,108 @@ app.post('/api/delete-s3-object', requirePermission('config.write'), async (req,
   }
 });
 
+
+const guardAlerts = [];
+
+function guardContract(contract) {
+  return (req, res, next) => {
+    const alerts = [];
+    if (contract && contract.fields) {
+      for (const [key, rules] of Object.entries(contract.fields)) {
+        if (req.body && req.body[key] !== undefined) {
+          const val = req.body[key];
+          if (rules.type === 'number' && typeof val !== 'number') {
+            alerts.push({ path: 'item.' + key, message: 'Must be a number' });
+          }
+        }
+      }
+    }
+    if (alerts.length > 0) {
+      guardAlerts.push({
+        route: req.method + ' ' + req.route.path,
+        details: { problems: alerts }
+      });
+    }
+    next();
+  };
+}
+
+app.get("/api/kernel/guard-alerts", (req, res) => {
+  res.json({ success: true, alerts: guardAlerts });
+});
+
+
+
+const { createItemsPorts } = require('./modules/items/ports');
+const itemsPorts = createItemsPorts({
+  describe: async (id) => {
+    const row = await get('SELECT * FROM items WHERE id = ?', [id]);
+    return rowToItemDto ? await rowToItemDto(row) : row;
+  },
+  resolveSelection: resolveOrderVariationSelection,
+  selectionSnapshot: getItemSelectionSnapshot,
+  stockAssertLeaf: assertValidStockVariationLeaf,
+  stockApplyDelta: applyInventoryMovement,
+  bomLines: async (itemId) => { return []; },
+  lookupByName: async (name) => {
+    return await get('SELECT * FROM items WHERE name = ? COLLATE NOCASE', [name]);
+  },
+  delete: async (type, id, req) => {
+    return await trashAndDelete(type + 's', id, req);
+  },
+  ensureReconcilePrimary: ensureReconcilePrimaryGroup,
+  ensureReconcileSub: ensureReconcileSubGroup,
+  ensureForReconcile: ensureReconcileItem,
+});
+
+const registerItemsModuleRoutes = require('./modules/items/routes');
+registerItemsModuleRoutes({
+  app,
+  requirePermission,
+  guardContract,
+  get,
+  all,
+  run,
+  logChange,
+  saveItem,
+  saveGroup,
+  rowToItemDto,
+  rowToGroupDto,
+  getItemsWithUsage,
+  getGroupsWithUsage,
+  getItemUsageDetails,
+  getItemRowById,
+  getGroupRowById,
+  getEffectiveSchema,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  trashAndDelete,
+  trashAndDeleteMany,
+  createAssetUploadIntent,
+  completeAssetUpload,
+  listAssetsForEntity,
+  itemsPorts,
+  getIo: () => io,
+});
+
+const { computeTerritory } = require("./kernel/territory");
+app.get("/api/kernel/territory", async (req, res) => {
+  try {
+    const result = await computeTerritory({
+      app,
+      allRows: all,
+      runtime: {
+        items: {
+          portCalls: itemsPorts.stats()
+        }
+      }
+    });
+    res.json({ success: true, territory: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 // ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
 // Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
 app.use('/api', (req, res) => {
@@ -27189,6 +26614,7 @@ let bonjour = null;
 function startServer() {
   console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);
   return new Promise((resolve, reject) => {
+    
     const server = app.listen(PORT, '0.0.0.0', async () => {
       console.log(`Paper backend listening on port ${PORT}`);
       
@@ -27705,6 +27131,42 @@ app.get('/api/action-center/issues', requirePermission('config.read'), async (re
 
 
 module.exports = {
+  applyInventoryMovement,
+  buildTemplateTestChallanDto,
+  completeAssetUpload,
+  completePoUpload,
+  createAssetUploadIntent,
+  createParentWithChildren,
+  createPoUploadIntent,
+  ensureMaterialForItemSelection,
+  getClientsWithUsage,
+  getEffectiveSchema,
+  getGroupsWithUsage,
+  getItemPropertySchema,
+  getItemsWithUsage,
+  getMaterialGroupGovernance,
+  getMaterialRowByBarcode,
+  getOrderActivity,
+  getOrders,
+  getOrderStatusHistory,
+  getPoDocumentsForOrder,
+  getUnitsWithUsage,
+  linkMaterialRecordToGroup,
+  linkMaterialRecordToItem,
+  linkPoDocumentsToOrder,
+  listAssetsForEntity,
+  listChallanTemplates,
+  listCompletedProductionRuns,
+  resetAndSeedDemoData,
+  resolveOrderVariationSelection,
+  rowToClientDto,
+  rowToItemDto,
+  rowToOrderDto,
+  rowToPoDocumentDto,
+  saveChallanTemplate,
+  unlinkMaterialRecord,
+  updateMaterialGroupConfiguration,
+  updateOrderLifecycle,
   app,
   initDb,
   startServer,
