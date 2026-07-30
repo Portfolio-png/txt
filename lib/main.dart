@@ -151,12 +151,25 @@ class _RealtimeSocketConnectorState extends State<_RealtimeSocketConnector>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    SocketService.instance.on('unauthorized', _handleUnauthorized);
   }
 
   @override
   void dispose() {
+    SocketService.instance.off('unauthorized', _handleUnauthorized);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _handleUnauthorized(dynamic _) {
+    if (mounted) {
+      // Use Provider.of instead of context.read if not imported, but context.read should work if provider is imported
+      // Wait, in main.dart context.read requires import 'package:provider/provider.dart'; which is usually there.
+      context.read<AuthProvider>().logoutRemote();
+      
+      // We can't guarantee ScaffoldMessenger is available above this context, but typically we can try:
+      // wait, let's just do logout, the UI will rebuild to login screen.
+    }
   }
 
   @override

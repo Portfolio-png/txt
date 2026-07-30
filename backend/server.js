@@ -3885,6 +3885,7 @@ async function initDb() {
       note TEXT DEFAULT '',
       quantity_pcs REAL NOT NULL DEFAULT 0,
       weight REAL NOT NULL DEFAULT 0,
+      sheet_weights_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -4360,6 +4361,7 @@ async function initDb() {
       custom_variation_values_json TEXT DEFAULT '{}',
       quantity_pcs TEXT DEFAULT '',
       weight TEXT DEFAULT '',
+      sheet_weights_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -4465,6 +4467,9 @@ async function initDb() {
   await ensureColumnExists('delivery_challan_items', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
+  // Per-sheet weight breakdown for purchase intake: JSON array of numbers, one
+  // per received sheet, summing to the line weight (total-in = total-out).
+  await ensureColumnExists('delivery_challan_items', 'sheet_weights_json', "TEXT NOT NULL DEFAULT '[]'");
   await run(`
     CREATE TABLE IF NOT EXISTS delivery_challan_order_items (
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
@@ -5176,12 +5181,15 @@ async function initDb() {
       challan_item_id INTEGER NOT NULL REFERENCES delivery_challan_items(id) ON DELETE CASCADE,
       parent_code TEXT UNIQUE NOT NULL,
       child_code TEXT NOT NULL,
+      weight REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     )
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_parent_code ON piece_barcodes(parent_code)');
   await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_child_code ON piece_barcodes(child_code)');
   await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_challan_item_id ON piece_barcodes(challan_item_id)');
+  // Per-sheet weight printed on each barcode tag (added after initial release).
+  await ensureColumnExists('piece_barcodes', 'weight', 'REAL NOT NULL DEFAULT 0');
 
   await bootstrapSuperAdminIfNeeded();
   dbReady = true;
@@ -8204,6 +8212,7 @@ async function getDeliveryChallanItems(challanId) {
         challanItemId: b.challan_item_id,
         parentCode: b.parent_code,
         childCode: b.child_code,
+        weight: Number(b.weight || 0),
       }));
     }
   }
@@ -8363,6 +8372,7 @@ function rowToDeliveryChallanItemDto(row) {
     custom_variation_values: parseJson(row.custom_variation_values_json, {}),
     quantity_pcs: formatMeasure(row.quantity_pcs),
     weight: formatMeasure(row.weight),
+    sheet_weights: parseJson(row.sheet_weights_json, []),
     piece_barcodes: row.piece_barcodes || [],
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
@@ -8630,6 +8640,35 @@ function normalizeDeliveryChallanMeasure(value, fieldName) {
     throw error;
   }
   return numeric;
+}
+
+// Per-sheet weight breakdown for purchase intake. Returns a sanitized array of
+// non-negative numbers. When present, it must sum to the line weight (the
+// factory's total-in = total-out invariant); otherwise a 400 is thrown. An
+// empty array is allowed for callers that don't track sheets (back-compat).
+function normalizeChallanSheetWeights(item, itemWeight) {
+  const raw = item.sheetWeights ?? item.sheet_weights ?? [];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [];
+  }
+  const weights = raw.map((value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      const error = new Error('Invalid sheet weight.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return numeric;
+  });
+  const sum = weights.reduce((total, value) => total + value, 0);
+  if (Math.abs(sum - itemWeight) > 0.01) {
+    const error = new Error(
+      `Sheet weights must sum to the line weight (got ${sum}, expected ${itemWeight}).`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  return weights;
 }
 
 function normalizeDeliveryChallanItems(items = []) {
@@ -10983,13 +11022,15 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     }
 
     for (const item of items) {
+      const itemWeight = normalizeDeliveryChallanMeasure(item.weight, 'challan weight');
+      const sheetWeights = normalizeChallanSheetWeights(item, itemWeight);
       const itemResult = await run(
         `
         INSERT INTO delivery_challan_items (
           challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id,
           line_no, particulars, hsn_code, variation_path_label, variation_path_node_ids_json,
-          note, quantity_pcs, weight, custom_variation_values_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          note, quantity_pcs, weight, sheet_weights_json, custom_variation_values_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanId,
@@ -11004,7 +11045,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           JSON.stringify(item.variationPathNodeIds || []),
           item.note,
           normalizeDeliveryChallanMeasure(item.quantityPcs, 'challan quantity'),
-          normalizeDeliveryChallanMeasure(item.weight, 'challan weight'),
+          itemWeight,
+          JSON.stringify(sheetWeights),
           JSON.stringify(item.customVariationValues || {}),
           now,
           now,
@@ -21445,6 +21487,81 @@ const handleCreateChallan = async (req, res) => {
 
 app.post('/api/challans', requirePermission('config.write'), handleCreateChallan);
 app.post('/api/delivery-challans', requirePermission('config.write'), handleCreateChallan);
+
+// Persist the piece/sheet barcodes generated on the mobile wizard's Done step,
+// after the challan (and its number) already exist. Kept separate from the
+// challan upsert because that path deletes-and-reinserts every item (cascade-
+// wiping barcodes and re-running issuance). Idempotent: replaces the barcodes
+// for each referenced item, so re-generating or re-printing is safe.
+app.post('/api/challans/:id/piece-barcodes', requirePermission('config.write'), async (req, res) => {
+  try {
+    const challanId = Number(req.params.id);
+    if (!Number.isInteger(challanId) || challanId <= 0) {
+      return res.status(400).json({ success: false, data: null, error: 'Invalid challan id.' });
+    }
+    const challan = await get('SELECT id FROM delivery_challans WHERE id = ?', [challanId]);
+    if (!challan) {
+      return res.status(404).json({ success: false, data: null, error: 'Challan not found.' });
+    }
+
+    const incoming = Array.isArray(req.body?.barcodes) ? req.body.barcodes : [];
+    const itemRows = await all('SELECT id FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
+    const validItemIds = new Set(itemRows.map((row) => row.id));
+
+    const clean = [];
+    const touchedItemIds = new Set();
+    for (const pb of incoming) {
+      const itemId = Number(pb.challanItemId ?? pb.challan_item_id);
+      if (!validItemIds.has(itemId)) {
+        return res.status(400).json({
+          success: false,
+          data: null,
+          error: `Barcode references an item that is not part of challan ${challanId}.`,
+        });
+      }
+      const parentCode = String(pb.parentCode ?? pb.parent_code ?? '').trim();
+      const childCode = String(pb.childCode ?? pb.child_code ?? '').trim();
+      if (!parentCode || !childCode) continue;
+      const weightNum = Number(pb.weight ?? 0);
+      clean.push({
+        itemId,
+        parentCode,
+        childCode,
+        weight: Number.isFinite(weightNum) && weightNum >= 0 ? weightNum : 0,
+      });
+      touchedItemIds.add(itemId);
+    }
+
+    const now = nowIso();
+    await run('BEGIN TRANSACTION');
+    try {
+      for (const itemId of touchedItemIds) {
+        await run('DELETE FROM piece_barcodes WHERE challan_item_id = ?', [itemId]);
+      }
+      for (const pb of clean) {
+        await run(
+          'INSERT INTO piece_barcodes (challan_item_id, parent_code, child_code, weight, created_at) VALUES (?, ?, ?, ?, ?)',
+          [pb.itemId, pb.parentCode, pb.childCode, pb.weight, now],
+        );
+      }
+      await run('COMMIT');
+    } catch (err) {
+      await run('ROLLBACK');
+      throw err;
+    }
+
+    const saved = await getDeliveryChallanRowById(challanId);
+    const dto = await rowToDeliveryChallanDto(saved);
+    res.json({ success: true, data: dto, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
 
 app.get('/api/orders/:orderId/delivery-challans', requirePermission('config.read'), async (req, res) => {
   try {

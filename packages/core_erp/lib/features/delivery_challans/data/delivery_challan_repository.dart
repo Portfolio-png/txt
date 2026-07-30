@@ -52,6 +52,15 @@ abstract class ChallanRepository {
 
   Future<void> recordPrint(int id);
 
+  /// Persists the piece/sheet barcodes generated on the mobile wizard's Done
+  /// step (after the challan already exists). Each map carries `challanItemId`,
+  /// `parentCode`, `childCode`, and `weight`. Idempotent — re-sending replaces
+  /// the barcodes for the referenced items. Returns the refreshed challan.
+  Future<DeliveryChallan> savePieceBarcodes(
+    int challanId,
+    List<Map<String, dynamic>> barcodes,
+  );
+
   Future<DeliveryChallan> updateChallanReportGroups(
     int id,
     List<String> reportGroupCodes,
@@ -251,6 +260,8 @@ class ChallanDraftInput {
               'note': item.note.trim(),
               'quantity_pcs': item.quantityPcs.trim(),
               'weight': item.weight.trim(),
+              if (item.sheetWeights.isNotEmpty)
+                'sheet_weights': item.sheetWeights,
             },
           )
           .toList(growable: false),

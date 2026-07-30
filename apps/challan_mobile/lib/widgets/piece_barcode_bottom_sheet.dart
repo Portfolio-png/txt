@@ -1,15 +1,82 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:barcode_widget/barcode_widget.dart';
+import 'package:intl/intl.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
-import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/delivery_challans/presentation/utils/sheet_tag_printer.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
-import 'dart:convert';
-import 'dart:math' as math;
-import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
-import '../services/network_discovery_service.dart';
+
+/// Stage prefix (colour-coded on the tag) derived from the line's name.
+String sheetBarcodeStagePrefix(String particulars) {
+  final name = particulars.toLowerCase();
+  if (name.contains('slate') || name.contains('slating')) return 'P1';
+  if (name.contains('progressive')) return 'P2';
+  if (name.contains('cut')) return 'P3';
+  return 'XX';
+}
+
+/// The item's short code IS its name — sanitised (uppercase A–Z0–9, capped) for
+/// the barcode payload. Falls back to `ITEM` for an empty name.
+String sheetBarcodeShortCode(String itemName) {
+  final cleaned = itemName.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  if (cleaned.isEmpty) return 'ITEM';
+  return cleaned.length > 8 ? cleaned.substring(0, 8) : cleaned;
+}
+
+/// Generates one parent/child barcode per sheet. Each map carries
+/// `challanItemId`, `parentCode`, `childCode`, and the sheet's `weight` (from
+/// [sheetWeights] when available). The child code encodes stage + item name +
+/// challan origin + date + sheet index; the parent code is a random scan token.
+List<Map<String, dynamic>> generateSheetPieceBarcodes({
+  required int challanItemId,
+  required String itemName,
+  required String particulars,
+  required String orderOrigin,
+  required int qty,
+  List<double> sheetWeights = const <double>[],
+}) {
+  final stagePrefix = sheetBarcodeStagePrefix(particulars);
+  final shortCode = sheetBarcodeShortCode(itemName);
+  final dateStr = DateFormat('ddMMyy').format(DateTime.now());
+  final origin = orderOrigin.isEmpty
+      ? 'UNK'
+      : orderOrigin.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  final rng = math.Random();
+
+  final generated = <Map<String, dynamic>>[];
+  for (var i = 1; i <= qty; i++) {
+    final pieceIndex = i.toString().padLeft(2, '0');
+    final childCode = '$stagePrefix$shortCode-$origin-$dateStr-$pieceIndex';
+    final randomPart =
+        List.generate(6, (_) => chars[rng.nextInt(chars.length)]).join();
+    final parentCode = 'PC-$dateStr-$randomPart-$pieceIndex';
+    final weight = (i - 1) < sheetWeights.length ? sheetWeights[i - 1] : 0.0;
+    generated.add({
+      'challanItemId': challanItemId,
+      'parentCode': parentCode,
+      'childCode': childCode,
+      'weight': weight,
+    });
+  }
+  return generated;
+}
+
+/// Maps generated barcode maps to printable [SheetTag]s.
+List<SheetTag> sheetTagsFromBarcodes(List<Map<String, dynamic>> barcodes) {
+  return List<SheetTag>.generate(barcodes.length, (i) {
+    final b = barcodes[i];
+    return SheetTag(
+      index: i + 1,
+      weight: (b['weight'] as num?)?.toDouble() ?? 0.0,
+      parentCode: (b['parentCode'] ?? b['parent_code'] ?? '') as String,
+      childCode: (b['childCode'] ?? b['child_code'] ?? '') as String,
+    );
+  });
+}
 
 class PieceBarcodeBottomSheet extends StatefulWidget {
   final DeliveryChallanItem item;
@@ -29,8 +96,6 @@ class PieceBarcodeBottomSheet extends StatefulWidget {
 }
 
 class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
-  final _shortCodeController = TextEditingController();
-  bool _isSavingShortCode = false;
   bool _isGenerating = false;
   late List<Map<String, dynamic>> _generatedBarcodes;
 
@@ -40,117 +105,76 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
     _generatedBarcodes = List.from(widget.item.pieceBarcodes);
   }
 
-  ItemDefinition? _getItemDefinition() {
+  String get _itemName {
     final items = context.read<ItemsProvider>().items;
-    try {
-      return items.firstWhere((i) => i.id == widget.item.itemId);
-    } catch (e) {
-      return null;
+    final idx = items.indexWhere((i) => i.id == widget.item.itemId);
+    if (idx >= 0) {
+      final def = items[idx];
+      return def.name.isNotEmpty ? def.name : def.displayName;
     }
+    return widget.item.particulars;
   }
 
-  Future<void> _saveShortCode(ItemDefinition itemDef) async {
-    final newCode = _shortCodeController.text.trim().toUpperCase();
-    if (newCode.isEmpty || newCode.length > 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Short code must be 1-5 characters.')),
-      );
-      return;
-    }
-
-    setState(() => _isSavingShortCode = true);
-    try {
-      await context.read<ItemsProvider>().updateShortCode(itemDef.id, newCode);
-      setState(() {});
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
-    } finally {
-      if (mounted) setState(() => _isSavingShortCode = false);
-    }
-  }
-
-  void _generateBarcodes(ItemDefinition itemDef) {
-    final qtyDouble = double.tryParse(widget.item.quantityPcs) ?? 0;
-    final qty = qtyDouble.toInt();
+  void _generateBarcodes() {
+    final qty = (double.tryParse(widget.item.quantityPcs) ?? 0).toInt();
     if (qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Quantity must be greater than 0.')),
       );
       return;
     }
-
     setState(() => _isGenerating = true);
     try {
-      final stagePrefix = _getStagePrefix();
-      final dateStr = DateFormat('ddMMyy').format(DateTime.now());
-      final orderOrigin = widget.orderOrigin.isEmpty
-          ? 'UNK'
-          : widget.orderOrigin.replaceAll(RegExp(r'[^A-Z0-9]'), '');
-
-      final generated = <Map<String, dynamic>>[];
-      final rng = math.Random();
-      for (var i = 1; i <= qty; i++) {
-        final pieceIndex = i.toString().padLeft(2, '0');
-        final childCode =
-            '$stagePrefix${itemDef.shortCode}-$orderOrigin-$dateStr-$pieceIndex';
-
-        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        final randomPart = List.generate(
-          6,
-          (index) => chars[rng.nextInt(chars.length)],
-        ).join();
-        final parentCode = 'PC-$dateStr-$randomPart-$pieceIndex';
-
-        generated.add({
-          'challanItemId': widget.item.id,
-          'parentCode': parentCode,
-          'childCode': childCode,
-        });
-      }
-
-      setState(() {
-        _generatedBarcodes = generated;
-      });
-      if (widget.onBarcodesGenerated != null) {
-        widget.onBarcodesGenerated!(generated);
-      }
+      final generated = generateSheetPieceBarcodes(
+        challanItemId: widget.item.id,
+        itemName: _itemName,
+        particulars: widget.item.particulars,
+        orderOrigin: widget.orderOrigin,
+        qty: qty,
+        sheetWeights: widget.item.sheetWeights,
+      );
+      setState(() => _generatedBarcodes = generated);
+      widget.onBarcodesGenerated?.call(generated);
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error generating barcodes: $e')));
     } finally {
-      setState(() => _isGenerating = false);
+      if (mounted) setState(() => _isGenerating = false);
     }
   }
 
-  (Color, Color) _getColorsForStage(String stagePrefix) {
+  Future<void> _printAll() async {
+    try {
+      await SheetTagPrinter.printTags(
+        itemName: _itemName,
+        challanNo: widget.orderOrigin,
+        tags: sheetTagsFromBarcodes(_generatedBarcodes),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to print: $e')));
+      }
+    }
+  }
+
+  (Color, Color) _colorsForStage(String stagePrefix) {
     switch (stagePrefix) {
       case 'P1':
-        return (Colors.blue.shade100, Colors.blue.shade900); // Slating
+        return (Colors.blue.shade100, Colors.blue.shade900);
       case 'P2':
-        return (Colors.purple.shade100, Colors.purple.shade900); // Progressive
+        return (Colors.purple.shade100, Colors.purple.shade900);
       case 'P3':
-        return (Colors.red.shade100, Colors.red.shade900); // Cutting
+        return (Colors.red.shade100, Colors.red.shade900);
       default:
-        return (Colors.grey.shade200, Colors.grey.shade900); // Unknown
+        return (Colors.grey.shade200, Colors.grey.shade900);
     }
-  }
-
-  String _getStagePrefix() {
-    final lowerName = widget.item.particulars.toLowerCase();
-    if (lowerName.contains('slate') || lowerName.contains('slating'))
-      return 'P1';
-    if (lowerName.contains('progressive')) return 'P2';
-    if (lowerName.contains('cut')) return 'P3';
-    return 'XX';
   }
 
   @override
   Widget build(BuildContext context) {
-    final itemDef = _getItemDefinition();
-
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -166,9 +190,9 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Piece-Level Barcodes',
-            style: const TextStyle(
+          const Text(
+            'Sheet Barcodes',
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: SoftErpTheme.accent,
@@ -176,25 +200,20 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            widget.item.particulars,
+            _itemName,
             style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
           ),
           const SizedBox(height: 24),
-
-          if (itemDef == null)
-            const Center(child: Text('Item definition not found.'))
-          else if (itemDef.shortCode.isEmpty)
-            _buildShortCodePrompt(itemDef)
-          else if (_generatedBarcodes.isEmpty)
-            _buildGenerateButton(itemDef)
+          if (_generatedBarcodes.isEmpty)
+            _buildGenerateButton()
           else
-            _buildBarcodesList(itemDef),
+            _buildBarcodesList(),
         ],
       ),
     );
   }
 
-  Widget _buildGenerateButton(ItemDefinition itemDef) {
+  Widget _buildGenerateButton() {
     return Center(
       child: ElevatedButton.icon(
         icon: _isGenerating
@@ -207,8 +226,8 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
                 ),
               )
             : const Icon(Icons.qr_code),
-        label: const Text('Generate Parent & Child Codes'),
-        onPressed: _isGenerating ? null : () => _generateBarcodes(itemDef),
+        label: const Text('Generate Sheet Tags'),
+        onPressed: _isGenerating ? null : _generateBarcodes,
         style: ElevatedButton.styleFrom(
           backgroundColor: SoftErpTheme.accent,
           foregroundColor: Colors.white,
@@ -218,86 +237,10 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
     );
   }
 
-  Widget _buildShortCodePrompt(ItemDefinition itemDef) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.orange.shade800,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Missing Short Code',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'This item does not have a short code assigned. Please enter a 2-5 letter code to generate piece barcodes.',
-                style: TextStyle(color: Colors.orange.shade900),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _shortCodeController,
-          textCapitalization: TextCapitalization.characters,
-          maxLength: 5,
-          decoration: InputDecoration(
-            labelText: 'Item Short Code',
-            hintText: 'e.g. CKB',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton(
-          onPressed: _isSavingShortCode ? null : () => _saveShortCode(itemDef),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: SoftErpTheme.accent,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: _isSavingShortCode
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : const Text('Save Code'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBarcodesList(ItemDefinition itemDef) {
+  Widget _buildBarcodesList() {
     final qty = _generatedBarcodes.length;
-    final stage = _getStagePrefix();
-    final (bgColor, fgColor) = _getColorsForStage(stage);
+    final stage = sheetBarcodeStagePrefix(widget.item.particulars);
+    final (bgColor, fgColor) = _colorsForStage(stage);
 
     return Flexible(
       child: Column(
@@ -308,17 +251,13 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Generated Tags ($qty)',
+                'Sheet Tags ($qty)',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               TextButton.icon(
                 icon: const Icon(Icons.print_rounded),
                 label: const Text('Print All'),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Sent to printer!')),
-                  );
-                },
+                onPressed: _printAll,
               ),
             ],
           ),
@@ -331,8 +270,7 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
                 final barcodeData = _generatedBarcodes[index];
                 final childCode = barcodeData['childCode'] as String;
                 final parentCode = barcodeData['parentCode'] as String;
-                final pieceIndex = (index + 1).toString().padLeft(2, '0');
-
+                final weight = (barcodeData['weight'] as num?)?.toDouble() ?? 0.0;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(16),
@@ -347,19 +285,34 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Piece $pieceIndex',
+                            'Sheet ${index + 1}',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: fgColor,
                             ),
                           ),
-                          Text(
-                            stage,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: fgColor,
-                              fontSize: 18,
-                            ),
+                          Row(
+                            children: [
+                              if (weight > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: Text(
+                                    '${_fmtWeight(weight)} kg',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: fgColor,
+                                    ),
+                                  ),
+                                ),
+                              Text(
+                                stage,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: fgColor,
+                                  fontSize: 18,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -399,5 +352,10 @@ class _PieceBarcodeBottomSheetState extends State<PieceBarcodeBottomSheet> {
         ],
       ),
     );
+  }
+
+  String _fmtWeight(double value) {
+    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+    return value.toStringAsFixed(2);
   }
 }

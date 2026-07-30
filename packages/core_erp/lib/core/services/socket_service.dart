@@ -89,6 +89,12 @@ class SocketService {
                 _scheduleReconnect(baseUrl);
               },
             );
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        print(
+          'SocketService: Unauthorized (status ${response.statusCode}), emitting event and stopping reconnect loop.',
+        );
+        _isConnected = false;
+        _emit('unauthorized', null);
       } else {
         print(
           'SocketService: Failed to connect, status code: ${response.statusCode}',

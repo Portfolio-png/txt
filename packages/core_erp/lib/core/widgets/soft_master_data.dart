@@ -8,7 +8,8 @@ class SoftMasterDataPage extends StatelessWidget {
   const SoftMasterDataPage({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.subtitleWidget,
     required this.action,
     required this.toolbar,
     required this.body,
@@ -16,7 +17,8 @@ class SoftMasterDataPage extends StatelessWidget {
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
+  final Widget? subtitleWidget;
   final Widget action;
   final Widget toolbar;
   final Widget body;
@@ -28,7 +30,12 @@ class SoftMasterDataPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SoftMasterHeader(title: title, subtitle: subtitle, action: action),
+          _SoftMasterHeader(
+            title: title,
+            subtitle: subtitle,
+            subtitleWidget: subtitleWidget,
+            action: action,
+          ),
           const SizedBox(height: 18),
           toolbar,
           for (final message in messages) ...[
@@ -46,12 +53,14 @@ class SoftMasterDataPage extends StatelessWidget {
 class _SoftMasterHeader extends StatelessWidget {
   const _SoftMasterHeader({
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.subtitleWidget,
     required this.action,
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
+  final Widget? subtitleWidget;
   final Widget action;
 
   @override
@@ -71,17 +80,22 @@ class _SoftMasterHeader extends StatelessWidget {
                 letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              maxLines: compact ? 3 : 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: SoftErpTheme.textSecondary,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
+            if (subtitleWidget != null) ...[
+              const SizedBox(height: 6),
+              subtitleWidget!,
+            ] else if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle!,
+                maxLines: compact ? 3 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w500,
+                  height: 1.35,
+                ),
               ),
-            ),
+            ],
           ],
         );
 

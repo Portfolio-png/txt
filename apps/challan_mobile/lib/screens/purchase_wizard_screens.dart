@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:barcode_widget/barcode_widget.dart';
 
 import 'package:core_erp/core/services/generic_asset_service.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -12,6 +13,7 @@ import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/widgets/challan_printable_document.dart';
+import 'package:core_erp/features/delivery_challans/presentation/utils/sheet_tag_printer.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/providers/favorites_provider.dart';
@@ -732,13 +734,16 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
 
     showPurchaseQuantitySheet(
       context,
-      onConfirm: (qty, weight) {
+      itemName: item.displayName,
+      sheetMode: true,
+      onConfirm: (qty, weight, sheetWeights) {
         Navigator.of(context).pop(
           _lineFrom(
             item: item,
             variation: variation,
             qty: qty,
             weight: weight,
+            sheetWeights: sheetWeights,
             lineNo: widget.nextLineNo,
           ),
         );
@@ -752,6 +757,7 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
     required String qty,
     required String weight,
     required int lineNo,
+    List<double> sheetWeights = const <double>[],
   }) {
     return DeliveryChallanItem(
       id: 0,
@@ -765,6 +771,7 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
       particulars: item.displayName,
       quantityPcs: qty,
       weight: weight,
+      sheetWeights: sheetWeights,
       lineNo: lineNo,
       hsnCode: '',
       note: '',
@@ -783,7 +790,9 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
 
     showPurchaseQuantitySheet(
       context,
-      onConfirm: (qty, weight) {
+      itemName: resolvedName,
+      sheetMode: true,
+      onConfirm: (qty, weight, sheetWeights) {
         Navigator.of(context).pop(
           DeliveryChallanItem(
             id: 0,
@@ -797,6 +806,7 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
             particulars: resolvedName,
             quantityPcs: qty,
             weight: weight,
+            sheetWeights: sheetWeights,
             lineNo: widget.nextLineNo,
             hsnCode: '',
             note: '',
@@ -1284,39 +1294,11 @@ class _DoneStep extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: challan.items.length,
             separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final item = challan.items[i];
-              return ListTile(
-                tileColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                leading: const Icon(Icons.qr_code_2_rounded, color: SoftErpTheme.accent),
-                title: Text(item.particulars, style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text(
-                  [
-                    if (item.variationPathLabel.isNotEmpty) item.variationPathLabel,
-                    'Qty: ${item.quantityPcs}',
-                  ].join('  ·  '),
-                ),
-                trailing: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: SoftErpTheme.accent.withOpacity(0.1),
-                    foregroundColor: SoftErpTheme.accent,
-                    elevation: 0,
-                  ),
-                  onPressed: () => showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => PieceBarcodeBottomSheet(
-                      item: item,
-                      orderOrigin: challan.challanNo,
-                    ),
-                  ),
-                  icon: const Icon(Icons.print_rounded, size: 18),
-                  label: const Text('Tags', style: TextStyle(fontWeight: FontWeight.w800)),
-                ),
-              );
-            },
+            itemBuilder: (context, i) => _SheetTagsPanel(
+              challanId: challan.id,
+              challanNo: challan.challanNo,
+              item: challan.items[i],
+            ),
           ),
         ),
         SafeArea(
@@ -1335,6 +1317,241 @@ class _DoneStep extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// One challan line on the Done step: a chevron that expands to list every
+/// sheet (item name, weight, real barcode) with per-sheet and Print-all
+/// buttons. On first expand it mints the sheet barcodes (needs the challan
+/// number) and persists them; re-expanding reuses the saved set.
+class _SheetTagsPanel extends StatefulWidget {
+  const _SheetTagsPanel({
+    required this.challanId,
+    required this.challanNo,
+    required this.item,
+  });
+
+  final int challanId;
+  final String challanNo;
+  final DeliveryChallanItem item;
+
+  @override
+  State<_SheetTagsPanel> createState() => _SheetTagsPanelState();
+}
+
+class _SheetTagsPanelState extends State<_SheetTagsPanel> {
+  bool _busy = false;
+  bool _generated = false;
+  String? _error;
+  late List<Map<String, dynamic>> _barcodes;
+
+  @override
+  void initState() {
+    super.initState();
+    _barcodes = List<Map<String, dynamic>>.from(widget.item.pieceBarcodes);
+    _generated = _barcodes.isNotEmpty;
+  }
+
+  String get _itemName {
+    final items = context.read<ItemsProvider>().items;
+    final idx = items.indexWhere((i) => i.id == widget.item.itemId);
+    if (idx >= 0) {
+      final def = items[idx];
+      return def.name.isNotEmpty ? def.name : def.displayName;
+    }
+    return widget.item.particulars;
+  }
+
+  Future<void> _ensureGenerated() async {
+    if (_generated || _busy) return;
+    final qty = (double.tryParse(widget.item.quantityPcs) ?? 0).toInt();
+    if (qty <= 0) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final barcodes = generateSheetPieceBarcodes(
+        challanItemId: widget.item.id,
+        itemName: _itemName,
+        particulars: widget.item.particulars,
+        orderOrigin: widget.challanNo,
+        qty: qty,
+        sheetWeights: widget.item.sheetWeights,
+      );
+      final provider = context.read<DeliveryChallanProvider>();
+      final saved = await provider.savePieceBarcodes(widget.challanId, barcodes);
+      if (!mounted) return;
+      setState(() {
+        _barcodes = barcodes;
+        _generated = true;
+        // Persisting is best-effort; the tags still print from the local set.
+        _error = saved == null ? provider.errorMessage : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _print(List<SheetTag> tags) async {
+    try {
+      await SheetTagPrinter.printTags(
+        itemName: _itemName,
+        challanNo: widget.challanNo,
+        tags: tags,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to print: $e')));
+      }
+    }
+  }
+
+  String _fmtWeight(double value) {
+    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+    return value.toStringAsFixed(2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = [
+      if (widget.item.variationPathLabel.isNotEmpty) widget.item.variationPathLabel,
+      'Qty: ${widget.item.quantityPcs}',
+      if (widget.item.weight.isNotEmpty && widget.item.weight != '0' && widget.item.weight != '0.0')
+        'Wt: ${widget.item.weight} kg',
+    ].join('  ·  ');
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          onExpansionChanged: (expanded) {
+            if (expanded) _ensureGenerated();
+          },
+          leading: const Icon(Icons.qr_code_2_rounded, color: SoftErpTheme.accent),
+          title: Text(widget.item.particulars, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text(subtitle),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [_buildBody()],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_busy) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    final tags = sheetTagsFromBarcodes(_barcodes);
+    if (tags.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          _error ?? 'No sheets to tag.',
+          style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Saved locally — $_error',
+              style: TextStyle(color: Colors.orange.shade800, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            icon: const Icon(Icons.print_rounded, size: 18),
+            label: const Text('Print all', style: TextStyle(fontWeight: FontWeight.w800)),
+            onPressed: () => _print(tags),
+          ),
+        ),
+        ...tags.map(_buildSheetCard),
+      ],
+    );
+  }
+
+  Widget _buildSheetCard(SheetTag tag) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8ECF5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  _itemName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: SoftErpTheme.textPrimary),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 110,
+                height: 34,
+                child: BarcodeWidget(
+                  barcode: Barcode.code128(),
+                  data: tag.parentCode,
+                  drawText: false,
+                  color: SoftErpTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text('Sheet ${tag.index}', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+              ),
+              if (tag.weight > 0)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(
+                    '${_fmtWeight(tag.weight)} kg',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: SoftErpTheme.accent),
+                  ),
+                ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.print_rounded, size: 20, color: SoftErpTheme.accent),
+                onPressed: () => _print([tag]),
+              ),
+            ],
+          ),
+          Text(
+            tag.childCode,
+            style: TextStyle(fontSize: 11, letterSpacing: 0.4, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }

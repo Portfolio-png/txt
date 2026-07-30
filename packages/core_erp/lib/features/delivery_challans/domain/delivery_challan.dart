@@ -127,6 +127,7 @@ class DeliveryChallanItem {
     required this.note,
     required this.quantityPcs,
     required this.weight,
+    this.sheetWeights = const <double>[],
     this.pieceBarcodes = const [],
   });
 
@@ -144,6 +145,10 @@ class DeliveryChallanItem {
   final String note;
   final String quantityPcs;
   final String weight;
+  /// Per-sheet weight breakdown for purchase intake. One entry per received
+  /// sheet; the entries sum to [weight] (total-in = total-out). Empty when the
+  /// line does not track individual sheets.
+  final List<double> sheetWeights;
   final List<Map<String, dynamic>> pieceBarcodes;
 
   factory DeliveryChallanItem.blank(int lineNo) {
@@ -162,6 +167,7 @@ class DeliveryChallanItem {
       note: '',
       quantityPcs: '',
       weight: '',
+      sheetWeights: const <double>[],
       pieceBarcodes: const [],
     );
   }
@@ -209,6 +215,13 @@ class DeliveryChallanItem {
           json['quantity_pcs'] as String? ??
           '',
       weight: json['weight'] as String? ?? '',
+      sheetWeights:
+          (json['sheetWeights'] as List<dynamic>? ??
+                  json['sheet_weights'] as List<dynamic>? ??
+                  const <dynamic>[])
+              .map((value) => value is num ? value.toDouble() : double.tryParse('$value'))
+              .whereType<double>()
+              .toList(growable: false),
       pieceBarcodes: (json['pieceBarcodes'] as List<dynamic>? ?? json['piece_barcodes'] as List<dynamic>? ?? [])
           .map((e) => e as Map<String, dynamic>)
           .toList(growable: false),
@@ -219,6 +232,7 @@ class DeliveryChallanItem {
     String? quantityPcs,
     String? weight,
     String? note,
+    List<double>? sheetWeights,
     List<Map<String, dynamic>>? pieceBarcodes,
   }) {
     return DeliveryChallanItem(
@@ -236,6 +250,7 @@ class DeliveryChallanItem {
       note: note ?? this.note,
       quantityPcs: quantityPcs ?? this.quantityPcs,
       weight: weight ?? this.weight,
+      sheetWeights: sheetWeights ?? this.sheetWeights,
       pieceBarcodes: pieceBarcodes ?? this.pieceBarcodes,
     );
   }
@@ -257,6 +272,7 @@ class DeliveryChallanItem {
       'note': note,
       'quantity_pcs': quantityPcs,
       'weight': weight,
+      'sheet_weights': sheetWeights,
       'piece_barcodes': pieceBarcodes,
     };
   }
