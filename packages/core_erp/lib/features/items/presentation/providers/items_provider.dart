@@ -583,6 +583,29 @@ class ItemsProvider extends ChangeNotifier {
     return _save(() => _repository.reassignItemGroup(id, groupId));
   }
 
+  /// Signs a fresh download link for the item's CAD file. Returns null (and
+  /// sets [errorMessage]) when the item has no CAD file or signing failed.
+  Future<Uri?> createCadFileReadUrl(int itemId) async {
+    try {
+      return await _repository.createCadFileReadUrl(itemId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Signs a fresh download link for one of the item's extra named files.
+  Future<Uri?> createAttachmentReadUrl(int itemId, int attachmentId) async {
+    try {
+      return await _repository.createAttachmentReadUrl(itemId, attachmentId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<List<ItemAsset>> loadItemAssets(int itemId) async {
     try {
       final assets = await _repository.getItemAssets(itemId);

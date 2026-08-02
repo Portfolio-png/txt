@@ -15,6 +15,8 @@ import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../../core/services/feature_flags.dart';
+import '../../../clients/domain/client_definition.dart';
+import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
@@ -26,6 +28,9 @@ import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../data/services/item_link_options_service.dart';
+import '../providers/item_form_sections_provider.dart';
+import '../widgets/item_form_sections_dialog.dart';
 
 import '../providers/items_provider.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
@@ -1058,6 +1063,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late final TextEditingController _aliasController;
   late final TextEditingController _displayNameController;
   late final TextEditingController _photoUrlController;
+  late final TextEditingController _cadFileKeyController;
+  late final TextEditingController _cadFileNameController;
+  final List<_AttachmentDraft> _attachments = [];
+  final Set<String> _selectedMachineIds = <String>{};
+  final Set<String> _selectedDieIds = <String>{};
+  List<ItemLinkOption> _machineOptions = const <ItemLinkOption>[];
+  List<ItemLinkOption> _dieOptions = const <ItemLinkOption>[];
+  bool _isLoadingLinkOptions = false;
   final List<_NodeDraft> _rootNodes = [];
   final ScrollController _variationTreeScrollController = ScrollController();
   int? _selectedGroupId;
@@ -1073,6 +1086,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String? _defaultPipelineId;
   List<Map<String, String>> _availablePipelines = [];
   bool _availableForPurchase = false;
+  int? _developedForClientId;
 
   bool get _isReadOnly => false;
 
@@ -1089,11 +1103,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _photoUrlController = TextEditingController(
       text: widget.item?.photoUrl ?? '',
     );
+    _cadFileKeyController = TextEditingController(
+      text: widget.item?.cadFileKey ?? '',
+    );
+    _cadFileNameController = TextEditingController(
+      text: widget.item?.cadFileName ?? '',
+    );
     _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
     _selectedUnitId = widget.item?.unitId;
     _namingFormat = widget.item?.namingFormat.toList() ?? [];
     _defaultPipelineId = widget.item?.defaultPipelineId;
     _availableForPurchase = widget.item?.availableForPurchase ?? false;
+    _developedForClientId = widget.item?.developedForClientId;
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -1121,6 +1142,31 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       );
     }
     _fetchPipelines();
+    for (final attachment
+        in widget.item?.attachments ??
+            const <ItemAttachmentDefinition>[]) {
+      _attachments.add(
+        _AttachmentDraft(
+          id: attachment.id,
+          label: attachment.label,
+          objectKey: attachment.objectKey,
+          fileName: attachment.fileName,
+          onChanged: _handleChange,
+        ),
+      );
+    }
+    _selectedMachineIds.addAll(
+      (widget.item?.machines ?? const <ItemMachineLink>[]).map((m) => m.id),
+    );
+    _selectedDieIds.addAll(
+      (widget.item?.dies ?? const <ItemDieLink>[]).map((d) => d.id),
+    );
+    // Both touch providers that notify, so they run after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<ItemFormSectionsProvider>().ensureLoaded();
+      _loadLinkOptions();
+    });
     for (final conversion in widget.item?.unitConversions ?? const []) {
       final unit = context.read<UnitsProvider>().findById(conversion.unitId);
       final factorToV = conversion.factorToPrimary <= 0
@@ -1680,6 +1726,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _aliasController.dispose();
     _displayNameController.dispose();
     _photoUrlController.dispose();
+    _cadFileKeyController.dispose();
+    _cadFileNameController.dispose();
+    for (final attachment in _attachments) {
+      attachment.dispose();
+    }
     _variationTreeScrollController.dispose();
     for (final node in _rootNodes) {
       node.dispose();
@@ -1695,6 +1746,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final itemsProvider = context.watch<ItemsProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final unitsProvider = context.watch<UnitsProvider>();
+    // A group can carry its own section layout (component groups author one in
+    // the group editor). When it does it wins over the user's own default, so
+    // every item filed under that group asks for the same things.
+    final groupSectionOverride = groupsProvider
+        .findById(_selectedGroupId)
+        ?.itemFormSections;
+    final hasGroupSectionOverride = groupSectionOverride != null;
+    final sections =
+        groupSectionOverride ??
+        context.watch<ItemFormSectionsProvider>().sections;
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
@@ -2025,6 +2086,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           ],
           const SizedBox(height: 12),
           _WarningText(warning: duplicate.warning),
+          if (sections.developedFor) ...[
+            const SizedBox(height: 12),
+            _DevelopedForField(
+              clientId: _developedForClientId,
+              readOnly: _isReadOnly,
+              onChanged: (clientId) {
+                setState(() {
+                  _developedForClientId = clientId;
+                  _handleChange();
+                });
+              },
+            ),
+          ],
           // Compact, flag-gated: adds no height for clients without the flag.
           if (FeatureFlags.isEnabled(FeatureKeys.catalogPurchaseItems))
             SwitchListTile.adaptive(
@@ -2050,6 +2124,88 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       child: _ItemPhotoPickerField(
         controller: _photoUrlController,
         readOnly: _isReadOnly,
+      ),
+    );
+    final cadFileSection = _SectionCard(
+      title: 'CAD File',
+      child: _CadFilePickerField(
+        keyController: _cadFileKeyController,
+        nameController: _cadFileNameController,
+        readOnly: _isReadOnly,
+      ),
+    );
+    final additionalFilesSection = _SectionCard(
+      title: 'Additional Files',
+      action: _isReadOnly
+          ? null
+          : AppButton(
+              label: 'Add File',
+              icon: Icons.attach_file,
+              variant: AppButtonVariant.secondary,
+              onPressed: _addAttachment,
+            ),
+      child: _attachments.isEmpty
+          ? const Text(
+              'No extra files. Add datasheets, test reports or anything else '
+              'this item needs — each with its own label.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            )
+          : Column(
+              children: [
+                for (var index = 0; index < _attachments.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 10),
+                  _AttachmentRow(
+                    draft: _attachments[index],
+                    readOnly: _isReadOnly,
+                    onRemove: () {
+                      final removed = _attachments.removeAt(index);
+                      setState(() {});
+                      removed.dispose();
+                      _handleChange();
+                    },
+                  ),
+                ],
+              ],
+            ),
+    );
+    final machinesSection = _SectionCard(
+      title: 'Machines',
+      child: _LinkOptionPicker(
+        options: _machineOptions,
+        selectedIds: _selectedMachineIds,
+        readOnly: _isReadOnly,
+        isLoading: _isLoadingLinkOptions,
+        emptyMessage: 'No machines available to link.',
+        hintText: 'Add a machine',
+        searchHintText: 'Search machines',
+        onChanged: (ids) {
+          setState(() {
+            _selectedMachineIds
+              ..clear()
+              ..addAll(ids);
+          });
+          _handleChange();
+        },
+      ),
+    );
+    final diesSection = _SectionCard(
+      title: 'Dies',
+      child: _LinkOptionPicker(
+        options: _dieOptions,
+        selectedIds: _selectedDieIds,
+        readOnly: _isReadOnly,
+        isLoading: _isLoadingLinkOptions,
+        emptyMessage: 'No dies available to link.',
+        hintText: 'Add a die',
+        searchHintText: 'Search dies',
+        onChanged: (ids) {
+          setState(() {
+            _selectedDieIds
+              ..clear()
+              ..addAll(ids);
+          });
+          _handleChange();
+        },
       ),
     );
     final variationTreeSection = _SectionCard(
@@ -2209,6 +2365,40 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               : 'Edit Item',
                         ),
                       ),
+                      if (!_isReadOnly)
+                        if (hasGroupSectionOverride)
+                          const Tooltip(
+                            message:
+                                'This group sets its own sections. Change them '
+                                'by editing the group.',
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline_rounded,
+                                    size: 15,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Sections set by group',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: _showSectionsMenu,
+                            icon: const Icon(Icons.tune_rounded, size: 17),
+                            label: const Text('Sections'),
+                          ),
                       IconButton(
                         onPressed: () => Navigator.of(context).maybePop(),
                         icon: const Icon(Icons.close),
@@ -2376,6 +2566,25 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                       );
 
+                      // Section visibility is the user's saved item-form
+                      // layout, so the same choice applies everywhere the
+                      // editor opens.
+                      final showPipeline =
+                          sections.defaultPipeline && !isRawMaterialGroup;
+                      final leftColumn = <Widget>[
+                        detailsSection,
+                        if (sections.itemImage) photoSection,
+                        if (sections.cadFile) cadFileSection,
+                        if (sections.additionalFiles) additionalFilesSection,
+                        if (sections.machines) machinesSection,
+                        if (sections.dies) diesSection,
+                        if (showPipeline) defaultPipelineSection,
+                      ];
+                      final rightColumn = <Widget>[
+                        if (sections.variationTree) variationTreeSection,
+                        namingFormatSection,
+                      ];
+
                       if (wideComposer) {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2383,26 +2592,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                             Expanded(
                               flex: 5,
                               child: Column(
-                                children: [
-                                  detailsSection,
-                                  const SizedBox(height: 16),
-                                  photoSection,
-                                  if (!isRawMaterialGroup) ...[
-                                    const SizedBox(height: 16),
-                                    defaultPipelineSection,
-                                  ],
-                                ],
+                                children: _withSectionGaps(leftColumn),
                               ),
                             ),
                             const SizedBox(width: 18),
                             Expanded(
                               flex: 6,
                               child: Column(
-                                children: [
-                                  variationTreeSection,
-                                  const SizedBox(height: 16),
-                                  namingFormatSection,
-                                ],
+                                children: _withSectionGaps(rightColumn),
                               ),
                             ),
                           ],
@@ -2410,19 +2607,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       }
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                        children: _withSectionGaps(<Widget>[
                           detailsSection,
-                          const SizedBox(height: 16),
-                          photoSection,
-                          const SizedBox(height: 16),
-                          variationTreeSection,
-                          const SizedBox(height: 16),
+                          if (sections.itemImage) photoSection,
+                          if (sections.cadFile) cadFileSection,
+                          if (sections.additionalFiles) additionalFilesSection,
+                          if (sections.variationTree) variationTreeSection,
                           namingFormatSection,
-                          if (!isRawMaterialGroup) ...[
-                            const SizedBox(height: 16),
-                            defaultPipelineSection,
-                          ],
-                        ],
+                          if (sections.machines) machinesSection,
+                          if (sections.dies) diesSection,
+                          if (showPipeline) defaultPipelineSection,
+                        ]),
                       );
                     },
                   ),
@@ -3026,6 +3221,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               defaultPipelineId: _defaultPipelineId,
               baseItemId: widget.item?.id,
               photoUrl: _photoUrlController.text.trim(),
+              cadFileKey: _cadFileKeyController.text.trim(),
+              cadFileName: _cadFileNameController.text.trim(),
+              attachments: _attachmentInputs,
+              machineIds: _selectedMachineIds.toList(growable: false),
+              dieIds: _selectedDieIds.toList(growable: false),
+              developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             );
             final created = await itemsProvider.createItem(input);
@@ -3297,6 +3498,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               variationTree: _variationTreeInputs,
               defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
+              cadFileKey: _cadFileKeyController.text.trim(),
+              cadFileName: _cadFileNameController.text.trim(),
+              attachments: _attachmentInputs,
+              machineIds: _selectedMachineIds.toList(growable: false),
+              dieIds: _selectedDieIds.toList(growable: false),
+              developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             ),
           )
@@ -3321,6 +3528,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               variationTree: _variationTreeInputs,
               defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
+              cadFileKey: _cadFileKeyController.text.trim(),
+              cadFileName: _cadFileNameController.text.trim(),
+              attachments: _attachmentInputs,
+              machineIds: _selectedMachineIds.toList(growable: false),
+              dieIds: _selectedDieIds.toList(growable: false),
+              developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             ),
           );
@@ -3454,6 +3667,160 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
     return current;
   }
+
+  /// Inserts the standard 16px gap between whichever sections are visible, so
+  /// hiding one never leaves a double gap behind.
+  List<Widget> _withSectionGaps(List<Widget> sections) {
+    final spaced = <Widget>[];
+    for (var index = 0; index < sections.length; index++) {
+      if (index > 0) {
+        spaced.add(const SizedBox(height: 16));
+      }
+      spaced.add(sections[index]);
+    }
+    return spaced;
+  }
+
+  Future<void> _showSectionsMenu() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => const ItemFormSectionsDialog(),
+    );
+    if (!mounted) return;
+    // Turning Machines or Dies on for the first time needs their options.
+    await _loadLinkOptions();
+  }
+
+  /// Loads the machine and die pickers' options. Failure is non-fatal — the
+  /// pickers just show an empty list and the rest of the form still works.
+  Future<void> _loadLinkOptions() async {
+    final sections = context.read<ItemFormSectionsProvider>().sections;
+    if (!sections.machines && !sections.dies) {
+      return;
+    }
+    ItemLinkOptionsService? service;
+    try {
+      service = context.read<ItemLinkOptionsService>();
+    } catch (_) {
+      // Host app hasn't provided the service (e.g. a lean embedding); the
+      // machine/die pickers simply stay empty.
+      return;
+    }
+    setState(() => _isLoadingLinkOptions = true);
+    try {
+      final machines = sections.machines
+          ? await service.fetchMachines()
+          : const <ItemLinkOption>[];
+      final dies = sections.dies
+          ? await service.fetchDies()
+          : const <ItemLinkOption>[];
+      if (!mounted) return;
+      setState(() {
+        _machineOptions = machines;
+        _dieOptions = dies;
+      });
+    } catch (_) {
+      // Swallow: an unreachable machines/dies list must not block item saving.
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingLinkOptions = false);
+      }
+    }
+  }
+
+  Future<void> _addAttachment() async {
+    final file = await openFile();
+    if (file == null || !mounted) {
+      return;
+    }
+
+    final sizeBytes = await file.length();
+    if (sizeBytes > _kMaxAttachmentBytes) {
+      showAppSnack(
+        const SnackBar(
+          content: Text('Files are limited to 50 MB.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final draft = _AttachmentDraft(
+      label: '',
+      objectKey: '',
+      fileName: file.name,
+      onChanged: _handleChange,
+    );
+    setState(() {
+      draft.isUploading = true;
+      _attachments.add(draft);
+    });
+
+    final baseUrl = const String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
+    final service = GenericAssetService(
+      baseUrl: baseUrl,
+      useMockResponses: false,
+    );
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name) ??
+          'application/octet-stream';
+
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+      final response = await http.put(
+        intent.uploadUrl,
+        headers: intent.headers,
+        body: bytes,
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Upload failed with status ${response.statusCode}.');
+      }
+      if (intent.objectKey.isEmpty) {
+        throw Exception('Upload did not return an object key.');
+      }
+      if (!mounted) return;
+      setState(() {
+        draft.objectKey = intent.objectKey;
+        draft.isUploading = false;
+      });
+      _handleChange();
+    } catch (error) {
+      if (mounted) {
+        // Drop the half-created row rather than leave an un-uploadable stub
+        // that would be silently skipped on save.
+        setState(() {
+          _attachments.remove(draft);
+        });
+        draft.dispose();
+      }
+      showAppSnack(SnackBar(content: Text('File upload failed: $error')));
+    }
+  }
+
+  List<ItemAttachmentInput> get _attachmentInputs => _attachments
+      .where((draft) => draft.objectKey.trim().isNotEmpty)
+      .map(
+        (draft) => ItemAttachmentInput(
+          label: draft.labelController.text.trim(),
+          objectKey: draft.objectKey.trim(),
+          fileName: draft.fileName,
+        ),
+      )
+      .toList(growable: false);
 
   Future<void> _fetchPipelines() async {
     final provider = context.read<ItemsProvider>();
@@ -4435,6 +4802,554 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
                   ],
                 ],
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Developed for" — links the item to the client it was developed for, so it
+/// can be listed under them. Renders as a button until a client is picked, then
+/// as a clearable chip.
+class _DevelopedForField extends StatelessWidget {
+  const _DevelopedForField({
+    required this.clientId,
+    required this.readOnly,
+    required this.onChanged,
+  });
+
+  final int? clientId;
+  final bool readOnly;
+  final ValueChanged<int?> onChanged;
+
+  Future<void> _pick(BuildContext context, List<ClientDefinition> clients) async {
+    final selected = await showSearchableSelectDialog<int>(
+      context: context,
+      title: 'Developed for',
+      searchHintText: 'Search clients',
+      options: clients
+          .map(
+            (client) => SearchableSelectOption<int>(
+              value: client.id,
+              label: client.name,
+              searchText: client.name,
+            ),
+          )
+          .toList(growable: false),
+      selectedValue: clientId,
+    );
+    if (selected != null) {
+      onChanged(selected.value);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clients = context
+        .watch<ClientsProvider>()
+        .clients
+        .where((client) => !client.isArchived)
+        .toList(growable: false);
+    final selected = clients.where((c) => c.id == clientId).firstOrNull;
+
+    return Row(
+      children: [
+        const Text(
+          'Developed for',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF334155),
+          ),
+        ),
+        const SizedBox(width: 12),
+        if (selected != null)
+          Chip(
+            label: Text(selected.name, style: const TextStyle(fontSize: 12.5)),
+            onDeleted: readOnly ? null : () => onChanged(null),
+          )
+        else if (clientId != null)
+          // The client was archived or removed after this item was saved.
+          Chip(
+            label: Text(
+              'Client #$clientId',
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            onDeleted: readOnly ? null : () => onChanged(null),
+          ),
+        if (!readOnly) ...[
+          const SizedBox(width: 8),
+          AppButton(
+            label: clientId == null ? 'Select client' : 'Change',
+            icon: Icons.person_search_outlined,
+            variant: AppButtonVariant.secondary,
+            onPressed: () => _pick(context, clients),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A presigned PUT sends the whole file from memory, so cap the size.
+const int _kMaxAttachmentBytes = 50 * 1024 * 1024;
+
+/// One in-progress extra file: the user's label plus the uploaded object key.
+class _AttachmentDraft {
+  _AttachmentDraft({
+    this.id,
+    required String label,
+    required this.objectKey,
+    required this.fileName,
+    required VoidCallback onChanged,
+  }) : labelController = TextEditingController(text: label) {
+    labelController.addListener(onChanged);
+  }
+
+  final int? id;
+  final TextEditingController labelController;
+  String objectKey;
+  final String fileName;
+  bool isUploading = false;
+
+  void dispose() {
+    labelController.dispose();
+  }
+}
+
+class _AttachmentRow extends StatelessWidget {
+  const _AttachmentRow({
+    required this.draft,
+    required this.readOnly,
+    required this.onRemove,
+  });
+
+  final _AttachmentDraft draft;
+  final bool readOnly;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFDDE1F0)),
+          ),
+          child: draft.isUploading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 19,
+                  color: Color(0xFF64748B),
+                ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: TextFormField(
+            controller: draft.labelController,
+            readOnly: readOnly,
+            decoration: InputDecoration(
+              labelText: 'Label',
+              hintText: 'e.g. Datasheet',
+              helperText: draft.fileName,
+              isDense: true,
+              filled: true,
+              fillColor: const Color(0xFFF9FAFB),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+              ),
+            ),
+          ),
+        ),
+        if (!readOnly) ...[
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Remove file',
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, size: 18),
+            color: const Color(0xFF64748B),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Multi-select for machines and dies: a searchable "add" field plus a chip per
+/// selection.
+class _LinkOptionPicker extends StatelessWidget {
+  const _LinkOptionPicker({
+    required this.options,
+    required this.selectedIds,
+    required this.readOnly,
+    required this.isLoading,
+    required this.emptyMessage,
+    required this.hintText,
+    required this.searchHintText,
+    required this.onChanged,
+  });
+
+  final List<ItemLinkOption> options;
+  final Set<String> selectedIds;
+  final bool readOnly;
+  final bool isLoading;
+  final String emptyMessage;
+  final String hintText;
+  final String searchHintText;
+  final ValueChanged<Set<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final optionsById = {for (final option in options) option.id: option};
+    final addable = options
+        .where((option) => !selectedIds.contains(option.id))
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (selectedIds.isEmpty)
+          Text(
+            isLoading ? 'Loading…' : emptyMessage,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final id in selectedIds)
+                Chip(
+                  label: Text(
+                    // An id with no matching option means the record was
+                    // deleted after this item was saved; show the raw id
+                    // rather than dropping the link silently.
+                    optionsById[id]?.label ?? 'Removed ($id)',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  onDeleted: readOnly
+                      ? null
+                      : () => onChanged({...selectedIds}..remove(id)),
+                ),
+            ],
+          ),
+        if (!readOnly && addable.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SearchableSelectField<String>(
+            options: addable
+                .map(
+                  (option) => SearchableSelectOption<String>(
+                    value: option.id,
+                    label: option.label,
+                    searchText: '${option.label} ${option.subtitle}',
+                  ),
+                )
+                .toList(growable: false),
+            value: null,
+            onChanged: (value) {
+              if (value == null) return;
+              onChanged({...selectedIds}..add(value));
+            },
+            decoration: InputDecoration(hintText: hintText),
+            searchHintText: searchHintText,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CAD File Picker
+// ---------------------------------------------------------------------------
+
+class _CadFilePickerField extends StatefulWidget {
+  const _CadFilePickerField({
+    required this.keyController,
+    required this.nameController,
+    required this.readOnly,
+  });
+
+  /// Permanent S3 object key of the uploaded drawing. Presigned URLs expire,
+  /// so the key — not a link — is what gets saved on the item.
+  final TextEditingController keyController;
+
+  /// Original file name, shown instead of the opaque object key.
+  final TextEditingController nameController;
+  final bool readOnly;
+
+  @override
+  State<_CadFilePickerField> createState() => _CadFilePickerFieldState();
+}
+
+class _CadFilePickerFieldState extends State<_CadFilePickerField> {
+  /// Deliberately broad — shops exchange native part files as often as the
+  /// neutral interchange formats.
+  static const List<String> _cadExtensions = [
+    'dwg',
+    'dxf',
+    'step',
+    'stp',
+    'iges',
+    'igs',
+    'stl',
+    'sat',
+    'sldprt',
+    'sldasm',
+    'ipt',
+    'iam',
+    'catpart',
+    'catproduct',
+    'prt',
+    'asm',
+    '3dm',
+    'obj',
+    'x_t',
+    'x_b',
+    'f3d',
+  ];
+
+  /// A presigned PUT sends the whole file from memory, so cap the size rather
+  /// than let a large assembly stall the editor.
+  static const int _maxSizeBytes = 50 * 1024 * 1024;
+
+  bool _isUploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.keyController.addListener(_rebuild);
+    widget.nameController.addListener(_rebuild);
+  }
+
+  @override
+  void dispose() {
+    widget.keyController.removeListener(_rebuild);
+    widget.nameController.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  String get _extension {
+    final name = widget.nameController.text.trim();
+    if (!name.contains('.')) {
+      return 'CAD';
+    }
+    return name.split('.').last.toUpperCase();
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  }
+
+  Future<void> _pickAndUploadCadFile() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'CAD files', extensions: _cadExtensions),
+      ],
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    final sizeBytes = await file.length();
+    if (sizeBytes > _maxSizeBytes) {
+      showAppSnack(
+        SnackBar(
+          content: Text(
+            'CAD file is ${_formatSize(sizeBytes)} — the limit is '
+            '${_formatSize(_maxSizeBytes)}.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isUploading = true);
+    final baseUrl = const String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
+    // Real presigned upload: a mocked intent would hand back a stand-in image
+    // URL, which is worse than a visible failure for a drawing file.
+    final service = GenericAssetService(
+      baseUrl: baseUrl,
+      useMockResponses: false,
+    );
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      // CAD formats have no registered MIME type, so octet-stream is the norm.
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name) ??
+          'application/octet-stream';
+
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+
+      final response = await http.put(
+        intent.uploadUrl,
+        headers: intent.headers,
+        body: bytes,
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          'CAD upload failed with status ${response.statusCode}.',
+        );
+      }
+
+      if (intent.objectKey.isEmpty) {
+        throw Exception('Upload did not return an object key.');
+      }
+
+      // Store the key, not intent.readUrl — that link expires, the key does not.
+      widget.keyController.text = intent.objectKey;
+      widget.nameController.text = file.name;
+      showAppSnack(
+        SnackBar(content: Text('${file.name} uploaded successfully.')),
+      );
+    } catch (error) {
+      showAppSnack(SnackBar(content: Text('CAD upload failed: $error')));
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = widget.nameController.text.trim();
+    final hasFile = widget.keyController.text.trim().isNotEmpty;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDE1F0)),
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hasFile
+                    ? Icons.description_outlined
+                    : Icons.architecture_outlined,
+                size: 34,
+                color: hasFile
+                    ? const Color(0xFF64748B)
+                    : const Color(0xFFCBD5E1),
+              ),
+              if (hasFile) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _extension,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                hasFile
+                    ? (fileName.isEmpty ? 'CAD file attached' : fileName)
+                    : 'No CAD file attached',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: hasFile
+                      ? const Color(0xFF1F2937)
+                      : const Color(0xFF94A3B8),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                hasFile
+                    ? 'Stays attached to this item until you remove it. '
+                          'Download it from the item view.'
+                    : 'Optional — DWG, DXF, STEP, IGES, STL, SLDPRT and similar',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              if (!widget.readOnly) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    AppButton(
+                      label: hasFile ? 'Replace' : 'Upload CAD File',
+                      icon: Icons.upload_file,
+                      variant: AppButtonVariant.secondary,
+                      isLoading: _isUploading,
+                      onPressed: _pickAndUploadCadFile,
+                    ),
+                    if (hasFile)
+                      AppButton(
+                        label: 'Remove',
+                        icon: Icons.delete_outline,
+                        variant: AppButtonVariant.secondary,
+                        onPressed: () {
+                          widget.keyController.clear();
+                          widget.nameController.clear();
+                        },
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

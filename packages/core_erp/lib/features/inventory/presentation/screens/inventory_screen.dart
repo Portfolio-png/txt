@@ -10977,12 +10977,19 @@ class _InventoryCreateGroupEditorState
       final unitGovernanceByUnitId = <int, _UnitGovernanceDraft>{};
 
       for (final draft in configuration.propertyDrafts) {
+        // Retired fields are retained for the values items still hold, not
+        // offered for editing — they must not reappear as active here, and
+        // leaving them out of the payload keeps them retired on save.
+        if (draft.state == governance.GroupPropertyState.retired) {
+          continue;
+        }
         final state = switch (draft.state) {
           governance.GroupPropertyState.active => _EditorPropertyState.active,
           governance.GroupPropertyState.unlinked =>
             _EditorPropertyState.unlinked,
           governance.GroupPropertyState.overridden =>
             _EditorPropertyState.overridden,
+          governance.GroupPropertyState.retired => _EditorPropertyState.active,
         };
         final sourceItemIds =
             draft.sources

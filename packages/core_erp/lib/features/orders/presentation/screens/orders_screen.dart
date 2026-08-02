@@ -3812,6 +3812,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               value: group.id,
               label: group.isCombination
                   ? '${group.name} (combination)'
+                  : group.isComponent
+                  ? '${group.name} (component)'
                   : group.name,
             ),
           ),

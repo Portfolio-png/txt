@@ -134,6 +134,24 @@ class ApiItemRepository implements ItemRepository {
         variationTree: tree,
         baseItemId: input.baseItemId,
         photoUrl: input.photoUrl.trim(),
+        cadFileKey: input.cadFileKey.trim(),
+        cadFileName: input.cadFileName.trim(),
+        attachments: input.attachments
+            .map(
+              (entry) => ItemAttachmentDefinition(
+                label: entry.label,
+                objectKey: entry.objectKey,
+                fileName: entry.fileName,
+              ),
+            )
+            .toList(growable: false),
+        machines: input.machineIds
+            .map((id) => ItemMachineLink(id: id, name: ''))
+            .toList(growable: false),
+        dies: input.dieIds
+            .map((id) => ItemDieLink(id: id, toolCode: ''))
+            .toList(growable: false),
+        developedForClientId: input.developedForClientId,
         availableForPurchase: input.availableForPurchase,
       );
       _mockItems.add(created);
@@ -211,6 +229,24 @@ class ApiItemRepository implements ItemRepository {
         variationTree: tree,
         baseItemId: input.baseItemId,
         photoUrl: input.photoUrl.trim(),
+        cadFileKey: input.cadFileKey.trim(),
+        cadFileName: input.cadFileName.trim(),
+        attachments: input.attachments
+            .map(
+              (entry) => ItemAttachmentDefinition(
+                label: entry.label,
+                objectKey: entry.objectKey,
+                fileName: entry.fileName,
+              ),
+            )
+            .toList(growable: false),
+        machines: input.machineIds
+            .map((id) => ItemMachineLink(id: id, name: ''))
+            .toList(growable: false),
+        dies: input.dieIds
+            .map((id) => ItemDieLink(id: id, toolCode: ''))
+            .toList(growable: false),
+        developedForClientId: input.developedForClientId,
         availableForPurchase: input.availableForPurchase,
       );
       _mockItems[index] = updated;
@@ -233,6 +269,59 @@ class ApiItemRepository implements ItemRepository {
       throw ItemApiException(parsed.error ?? 'Failed to update item.');
     }
     return parsed.item!.toDomain();
+  }
+
+  @override
+  Future<Uri> createCadFileReadUrl(int itemId) async {
+    if (useMockResponses) {
+      final item = _mockItems.firstWhere(
+        (entry) => entry.id == itemId,
+        orElse: () => throw ItemApiException('Item not found.'),
+      );
+      if (item.cadFileKey.trim().isEmpty) {
+        throw ItemApiException('This item has no CAD file.');
+      }
+      return Uri.parse('https://mock.local/${item.cadFileKey}');
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$itemId/cad-file/read-url');
+    final response = await _client.post(uri);
+    final payload = _decodeJsonObject(response.body);
+    final readUrl = payload['readUrl'] as String?;
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        readUrl == null ||
+        readUrl.isEmpty) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to get the CAD file link.',
+      );
+    }
+    return Uri.parse(readUrl);
+  }
+
+  @override
+  Future<Uri> createAttachmentReadUrl(int itemId, int attachmentId) async {
+    if (useMockResponses) {
+      return Uri.parse('https://mock.local/attachment/$attachmentId');
+    }
+
+    final uri = Uri.parse(
+      '$baseUrl/api/items/$itemId/attachments/$attachmentId/read-url',
+    );
+    final response = await _client.post(uri);
+    final payload = _decodeJsonObject(response.body);
+    final readUrl = payload['readUrl'] as String?;
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        readUrl == null ||
+        readUrl.isEmpty) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to get the file link.',
+      );
+    }
+    return Uri.parse(readUrl);
   }
 
   @override
@@ -491,6 +580,13 @@ class ApiItemRepository implements ItemRepository {
         defaultPipelineName: current.defaultPipelineName,
         baseItemId: current.baseItemId,
         photoUrl: current.photoUrl,
+        cadFileKey: current.cadFileKey,
+        cadFileName: current.cadFileName,
+        attachments: current.attachments,
+        machines: current.machines,
+        dies: current.dies,
+        developedForClientId: current.developedForClientId,
+        developedForClientName: current.developedForClientName,
         combinationGroupIds: current.combinationGroupIds,
       );
       _mockItems[index] = updated;

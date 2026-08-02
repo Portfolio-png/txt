@@ -18,7 +18,9 @@ import '../../../inventory/domain/material_inputs.dart';
 import '../../../inventory/domain/material_record.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/domain/item_form_sections.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../items/presentation/widgets/item_form_sections_dialog.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 
@@ -93,7 +95,8 @@ class _StructuredGroupEditorDialogState
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _propertyFocus = FocusNode();
 
-  /// 'hierarchical' (nestable, default) or 'combination' (flat variant set).
+  /// 'hierarchical' (an item group: nestable, the default), 'component' (same
+  /// structure, for sub-assemblies) or 'combination' (flat variant set).
   /// See Enhancement 2.1.
   String _groupStructure = 'hierarchical';
 
@@ -101,6 +104,9 @@ class _StructuredGroupEditorDialogState
   int? _selectedParentGroupId;
   final Set<int> _selectedSeedItemIds = <int>{};
   EffectiveGroupSchema? _inheritedSchema;
+
+  /// This group's own effective schema, used only for its retired fields.
+  EffectiveGroupSchema? _ownSchema;
   bool _isLoadingInheritedSchema = false;
   bool _didHydrateExisting = false;
   MaterialRecord? _linkedMaterial;
@@ -123,12 +129,27 @@ class _StructuredGroupEditorDialogState
 
   bool get _isCombination => _groupStructure == 'combination';
 
+  /// Component groups share every field and code path with item groups; only
+  /// the stored structure and the labelling differ.
+  bool get _isComponent => _groupStructure == 'component';
+
+  /// The section override this component group will carry. Seeded from the
+  /// group being edited, or from the app defaults for a new one.
+  ItemFormSections _componentFormSections = const ItemFormSections();
+
+  /// Only sent for components — switching back to Item or Combination must not
+  /// leave a stale override behind.
+  ItemFormSections? get _formSectionsToSave =>
+      _isComponent ? _componentFormSections : null;
+
   @override
   void initState() {
     super.initState();
     _nameController.text = widget.group?.name ?? widget.initialName;
     _descriptionController.text = widget.group?.description ?? '';
     _groupStructure = widget.group?.groupStructure ?? 'hierarchical';
+    _componentFormSections =
+        widget.group?.itemFormSections ?? const ItemFormSections();
     _selectedParentGroupId = widget.group?.parentGroupId;
     _selectedUnitId = widget.group?.unitId;
   }
@@ -168,6 +189,12 @@ class _StructuredGroupEditorDialogState
       _linkedMaterial = linkedMaterial;
       _isLoadingInheritedSchema = group.parentGroupId != null;
     });
+
+    final ownSchema = await inventory.loadEffectiveSchema(group.id);
+    if (!mounted || widget.group?.id != group.id) {
+      return;
+    }
+    setState(() => _ownSchema = ownSchema);
 
     if (group.parentGroupId != null) {
       final schema = await inventory.loadEffectiveSchema(group.parentGroupId!);
@@ -416,8 +443,6 @@ class _StructuredGroupEditorDialogState
                                     : null,
                                 decoration: _selectDecoration(
                                   label: 'Parent Group',
-                                  helper:
-                                      'Primary means this group is a top-level inventory group.',
                                 ),
                                 dialogTitle: 'Parent Group',
                                 searchHintText: 'Search group',
@@ -426,9 +451,17 @@ class _StructuredGroupEditorDialogState
                                     value: null,
                                     label: 'Primary',
                                   ),
+                                  // Hide the group itself and everything under
+                                  // it: the server rejects those with a 409, so
+                                  // offering them only produces a dead end.
                                   ...groups
                                       .where(
-                                        (group) => group.id != widget.group?.id,
+                                        (group) =>
+                                            group.id != widget.group?.id &&
+                                            !_wouldCreateCycle(
+                                              groupsProvider,
+                                              group.id,
+                                            ),
                                       )
                                       .map(
                                         (group) => SearchableSelectOption<int?>(
@@ -455,9 +488,6 @@ class _StructuredGroupEditorDialogState
                                     : selectedUnit?.id,
                                 decoration: _selectDecoration(
                                   label: 'Group Unit',
-                                  helper: widget.groupType == 'machine'
-                                      ? 'Optional for machines.'
-                                      : 'Required. If the unit is missing, create it here and continue.',
                                 ),
                                 dialogTitle: 'Group Unit',
                                 searchHintText: 'Search unit',
@@ -647,6 +677,54 @@ class _StructuredGroupEditorDialogState
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                                if (_retiredDrafts.isNotEmpty) ...[
+                                  Text(
+                                    'Retained (hidden)',
+                                    style: _inventoryInterStyle(
+                                      color: const Color(0xFF334155),
+                                      size: 14,
+                                      weight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'This group no longer asks for these, but '
+                                    'items created earlier still hold their '
+                                    'values. Add a property back with the same '
+                                    'name to start collecting it again.',
+                                    style: _inventoryInterStyle(
+                                      color: const Color(0xFF6B7280),
+                                      size: 12,
+                                      weight: FontWeight.w400,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        for (final draft in _retiredDrafts)
+                                          _PropertyChip(
+                                            label: draft.name,
+                                            badge: 'hidden',
+                                            onRemove: () {},
+                                            removable: false,
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                   const SizedBox(height: 14),
                                 ],
@@ -881,15 +959,35 @@ class _StructuredGroupEditorDialogState
                       ],
                     );
 
-                    // Combination groups are flat variant sets; they have no
-                    // structure/properties panel.
+                    // Combination groups are flat variant sets and components
+                    // inherit their structure from the item form, so neither
+                    // gets a structure/properties panel.
                     final compositionCard =
-                        supportsStructuredGovernance && !_isCombination
+                        supportsStructuredGovernance &&
+                            !_isCombination &&
+                            !_isComponent
                         ? _CreateGroupSurfaceCard(
                             title: 'Structure & Properties',
                             child: compositionBody,
                           )
                         : null;
+
+                    // Components take the second column instead, so the dialog
+                    // stays two-column rather than collapsing into one tall
+                    // stack.
+                    final sideCard =
+                        compositionCard ??
+                        (_isComponent
+                            ? _CreateGroupSurfaceCard(
+                                title: 'Item Form Sections',
+                                child: _ComponentFormSectionsPanel(
+                                  sections: _componentFormSections,
+                                  onChanged: (updated) => setState(
+                                    () => _componentFormSections = updated,
+                                  ),
+                                ),
+                              )
+                            : null);
 
                     return SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
@@ -898,9 +996,9 @@ class _StructuredGroupEditorDialogState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 detailsCard,
-                                if (compositionCard != null) ...[
+                                if (sideCard != null) ...[
                                   const SizedBox(height: 18),
-                                  compositionCard,
+                                  sideCard,
                                 ],
                               ],
                             )
@@ -908,9 +1006,9 @@ class _StructuredGroupEditorDialogState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(child: detailsCard),
-                                if (compositionCard != null) ...[
+                                if (sideCard != null) ...[
                                   const SizedBox(width: 18),
-                                  Expanded(child: compositionCard),
+                                  Expanded(child: sideCard),
                                 ],
                               ],
                             ),
@@ -1014,6 +1112,29 @@ class _StructuredGroupEditorDialogState
     );
   }
 
+  /// Fields this group used to ask for and no longer does, but whose values
+  /// items still hold. Shown read-only so the retained data is visible.
+  ///
+  /// Read from this group's own effective schema — [_inheritedSchema] is the
+  /// *parent's*, whose retired fields are not this group's business.
+  List<governance.GroupPropertyDraft> get _retiredDrafts =>
+      _ownSchema?.retiredPropertyDrafts ??
+      const <governance.GroupPropertyDraft>[];
+
+  /// Whether picking [candidateParentId] as this group's parent would put it
+  /// under one of its own descendants. Always false while creating, since a new
+  /// group has no descendants yet.
+  bool _wouldCreateCycle(GroupsProvider groupsProvider, int candidateParentId) {
+    final editingId = widget.group?.id;
+    if (editingId == null) {
+      return false;
+    }
+    return groupsProvider.wouldCreateCycle(
+      groupId: editingId,
+      parentGroupId: candidateParentId,
+    );
+  }
+
   /// Radio toggle that selects the group structure (Enhancement 2.1).
   Widget _buildStructureToggle() {
     return _CreateGroupField(
@@ -1022,15 +1143,19 @@ class _StructuredGroupEditorDialogState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _StructureOptionTile(
-            title: 'Hierarchical Group',
-            subtitle: 'Nestable group with a parent, unit and properties.',
-            selected: !_isCombination,
+            title: 'Item Group',
+            selected: _groupStructure == 'hierarchical',
             onTap: () => setState(() => _groupStructure = 'hierarchical'),
           ),
           const SizedBox(height: 8),
           _StructureOptionTile(
+            title: 'Component',
+            selected: _isComponent,
+            onTap: () => setState(() => _groupStructure = 'component'),
+          ),
+          const SizedBox(height: 8),
+          _StructureOptionTile(
             title: 'Combination Group',
-            subtitle: 'Flat set that simply holds a list of item variants.',
             selected: _isCombination,
             onTap: () => setState(() => _groupStructure = 'combination'),
           ),
@@ -1134,6 +1259,8 @@ class _StructuredGroupEditorDialogState
           CreateGroupInput(
             name: _nameController.text.trim(),
             groupType: widget.groupType,
+            groupStructure: _groupStructure,
+            itemFormSections: _formSectionsToSave,
             parentGroupId: _selectedParentGroupId,
             unitId: _selectedUnitId,
           ),
@@ -1206,6 +1333,26 @@ class _StructuredGroupEditorDialogState
           )
           .toList(growable: false);
       savedGroup = matchingGroups.isEmpty ? null : matchingGroups.last;
+
+      // The inventory-backed create goes through the material route, which has
+      // no notion of group structure — stamp it afterwards so a component group
+      // created here doesn't come back as a plain item group.
+      if (savedGroup != null && _isComponent && !savedGroup.isComponent) {
+        final restructured = await groupsProvider.updateGroup(
+          UpdateGroupInput(
+            id: savedGroup.id,
+            name: savedGroup.name,
+            groupType: savedGroup.groupType,
+            groupStructure: 'component',
+            itemFormSections: _componentFormSections,
+            parentGroupId: savedGroup.parentGroupId,
+            unitId: savedGroup.unitId,
+          ),
+        );
+        if (restructured != null && groupsProvider.errorMessage == null) {
+          savedGroup = restructured;
+        }
+      }
     } else {
       final group = widget.group!;
       savedGroup = await groupsProvider.updateGroup(
@@ -1213,6 +1360,10 @@ class _StructuredGroupEditorDialogState
           id: group.id,
           name: _nameController.text.trim(),
           groupType: group.groupType,
+          // Hydrated from the group in initState; without it an edit would
+          // silently reset a component group back to a plain item group.
+          groupStructure: _groupStructure,
+          itemFormSections: _formSectionsToSave,
           parentGroupId: _selectedParentGroupId,
           unitId: _selectedUnitId,
         ),
@@ -1537,7 +1688,7 @@ class _StructuredGroupEditorDialogState
 
 InputDecoration _selectDecoration({
   required String label,
-  required String helper,
+  String? helper,
 }) {
   return InputDecoration(
     labelText: label,
@@ -1563,6 +1714,41 @@ InputDecoration _selectDecoration({
       weight: FontWeight.w400,
     ),
   );
+}
+
+/// Right-hand pane for component groups: the same toggles as Settings → Item
+/// Creation, but authoring this group's own override.
+///
+/// Items created under this group use these sections instead of whatever the
+/// creating user's account-wide default happens to be.
+class _ComponentFormSectionsPanel extends StatelessWidget {
+  const _ComponentFormSectionsPanel({
+    required this.sections,
+    required this.onChanged,
+  });
+
+  final ItemFormSections sections;
+  final ValueChanged<ItemFormSections> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Items created under this component group use these sections, '
+          'overriding each user’s own default.',
+          style: _inventoryInterStyle(
+            color: const Color(0xFF6B7280),
+            size: 12,
+            weight: FontWeight.w400,
+          ),
+        ),
+        const SizedBox(height: 14),
+        ItemFormSectionsEditor(value: sections, onChanged: onChanged),
+      ],
+    );
+  }
 }
 
 class _CreateGroupSurfaceCard extends StatelessWidget {
@@ -1650,13 +1836,11 @@ class _CreateGroupField extends StatelessWidget {
 class _StructureOptionTile extends StatelessWidget {
   const _StructureOptionTile({
     required this.title,
-    required this.subtitle,
     required this.selected,
     required this.onTap,
   });
 
   final String title;
-  final String subtitle;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1676,7 +1860,6 @@ class _StructureOptionTile extends StatelessWidget {
           ),
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
               selected
@@ -1689,27 +1872,13 @@ class _StructureOptionTile extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: _inventoryInterStyle(
-                      color: const Color(0xFF111827),
-                      size: 14,
-                      weight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: _inventoryInterStyle(
-                      color: const Color(0xFF6B7280),
-                      size: 12,
-                      weight: FontWeight.w400,
-                    ),
-                  ),
-                ],
+              child: Text(
+                title,
+                style: _inventoryInterStyle(
+                  color: const Color(0xFF111827),
+                  size: 14,
+                  weight: FontWeight.w600,
+                ),
               ),
             ),
           ],

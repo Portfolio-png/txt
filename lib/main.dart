@@ -38,6 +38,9 @@ import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
+import 'package:core_erp/core/services/user_preferences_service.dart';
+import 'package:core_erp/features/items/data/services/item_link_options_service.dart';
+import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
@@ -518,6 +521,22 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? ItemsProvider(repository: repository)
                 ..initialize(),
+        ),
+        Provider<ItemLinkOptionsService>(
+          create: (context) => ItemLinkOptionsService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        ChangeNotifierProvider<ItemFormSectionsProvider>(
+          create: (context) => ItemFormSectionsProvider(
+            service: UserPreferencesService(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: _apiBaseUrl,
+              useMockResponses: _effectiveDemoMode,
+            ),
+          ),
         ),
         ChangeNotifierProxyProvider<ChallanRepository, ChallanProvider>(
           create: (context) =>

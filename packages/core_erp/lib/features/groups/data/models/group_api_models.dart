@@ -1,5 +1,6 @@
 import '../../domain/group_definition.dart';
 import '../../domain/group_inputs.dart';
+import '../../../items/domain/item_form_sections.dart';
 
 class GroupDto {
   const GroupDto({
@@ -10,6 +11,7 @@ class GroupDto {
     this.description = '',
     required this.parentGroupId,
     this.unitId,
+    this.itemFormSections,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -23,6 +25,7 @@ class GroupDto {
   final String description;
   final int? parentGroupId;
   final int? unitId;
+  final ItemFormSections? itemFormSections;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;
@@ -37,6 +40,11 @@ class GroupDto {
       description: json['description'] as String? ?? '',
       parentGroupId: json['parentGroupId'] as int?,
       unitId: json['unitId'] as int?,
+      itemFormSections: json['itemFormSections'] is Map<String, dynamic>
+          ? ItemFormSections.fromJson(
+              json['itemFormSections'] as Map<String, dynamic>,
+            )
+          : null,
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
       createdAt:
@@ -57,6 +65,7 @@ class GroupDto {
       description: description,
       parentGroupId: parentGroupId,
       unitId: unitId,
+      itemFormSections: itemFormSections,
       isArchived: isArchived,
       usageCount: usageCount,
       createdAt: createdAt,
@@ -107,6 +116,7 @@ class CreateGroupRequest {
     this.description = '',
     required this.parentGroupId,
     this.unitId,
+    this.itemFormSections,
   });
 
   final String name;
@@ -115,6 +125,7 @@ class CreateGroupRequest {
   final String description;
   final int? parentGroupId;
   final int? unitId;
+  final ItemFormSections? itemFormSections;
 
   factory CreateGroupRequest.fromInput(CreateGroupInput input) {
     return CreateGroupRequest(
@@ -124,6 +135,7 @@ class CreateGroupRequest {
       description: input.description,
       parentGroupId: input.parentGroupId,
       unitId: input.unitId,
+      itemFormSections: input.itemFormSections,
     );
   }
 
@@ -135,6 +147,7 @@ class CreateGroupRequest {
       'description': description,
       'parentGroupId': parentGroupId,
       'unitId': unitId,
+      'itemFormSections': itemFormSections?.toJson(),
     };
   }
 }
@@ -147,6 +160,7 @@ class UpdateGroupRequest {
     this.description = '',
     required this.parentGroupId,
     this.unitId,
+    this.itemFormSections,
   });
 
   final String name;
@@ -155,6 +169,7 @@ class UpdateGroupRequest {
   final String description;
   final int? parentGroupId;
   final int? unitId;
+  final ItemFormSections? itemFormSections;
 
   factory UpdateGroupRequest.fromInput(UpdateGroupInput input) {
     return UpdateGroupRequest(
@@ -164,6 +179,7 @@ class UpdateGroupRequest {
       description: input.description,
       parentGroupId: input.parentGroupId,
       unitId: input.unitId,
+      itemFormSections: input.itemFormSections,
     );
   }
 
@@ -175,6 +191,7 @@ class UpdateGroupRequest {
       'description': description,
       'parentGroupId': parentGroupId,
       'unitId': unitId,
+      'itemFormSections': itemFormSections?.toJson(),
     };
   }
 }

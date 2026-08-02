@@ -2260,6 +2260,16 @@ class FakeItemRepository extends ItemRepository {
   }
 
   @override
+  Future<Uri> createCadFileReadUrl(int itemId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Uri> createAttachmentReadUrl(int itemId, int attachmentId) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<List<ItemAsset>> getItemAssets(int itemId) async {
     return const <ItemAsset>[];
   }

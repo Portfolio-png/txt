@@ -5,8 +5,10 @@ import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';
 import 'package:mime/mime.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -338,6 +340,9 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                   imageCount: assets.length,
                   sameNamingFormatItems: sameNamingFormatItems,
                 );
+                final cadFileCard = item.cadFileKey.trim().isEmpty
+                    ? null
+                    : _ItemCadFileCard(item: item);
                 final editButton = widget.onEdit == null
                     ? null
                     : AppButton(
@@ -359,6 +364,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 imagePreview,
+                                if (cadFileCard != null) ...[
+                                  const SizedBox(height: 16),
+                                  cadFileCard,
+                                ],
                                 if (editButton != null) ...[
                                   const SizedBox(height: 16),
                                   editButton,
@@ -376,6 +385,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           imagePreview,
+                          if (cadFileCard != null) ...[
+                            const SizedBox(height: 18),
+                            cadFileCard,
+                          ],
                           const SizedBox(height: 18),
                           factsheet,
                           const SizedBox(height: 18),
@@ -587,6 +600,139 @@ class _ImageActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Read-only view of the item's CAD attachment. Only rendered when the item
+/// actually has one — uploading and replacing stay in the item editor.
+class _ItemCadFileCard extends StatefulWidget {
+  const _ItemCadFileCard({required this.item});
+
+  final ItemDefinition item;
+
+  @override
+  State<_ItemCadFileCard> createState() => _ItemCadFileCardState();
+}
+
+class _ItemCadFileCardState extends State<_ItemCadFileCard> {
+  bool _isPreparing = false;
+
+  String get _fileName {
+    final name = widget.item.cadFileName.trim();
+    if (name.isNotEmpty) {
+      return name;
+    }
+    // Records saved before the file name was captured fall back to the last
+    // segment of the object key.
+    final segments = widget.item.cadFileKey.trim().split('/');
+    if (segments.isNotEmpty && segments.last.isNotEmpty) {
+      return segments.last;
+    }
+    return 'CAD file';
+  }
+
+  String get _extension {
+    final name = _fileName;
+    if (!name.contains('.')) {
+      return 'CAD';
+    }
+    return name.split('.').last.toUpperCase();
+  }
+
+  /// The item stores a permanent object key, so the download link is signed
+  /// fresh on every click instead of read from a stored URL that could expire.
+  Future<void> _download(BuildContext context) async {
+    if (_isPreparing) {
+      return;
+    }
+    setState(() => _isPreparing = true);
+    final itemsProvider = context.read<ItemsProvider>();
+    try {
+      final uri = await itemsProvider.createCadFileReadUrl(widget.item.id);
+      if (uri == null) {
+        showAppSnack(
+          SnackBar(
+            content: Text(
+              itemsProvider.errorMessage ?? 'Could not prepare the download.',
+            ),
+          ),
+        );
+        return;
+      }
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        await Clipboard.setData(ClipboardData(text: uri.toString()));
+        showAppSnack(
+          const SnackBar(content: Text('CAD file link copied to clipboard.')),
+        );
+      }
+    } catch (error) {
+      showAppSnack(
+        SnackBar(content: Text('Could not download the CAD file: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _DetailCard(
+      title: 'CAD File',
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE1E5F0)),
+              ),
+              child: Text(
+                _extension,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _fileName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: AppButton(
+            label: 'Download CAD File',
+            icon: Icons.download_outlined,
+            variant: AppButtonVariant.secondary,
+            isLoading: _isPreparing,
+            onPressed: () => _download(context),
+          ),
+        ),
+      ],
     );
   }
 }

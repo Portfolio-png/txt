@@ -1828,6 +1828,9 @@ function moduleOpForRequest(req) {
   if (m === 'POST') op = 'create';
   else if (m === 'PUT' || m === 'PATCH') op = 'update';
   else if (m === 'DELETE') op = 'delete';
+  // Signing a download link for a file that already exists is a read, even
+  // though the route is a POST (the id goes in the path, not a query string).
+  if (op === 'create' && /\/read-url$/.test(path)) op = 'read';
   return { module, op, key: `${module}.${op}` };
 }
 
@@ -2296,6 +2299,15 @@ function rowToGroupDto(row) {
     description: row.description || '',
     parentGroupId: row.parent_group_id || null,
     unitId: row.unit_id || null,
+    // null when the group has no override and items fall back to the creating
+    // user's own default section layout.
+    itemFormSections: (() => {
+      try {
+        return row.item_form_sections ? JSON.parse(row.item_form_sections) : null;
+      } catch (e) {
+        return null;
+      }
+    })(),
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -2519,6 +2531,33 @@ async function rowToItemDto(row) {
     `,
     [row.id],
   );
+  const attachmentRows = await all(
+    'SELECT id, label, object_key, file_name FROM item_attachments WHERE item_id = ? ORDER BY position ASC, id ASC',
+    [row.id],
+  );
+  const machineLinkRows = await all(
+    `
+    SELECT machines.id, machines.name, machines.asset_id
+    FROM item_machines
+    INNER JOIN machines ON machines.id = item_machines.machine_id
+    WHERE item_machines.item_id = ?
+    ORDER BY LOWER(machines.name) ASC
+    `,
+    [row.id],
+  );
+  const developedForClientRow = row.developed_for_client_id
+    ? await get('SELECT id, name FROM clients WHERE id = ?', [row.developed_for_client_id])
+    : null;
+  const dieLinkRows = await all(
+    `
+    SELECT dies.id, dies.tool_code
+    FROM item_dies
+    INNER JOIN dies ON dies.id = item_dies.die_id
+    WHERE item_dies.item_id = ?
+    ORDER BY LOWER(dies.tool_code) ASC
+    `,
+    [row.id],
+  );
 
   return {
     id: row.id,
@@ -2551,6 +2590,25 @@ async function rowToItemDto(row) {
     baseItemId: row.base_item_id || null,
     combinationGroupIds: combinationGroupRows.map((entry) => entry.group_id),
     photoUrl: row.photo_url || null,
+    cadFileKey: row.cad_file_key || '',
+    cadFileName: row.cad_file_name || '',
+    attachments: attachmentRows.map((entry) => ({
+      id: entry.id,
+      label: entry.label || '',
+      objectKey: entry.object_key || '',
+      fileName: entry.file_name || '',
+    })),
+    machines: machineLinkRows.map((entry) => ({
+      id: String(entry.id),
+      name: entry.name || '',
+      assetId: entry.asset_id || '',
+    })),
+    dies: dieLinkRows.map((entry) => ({
+      id: String(entry.id),
+      toolCode: entry.tool_code || '',
+    })),
+    developedForClientId: row.developed_for_client_id || null,
+    developedForClientName: developedForClientRow?.name || '',
     availableForPurchase: Boolean(row.available_for_purchase),
   };
 }
@@ -3739,6 +3797,56 @@ async function initDb() {
     'CREATE INDEX IF NOT EXISTS idx_item_unit_conversions_item_id ON item_unit_conversions(item_id)',
   );
 
+  // Per-user UI preferences (e.g. which sections the item editor shows). Kept
+  // per user on purpose — this is a personal form layout, not a policy.
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pref_key TEXT NOT NULL,
+      value_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, pref_key)
+    )
+  `);
+
+  // Extra named files on an item master, beyond the photo and the CAD file.
+  // Same rule as cad_file_key: the permanent object key is stored, never a
+  // presigned URL.
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      label TEXT NOT NULL DEFAULT '',
+      object_key TEXT NOT NULL,
+      file_name TEXT NOT NULL DEFAULT '',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_attachments_item_id ON item_attachments(item_id)',
+  );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_machines (
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      machine_id INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (item_id, machine_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_dies (
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      die_id INTEGER NOT NULL REFERENCES dies(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (item_id, die_id)
+    )
+  `);
+
   await run(`
     CREATE TABLE IF NOT EXISTS item_property_schema (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4427,8 +4535,19 @@ async function initDb() {
   // Enhancement 2: combination groups (flat variant sets) + optional description.
   await ensureColumnExists('groups', 'group_structure', "TEXT NOT NULL DEFAULT 'hierarchical'");
   await ensureColumnExists('groups', 'description', "TEXT NOT NULL DEFAULT ''");
+  // Per-group override of the item-form section layout (JSON). NULL means the
+  // creating user's own default applies.
+  await ensureColumnExists('groups', 'item_form_sections', 'TEXT DEFAULT NULL');
 
   await ensureColumnExists('items', 'photo_url', 'TEXT DEFAULT NULL');
+  // Single CAD / drawing file attached to the item master. The S3 object key is
+  // stored — never a presigned URL, which would expire — so the attachment lives
+  // until someone clears it; read URLs are minted on demand. The original file
+  // name is kept alongside so the UI can label it instead of showing the key.
+  await ensureColumnExists('items', 'cad_file_key', 'TEXT DEFAULT NULL');
+  await ensureColumnExists('items', 'cad_file_name', "TEXT DEFAULT ''");
+  // The client this item was developed for, so it can be listed under them.
+  await ensureColumnExists('items', 'developed_for_client_id', 'INTEGER');
 
   await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
@@ -14422,13 +14541,22 @@ async function getActiveChildGroups(parentGroupId) {
 }
 
 async function groupWouldCreateCycle(groupId, parentGroupId) {
-  let currentId = parentGroupId;
-  while (currentId != null) {
-    if (currentId === groupId) {
+  const targetId = Number(groupId);
+  // Normalized compare: a string id (e.g. straight off a route param) would
+  // slip past a === check and let a cycle through.
+  let currentId = parentGroupId == null ? null : Number(parentGroupId);
+  const visited = new Set();
+  while (currentId != null && Number.isFinite(currentId)) {
+    if (currentId === targetId) {
       return true;
     }
+    // A loop already present upstream: refuse rather than walk it forever.
+    if (visited.has(currentId)) {
+      return true;
+    }
+    visited.add(currentId);
     const row = await get('SELECT parent_group_id FROM groups WHERE id = ?', [currentId]);
-    currentId = row?.parent_group_id || null;
+    currentId = row?.parent_group_id == null ? null : Number(row.parent_group_id);
   }
   return false;
 }
@@ -14441,14 +14569,23 @@ async function saveGroup({
   groupType = 'item',
   groupStructure = 'hierarchical',
   description = '',
+  // Per-group override of the item-form section layout. null clears it (fall
+  // back to the user's own default); undefined leaves what is stored alone.
+  itemFormSections,
 }) {
   const trimmedName = String(name || '').trim();
-  const normalizedStructure =
-    String(groupStructure || 'hierarchical').toLowerCase() === 'combination'
-      ? 'combination'
-      : 'hierarchical';
+  // 'component' is nestable like an item group — it only differs in intent, so
+  // everything downstream keys off isCombination and treats it the same way.
+  const requestedStructure = String(groupStructure || 'hierarchical').toLowerCase();
+  const normalizedStructure = ['combination', 'component'].includes(requestedStructure)
+    ? requestedStructure
+    : 'hierarchical';
   const isCombination = normalizedStructure === 'combination';
   const trimmedDescription = String(description || '').trim();
+  const serializedFormSections =
+    itemFormSections && typeof itemFormSections === 'object'
+      ? JSON.stringify(itemFormSections)
+      : null;
   // Combination groups are flat: they never have a parent and never auto-attach
   // to the Primary Group, and their unit is optional (members carry their own).
   let normalizedParentId =
@@ -14519,10 +14656,10 @@ async function saveGroup({
   if (id == null) {
     const result = await run(
       `
-      INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, item_form_sections, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
-      [trimmedName, groupType, normalizedStructure, trimmedDescription, normalizedParentId, normalizedUnitId, now, now],
+      [trimmedName, groupType, normalizedStructure, trimmedDescription, normalizedParentId, normalizedUnitId, serializedFormSections, now, now],
     );
     return getGroupRowById(result.lastID);
   }
@@ -14541,18 +14678,39 @@ async function saveGroup({
     `,
     [id, id],
   );
-  if (
-    Number(blockingUsage?.active_child_count || 0) > 0 ||
-    Number(blockingUsage?.active_item_count || 0) > 0
-  ) {
-    const error = new Error('Used groups cannot be edited.');
+  const nullableEquals = (a, b) =>
+    (a == null ? null : Number(a)) === (b == null ? null : Number(b));
+
+  // Used groups are editable: a group legitimately gains and loses fields over
+  // its life, and the schema handles that by retaining what it can no longer
+  // show (see retireMissingGroupProperties) rather than by freezing the group.
+  //
+  // The one exception is the unit. Every stock figure, conversion and order
+  // line under this group is denominated in it, so swapping it out silently
+  // rewrites the meaning of existing numbers rather than just hiding a field.
+  const isUnitChange = !nullableEquals(normalizedUnitId, existing.unit_id);
+  if (isUnitChange && Number(blockingUsage?.active_item_count || 0) > 0) {
+    const error = new Error(
+      "This group's unit cannot be changed while it has items — existing " +
+        'quantities are recorded in the current unit.',
+    );
     error.statusCode = 409;
     throw error;
   }
 
   await run(
-    'UPDATE groups SET name = ?, group_type = ?, group_structure = ?, description = ?, parent_group_id = ?, unit_id = ?, updated_at = ? WHERE id = ?',
-    [trimmedName, groupType, normalizedStructure, trimmedDescription, normalizedParentId, normalizedUnitId, now, id],
+    'UPDATE groups SET name = ?, group_type = ?, group_structure = ?, description = ?, parent_group_id = ?, unit_id = ?, item_form_sections = ?, updated_at = ? WHERE id = ?',
+    [
+      trimmedName,
+      groupType,
+      normalizedStructure,
+      trimmedDescription,
+      normalizedParentId,
+      normalizedUnitId,
+      itemFormSections !== undefined ? serializedFormSections : (existing.item_form_sections || null),
+      now,
+      id,
+    ],
   );
   return getGroupRowById(id);
 }
@@ -14570,13 +14728,31 @@ async function ensureGroupRecord({
 }) {
   const duplicate = await findGroupDuplicate({ name, parentGroupId });
   const group = duplicate || await saveGroup({ name, parentGroupId, unitId });
+  // This raw UPDATE bypasses saveGroup, so it has to run the same cycle check
+  // itself — otherwise a seed could write the one thing every ancestor walk
+  // assumes cannot exist. On conflict keep the stored parent rather than
+  // aborting a boot-time reseed.
+  const wouldCycle = await groupWouldCreateCycle(group.id, parentGroupId);
+  if (wouldCycle) {
+    console.warn(
+      `[groups] ensureGroupRecord skipped reparenting "${name}" (group ${group.id}) ` +
+        `under ${parentGroupId}: it would create a parent cycle`,
+    );
+  }
   await run(
     `
     UPDATE groups
     SET name = ?, parent_group_id = ?, unit_id = ?, is_archived = ?, updated_at = ?
     WHERE id = ?
     `,
-    [name, parentGroupId, unitId, isArchived ? 1 : 0, new Date().toISOString(), group.id],
+    [
+      name,
+      wouldCycle ? (group.parent_group_id ?? null) : parentGroupId,
+      unitId,
+      isArchived ? 1 : 0,
+      new Date().toISOString(),
+      group.id,
+    ],
   );
   return getGroupRowById(group.id);
 }
@@ -14619,6 +14795,16 @@ async function saveItem({
   defaultPipelineId = null,
   baseItemId = null,
   photoUrl = null,
+  // Left undefined-able on purpose: internal callers (seeds, ensureItemRecord)
+  // never send these, and an update must preserve what is already stored.
+  cadFileKey,
+  cadFileName,
+  // Same undefined-preserving contract as the CAD fields: a caller that does
+  // not mention these child records must not have them wiped.
+  attachments,
+  machineIds,
+  dieIds,
+  developedForClientId,
   availableForPurchase,
   id = null,
 }) {
@@ -14730,8 +14916,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, available_for_purchase, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, available_for_purchase, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -14744,6 +14930,9 @@ async function saveItem({
           defaultPipelineId || null,
           normalizedBaseItemId,
           photoUrl || null,
+          String(cadFileKey || '').trim() || null,
+          String(cadFileName || '').trim(),
+          developedForClientId ? Number(developedForClientId) : null,
           availableForPurchase ? 1 : 0,
           now,
           now,
@@ -14768,7 +14957,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, available_for_purchase = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, available_for_purchase = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -14782,6 +14971,17 @@ async function saveItem({
           defaultPipelineId || null,
           normalizedBaseItemId,
           photoUrl || null,
+          // Same preservation rule as available_for_purchase: an internal
+          // re-save that omits the CAD fields must not clear them.
+          cadFileKey !== undefined
+            ? (String(cadFileKey || '').trim() || null)
+            : (existing.cad_file_key || null),
+          cadFileName !== undefined
+            ? String(cadFileName || '').trim()
+            : (existing.cad_file_name || ''),
+          developedForClientId !== undefined
+            ? (developedForClientId ? Number(developedForClientId) : null)
+            : (existing.developed_for_client_id || null),
           // Preserve the existing flag when the caller didn't send it (e.g. an
           // internal re-seed via ensureItemRecord) instead of resetting to 0.
           availableForPurchase !== undefined
@@ -14864,6 +15064,79 @@ async function saveItem({
     for (const oldId of existingNodeIds) {
       if (!processedNodeIds.has(oldId)) {
         await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE id = ?', [now, oldId]);
+      }
+    }
+
+    if (attachments !== undefined) {
+      await run('DELETE FROM item_attachments WHERE item_id = ?', [itemId]);
+      const attachmentList = Array.isArray(attachments) ? attachments : [];
+      let attachmentPosition = 0;
+      for (const attachment of attachmentList) {
+        const objectKey = String(attachment?.objectKey || '').trim();
+        if (!objectKey) {
+          continue;
+        }
+        await run(
+          `
+          INSERT INTO item_attachments (
+            item_id, label, object_key, file_name, position, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            itemId,
+            String(attachment?.label || '').trim(),
+            objectKey,
+            String(attachment?.fileName || '').trim(),
+            attachmentPosition,
+            now,
+            now,
+          ],
+        );
+        attachmentPosition += 1;
+      }
+    }
+
+    if (machineIds !== undefined) {
+      await run('DELETE FROM item_machines WHERE item_id = ?', [itemId]);
+      const uniqueMachineIds = [
+        ...new Set(
+          (Array.isArray(machineIds) ? machineIds : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value > 0),
+        ),
+      ];
+      for (const machineId of uniqueMachineIds) {
+        // Skip silently rather than 500 on a machine deleted since the form
+        // was opened.
+        const machineRow = await get('SELECT id FROM machines WHERE id = ?', [machineId]);
+        if (!machineRow) {
+          continue;
+        }
+        await run(
+          'INSERT OR IGNORE INTO item_machines (item_id, machine_id, created_at) VALUES (?, ?, ?)',
+          [itemId, machineId, now],
+        );
+      }
+    }
+
+    if (dieIds !== undefined) {
+      await run('DELETE FROM item_dies WHERE item_id = ?', [itemId]);
+      const uniqueDieIds = [
+        ...new Set(
+          (Array.isArray(dieIds) ? dieIds : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value > 0),
+        ),
+      ];
+      for (const dieId of uniqueDieIds) {
+        const dieRow = await get('SELECT id FROM dies WHERE id = ?', [dieId]);
+        if (!dieRow) {
+          continue;
+        }
+        await run(
+          'INSERT OR IGNORE INTO item_dies (item_id, die_id, created_at) VALUES (?, ?, ?)',
+          [itemId, dieId, now],
+        );
       }
     }
 
@@ -16069,7 +16342,10 @@ function normalizeGroupPropertyDraft(rawDraft) {
   const sourceType = ['inherited_item', 'inherited_group', 'manual'].includes(rawDraft?.sourceType)
     ? rawDraft.sourceType
     : 'manual';
-  const state = ['active', 'unlinked', 'overridden'].includes(rawDraft?.state)
+  // 'retired' = the group no longer asks for this field, but items already
+  // carry values for it, so the definition is kept and hidden instead of
+  // deleted. See retireMissingGroupProperties.
+  const state = ['active', 'unlinked', 'overridden', 'retired'].includes(rawDraft?.state)
     ? rawDraft.state
     : 'active';
   const overrideLocked = Boolean(rawDraft?.overrideLocked);
@@ -16365,7 +16641,18 @@ async function getEffectiveSchema(groupId) {
     error.statusCode = 404;
     throw error;
   }
+  // Writes refuse to create a parent cycle, but this read must not hang if one
+  // ever lands in the table anyway — stop at the first repeated ancestor.
+  const seenAncestorIds = new Set();
   while (cursor) {
+    if (seenAncestorIds.has(cursor.id)) {
+      console.warn(
+        `[groups] parent cycle detected while resolving schema for group ${normalizedGroupId}; ` +
+          `stopping at group ${cursor.id}`,
+      );
+      break;
+    }
+    seenAncestorIds.add(cursor.id);
     lineageRows.unshift(cursor);
     cursor = cursor.parent_group_id
       ? await getGroupRowById(Number(cursor.parent_group_id))
@@ -16419,9 +16706,17 @@ async function getEffectiveSchema(groupId) {
     }
   }
 
+  // Retired fields are still part of the group's history — items may hold
+  // values for them — but they are not what the group asks for any more, so
+  // they are reported separately instead of in the active field list.
+  const allDrafts = [...mergedByKey.values()];
+  const activeDrafts = allDrafts.filter((draft) => draft.state !== 'retired');
+  const retiredDrafts = allDrafts.filter((draft) => draft.state === 'retired');
+
   return {
     groupId: normalizedGroupId,
-    propertyDrafts: [...mergedByKey.values()],
+    propertyDrafts: activeDrafts,
+    retiredPropertyDrafts: retiredDrafts,
     discardedPropertyKeys: [...discardedPropertyKeys],
     lineageGroupIds: lineageRows.map((row) => Number(row.id)),
     lineageGroupNames: lineageRows.map((row) => row.name || ''),
@@ -16724,6 +17019,91 @@ function normalizeGroupUiPreferences(rawPreferences) {
   };
 }
 
+/// Property keys that at least one item under [groupId] actually carries a
+/// value for, taken from the items' own variation trees.
+async function propertyKeysInUseByItems(groupId) {
+  const inUse = new Set();
+  if (!groupId) {
+    return inUse;
+  }
+  const rows = await all(
+    `
+    SELECT DISTINCT item_variation_nodes.name AS name
+    FROM item_variation_nodes
+    INNER JOIN items ON items.id = item_variation_nodes.item_id
+    WHERE items.group_id = ?
+      AND items.is_archived = 0
+      AND item_variation_nodes.kind = 'property'
+      AND item_variation_nodes.is_archived = 0
+    `,
+    [Number(groupId)],
+  );
+  for (const row of rows) {
+    const key = normalizePropertyKey(row.name);
+    if (key) {
+      inUse.add(key);
+    }
+  }
+  return inUse;
+}
+
+/// Abundance → scarcity.
+///
+/// When a group stops asking for a field, the values items already recorded
+/// under it must not evaporate. Any property dropped from [incomingDrafts] that
+/// items still carry is carried forward as `state: 'retired'`: kept in the
+/// schema, hidden from the active field list. A dropped property nothing uses
+/// is simply forgotten.
+async function retireMissingGroupProperties({
+  materialId,
+  groupId,
+  incomingDrafts,
+  now,
+}) {
+  const existingRows = await all(
+    'SELECT * FROM material_group_properties WHERE material_id = ?',
+    [materialId],
+  );
+  if (existingRows.length === 0) {
+    return incomingDrafts;
+  }
+
+  const incomingKeys = new Set(incomingDrafts.map((draft) => draft.propertyKey));
+  const inUseKeys = await propertyKeysInUseByItems(groupId);
+  const carriedForward = [];
+
+  for (const row of existingRows) {
+    const propertyKey = normalizePropertyKey(row.property_key);
+    if (!propertyKey || incomingKeys.has(propertyKey)) {
+      continue;
+    }
+    // Already retired earlier, or still referenced by an item: keep it.
+    const wasRetired = String(row.state || '') === 'retired';
+    if (!wasRetired && !inUseKeys.has(propertyKey)) {
+      continue;
+    }
+    carriedForward.push(
+      normalizeGroupPropertyDraft({
+        propertyKey,
+        name: row.display_name || propertyKey,
+        displayName: row.display_name || propertyKey,
+        inputType: row.input_type || 'Text',
+        mandatory: false,
+        sourceType: row.source_type || 'manual',
+        sourceItemIds: parseJson(row.source_item_ids_json, []),
+        state: 'retired',
+        unitId: row.unit_id ? Number(row.unit_id) : null,
+        unitSymbol: row.unit_symbol || null,
+        unitLabel: row.unit_label || null,
+        sourceGroupId: row.source_group_id ? Number(row.source_group_id) : null,
+        sourceGroupName: row.source_group_name || null,
+      }),
+    );
+  }
+
+  return [...incomingDrafts, ...carriedForward.filter(Boolean)];
+}
+
 async function persistMaterialGroupGovernance(materialId, payload, now = new Date().toISOString()) {
   const selectedItemIds = Array.isArray(payload?.selectedItemIds)
     ? [...new Set(
@@ -16752,7 +17132,17 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
       dedupedDraftsByKey.set(draft.propertyKey, draft);
     }
   }
-  const dedupedDrafts = [...dedupedDraftsByKey.values()];
+  let dedupedDrafts = [...dedupedDraftsByKey.values()];
+
+  // Carry forward anything this save drops that items still rely on, so a
+  // group narrowing its fields hides them instead of destroying the values.
+  const materialRow = await get('SELECT linked_group_id FROM materials WHERE id = ?', [materialId]);
+  dedupedDrafts = await retireMissingGroupProperties({
+    materialId,
+    groupId: materialRow?.linked_group_id || null,
+    incomingDrafts: dedupedDrafts,
+    now,
+  });
 
   await run('DELETE FROM material_group_item_links WHERE material_id = ?', [materialId]);
   await run('DELETE FROM material_group_properties WHERE material_id = ?', [materialId]);
@@ -24146,6 +24536,143 @@ app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) 
   }
 });
 
+// Per-user UI preferences. Scoped to the caller's own user id — there is no
+// cross-user read or write, so plain authentication is the only gate needed.
+app.get('/api/user-preferences/:key', async (req, res) => {
+  try {
+    const prefKey = String(req.params.key || '').trim();
+    if (!prefKey) {
+      const error = new Error('Preference key is required.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const row = await get(
+      'SELECT value_json FROM user_preferences WHERE user_id = ? AND pref_key = ?',
+      [Number(req.user.id), prefKey],
+    );
+    let value = null;
+    if (row?.value_json) {
+      try {
+        value = JSON.parse(row.value_json);
+      } catch (_) {
+        value = null;
+      }
+    }
+    res.json({ success: true, key: prefKey, value, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      key: null,
+      value: null,
+      error: error.message,
+    });
+  }
+});
+
+app.put('/api/user-preferences/:key', async (req, res) => {
+  try {
+    const prefKey = String(req.params.key || '').trim();
+    if (!prefKey) {
+      const error = new Error('Preference key is required.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const value = (req.body || {}).value;
+    if (value === undefined) {
+      const error = new Error('A value is required.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const now = new Date().toISOString();
+    await run(
+      `
+      INSERT INTO user_preferences (user_id, pref_key, value_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, pref_key)
+      DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+      `,
+      [Number(req.user.id), prefKey, JSON.stringify(value), now, now],
+    );
+    res.json({ success: true, key: prefKey, value, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      key: null,
+      value: null,
+      error: error.message,
+    });
+  }
+});
+
+// Mints a short-lived read URL for one of the item's extra named files.
+app.post('/api/items/:id/attachments/:attachmentId/read-url', requirePermission('config.read'), async (req, res) => {
+  try {
+    const row = await get(
+      'SELECT object_key, file_name FROM item_attachments WHERE id = ? AND item_id = ?',
+      [Number(req.params.attachmentId), Number(req.params.id)],
+    );
+    const objectKey = String(row?.object_key || '').trim();
+    if (!objectKey) {
+      const error = new Error('Attachment not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const payload = await assetReadUrlPayload(objectKey);
+    res.json({
+      success: true,
+      readUrl: payload.readUrl,
+      expiresAt: payload.expiresAt,
+      fileName: row.file_name || '',
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      readUrl: null,
+      expiresAt: null,
+      fileName: null,
+      error: error.message,
+    });
+  }
+});
+
+// Mints a short-lived read URL for the item's CAD file. The stored value is the
+// permanent object key, so the attachment survives indefinitely and every
+// download gets a freshly signed link instead of a URL that rots after a week.
+app.post('/api/items/:id/cad-file/read-url', requirePermission('config.read'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = await get('SELECT cad_file_key, cad_file_name FROM items WHERE id = ?', [id]);
+    if (!row) {
+      const error = new Error('Item not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const objectKey = String(row.cad_file_key || '').trim();
+    if (!objectKey) {
+      const error = new Error('This item has no CAD file.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const payload = await assetReadUrlPayload(objectKey);
+    res.json({
+      success: true,
+      readUrl: payload.readUrl,
+      expiresAt: payload.expiresAt,
+      fileName: row.cad_file_name || '',
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      readUrl: null,
+      expiresAt: null,
+      fileName: null,
+      error: error.message,
+    });
+  }
+});
+
 app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -24363,6 +24890,79 @@ app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res
 });
 
 
+
+// Scarcity → abundance.
+//
+// Lists the fields the group now asks for that existing items have no value
+// for, plus the items concerned, so the UI can ask the user to fill them in.
+// Nothing is back-filled automatically: until someone supplies a value the
+// field simply reads as nil on those items.
+app.get('/api/groups/:id/schema-impact', requirePermission('config.read'), async (req, res) => {
+  try {
+    const groupId = Number(req.params.id);
+    const group = await getGroupRowById(groupId);
+    if (!group) {
+      const error = new Error('Group not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const schema = await getEffectiveSchema(groupId);
+    const items = await all(
+      'SELECT id, name, display_name FROM items WHERE group_id = ? AND is_archived = 0 ORDER BY LOWER(COALESCE(NULLIF(display_name, \'\'), name)) ASC',
+      [groupId],
+    );
+
+    const missingByProperty = new Map();
+    for (const item of items) {
+      const tree = await getItemVariationTree(item.id);
+      const presentKeys = new Set(
+        (Array.isArray(tree) ? tree : [])
+          .filter((node) => node.kind === 'property')
+          .map((node) => normalizePropertyKey(node.name))
+          .filter(Boolean),
+      );
+      for (const draft of schema.propertyDrafts || []) {
+        if (presentKeys.has(draft.propertyKey)) {
+          continue;
+        }
+        if (!missingByProperty.has(draft.propertyKey)) {
+          missingByProperty.set(draft.propertyKey, {
+            propertyKey: draft.propertyKey,
+            displayName: draft.name || draft.propertyKey,
+            mandatory: Boolean(draft.mandatory),
+            items: [],
+          });
+        }
+        missingByProperty.get(draft.propertyKey).items.push({
+          id: item.id,
+          name: item.display_name || item.name || `Item #${item.id}`,
+        });
+      }
+    }
+
+    const missingProperties = [...missingByProperty.values()];
+    res.json({
+      success: true,
+      groupId,
+      itemCount: items.length,
+      missingProperties,
+      retiredProperties: (schema.retiredPropertyDrafts || []).map((draft) => ({
+        propertyKey: draft.propertyKey,
+        displayName: draft.name || draft.propertyKey,
+      })),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      groupId: null,
+      itemCount: 0,
+      missingProperties: [],
+      retiredProperties: [],
+      error: error.message,
+    });
+  }
+});
 
 app.get('/api/groups/:id/effective-schema', requirePermission('config.read'), async (req, res) => {
   try {

@@ -1,6 +1,8 @@
 enum GroupPropertySourceType { manual, inheritedItem, inheritedGroup }
 
-enum GroupPropertyState { active, unlinked, overridden }
+/// `retired` — the group no longer asks for this field, but items still hold
+/// values for it, so the definition is kept and hidden rather than deleted.
+enum GroupPropertyState { active, unlinked, overridden, retired }
 
 class GroupPropertySource {
   const GroupPropertySource({required this.itemId, this.itemName});

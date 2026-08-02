@@ -1153,6 +1153,8 @@ class GroupPropertyDraftDto {
         return GroupPropertyState.unlinked;
       case 'overridden':
         return GroupPropertyState.overridden;
+      case 'retired':
+        return GroupPropertyState.retired;
       default:
         return GroupPropertyState.active;
     }
@@ -1166,6 +1168,8 @@ class GroupPropertyDraftDto {
         return 'unlinked';
       case GroupPropertyState.overridden:
         return 'overridden';
+      case GroupPropertyState.retired:
+        return 'retired';
     }
   }
 }
@@ -1284,6 +1288,7 @@ class EffectiveGroupSchemaDto {
   const EffectiveGroupSchemaDto({
     required this.groupId,
     required this.propertyDrafts,
+    this.retiredPropertyDrafts = const <GroupPropertyDraftDto>[],
     required this.discardedPropertyKeys,
     required this.lineageGroupIds,
     required this.lineageGroupNames,
@@ -1291,6 +1296,7 @@ class EffectiveGroupSchemaDto {
 
   final int groupId;
   final List<GroupPropertyDraftDto> propertyDrafts;
+  final List<GroupPropertyDraftDto> retiredPropertyDrafts;
   final List<String> discardedPropertyKeys;
   final List<int> lineageGroupIds;
   final List<String> lineageGroupNames;
@@ -1304,6 +1310,13 @@ class EffectiveGroupSchemaDto {
                 GroupPropertyDraftDto.fromJson(item as Map<String, dynamic>),
           )
           .toList(growable: false),
+      retiredPropertyDrafts:
+          (json['retiredPropertyDrafts'] as List<dynamic>? ?? const [])
+              .map(
+                (item) =>
+                    GroupPropertyDraftDto.fromJson(item as Map<String, dynamic>),
+              )
+              .toList(growable: false),
       discardedPropertyKeys:
           (json['discardedPropertyKeys'] as List<dynamic>? ?? const [])
               .map((entry) => entry.toString())
@@ -1322,6 +1335,9 @@ class EffectiveGroupSchemaDto {
     return EffectiveGroupSchema(
       groupId: groupId,
       propertyDrafts: propertyDrafts
+          .map((draft) => draft.toDomain())
+          .toList(growable: false),
+      retiredPropertyDrafts: retiredPropertyDrafts
           .map((draft) => draft.toDomain())
           .toList(growable: false),
       discardedPropertyKeys: discardedPropertyKeys,
