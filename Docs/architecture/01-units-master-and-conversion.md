@@ -16,12 +16,15 @@
 >    master, backed by one canonical symbol per unit reused identically
 >    everywhere in the app.
 >
-> Reviewed 2026-07-29 (requester) — four refinements folded in:
+> Reviewed 2026-07-29 (requester) — five refinements folded in:
 > (1) `item_unit_conversions` stays **cross-dimension-capable** — no intra-family
 > constraint (§1.2, §7, §10); (2) pickers must **union the entity's current
 > unit(s)** into the included list (§1.3, §5); (3) `convert()` handles **suffixed
 > gauge variation strings** via a companion parser (§3, §6); (4) config-sync is a
-> **real test**, not a note (§4, §9).
+> **real test**, not a note (§4, §9); (5) **the motivating use-case is smart
+> display auto-scaling** — `105390.84 kg` renders as `105.39 t` across
+> inventory / challan / sheet views; the conversion graph exists to power this
+> (§1.5, §5). The dropdowns/converter are plumbing; auto-scale is the product.
 
 ---
 
@@ -206,6 +209,44 @@ to all three sync points, §4):
   value in any unit, see it in every other included unit of that family — gauge
   included via table lookup. Backed by the same `convert()` used server-side.
 
+### 1.5 Smart display auto-scaling — the motivating use-case
+
+This is *why* the conversion graph exists. A rolled-up inventory total stored as
+`105390.84 kg` should **render** as `105.39 t`; a sub-kilogram weight should
+render in grams. The stored/base value never changes — only the rendering picks
+the most human unit of the family.
+
+- **Why (the forcing function): column space.** The list columns (see the
+  Raw-Materials rollup) can't fit a 6-digit integer like `105390.84`. Auto-scale
+  exists to keep the **integer part compact (≈≤4 digits)** so the number fits.
+- **The ladder.** For a family, order its **linear** units by factor
+  (Mass: g < kg < tonne). Given a value, convert to base, then pick the largest
+  ladder unit `U` where `value_in_U ≥ 1` (SI step: `≥ 1000 kg` → tonnes,
+  `< 1 kg` → grams). Render `value_in_U` at `U.precision` with `U.symbol`.
+- **This rule *is* the digit cap.** "Largest unit where `value ≥ 1`" holds the
+  integer part between `1` and `(ratio to next unit − 1)` — for Mass that's
+  `1–999`, i.e. ≤3 integer digits — so the value inherently fits the column.
+  `105390.84 kg → 105.39 t`; `9999 kg → 9.999 t`; `999 kg → 999 kg`.
+  **Caveat:** only the ladder's *top* unit can overflow (e.g. `50000 t` with no
+  larger unit). So each family needs a big-enough top unit — tonne covers Mass
+  here; if inventories routinely exceed ~9999 t, seed a larger unit rather than
+  let the top overflow.
+- **The ladder = included units (family + context).** Auto-scale reuses the very
+  config an admin curates in §1.3 — exclude tonne from a context and totals in
+  that context simply stop stepping up to tonne. **One curated list drives both
+  the dropdowns and the display ladder.** (Fallback when unset: all active linear
+  units of the family.)
+- **Table units are never laddered.** Gauge is discrete/non-linear — you never
+  "scale up into" a gauge. Only linear units participate.
+- **Display-only, applied to read-outs — not input echoes.** Auto-scale governs
+  *computed/aggregated* quantities: inventory group + item rollups (the image),
+  challan line/summary totals, and the sheet-weight view. A field showing a value
+  the user just typed in a chosen unit keeps that unit. Storage is untouched —
+  same "presentation filters, data is sacred" rule as inclusion (§1.3).
+- **Same-dimension only.** A ladder scales within one family; a total that mixes
+  dimensions (a Mass item + a Quantity item) is not a single scalable number —
+  that is an existing aggregation concern, unchanged here.
+
 ---
 
 ## 2. Schema changes (one migration)
@@ -317,9 +358,21 @@ of *"user can select which units to include."*
   missing that unit → the field defaults elsewhere and **saving silently mutates
   stored data**. The current-but-out-of-policy unit stays selectable (optionally
   flagged). This is the single most important correctness rule of the migration.
-- **Shared `QuantityFormatter`.** Co-locate with `NamingFormatHelper`; honors
-  `unit.precision`. Replace the 2 duplicated `_formatQuantity` first, then chip
-  away at the 67 `toStringAsFixed` sites opportunistically (not a blocker).
+- **Shared `QuantityFormatter` — two modes (this is the payoff, §1.5).**
+  Co-locate with `NamingFormatHelper`.
+  - `formatFixed(value, unit)` → value at `unit.precision` + `unit.symbol`
+    (replaces the 2 duplicated `_formatQuantity` and the bare
+    `toStringAsFixed(N)` sites).
+  - `formatAuto(value, unit, {familyId, context})` → **auto-scaled** display:
+    convert to base, pick the best ladder unit (§1.5), format. This is what turns
+    `105390.84 kg` into `105.39 t`.
+  - **Target the read-out sites, not everything.** Point `formatAuto` at the
+    aggregate/display surfaces first — inventory group + item rollups
+    (`inventory_screen.dart`, the image), challan summary/excel totals
+    (`challan_excel_view.dart:509-512`, `delivery_challan_screen.dart`
+    qty/weight cells), and the sheet-weight view. The remaining `toStringAsFixed`
+    call-sites that echo user-entered values move to `formatFixed`
+    opportunistically.
 
 ---
 
@@ -393,7 +446,11 @@ cut over:
 4. Flutter model + provider accessors + converter widget (§5) — additive.
 5. Dropdown migration, **one surface per commit**, flag-gated (§5).
 6. Backend W4–W5 (service move + enforcement flip + `evacuated:true`).
-7. `QuantityFormatter` + precision adoption (ongoing).
+7. `QuantityFormatter`: land `formatFixed`/`formatAuto` (§5), then roll
+   **`formatAuto` onto the read-out sites** — inventory rollups, challan
+   summary/excel totals, sheet-weight view (§1.5). This is the visible payoff
+   (`105390.84 kg` → `105.39 t`); ship it as its own flag-gated step so the
+   scaling can be A/B-verified against the current fixed-kg display.
 
 ---
 
@@ -405,6 +462,7 @@ cut over:
 | Gauge near-boundary mis-map | Formalize the reverse-lookup tolerance server-side; off-table = verbatim, never snap; unit tests on all 40 rows + boundaries |
 | Two conversion systems drift (`units.conversion_factor` vs per-item `factor_to_primary`) | Keep item conversions independent + **cross-dimension-capable** (no intra-family constraint); log divergence only when both units share a family; defer reconciliation |
 | Edit-time data loss when a stored unit was later un-included from config | Pickers **union the entity's current + configured units** into the included list (§1.3, §5) — inclusion filters the UI, never constrains stored data |
+| Auto-scale corrupts data or scrambles inputs | `formatAuto` is **render-only** on aggregate/read-out sites (§1.5, §5) — stored base value never changes; user-entered fields keep their entered unit; ladders never include table (gauge) units or mix dimensions |
 | Config triple-duplication reverts a half-added section | Add `units` to all three JSONs in one commit **with** a `config-defaults-sync.test.js` drift guard (§4) |
 | Legacy `config.*` gating bypasses the module CRUD grid | Switch `/api/units` to `units.crud` in the enforce step (W5) |
 | Log-only contract actually rejects (400) once wired through `guardContract` | Reconcile the two engines during W1/W5 (same issue items hit) |

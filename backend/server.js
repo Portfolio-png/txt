@@ -4655,6 +4655,28 @@ async function initDb() {
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
   await ensureColumnExists('units', 'conversion_factor', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
+  // Units families + conversion engine (migration 026) — mirrored here so fresh
+  // DBs (tests, new installs) get the columns/table that migrate.js only adds to
+  // an already-provisioned paper.db. Without these, getUnitsWithUsage() and
+  // buildUnitGraph() throw "no such column: unit_groups.dimension" on a fresh DB.
+  await ensureColumnExists('units', 'conversion_type', "TEXT NOT NULL DEFAULT 'linear'");
+  await ensureColumnExists('units', 'precision', 'INTEGER');
+  await ensureColumnExists('unit_groups', 'dimension', 'TEXT');
+  await ensureColumnExists('unit_groups', 'base_unit_id', 'INTEGER');
+  await ensureColumnExists('order_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
+  await ensureColumnExists('delivery_challan_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
+  await run(`
+    CREATE TABLE IF NOT EXISTS unit_conversion_points (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      unit_id INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+      point_key TEXT NOT NULL,
+      base_value REAL NOT NULL,
+      UNIQUE(unit_id, point_key)
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_unit_conversion_points_unit_id ON unit_conversion_points(unit_id)');
+  await ensureUnitFamiliesSeeded();
+  await buildUnitGraph(); // warm the in-process conversion cache (R3 partial) after seeding
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
@@ -5217,6 +5239,7 @@ async function ensurePrimaryGroupAndUnit() {
 
 async function ensureDemoDataset(scenarioId = 'default') {
   await ensureDemoUnitsPresent(scenarioId);
+  await ensureUnitFamiliesSeeded(); // re-establish canonical families/gauge on every reseed
   await backfillMaterialUnitIds();
   await ensureDemoClientsPresent();
   await ensureDemoGroupsPresent(scenarioId);
@@ -6605,6 +6628,128 @@ async function bootstrapUnitsFromMaterials() {
       `,
       [value, value, now, now],
     );
+  }
+}
+
+// SWG (British Standard Wire Gauge, BS 3737) thickness table — gauge -> mm.
+// Mirrors packages/core_erp/lib/features/items/domain/swg_gauge_table.dart, which
+// stays the mobile offline fallback (R4). base_value below is stored in METRES
+// (the Length family base) so a single convert() path serves linear + table units.
+const SWG_GAUGE_MM = [
+  [1, 7.62], [2, 7.01], [3, 6.401], [4, 5.893], [5, 5.385], [6, 4.877],
+  [7, 4.47], [8, 4.064], [9, 3.658], [10, 3.251], [11, 2.946], [12, 2.642],
+  [13, 2.337], [14, 2.032], [15, 1.829], [16, 1.626], [17, 1.422], [18, 1.219],
+  [19, 1.016], [20, 0.914], [21, 0.813], [22, 0.711], [23, 0.61], [24, 0.559],
+  [25, 0.508], [26, 0.457], [27, 0.417], [28, 0.376], [29, 0.345], [30, 0.315],
+  [31, 0.295], [32, 0.274], [33, 0.254], [34, 0.234], [35, 0.213], [36, 0.193],
+  [37, 0.173], [38, 0.152], [39, 0.132], [40, 0.122],
+];
+
+// Canonical unit families seeded for every DB (idempotent). This is the
+// foundation the conversion engine (convertValue/buildUnitGraph) needs — without
+// it the family graph is empty and gauge points are never populated, so every
+// table conversion is dead. Base units: metre / kilogram / piece.
+const CANONICAL_UNIT_FAMILIES = [
+  {
+    name: 'Length', dimension: 'length',
+    base: { name: 'Meter', symbol: 'm', precision: 3 },
+    linear: [
+      { name: 'Millimeter', symbol: 'mm', factor: 0.001, precision: 2 },
+      { name: 'Inch', symbol: 'in', factor: 0.0254, precision: 3 },
+    ],
+    table: [
+      { name: 'Gauge', symbol: 'G', points: SWG_GAUGE_MM.map(([g, mm]) => ({ key: String(g), baseValue: mm / 1000 })) },
+    ],
+  },
+  {
+    name: 'Mass', dimension: 'mass',
+    base: { name: 'Kilogram', symbol: 'kg', precision: 3 },
+    linear: [
+      { name: 'Gram', symbol: 'g', factor: 0.001, precision: 2 },
+      { name: 'Tonne', symbol: 't', factor: 1000, precision: 3 },
+      { name: 'Pound', symbol: 'lb', factor: 0.45359237, precision: 3 }, // exact avoirdupois pound
+    ],
+  },
+  {
+    name: 'Quantity', dimension: 'count',
+    base: { name: 'Piece', symbol: 'pcs', precision: 0 },
+    linear: [
+      { name: 'Dozen', symbol: 'dozen', factor: 12, precision: 0 },
+      { name: 'Gross', symbol: 'gross', factor: 144, precision: 0 },
+    ],
+  },
+];
+
+// Idempotent: matches existing units by (name, symbol) case-insensitively so it
+// upgrades legacy seeds in place (e.g. Kilogram/Kg) instead of duplicating.
+async function ensureUnitFamiliesSeeded() {
+  const now = new Date().toISOString();
+
+  async function upsertUnit(name, symbol, { conversionType = 'linear', precision = null }) {
+    const existing = await get(
+      'SELECT id FROM units WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(symbol)) = LOWER(TRIM(?))',
+      [name, symbol],
+    );
+    if (existing) {
+      await run(
+        'UPDATE units SET conversion_type = ?, precision = ?, is_archived = 0, updated_at = ? WHERE id = ?',
+        [conversionType, precision, now, existing.id],
+      );
+      return existing.id;
+    }
+    const res = await run(
+      `INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, conversion_type, precision, notes, is_archived, created_at, updated_at)
+       VALUES (?, ?, NULL, 1, NULL, ?, ?, '', 0, ?, ?)`,
+      [name, symbol, conversionType, precision, now, now],
+    );
+    return res.lastID;
+  }
+
+  async function upsertFamily(name, dimension) {
+    const existing = await get('SELECT id FROM unit_groups WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))', [name]);
+    if (existing) {
+      await run('UPDATE unit_groups SET dimension = ?, updated_at = ? WHERE id = ?', [dimension, now, existing.id]);
+      return existing.id;
+    }
+    const res = await run(
+      'INSERT INTO unit_groups (name, dimension, base_unit_id, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)',
+      [name, dimension, now, now],
+    );
+    return res.lastID;
+  }
+
+  for (const fam of CANONICAL_UNIT_FAMILIES) {
+    const familyId = await upsertFamily(fam.name, fam.dimension);
+    const baseId = await upsertUnit(fam.base.name, fam.base.symbol, { precision: fam.base.precision });
+    // Base: factor 1, NULL base pointer (the implicit-base convention convertValue relies on).
+    await run(
+      'UPDATE units SET unit_group_id = ?, conversion_factor = 1, conversion_base_unit_id = NULL, conversion_type = \'linear\', updated_at = ? WHERE id = ?',
+      [familyId, now, baseId],
+    );
+    await run('UPDATE unit_groups SET base_unit_id = ?, updated_at = ? WHERE id = ?', [baseId, now, familyId]);
+
+    for (const m of fam.linear || []) {
+      const id = await upsertUnit(m.name, m.symbol, { precision: m.precision });
+      await run(
+        'UPDATE units SET unit_group_id = ?, conversion_factor = ?, conversion_base_unit_id = ?, conversion_type = \'linear\', updated_at = ? WHERE id = ?',
+        [familyId, m.factor, baseId, now, id],
+      );
+    }
+
+    for (const t of fam.table || []) {
+      const id = await upsertUnit(t.name, t.symbol, { conversionType: 'table' });
+      await run(
+        'UPDATE units SET unit_group_id = ?, conversion_factor = 1, conversion_base_unit_id = ?, conversion_type = \'table\', updated_at = ? WHERE id = ?',
+        [familyId, baseId, now, id],
+      );
+      for (const p of t.points) {
+        // INSERT OR IGNORE keeps re-seeds idempotent against UNIQUE(unit_id, point_key).
+        await run(
+          'INSERT OR IGNORE INTO unit_conversion_points (unit_id, point_key, base_value) VALUES (?, ?, ?)',
+          [id, p.key, p.baseValue],
+        );
+      }
+    }
   }
 }
 
@@ -14039,6 +14184,11 @@ async function saveOrder({
   await assertPoDocumentsUploaded(poDocumentIds);
 
   const now = new Date().toISOString();
+  // R1 stop-the-bleed: `factor_to_primary_at_creation` (migration 026) was bound
+  // in the UPDATE/INSERT below but never declared in this scope → ReferenceError
+  // that 500'd every order create/merge. Default to 1 (matches the column DEFAULT);
+  // the real frozen base_quantity/base_unit_id work supersedes this.
+  const factorToPrimary = 1;
   await run('BEGIN TRANSACTION');
   try {
     const existing = await get(
@@ -27831,6 +27981,11 @@ module.exports = {
   run,
   backfillStageReconciliations,
   saveUnit,
+  // Units conversion seam (R0 down-payment: importable for tests / future modules/units)
+  convertValue,
+  parseQualifiedValue,
+  buildUnitGraph,
+  ensureUnitFamiliesSeeded,
   saveClient,
   saveGroup,
   saveItem,
