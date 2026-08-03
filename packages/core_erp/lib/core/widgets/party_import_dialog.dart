@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/party_import_service.dart';
 import '../theme/soft_erp_theme.dart';
@@ -55,21 +57,44 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
   final List<String> _failures = <String>[];
   bool _finished = false;
 
+  /// Saves the template straight to Downloads rather than through a Save panel.
+  ///
+  /// The template is a fixed artefact with a fixed name — there is nothing to
+  /// choose — and on a sandboxed macOS build the first NSSavePanel costs
+  /// seconds spinning up the powerbox service. Generating the file itself takes
+  /// ~25 ms, so skipping the panel is the whole difference.
+  ///
+  /// Platforms with no Downloads directory (mobile, web) still get the picker.
   Future<void> _downloadTemplate() async {
     setState(() => _isWorking = true);
+    final fileName = '${widget.kind.templateFileName}.xlsx';
+    const mimeType =
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     try {
       final bytes = PartyImportService.buildTemplate(widget.kind);
-      final location = await getSaveLocation(
-        suggestedName: '${widget.kind.templateFileName}.xlsx',
-      );
-      if (location == null) return;
-      await XFile.fromData(
-        bytes,
-        mimeType:
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ).saveTo(location.path);
+
+      // Inferred, so this file needs no dart:io import of its own.
+      var downloads = await _downloadsDirectoryOrNull();
+
+      if (downloads == null) {
+        final location = await getSaveLocation(suggestedName: fileName);
+        if (location == null) return;
+        await XFile.fromData(bytes, mimeType: mimeType).saveTo(location.path);
+        showAppSnack(const SnackBar(content: Text('Template saved.')));
+        return;
+      }
+
+      // Forward slash is accepted by Dart's file APIs on Windows too.
+      final path = '${downloads.path}/$fileName';
+      await XFile.fromData(bytes, mimeType: mimeType).saveTo(path);
       showAppSnack(
-        const SnackBar(content: Text('Template saved.')),
+        SnackBar(
+          content: Text('Saved to Downloads — $fileName'),
+          action: SnackBarAction(
+            label: 'Open',
+            onPressed: () => launchUrl(Uri.file(path)),
+          ),
+        ),
       );
     } catch (error) {
       showAppSnack(SnackBar(content: Text('Could not save template: $error')));
@@ -133,6 +158,16 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
       _isWorking = false;
       _finished = true;
     });
+  }
+
+  /// Null on platforms with no Downloads directory (mobile, web), where the
+  /// caller falls back to a save picker.
+  Future<dynamic> _downloadsDirectoryOrNull() async {
+    try {
+      return await getDownloadsDirectory();
+    } catch (_) {
+      return null;
+    }
   }
 
   @override

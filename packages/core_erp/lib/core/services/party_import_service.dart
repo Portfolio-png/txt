@@ -180,17 +180,12 @@ class PartyImportService {
       sheet.setColumnWidth(columns.indexOf(column), 26);
     }
 
+    // One example row, and nothing else. An explanatory marker row used to sit
+    // underneath, but it read as a stray half-filled record in Excel; the
+    // Instructions sheet says the same thing without cluttering the grid.
+    // An untouched example is recognised on import and skipped.
     sheet.appendRow(
       columns.map((column) => TextCellValue(column.example)).toList(),
-    );
-    sheet.appendRow(
-      columns
-          .map(
-            (column) => TextCellValue(
-              column.field == 'name' ? _exampleMarker : '',
-            ),
-          )
-          .toList(),
     );
 
     final help = excel['Instructions'];
@@ -200,7 +195,8 @@ class PartyImportService {
       '1. Fill one ${kind.label.toLowerCase()} per row on the "$dataSheetName" sheet.',
       '2. Do not rename, reorder or delete the header row — the importer reads it.',
       '3. Columns marked * are required.',
-      '4. The grey example rows can be left in place; they are ignored on import.',
+      '4. Row 2 is an example. Overwrite it or delete it — if left untouched it is ignored on import.',
+      '   Only the columns listed below are read; anything you add to the right is ignored.',
       '5. Names that already exist in the app are reported and skipped, never duplicated.',
       '6. Save as .xlsx and import from the ${kind.pluralLabel} screen.',
     ]) {

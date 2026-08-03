@@ -153,6 +153,47 @@ void main() {
       expect(result.importable.single.values['phone'], '9820012345');
     });
 
+    test('ignores extra columns beyond the template, headed or not', () {
+      final excel = Excel.createExcel();
+      excel.rename(excel.getDefaultSheet()!, 'Clients');
+      final sheet = excel['Clients'];
+      sheet.appendRow([
+        TextCellValue('Name *'),
+        TextCellValue('Alias'),
+        TextCellValue('GST Number'),
+        TextCellValue('Address'),
+        TextCellValue(''), // blank header, as a previewer suggests
+        TextCellValue('Notes to self'), // a column the user added
+      ]);
+      sheet.appendRow([
+        TextCellValue('Acme Industries'),
+        TextCellValue('Acme'),
+        TextCellValue(''),
+        TextCellValue(''),
+        TextCellValue('scribble'),
+        TextCellValue('call them Monday'),
+      ]);
+      // A row with content ONLY in an unmapped column must not become a record.
+      sheet.appendRow([
+        TextCellValue(''),
+        TextCellValue(''),
+        TextCellValue(''),
+        TextCellValue(''),
+        TextCellValue('stray note'),
+        TextCellValue(''),
+      ]);
+
+      final result = PartyImportService.parse(
+        Uint8List.fromList(excel.encode()!),
+        PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.headerProblems, isEmpty);
+      expect(result.rows.length, 1, reason: 'stray-note row must be skipped');
+      expect(result.importable.single.values['name'], 'Acme Industries');
+      expect(result.importable.single.values.containsKey('Notes to self'), isFalse);
+    });
+
     test('a file that is not a spreadsheet is reported, not thrown', () {
       final result = PartyImportService.parse(
         Uint8List.fromList('this is not xlsx'.codeUnits),
