@@ -1285,6 +1285,14 @@ class _StructuredGroupEditorDialogState
         return;
       }
 
+      // Snapshot the ids so the row the material route creates can be found by
+      // difference. Matching on parent/unit does not work: the server re-parents
+      // a null parent onto Primary Group, so the created row never matches the
+      // null the form submitted.
+      final groupIdsBeforeCreate = groupsProvider.groups
+          .map((group) => group.id)
+          .toSet();
+
       await inventoryProvider.addParentMaterial(
         CreateParentMaterialInput(
           name: _nameController.text.trim(),
@@ -1327,30 +1335,58 @@ class _StructuredGroupEditorDialogState
           .where(
             (group) =>
                 group.name.trim().toLowerCase() ==
-                    _nameController.text.trim().toLowerCase() &&
-                group.parentGroupId == _selectedParentGroupId &&
-                group.unitId == _selectedUnitId,
+                _nameController.text.trim().toLowerCase(),
           )
           .toList(growable: false);
-      savedGroup = matchingGroups.isEmpty ? null : matchingGroups.last;
+      // Prefer a row that did not exist before this save; fall back to the
+      // newest name match if the refresh raced.
+      savedGroup =
+          matchingGroups
+              .where((group) => !groupIdsBeforeCreate.contains(group.id))
+              .lastOrNull ??
+          matchingGroups.lastOrNull;
 
       // The inventory-backed create goes through the material route, which has
       // no notion of group structure — stamp it afterwards so a component group
       // created here doesn't come back as a plain item group.
-      if (savedGroup != null && _isComponent && !savedGroup.isComponent) {
-        final restructured = await groupsProvider.updateGroup(
-          UpdateGroupInput(
-            id: savedGroup.id,
-            name: savedGroup.name,
-            groupType: savedGroup.groupType,
-            groupStructure: 'component',
-            itemFormSections: _componentFormSections,
-            parentGroupId: savedGroup.parentGroupId,
-            unitId: savedGroup.unitId,
-          ),
-        );
-        if (restructured != null && groupsProvider.errorMessage == null) {
-          savedGroup = restructured;
+      if (_isComponent) {
+        if (savedGroup == null) {
+          // The name/parent/unit re-lookup above is the only handle we get on
+          // the row the material route created. Losing it used to drop the
+          // component structure and its section layout in silence.
+          showAppSnack(
+            const SnackBar(
+              content: Text(
+                'Group created, but it could not be marked as a component. '
+                'Open it and set the type again.',
+              ),
+            ),
+          );
+        } else if (!savedGroup.isComponent ||
+            savedGroup.itemFormSections == null) {
+          final restructured = await groupsProvider.updateGroup(
+            UpdateGroupInput(
+              id: savedGroup.id,
+              name: savedGroup.name,
+              groupType: savedGroup.groupType,
+              groupStructure: 'component',
+              itemFormSections: _componentFormSections,
+              parentGroupId: savedGroup.parentGroupId,
+              unitId: savedGroup.unitId,
+            ),
+          );
+          if (restructured != null && groupsProvider.errorMessage == null) {
+            savedGroup = restructured;
+          } else {
+            showAppSnack(
+              SnackBar(
+                content: Text(
+                  groupsProvider.errorMessage ??
+                      'Group created, but its component settings did not save.',
+                ),
+              ),
+            );
+          }
         }
       }
     } else {

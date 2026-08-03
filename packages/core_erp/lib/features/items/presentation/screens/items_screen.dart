@@ -30,7 +30,6 @@ import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../../data/services/item_link_options_service.dart';
 import '../providers/item_form_sections_provider.dart';
-import '../widgets/item_form_sections_dialog.dart';
 
 import '../providers/items_provider.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
@@ -84,13 +83,20 @@ class ItemsScreen extends StatefulWidget {
 
     return showDialog<ItemDefinition?>(
       context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1380),
-          child: body,
-        ),
-      ),
+      builder: (context) {
+        // Let a wide monitor earn a third column instead of capping at two and
+        // leaving the sections to stack.
+        final available = MediaQuery.of(context).size.width - 64;
+        return Dialog(
+          insetPadding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: available >= 1700 ? 1680 : 1380,
+            ),
+            child: body,
+          ),
+        );
+      },
     );
   }
 
@@ -2365,40 +2371,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               : 'Edit Item',
                         ),
                       ),
-                      if (!_isReadOnly)
-                        if (hasGroupSectionOverride)
-                          const Tooltip(
-                            message:
-                                'This group sets its own sections. Change them '
-                                'by editing the group.',
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.lock_outline_rounded,
-                                    size: 15,
-                                    color: Color(0xFF94A3B8),
-                                  ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Sections set by group',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF94A3B8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        else
-                          TextButton.icon(
-                            onPressed: _showSectionsMenu,
-                            icon: const Icon(Icons.tune_rounded, size: 17),
-                            label: const Text('Sections'),
-                          ),
+                      // The section layout is configured in Settings → Item
+                      // Creation (or on the group, for components) — not from
+                      // the form it controls.
                       IconButton(
                         onPressed: () => Navigator.of(context).maybePop(),
                         icon: const Icon(Icons.close),
@@ -2571,53 +2546,66 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       // editor opens.
                       final showPipeline =
                           sections.defaultPipeline && !isRawMaterialGroup;
-                      final leftColumn = <Widget>[
-                        detailsSection,
-                        if (sections.itemImage) photoSection,
-                        if (sections.cadFile) cadFileSection,
-                        if (sections.additionalFiles) additionalFilesSection,
-                        if (sections.machines) machinesSection,
-                        if (sections.dies) diesSection,
-                        if (showPipeline) defaultPipelineSection,
-                      ];
-                      final rightColumn = <Widget>[
-                        if (sections.variationTree) variationTreeSection,
-                        namingFormatSection,
+
+                      // Sections are packed by estimated height rather than
+                      // assigned to fixed columns: turning sections on and off
+                      // otherwise leaves one column long and the other empty,
+                      // which is what forces scrolling on a wide screen.
+                      final entries = <_SectionEntry>[
+                        _SectionEntry(
+                          detailsSection,
+                          5.5 + _secondaryUnitConversions.length * 0.6,
+                        ),
+                        if (sections.variationTree)
+                          _SectionEntry(
+                            variationTreeSection,
+                            3.0 + _rootNodes.length * 1.6,
+                          ),
+                        _SectionEntry(namingFormatSection, 3.6),
+                        if (sections.itemImage)
+                          _SectionEntry(photoSection, 2.2),
+                        if (sections.cadFile)
+                          _SectionEntry(cadFileSection, 2.2),
+                        if (sections.additionalFiles)
+                          _SectionEntry(
+                            additionalFilesSection,
+                            1.8 + _attachments.length * 0.7,
+                          ),
+                        if (sections.machines)
+                          _SectionEntry(machinesSection, 2.0),
+                        if (sections.dies) _SectionEntry(diesSection, 2.0),
+                        if (showPipeline)
+                          _SectionEntry(defaultPipelineSection, 2.0),
                       ];
 
-                      if (wideComposer) {
-                        return Row(
+                      final columnCount = constraints.maxWidth >= 1560
+                          ? 3
+                          : (wideComposer ? 2 : 1);
+                      if (columnCount == 1) {
+                        return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 5,
-                              child: Column(
-                                children: _withSectionGaps(leftColumn),
-                              ),
-                            ),
-                            const SizedBox(width: 18),
-                            Expanded(
-                              flex: 6,
-                              child: Column(
-                                children: _withSectionGaps(rightColumn),
-                              ),
-                            ),
-                          ],
+                          children: _withSectionGaps(
+                            entries
+                                .map((entry) => entry.child)
+                                .toList(growable: false),
+                          ),
                         );
                       }
-                      return Column(
+
+                      final columns = _packSections(entries, columnCount);
+                      return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: _withSectionGaps(<Widget>[
-                          detailsSection,
-                          if (sections.itemImage) photoSection,
-                          if (sections.cadFile) cadFileSection,
-                          if (sections.additionalFiles) additionalFilesSection,
-                          if (sections.variationTree) variationTreeSection,
-                          namingFormatSection,
-                          if (sections.machines) machinesSection,
-                          if (sections.dies) diesSection,
-                          if (showPipeline) defaultPipelineSection,
-                        ]),
+                        children: [
+                          for (var index = 0; index < columns.length; index++)
+                            ...[
+                              if (index > 0) const SizedBox(width: 18),
+                              Expanded(
+                                child: Column(
+                                  children: _withSectionGaps(columns[index]),
+                                ),
+                              ),
+                            ],
+                        ],
                       );
                     },
                   ),
@@ -3670,6 +3658,28 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   /// Inserts the standard 16px gap between whichever sections are visible, so
   /// hiding one never leaves a double gap behind.
+  /// Greedy shortest-column packing.
+  ///
+  /// Each section goes to whichever column is currently shortest, so the
+  /// columns finish at roughly the same height however many sections are
+  /// switched on. Item Details is placed first and so always anchors column 1.
+  List<List<Widget>> _packSections(List<_SectionEntry> entries, int columns) {
+    final buckets = List.generate(columns, (_) => <Widget>[], growable: false);
+    final heights = List<double>.filled(columns, 0);
+    for (final entry in entries) {
+      var target = 0;
+      for (var index = 1; index < columns; index++) {
+        if (heights[index] < heights[target]) {
+          target = index;
+        }
+      }
+      buckets[target].add(entry.child);
+      heights[target] += entry.weight;
+    }
+    // Drop trailing empties so a spare column never renders as dead space.
+    return buckets.where((bucket) => bucket.isNotEmpty).toList(growable: false);
+  }
+
   List<Widget> _withSectionGaps(List<Widget> sections) {
     final spaced = <Widget>[];
     for (var index = 0; index < sections.length; index++) {
@@ -3679,16 +3689,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       spaced.add(sections[index]);
     }
     return spaced;
-  }
-
-  Future<void> _showSectionsMenu() async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => const ItemFormSectionsDialog(),
-    );
-    if (!mounted) return;
-    // Turning Machines or Dies on for the first time needs their options.
-    await _loadLinkOptions();
   }
 
   /// Loads the machine and die pickers' options. Failure is non-fatal — the
@@ -3756,14 +3756,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _attachments.add(draft);
     });
 
-    final baseUrl = const String.fromEnvironment(
-      'PAPER_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
-    );
-    final service = GenericAssetService(
-      baseUrl: baseUrl,
-      useMockResponses: false,
-    );
+    final service = _resolveAssetService(context);
 
     try {
       final bytes = await file.readAsBytes();
@@ -3787,7 +3780,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         body: bytes,
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Upload failed with status ${response.statusCode}.');
+        throw Exception(
+          _describeS3UploadFailure(response.statusCode, response.body),
+        );
       }
       if (intent.objectKey.isEmpty) {
         throw Exception('Upload did not return an object key.');
@@ -4600,6 +4595,61 @@ class _UnitConversionRow extends StatelessWidget {
   }
 }
 
+/// The upload service every file picker in this editor uses.
+///
+/// `/api/upload/generic` sits behind the same auth as everything else, so the
+/// intent call has to go out on the app's authenticated client. Building a bare
+/// [GenericAssetService] here fails with "Authentication required"; the host
+/// registers a configured one instead.
+///
+/// The fallback keeps lean embeddings that don't register it working, in mock
+/// mode — the only mode a client with no credentials could succeed in.
+/// A section card plus a rough height estimate, used to balance the columns.
+///
+/// The weight only needs to be right relative to the other sections — it drives
+/// which column a card lands in, never how it is laid out.
+class _SectionEntry {
+  const _SectionEntry(this.child, this.weight);
+
+  final Widget child;
+  final double weight;
+}
+
+/// Turns a failed S3 upload into a message that says what actually went wrong.
+///
+/// S3 answers a rejected presigned PUT with an XML body whose `<Code>` is the
+/// only thing distinguishing the causes — `SignatureDoesNotMatch` (the request
+/// didn't match what was signed, usually Content-Type), `AccessDenied` (the
+/// signing identity lacks s3:PutObject, or a bucket policy blocked it),
+/// `ExpiredToken`, and so on. Reporting the bare status code throws that away.
+String _describeS3UploadFailure(int statusCode, String body) {
+  String? tagValue(String tag) {
+    final match = RegExp('<$tag>(.*?)</$tag>', dotAll: true).firstMatch(body);
+    return match?.group(1)?.trim();
+  }
+
+  final code = tagValue('Code');
+  final message = tagValue('Message');
+  if (code == null && message == null) {
+    return 'upload rejected with status $statusCode.';
+  }
+  return '$statusCode ${code ?? ''}${message == null ? '' : ' — $message'}'
+      .trim();
+}
+
+GenericAssetService _resolveAssetService(BuildContext context) {
+  try {
+    return context.read<GenericAssetService>();
+  } catch (_) {
+    return GenericAssetService(
+      baseUrl: const String.fromEnvironment(
+        'PAPER_API_BASE_URL',
+        defaultValue: 'http://localhost:8080',
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Item Photo Picker
 // ---------------------------------------------------------------------------
@@ -4660,11 +4710,7 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
     }
 
     setState(() => _isUploading = true);
-    final baseUrl = const String.fromEnvironment(
-      'PAPER_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
-    );
-    final service = GenericAssetService(baseUrl: baseUrl);
+    final service = _resolveAssetService(context);
 
     try {
       final bytes = await file.readAsBytes();
@@ -4691,7 +4737,7 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
         );
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw Exception(
-            'Image upload failed with status ${response.statusCode}.',
+            _describeS3UploadFailure(response.statusCode, response.body),
           );
         }
       }
@@ -5191,16 +5237,7 @@ class _CadFilePickerFieldState extends State<_CadFilePickerField> {
 
     if (!mounted) return;
     setState(() => _isUploading = true);
-    final baseUrl = const String.fromEnvironment(
-      'PAPER_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
-    );
-    // Real presigned upload: a mocked intent would hand back a stand-in image
-    // URL, which is worse than a visible failure for a drawing file.
-    final service = GenericAssetService(
-      baseUrl: baseUrl,
-      useMockResponses: false,
-    );
+    final service = _resolveAssetService(context);
 
     try {
       final bytes = await file.readAsBytes();
@@ -5227,7 +5264,7 @@ class _CadFilePickerFieldState extends State<_CadFilePickerField> {
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(
-          'CAD upload failed with status ${response.statusCode}.',
+          _describeS3UploadFailure(response.statusCode, response.body),
         );
       }
 

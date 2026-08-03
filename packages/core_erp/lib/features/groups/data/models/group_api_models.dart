@@ -147,7 +147,11 @@ class CreateGroupRequest {
       'description': description,
       'parentGroupId': parentGroupId,
       'unitId': unitId,
-      'itemFormSections': itemFormSections?.toJson(),
+      // Omitted, not sent as null. The server reads an explicit null as "clear
+      // the override", so emitting the key unconditionally made every update
+      // that didn't carry sections wipe the group's stored layout.
+      if (itemFormSections != null)
+        'itemFormSections': itemFormSections!.toJson(),
     };
   }
 }
@@ -191,7 +195,11 @@ class UpdateGroupRequest {
       'description': description,
       'parentGroupId': parentGroupId,
       'unitId': unitId,
-      'itemFormSections': itemFormSections?.toJson(),
+      // Omitted, not sent as null. The server reads an explicit null as "clear
+      // the override", so emitting the key unconditionally made every update
+      // that didn't carry sections wipe the group's stored layout.
+      if (itemFormSections != null)
+        'itemFormSections': itemFormSections!.toJson(),
     };
   }
 }

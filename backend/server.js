@@ -27878,27 +27878,6 @@ app.post('/api/delete-s3-object', requirePermission('config.write'), async (req,
   }
 });
 
-// ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
-// Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
-app.use('/api', (req, res) => {
-  console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
-  const message = `API route not found: ${req.method} ${req.originalUrl}`;
-  res.status(404).json({
-    success: false,
-    message,
-    error: message,
-  });
-});
-
-app.use((error, req, res, _next) => {
-  console.error(`Request failed: ${req.method} ${req.originalUrl}`, error);
-  const message = IS_PRODUCTION ? 'Request failed.' : error.message;
-  res.status(error.statusCode || 500).json({
-    success: false,
-    message,
-    error: message,
-  });
-});
 
 let io = null;
 let bonjour = null;
@@ -28420,6 +28399,28 @@ app.get('/api/action-center/issues', requirePermission('config.read'), async (re
   res.json({ success: true, issues, total: issues.length, scanErrors, error: null });
 });
 
+
+// ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
+// Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
+app.use('/api', (req, res) => {
+  console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
+  const message = `API route not found: ${req.method} ${req.originalUrl}`;
+  res.status(404).json({
+    success: false,
+    message,
+    error: message,
+  });
+});
+
+app.use((error, req, res, _next) => {
+  console.error(`Request failed: ${req.method} ${req.originalUrl}`, error);
+  const message = IS_PRODUCTION ? 'Request failed.' : error.message;
+  res.status(error.statusCode || 500).json({
+    success: false,
+    message,
+    error: message,
+  });
+});
 
 module.exports = {
   app,

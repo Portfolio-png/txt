@@ -61,7 +61,6 @@ class _AppSidebarState extends State<AppSidebar> {
       'Production',
       Icons.precision_manufacturing_outlined,
     ),
-    _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
     _SidebarItemData('jobs', 'Jobs', Icons.engineering_outlined),
     _SidebarItemData(
       'action_center',

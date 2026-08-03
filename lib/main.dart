@@ -38,6 +38,7 @@ import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
+import 'package:core_erp/core/services/generic_asset_service.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/items/data/services/item_link_options_service.dart';
 import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
@@ -524,6 +525,16 @@ class MyApp extends StatelessWidget {
         ),
         Provider<ItemLinkOptionsService>(
           create: (context) => ItemLinkOptionsService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // Upload intents hit /api/upload/generic, which is behind auth like
+        // every other endpoint — the file pickers must not build their own
+        // unauthenticated client.
+        Provider<GenericAssetService>(
+          create: (context) => GenericAssetService(
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: _apiBaseUrl,
             useMockResponses: _effectiveDemoMode,
