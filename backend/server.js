@@ -7581,10 +7581,12 @@ async function resolveOrderUnitSelection({ item, unitId = null }) {
     throw error;
   }
 
+  let factorToPrimary = 1;
+
   if (requestedUnitId > 0 && requestedUnitId !== itemUnitId) {
     const conversion = await get(
       `
-      SELECT 1 AS ok
+      SELECT factor_to_primary
       FROM item_unit_conversions
       WHERE item_id = ? AND unit_id = ?
       LIMIT 1
@@ -7598,12 +7600,14 @@ async function resolveOrderUnitSelection({ item, unitId = null }) {
       error.statusCode = 400;
       throw error;
     }
+    factorToPrimary = Number(conversion.factor_to_primary || 1);
   }
 
   return {
     unitId: unit.id,
     unitName: unit.name || '',
     unitSymbol: unit.symbol || unit.name || '',
+    factorToPrimary,
   };
 }
 
@@ -14137,6 +14141,7 @@ async function saveOrder({
     item: variationSelection.item,
     unitId,
   });
+  const factorToPrimary = unitSelection.factorToPrimary || 1;
 
   if (!trimmedClientName && client) {
     trimmedClientName = String(client.name || '').trim();

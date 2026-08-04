@@ -4658,6 +4658,22 @@ String _describeS3UploadFailure(int statusCode, String body) {
       .trim();
 }
 
+/// Opens the system file picker, reporting failure instead of throwing past the
+/// caller.
+///
+/// A type group the host platform rejects makes openFile throw before any of
+/// the upload code runs, which presents as a button that does nothing.
+Future<XFile?> _pickFileOrNull(XTypeGroup group, String what) async {
+  try {
+    return await openFile(acceptedTypeGroups: <XTypeGroup>[group]);
+  } catch (error) {
+    showAppSnack(
+      SnackBar(content: Text('Could not open the $what picker: $error')),
+    );
+    return null;
+  }
+}
+
 GenericAssetService _resolveAssetService(BuildContext context) {
   try {
     return context.read<GenericAssetService>();
@@ -4717,14 +4733,15 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
   }
 
   Future<void> _pickAndUploadImage() async {
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(
-          label: 'Images',
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-          extensions: ['png', 'jpg', 'jpeg', 'webp'],
-        ),
-      ],
+    // Extensions only. Declaring mimeTypes as well makes the macOS picker
+    // reject the type group outright, and openFile then throws before the
+    // try below — which looked like the button doing nothing at all.
+    final file = await _pickFileOrNull(
+      const XTypeGroup(
+        label: 'Images',
+        extensions: ['png', 'jpg', 'jpeg', 'webp'],
+      ),
+      'image',
     );
     if (file == null || !mounted) {
       return;
@@ -5234,10 +5251,9 @@ class _CadFilePickerFieldState extends State<_CadFilePickerField> {
   }
 
   Future<void> _pickAndUploadCadFile() async {
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'CAD files', extensions: _cadExtensions),
-      ],
+    final file = await _pickFileOrNull(
+      const XTypeGroup(label: 'CAD files', extensions: _cadExtensions),
+      'CAD file',
     );
     if (file == null || !mounted) {
       return;
