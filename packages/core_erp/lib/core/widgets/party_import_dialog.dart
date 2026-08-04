@@ -106,7 +106,10 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
   Future<void> _pickFile() async {
     final file = await openFile(
       acceptedTypeGroups: const [
-        XTypeGroup(label: 'Excel', extensions: ['xlsx']),
+        XTypeGroup(
+          label: 'Spreadsheets',
+          extensions: PartyImportService.acceptedExtensions,
+        ),
       ],
     );
     if (file == null || !mounted) return;
@@ -114,9 +117,10 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
     setState(() => _isWorking = true);
     try {
       final bytes = Uint8List.fromList(await file.readAsBytes());
-      final parsed = PartyImportService.parse(
-        bytes,
-        widget.kind,
+      final parsed = PartyImportService.parseFile(
+        fileName: file.name,
+        bytes: bytes,
+        kind: widget.kind,
         existingNames: widget.existingNames,
       );
       if (!mounted) return;
@@ -208,7 +212,7 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
               const SizedBox(height: 4),
               Text(
                 'Download the template, fill one ${widget.kind.label.toLowerCase()} '
-                'per row, then bring it back here.',
+                'per row, then bring it back here. Excel (.xlsx) or CSV.',
                 style: const TextStyle(
                   fontSize: 12.5,
                   height: 1.45,
@@ -292,8 +296,12 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
           _line('$_fileName', bold: true),
           const SizedBox(height: 8),
           _panel(
-            tone: SoftErpTheme.successBg,
-            border: const Color(0xFFBFE7CD),
+            tone: parsed.importable.isEmpty
+                ? SoftErpTheme.warningBg
+                : SoftErpTheme.successBg,
+            border: parsed.importable.isEmpty
+                ? const Color(0xFFF2DFC0)
+                : const Color(0xFFBFE7CD),
             children: [
               _line(
                 _finished
@@ -301,6 +309,18 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
                     : '${parsed.importable.length} ready to import.',
                 bold: true,
               ),
+              // When nothing can be imported, say what the file actually
+              // contained rather than leaving a bare zero.
+              if (parsed.importable.isEmpty && !_finished) ...[
+                const SizedBox(height: 4),
+                _line(parsed.diagnostics),
+                if (parsed.dataRowsSeen == 0)
+                  _line(
+                    'Nothing was found below the header row. Check that the '
+                    'names were typed on the "${widget.kind.pluralLabel}" sheet '
+                    'and the file was saved before choosing it.',
+                  ),
+              ],
             ],
           ),
           if (rejected.isNotEmpty) ...[

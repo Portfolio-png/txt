@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
@@ -56,9 +57,39 @@ class PartyImportResult {
   const PartyImportResult({
     required this.rows,
     required this.headerProblems,
+    this.sheetName = '',
+    this.sheetNames = const <String>[],
+    this.headersFound = const <String>[],
+    this.dataRowsSeen = 0,
+    this.blankRowsSkipped = 0,
+    this.exampleRowsSkipped = 0,
   });
 
   final List<PartyImportRow> rows;
+
+  /// What the parser actually read, so "nothing to import" can explain itself
+  /// instead of leaving the user guessing.
+  final String sheetName;
+  final List<String> sheetNames;
+  final List<String> headersFound;
+  final int dataRowsSeen;
+  final int blankRowsSkipped;
+  final int exampleRowsSkipped;
+
+  /// Plain-language account of what the parser saw. Shown when a file yields
+  /// no importable rows.
+  String get diagnostics {
+    final parts = <String>[
+      'Read sheet "$sheetName"'
+          '${sheetNames.length > 1 ? ' (of: ${sheetNames.join(', ')})' : ''}.',
+      'Columns found: ${headersFound.isEmpty ? 'none' : headersFound.join(' | ')}.',
+      '$dataRowsSeen row(s) below the header.',
+      if (blankRowsSkipped > 0) '$blankRowsSkipped blank row(s) skipped.',
+      if (exampleRowsSkipped > 0)
+        '$exampleRowsSkipped example row(s) skipped.',
+    ];
+    return parts.join(' ');
+  }
 
   /// Problems with the sheet itself (missing/renamed columns), which make the
   /// whole file unusable rather than a single row.
@@ -216,7 +247,133 @@ class PartyImportService {
   /// Rows whose name cell is this are template samples, not real data.
   static const String _exampleMarker = '↑ example row — delete or leave, it is ignored';
 
+  /// Extensions the picker should offer.
+  ///
+  /// `.numbers` is listed on purpose even though it cannot be parsed: a Mac user
+  /// whose file is a Numbers document otherwise sees an empty picker and no
+  /// explanation. Choosing one produces instructions instead of silence.
+  static const List<String> acceptedExtensions = <String>[
+    'xlsx',
+    'csv',
+    'numbers',
+  ];
+
+  /// Reads a filled-in template, dispatching on the file's format.
+  static PartyImportResult parseFile({
+    required String fileName,
+    required Uint8List bytes,
+    required PartyKind kind,
+    required Iterable<String> existingNames,
+  }) {
+    final lower = fileName.trim().toLowerCase();
+
+    if (lower.endsWith('.numbers')) {
+      // Numbers documents are a proprietary bundle of compressed protobufs;
+      // there is no reader for them outside Apple's own frameworks. Say so, and
+      // point at the two-click way out.
+      return const PartyImportResult(
+        rows: [],
+        headerProblems: [
+          'Numbers files cannot be read directly.',
+          'In Numbers choose File → Export To → Excel (or CSV), then import '
+              'that file.',
+        ],
+      );
+    }
+
+    if (lower.endsWith('.csv')) {
+      return parseCsv(bytes, kind, existingNames: existingNames);
+    }
+
+    return parse(bytes, kind, existingNames: existingNames);
+  }
+
+  /// Reads a CSV export. Numbers, Excel and Sheets all produce these, so it is
+  /// the common fallback when the .xlsx path is not available.
+  static PartyImportResult parseCsv(
+    Uint8List bytes,
+    PartyKind kind, {
+    required Iterable<String> existingNames,
+  }) {
+    String text;
+    try {
+      // Excel on Windows writes a BOM; strip it so the first header does not
+      // arrive as "﻿Name".
+      text = utf8.decode(bytes, allowMalformed: true);
+      if (text.startsWith('﻿')) {
+        text = text.substring(1);
+      }
+    } catch (_) {
+      return const PartyImportResult(
+        rows: [],
+        headerProblems: ['This file could not be read as text.'],
+      );
+    }
+
+    final grid = _parseCsvGrid(text);
+    if (grid.isEmpty) {
+      return const PartyImportResult(
+        rows: [],
+        headerProblems: ['The file has no rows.'],
+      );
+    }
+    return _resultFromGrids(
+      {'CSV': grid},
+      kind,
+      existingNames: existingNames,
+    );
+  }
+
+  /// RFC 4180-ish reader: honours quoted fields, escaped quotes and newlines
+  /// inside quotes, which matter because addresses routinely contain commas.
+  static List<List<String>> _parseCsvGrid(String text) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    final field = StringBuffer();
+    var inQuotes = false;
+
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (inQuotes) {
+        if (char == '"') {
+          if (i + 1 < text.length && text[i + 1] == '"') {
+            field.write('"');
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field.write(char);
+        }
+        continue;
+      }
+      if (char == '"') {
+        inQuotes = true;
+      } else if (char == ',') {
+        row.add(field.toString());
+        field.clear();
+      } else if (char == '\n' || char == '\r') {
+        // Swallow the \n of a \r\n pair.
+        if (char == '\r' && i + 1 < text.length && text[i + 1] == '\n') {
+          i++;
+        }
+        row.add(field.toString());
+        field.clear();
+        rows.add(row);
+        row = <String>[];
+      } else {
+        field.write(char);
+      }
+    }
+    if (field.isNotEmpty || row.isNotEmpty) {
+      row.add(field.toString());
+      rows.add(row);
+    }
+    return rows;
+  }
+
   /// Reads a filled-in template.
+
   ///
   /// [existingNames] is used to flag rows that would duplicate a record that is
   /// already there; those are reported and skipped rather than creating a
@@ -226,97 +383,155 @@ class PartyImportService {
     PartyKind kind, {
     required Iterable<String> existingNames,
   }) {
-    final columns = columnsFor(kind);
-    final headerProblems = <String>[];
-    final rows = <PartyImportRow>[];
-
     final Excel excel;
     try {
       excel = Excel.decodeBytes(bytes);
-    } catch (error) {
-      return PartyImportResult(
-        rows: const [],
+    } catch (_) {
+      return const PartyImportResult(
+        rows: [],
         headerProblems: ['This file could not be read as a spreadsheet.'],
       );
     }
 
-    // Prefer the sheet the template ships with; otherwise take the first one
-    // with content, so a re-saved or renamed file still imports.
-    final sheet =
-        excel.tables[kind.pluralLabel] ??
-        excel.tables.values
-            .where((table) => table.maxRows > 0)
-            .firstOrNull;
-    if (sheet == null || sheet.maxRows == 0) {
-      return PartyImportResult(
-        rows: const [],
-        headerProblems: ['The file has no rows.'],
+    if (excel.tables.isEmpty) {
+      return const PartyImportResult(
+        rows: [],
+        headerProblems: ['The file has no sheets.'],
       );
     }
 
-    String cellText(List<Data?> row, int index) {
-      if (index < 0 || index >= row.length) return '';
-      final value = row[index]?.value;
+    /// Text of a cell, whatever type the producing app chose.
+    ///
+    /// Excel, Numbers and LibreOffice each pick different cell types for the
+    /// same visible content — a phone becomes an int, a blank becomes a null or
+    /// an empty shared string — so every case funnels to a trimmed string.
+    String cellText(Data? cell) {
+      final value = cell?.value;
       if (value == null) return '';
       if (value is TextCellValue) return value.value.toString().trim();
       if (value is IntCellValue) return value.value.toString();
       if (value is DoubleCellValue) {
         final d = value.value;
-        return d == d.roundToDouble()
-            ? d.toStringAsFixed(0)
-            : d.toString();
+        return d == d.roundToDouble() ? d.toStringAsFixed(0) : d.toString();
       }
+      if (value is BoolCellValue) return value.value ? 'true' : 'false';
+      if (value is FormulaCellValue) return value.formula.trim();
       return value.toString().trim();
     }
 
-    // Map headers by normalized text, so "Name *", "name" and " NAME " all match.
-    final headerRow = sheet.rows.first;
-    final headerIndex = <String, int>{};
-    for (var i = 0; i < headerRow.length; i++) {
-      final text = cellText(headerRow, i)
-          .replaceAll('*', '')
-          .trim()
-          .toLowerCase();
-      if (text.isNotEmpty) {
-        headerIndex.putIfAbsent(text, () => i);
+    final grids = <String, List<List<String>>>{
+      for (final entry in excel.tables.entries)
+        entry.key: entry.value.rows
+            .map((row) => row.map(cellText).toList(growable: false))
+            .toList(growable: false),
+    };
+    return _resultFromGrids(grids, kind, existingNames: existingNames);
+  }
+
+  /// Turns one or more sheets of plain text into a parse result.
+  ///
+  /// Shared by the .xlsx and .csv readers so validation, duplicate handling and
+  /// header detection cannot diverge between formats.
+  ///
+  /// The data is located by content, not by sheet name or a fixed header row:
+  /// files come back from Excel, Numbers, Sheets and LibreOffice, any of which
+  /// may rename a sheet, reorder tabs or leave filler rows above the header.
+  static PartyImportResult _resultFromGrids(
+    Map<String, List<List<String>>> grids,
+    PartyKind kind, {
+    required Iterable<String> existingNames,
+  }) {
+    final columns = columnsFor(kind);
+    final rows = <PartyImportRow>[];
+    final sheetNames = grids.keys.toList(growable: false);
+
+    String normalizeHeader(String raw) => raw
+        .replaceAll('*', '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .toLowerCase();
+
+    String cellAt(List<String> row, int index) =>
+        (index < 0 || index >= row.length) ? '' : row[index].trim();
+
+    List<List<String>>? bestGrid;
+    var bestSheetName = '';
+    var bestHeaderRow = -1;
+    var bestHeaderIndex = <String, int>{};
+    var bestScore = -1;
+
+    for (final entry in grids.entries) {
+      final grid = entry.value;
+      final scanLimit = grid.length < 10 ? grid.length : 10;
+      for (var r = 0; r < scanLimit; r++) {
+        final found = <String, int>{};
+        for (var i = 0; i < grid[r].length; i++) {
+          final text = normalizeHeader(grid[r][i]);
+          if (text.isNotEmpty) found.putIfAbsent(text, () => i);
+        }
+        if (!found.containsKey('name')) {
+          continue; // without the required column this row is not a header
+        }
+        final matched = columns
+            .where((c) => found.containsKey(c.header.toLowerCase()))
+            .length;
+        // Prefer more matched columns, then more rows underneath to import.
+        final score = matched * 1000 + (grid.length - r - 1);
+        if (score > bestScore) {
+          bestScore = score;
+          bestGrid = grid;
+          bestSheetName = entry.key;
+          bestHeaderRow = r;
+          bestHeaderIndex = found;
+        }
       }
-    }
-    for (final column in columns.where((c) => c.required)) {
-      if (!headerIndex.containsKey(column.header.toLowerCase())) {
-        headerProblems.add('Missing required column "${column.header}".');
-      }
-    }
-    if (headerProblems.isNotEmpty) {
-      return PartyImportResult(rows: const [], headerProblems: headerProblems);
     }
 
+    if (bestGrid == null) {
+      return PartyImportResult(
+        rows: const [],
+        headerProblems: const [
+          'Could not find a header row containing "Name".',
+          'Use the downloaded template and keep its header row intact.',
+        ],
+        sheetNames: sheetNames,
+      );
+    }
+
+    final grid = bestGrid;
+    final headerIndex = bestHeaderIndex;
+    final headersFound = headerIndex.keys.toList(growable: false);
+
+    var dataRowsSeen = 0;
+    var blankRowsSkipped = 0;
+    var exampleRowsSkipped = 0;
     final seenNames = <String>{};
     final existing = existingNames
         .map((name) => name.trim().toLowerCase())
         .where((name) => name.isNotEmpty)
         .toSet();
 
-    for (var r = 1; r < sheet.rows.length; r++) {
-      final row = sheet.rows[r];
-      final values = <String, String>{};
-      for (final column in columns) {
-        values[column.field] =
-            cellText(row, headerIndex[column.header.toLowerCase()] ?? -1);
-      }
+    for (var r = bestHeaderRow + 1; r < grid.length; r++) {
+      final row = grid[r];
+      final values = <String, String>{
+        for (final column in columns)
+          column.field: cellAt(row, headerIndex[column.header.toLowerCase()] ?? -1),
+      };
 
+      dataRowsSeen++;
       if (values.values.every((value) => value.isEmpty)) {
+        blankRowsSkipped++;
         continue; // blank spacer row
       }
       final name = values['name'] ?? '';
       if (name == _exampleMarker || name.startsWith('↑ example')) {
+        exampleRowsSkipped++;
         continue;
       }
-      // The sample row ships with the documented example name; treat an
+      // The sample row ships with the documented example values; treat an
       // untouched one as a leftover rather than real data.
-      final isUntouchedSample = columns.every(
-        (column) => values[column.field] == column.example,
-      );
-      if (isUntouchedSample) {
+      if (columns.every((column) => values[column.field] == column.example)) {
+        exampleRowsSkipped++;
         continue;
       }
 
@@ -325,7 +540,8 @@ class PartyImportService {
         errors.add('Name is required.');
       }
       final email = values['email'] ?? '';
-      if (email.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      if (email.isNotEmpty &&
+          !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
         errors.add('Email "$email" is not a valid address.');
       }
       final gst = values['gstNumber'] ?? '';
@@ -353,6 +569,15 @@ class PartyImportService {
       );
     }
 
-    return PartyImportResult(rows: rows, headerProblems: headerProblems);
+    return PartyImportResult(
+      rows: rows,
+      headerProblems: const [],
+      sheetName: bestSheetName,
+      sheetNames: sheetNames,
+      headersFound: headersFound,
+      dataRowsSeen: dataRowsSeen,
+      blankRowsSkipped: blankRowsSkipped,
+      exampleRowsSkipped: exampleRowsSkipped,
+    );
   }
 }

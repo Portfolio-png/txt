@@ -2218,8 +2218,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       title: 'Variation Tree',
       action: _isReadOnly
           ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
+          : Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 AppButton(
                   label: 'Add Top-Level Property',
@@ -2227,7 +2228,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   variant: AppButtonVariant.secondary,
                   onPressed: _addTopLevelProperty,
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   label: 'Variation Creation',
                   icon: Icons.account_tree_outlined,
@@ -2578,7 +2578,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           _SectionEntry(defaultPipelineSection, 2.0),
                       ];
 
-                      final columnCount = constraints.maxWidth >= 1560
+                      // A third column is only worth it when each one still
+                      // clears ~600px. The variation tree packs a name field
+                      // and eight controls into a row; below that width the
+                      // name becomes unreadable.
+                      final columnCount = constraints.maxWidth >= 1860
                           ? 3
                           : (wideComposer ? 2 : 1);
                       if (columnCount == 1) {
@@ -4002,7 +4006,14 @@ class _TreeNodeEditor extends StatelessWidget {
                       const SizedBox(width: 8),
                       if (draft.isNameEditing && !readOnly)
                         Expanded(
-                          child: Row(
+                          // The optional Code field yields its space when the
+                          // row is tight, so the name being typed stays legible
+                          // instead of both shrinking to a few characters.
+                          child: LayoutBuilder(
+                            builder: (context, nameConstraints) {
+                            final showCodeField =
+                                nameConstraints.maxWidth >= 260;
+                            return Row(
                             children: [
                               Expanded(
                                 flex: 3,
@@ -4027,6 +4038,7 @@ class _TreeNodeEditor extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              if (showCodeField) ...[
                               const SizedBox(width: 8),
                               Expanded(
                                 flex: 2,
@@ -4048,7 +4060,10 @@ class _TreeNodeEditor extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              ],
                             ],
+                          );
+                            },
                           ),
                         )
                       else
@@ -4317,18 +4332,24 @@ class _SectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          // Wrap, not Row: an Expanded title next to a wide action row gets
+          // squeezed toward zero width in a narrow column and then renders one
+          // letter per line. Wrapping lets the action drop to its own line
+          // instead, and the title keeps its natural width.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 10,
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1F2937),
-                  ),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1F2937),
                 ),
               ),
-              action ?? const SizedBox.shrink(),
+              if (action != null) action!,
             ],
           ),
           const SizedBox(height: 16),

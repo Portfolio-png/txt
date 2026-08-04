@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:core_erp/core/services/party_import_service.dart';
@@ -119,7 +120,12 @@ void main() {
         PartyKind.client,
         existingNames: const [],
       );
-      expect(result.headerProblems.single, contains('Missing required column'));
+      // Detection is by content now: with no "Name" heading anywhere, there is
+      // no header row to anchor to, and that is what gets reported.
+      expect(
+        result.headerProblems.first,
+        contains('Could not find a header row'),
+      );
       expect(result.isUsable, isFalse);
     });
 
@@ -192,6 +198,126 @@ void main() {
       expect(result.rows.length, 1, reason: 'stray-note row must be skipped');
       expect(result.importable.single.values['name'], 'Acme Industries');
       expect(result.importable.single.values.containsKey('Notes to self'), isFalse);
+    });
+
+    test('finds the data when a re-save renamed the sheet and moved tabs', () {
+      // What Numbers/LibreOffice can produce: instructions first, data sheet
+      // renamed, and a blank row above the header.
+      final excel = Excel.createExcel();
+      excel.rename(excel.getDefaultSheet()!, 'Instructions');
+      excel['Instructions'].appendRow([TextCellValue('How to use this')]);
+      final data = excel['Sheet1 (2)'];
+      data.appendRow([TextCellValue('')]); // stray blank row above the header
+      data.appendRow([
+        TextCellValue('Name *'),
+        TextCellValue('Alias'),
+        TextCellValue('GST Number'),
+        TextCellValue('Address'),
+      ]);
+      data.appendRow([TextCellValue('Acme Industries')]);
+      data.appendRow([TextCellValue('Borewell Co')]);
+
+      final result = PartyImportService.parse(
+        Uint8List.fromList(excel.encode()!),
+        PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.headerProblems, isEmpty);
+      expect(result.sheetName, 'Sheet1 (2)');
+      expect(result.importable.length, 2);
+      // Row numbers must still match what the user sees in the sheet.
+      expect(result.importable.first.rowNumber, 3);
+    });
+
+    test('picks the data sheet over an instructions sheet', () {
+      final excel = Excel.createExcel();
+      excel.rename(excel.getDefaultSheet()!, 'Instructions');
+      excel['Instructions'].appendRow([TextCellValue('Column'), TextCellValue('Notes')]);
+      excel['Instructions'].appendRow([TextCellValue('Name'), TextCellValue('Required.')]);
+      final data = excel['Clients'];
+      data.appendRow([TextCellValue('Name *'), TextCellValue('Alias')]);
+      data.appendRow([TextCellValue('Acme Industries')]);
+
+      final result = PartyImportService.parse(
+        Uint8List.fromList(excel.encode()!),
+        PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.sheetName, 'Clients');
+      expect(result.importable.single.name, 'Acme Industries');
+    });
+
+    test('reports when no sheet carries a Name header', () {
+      final excel = Excel.createExcel();
+      excel.rename(excel.getDefaultSheet()!, 'Sheet1');
+      excel['Sheet1'].appendRow([TextCellValue('Company'), TextCellValue('City')]);
+      excel['Sheet1'].appendRow([TextCellValue('Acme'), TextCellValue('Pune')]);
+
+      final result = PartyImportService.parse(
+        Uint8List.fromList(excel.encode()!),
+        PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.headerProblems.first, contains('Could not find a header row'));
+      expect(result.sheetNames, contains('Sheet1'));
+    });
+
+    test('reads a CSV export, including quoted commas', () {
+      const csv = 'Name *,Alias,GST Number,Address\n'
+          'Acme Industries,Acme,,"Plot 14, MIDC, Pune"\n'
+          'Borewell Co,,,\n';
+      final result = PartyImportService.parseFile(
+        fileName: 'clients.csv',
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+        kind: PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.headerProblems, isEmpty);
+      expect(result.importable.length, 2);
+      // The comma-bearing address must survive as one field.
+      expect(
+        result.importable.first.values['address'],
+        'Plot 14, MIDC, Pune',
+      );
+      expect(result.importable.last.values['name'], 'Borewell Co');
+    });
+
+    test('strips a BOM so the first header still matches', () {
+      const csv = '﻿Name *,Alias,GST Number,Address\nAcme,,,\n';
+      final result = PartyImportService.parseFile(
+        fileName: 'clients.csv',
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+        kind: PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.headerProblems, isEmpty);
+      expect(result.importable.single.name, 'Acme');
+    });
+
+    test('a .numbers file explains how to convert instead of failing', () {
+      final result = PartyImportService.parseFile(
+        fileName: 'clients.numbers',
+        bytes: Uint8List.fromList(const [0, 1, 2, 3]),
+        kind: PartyKind.client,
+        existingNames: const [],
+      );
+      expect(result.headerProblems.first, contains('cannot be read directly'));
+      expect(result.headerProblems.join(' '), contains('Export To'));
+    });
+
+    test('xlsx and csv agree on validation and duplicates', () {
+      const csv = 'Name *,Alias,GST Number,Address\n'
+          'Existing Client,,,\n'
+          'Bad GST Co,,123,\n';
+      final result = PartyImportService.parseFile(
+        fileName: 'clients.csv',
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+        kind: PartyKind.client,
+        existingNames: const ['existing client'],
+      );
+      expect(result.rows[0].isDuplicate, isTrue);
+      expect(result.rows[1].errors.single, contains('15 characters'));
+      expect(result.importable, isEmpty);
     });
 
     test('a file that is not a spreadsheet is reported, not thrown', () {
