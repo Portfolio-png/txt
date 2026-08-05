@@ -1741,6 +1741,7 @@ class LocalInventoryRepository implements InventoryRepository {
           GroupPropertyState.active => 'active',
           GroupPropertyState.unlinked => 'unlinked',
           GroupPropertyState.overridden => 'overridden',
+          GroupPropertyState.retired => 'retired',
         },
         'override_locked': property.overrideLocked ? 1 : 0,
         'has_type_conflict': property.hasTypeConflict ? 1 : 0,
@@ -1817,6 +1818,7 @@ class LocalInventoryRepository implements InventoryRepository {
               state: switch (stateWire) {
                 'unlinked' => GroupPropertyState.unlinked,
                 'overridden' => GroupPropertyState.overridden,
+                'retired' => GroupPropertyState.retired,
                 _ => GroupPropertyState.active,
               },
               sources: sourceIds

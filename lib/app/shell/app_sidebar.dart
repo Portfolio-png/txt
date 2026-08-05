@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
@@ -13,6 +15,7 @@ import 'package:core_erp/features/delivery_challans/presentation/providers/deliv
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/presentation/widgets/item_form_sections_dialog.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
@@ -58,7 +61,6 @@ class _AppSidebarState extends State<AppSidebar> {
       'Production',
       Icons.precision_manufacturing_outlined,
     ),
-    _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
     _SidebarItemData('jobs', 'Jobs', Icons.engineering_outlined),
     _SidebarItemData(
       'action_center',
@@ -625,9 +627,120 @@ class _SettingsPreferencesDialog extends StatefulWidget {
       _SettingsPreferencesDialogState();
 }
 
+/// Panes listed in the settings sidebar, in display order.
+enum _SettingsPane { itemCreation, modules, workspaceData }
+
+class _SettingsNavItem {
+  const _SettingsNavItem({
+    required this.pane,
+    required this.label,
+    required this.icon,
+    required this.tint,
+    this.keywords = const <String>[],
+  });
+
+  final _SettingsPane pane;
+  final String label;
+  final IconData icon;
+  final Color tint;
+
+  /// Extra terms the sidebar search matches on, so "stock" finds Modules and
+  /// "reset" finds Workspace Data even though neither word is in the label.
+  final List<String> keywords;
+
+  bool matches(String query) {
+    if (query.isEmpty) {
+      return true;
+    }
+    return label.toLowerCase().contains(query) ||
+        keywords.any((keyword) => keyword.contains(query));
+  }
+}
+
 class _SettingsPreferencesDialogState
     extends State<_SettingsPreferencesDialog> {
   bool _isResetting = false;
+  _SettingsPane _selectedPane = _SettingsPane.itemCreation;
+  final TextEditingController _searchController = TextEditingController();
+
+  /// Grouped exactly like macOS System Settings: separated blocks of rows
+  /// rather than one long list.
+  static const List<List<_SettingsNavItem>> _navGroups =
+      <List<_SettingsNavItem>>[
+        <_SettingsNavItem>[
+          _SettingsNavItem(
+            pane: _SettingsPane.itemCreation,
+            label: 'Item Creation',
+            icon: Icons.inventory_2_outlined,
+            tint: Color(0xFF3B82F6),
+            keywords: <String>[
+              'item',
+              'sections',
+              'form',
+              'image',
+              'cad',
+              'files',
+              'variation',
+              'machine',
+              'die',
+              'pipeline',
+            ],
+          ),
+        ],
+        <_SettingsNavItem>[
+          _SettingsNavItem(
+            pane: _SettingsPane.modules,
+            label: 'Modules',
+            icon: Icons.tune_rounded,
+            tint: Color(0xFF8B5CF6),
+            keywords: <String>[
+              'stock',
+              'trading',
+              'manufacturing',
+              'service',
+              'job work',
+              'preferences',
+            ],
+          ),
+        ],
+        <_SettingsNavItem>[
+          _SettingsNavItem(
+            pane: _SettingsPane.workspaceData,
+            label: 'Workspace Data',
+            icon: Icons.storage_rounded,
+            tint: Color(0xFFEF4444),
+            keywords: <String>[
+              'seed',
+              'demo',
+              'clear',
+              'reset',
+              'factory',
+              'scenario',
+            ],
+          ),
+        ],
+      ];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<List<_SettingsNavItem>> get _visibleNavGroups {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return _navGroups;
+    }
+    return _navGroups
+        .map(
+          (group) =>
+              group.where((item) => item.matches(query)).toList(growable: false),
+        )
+        .where((group) => group.isNotEmpty)
+        .toList(growable: false);
+  }
+
 
   Future<void> _handleClear() async {
     setState(() {
@@ -754,263 +867,634 @@ class _SettingsPreferencesDialogState
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final dialogWidth = math.min(920.0, math.max(360.0, screenSize.width - 64));
+    final dialogHeight = math.min(624.0, math.max(420.0, screenSize.height - 96));
+    final isNarrow = dialogWidth < 640;
+
     return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Settings & Preferences',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: SoftErpTheme.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
+      backgroundColor: SoftErpTheme.cardSurface,
+      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: SizedBox(
+        width: dialogWidth,
+        height: dialogHeight,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: isNarrow ? 208 : 244, child: _buildSidebar()),
+            const VerticalDivider(width: 1, color: SoftErpTheme.border),
+            Expanded(child: _buildDetailPane()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebar() {
+    final groups = _visibleNavGroups;
+    return Container(
+      color: SoftErpTheme.sectionSurface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(
+                fontSize: 13,
+                color: SoftErpTheme.textPrimary,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search',
+                hintStyle: const TextStyle(
+                  fontSize: 13,
+                  color: SoftErpTheme.textSecondary,
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and audit data stay intact.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: SoftErpTheme.textSecondary,
-                    height: 1.45,
-                  ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 17,
+                  color: SoftErpTheme.textSecondary,
                 ),
-                const SizedBox(height: 20),
-                Consumer<PreferencesProvider>(
-                  builder: (context, preferences, _) {
-                    return Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: SoftErpTheme.cardSurfaceAlt,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: SoftErpTheme.border),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            value: preferences.maintainStocks,
-                            onChanged: preferences.toggleMaintainStocks,
-                            title: const Text(
-                              'Maintain Stocks',
-                              style: TextStyle(
-                                color: SoftErpTheme.textPrimary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              'Turn off for typewriter challans that print documents without touching inventory.',
-                              style: TextStyle(
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 24),
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            value: preferences.enableTrading,
-                            onChanged: preferences.toggleTrading,
-                            title: const Text(
-                              'Trading Mode',
-                              style: TextStyle(
-                                color: SoftErpTheme.textPrimary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
-                              style: TextStyle(
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 24),
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            value: preferences.enableManufacturing,
-                            onChanged: preferences.toggleManufacturing,
-                            title: const Text(
-                              'Manufacturing Mode',
-                              style: TextStyle(
-                                color: SoftErpTheme.textPrimary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              'Enable linkage to production runs, tracking raw material vs. finished goods.',
-                              style: TextStyle(
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 24),
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            value: preferences.enableServiceMode,
-                            onChanged: preferences.toggleServiceMode,
-                            title: const Text(
-                              'Service (Job Work) Mode',
-                              style: TextStyle(
-                                color: SoftErpTheme.textPrimary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
-                              style: TextStyle(
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 34,
+                  minHeight: 34,
                 ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7F5),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFF4D4CB)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Workspace Data Controls',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: SoftErpTheme.textPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Clear Data leaves only the minimum app baseline. Reset + Reseed Demo clears operational data and rebuilds the seeded demo workspace.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                filled: true,
+                fillColor: SoftErpTheme.cardSurface,
+                contentPadding: const EdgeInsets.symmetric(vertical: 9),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: SoftErpTheme.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: SoftErpTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: SoftErpTheme.accent),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: groups.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'No settings match your search.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
                           color: SoftErpTheme.textSecondary,
-                          height: 1.45,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        alignment: WrapAlignment.end,
-                        runAlignment: WrapAlignment.end,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 10,
-                        runSpacing: 10,
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(10, 2, 10, 16),
+                    itemCount: groups.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 14),
+                    itemBuilder: (context, groupIndex) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          OutlinedButton(
-                            onPressed: _isResetting
-                                ? null
-                                : () => _handleResetAndReseed('default'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: SoftErpTheme.accent,
-                              side: const BorderSide(
-                                color: SoftErpTheme.accent,
-                              ),
-                              minimumSize: const Size(168, 44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
+                          for (final item in groups[groupIndex])
+                            _SettingsNavRow(
+                              item: item,
+                              isSelected: _selectedPane == item.pane,
+                              onTap: () =>
+                                  setState(() => _selectedPane = item.pane),
                             ),
-                            child: Text(
-                              _isResetting ? 'Working…' : 'Seed Electrical',
-                            ),
-                          ),
-                          OutlinedButton(
-                            onPressed: _isResetting
-                                ? null
-                                : () => _handleResetAndReseed('manufacturing'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: SoftErpTheme.accent,
-                              side: const BorderSide(
-                                color: SoftErpTheme.accent,
-                              ),
-                              minimumSize: const Size(168, 44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: Text(
-                              _isResetting ? 'Working…' : 'Seed Manufacturing',
-                            ),
-                          ),
-                          OutlinedButton(
-                            onPressed: _isResetting
-                                ? null
-                                : () => _handleResetAndReseed('mobiles'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: SoftErpTheme.accent,
-                              side: const BorderSide(
-                                color: SoftErpTheme.accent,
-                              ),
-                              minimumSize: const Size(168, 44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: Text(
-                              _isResetting ? 'Working…' : 'Seed Mobiles',
-                            ),
-                          ),
-                          FilledButton(
-                            onPressed: _isResetting ? null : _handleClear,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: SoftErpTheme.accent,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(120, 44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: Text(
-                              _isResetting ? 'Working…' : 'Clear Data',
-                            ),
-                          ),
-                          FilledButton(
-                            onPressed: _isResetting ? null : _handleFactoryReset,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Colors.red.shade700,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(140, 44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: Text(
-                              _isResetting ? 'Working…' : 'Factory Reset',
-                            ),
-                          ),
                         ],
-                      ),
-                    ],
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailPane() {
+    final activeItem = _navGroups
+        .expand((group) => group)
+        .firstWhere((item) => item.pane == _selectedPane);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  activeItem.label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: SoftErpTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _isResetting
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    child: const Text('Close'),
+              ),
+              IconButton(
+                tooltip: 'Close',
+                onPressed: _isResetting
+                    ? null
+                    : () => Navigator.of(context).pop(),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  size: 19,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SettingsPaneHeader(
+                  icon: activeItem.icon,
+                  tint: activeItem.tint,
+                  title: activeItem.label,
+                  description: _paneDescription(_selectedPane),
+                ),
+                const SizedBox(height: 18),
+                ..._paneContent(_selectedPane),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _paneDescription(_SettingsPane pane) {
+    switch (pane) {
+      case _SettingsPane.itemCreation:
+        return 'Choose which sections the item form shows when you create or '
+            'edit an item.';
+      case _SettingsPane.modules:
+        return 'Turn workspace capabilities on or off to match how this '
+            'factory actually runs.';
+      case _SettingsPane.workspaceData:
+        return 'Rebuild a demo workspace or wipe operational data. Users, '
+            'sessions, permissions and audit data stay intact.';
+    }
+  }
+
+  List<Widget> _paneContent(_SettingsPane pane) {
+    switch (pane) {
+      case _SettingsPane.itemCreation:
+        return _buildItemCreationPane();
+      case _SettingsPane.modules:
+        return _buildModulesPane();
+      case _SettingsPane.workspaceData:
+        return _buildWorkspaceDataPane();
+    }
+  }
+
+  List<Widget> _buildItemCreationPane() {
+    return const <Widget>[
+      Padding(
+        padding: EdgeInsets.only(left: 4, bottom: 8),
+        child: Text(
+          'FORM SECTIONS',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            color: SoftErpTheme.textSecondary,
+          ),
+        ),
+      ),
+      Padding(
+        padding: EdgeInsets.only(left: 4, bottom: 12),
+        child: Text(
+          'Choose what the item form asks for. Applies to every new item you '
+          'create, on every screen, for your account only.',
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: SoftErpTheme.textSecondary,
+          ),
+        ),
+      ),
+      ItemFormSectionsEditor(),
+    ];
+  }
+
+  List<Widget> _buildModulesPane() {
+    return <Widget>[
+      Consumer<PreferencesProvider>(
+        builder: (context, preferences, _) {
+          return _SettingsGroup(
+            children: <Widget>[
+              _SettingsRow(
+                icon: Icons.inventory_outlined,
+                iconTint: const Color(0xFF8B5CF6),
+                title: 'Maintain Stocks',
+                subtitle:
+                    'Turn off for typewriter challans that print documents '
+                    'without touching inventory.',
+                trailing: Switch.adaptive(
+                  value: preferences.maintainStocks,
+                  onChanged: preferences.toggleMaintainStocks,
+                ),
+              ),
+              _SettingsRow(
+                icon: Icons.swap_horiz_rounded,
+                iconTint: const Color(0xFF6366F1),
+                title: 'Trading Mode',
+                subtitle:
+                    'Enable direct buy/sell flow and standard '
+                    'retail/wholesale inventory stock.',
+                trailing: Switch.adaptive(
+                  value: preferences.enableTrading,
+                  onChanged: preferences.toggleTrading,
+                ),
+              ),
+              _SettingsRow(
+                icon: Icons.precision_manufacturing_outlined,
+                iconTint: const Color(0xFFF59E0B),
+                title: 'Manufacturing Mode',
+                subtitle:
+                    'Enable linkage to production runs, tracking raw material '
+                    'vs. finished goods.',
+                trailing: Switch.adaptive(
+                  value: preferences.enableManufacturing,
+                  onChanged: preferences.toggleManufacturing,
+                ),
+              ),
+              _SettingsRow(
+                icon: Icons.handyman_outlined,
+                iconTint: const Color(0xFF10B981),
+                title: 'Service (Job Work) Mode',
+                subtitle:
+                    'Enable customer-owned stock receipt (Inward), '
+                    'printing/processing, and return.',
+                trailing: Switch.adaptive(
+                  value: preferences.enableServiceMode,
+                  onChanged: preferences.toggleServiceMode,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ];
+  }
+
+  List<Widget> _buildWorkspaceDataPane() {
+    Widget seedButton(String scenarioId) {
+      return OutlinedButton(
+        onPressed: _isResetting
+            ? null
+            : () => _handleResetAndReseed(scenarioId),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: SoftErpTheme.accent,
+          side: const BorderSide(color: SoftErpTheme.accent),
+          minimumSize: const Size(88, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(9),
+          ),
+        ),
+        child: Text(_isResetting ? 'Working…' : 'Seed'),
+      );
+    }
+
+    return <Widget>[
+      _SettingsGroup(
+        title: 'Demo Scenarios',
+        children: <Widget>[
+          _SettingsRow(
+            icon: Icons.bolt_outlined,
+            iconTint: const Color(0xFFF59E0B),
+            title: 'Electrical',
+            subtitle: 'Reset and reseed the default electrical workspace.',
+            trailing: seedButton('default'),
+          ),
+          _SettingsRow(
+            icon: Icons.factory_outlined,
+            iconTint: const Color(0xFF6366F1),
+            title: 'Manufacturing',
+            subtitle: 'Reset and reseed a manufacturing workspace.',
+            trailing: seedButton('manufacturing'),
+          ),
+          _SettingsRow(
+            icon: Icons.smartphone_outlined,
+            iconTint: const Color(0xFF0EA5E9),
+            title: 'Mobiles',
+            subtitle: 'Reset and reseed a mobiles trading workspace.',
+            trailing: seedButton('mobiles'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 18),
+      _SettingsGroup(
+        title: 'Danger Zone',
+        children: <Widget>[
+          _SettingsRow(
+            icon: Icons.cleaning_services_outlined,
+            iconTint: const Color(0xFFEF4444),
+            title: 'Clear Data',
+            subtitle: 'Leaves only the minimum app baseline in place.',
+            trailing: FilledButton(
+              onPressed: _isResetting ? null : _handleClear,
+              style: FilledButton.styleFrom(
+                backgroundColor: SoftErpTheme.accent,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(88, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              ),
+              child: Text(_isResetting ? 'Working…' : 'Clear'),
+            ),
+          ),
+          _SettingsRow(
+            icon: Icons.restart_alt_rounded,
+            iconTint: const Color(0xFFB91C1C),
+            title: 'Factory Reset',
+            subtitle:
+                'Wipes everything including user accounts. You will be '
+                'logged out.',
+            trailing: FilledButton(
+              onPressed: _isResetting ? null : _handleFactoryReset,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(88, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              ),
+              child: Text(_isResetting ? 'Working…' : 'Reset'),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+}
+
+/// One row in the settings sidebar: macOS-style colored icon tile + label.
+class _SettingsNavRow extends StatelessWidget {
+  const _SettingsNavRow({
+    required this.item,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final _SettingsNavItem item;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: isSelected ? SoftErpTheme.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+            child: Row(
+              children: [
+                _SettingsIconTile(icon: item.icon, tint: item.tint, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected
+                          ? SoftErpTheme.accent
+                          : SoftErpTheme.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Rounded square icon chip used by both the sidebar and the detail rows.
+class _SettingsIconTile extends StatelessWidget {
+  const _SettingsIconTile({
+    required this.icon,
+    required this.tint,
+    this.size = 28,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: tint,
+        borderRadius: BorderRadius.circular(size * 0.26),
+      ),
+      child: Icon(icon, size: size * 0.62, color: Colors.white),
+    );
+  }
+}
+
+/// The big icon + title + blurb block at the top of a detail pane.
+class _SettingsPaneHeader extends StatelessWidget {
+  const _SettingsPaneHeader({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.description,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        children: [
+          _SettingsIconTile(icon: icon, tint: tint, size: 46),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.45,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A macOS-style grouped card: rows stacked inside one rounded surface with
+/// hairline dividers between them, under an optional uppercase caption.
+class _SettingsGroup extends StatelessWidget {
+  const _SettingsGroup({required this.children, this.title});
+
+  final List<Widget> children;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var index = 0; index < children.length; index++) {
+      if (index > 0) {
+        rows.add(
+          const Divider(
+            height: 1,
+            thickness: 1,
+            indent: 54,
+            color: SoftErpTheme.border,
+          ),
+        );
+      }
+      rows.add(children[index]);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              title!.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+          ),
+        ],
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: SoftErpTheme.border),
+          ),
+          child: Column(children: rows),
+        ),
+      ],
+    );
+  }
+}
+
+/// One row inside a [_SettingsGroup]: icon, title, blurb, and the control that
+/// acts on it (a switch or a button).
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({
+    required this.icon,
+    required this.iconTint,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final Color iconTint;
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          _SettingsIconTile(icon: icon, tint: iconTint),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 12),
+            trailing!,
+          ],
+        ],
       ),
     );
   }

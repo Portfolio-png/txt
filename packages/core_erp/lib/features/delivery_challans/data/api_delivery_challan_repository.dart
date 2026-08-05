@@ -430,6 +430,34 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
+  Future<DeliveryChallan> savePieceBarcodes(
+    int challanId,
+    List<Map<String, dynamic>> barcodes,
+  ) async {
+    if (useMockResponses) {
+      final index = _mockChallans.indexWhere((c) => c.id == challanId);
+      if (index < 0) {
+        throw const ChallanApiException('Challan not found.');
+      }
+      return _mockChallans[index];
+    }
+    final uri = Uri.parse('$baseUrl/api/challans/$challanId/piece-barcodes');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'barcodes': barcodes}),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to save piece barcodes.',
+    );
+    return DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
+  }
+
+  @override
   Future<DeliveryChallan> updateChallanReportGroups(
     int id,
     List<String> reportGroupCodes,

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:barcode_widget/barcode_widget.dart';
 
 import 'package:core_erp/core/services/feature_flags.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -375,7 +378,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
 
     showPurchaseQuantitySheet(
       context,
-      onConfirm: (qty, weight) {
+      onConfirm: (qty, weight, _) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
@@ -585,7 +588,7 @@ class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
   void _pickFav(DeliveryChallanItem favItem) {
     showPurchaseQuantitySheet(
       context,
-      onConfirm: (qty, weight) {
+      onConfirm: (qty, weight, _) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
@@ -791,7 +794,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
 
     showPurchaseQuantitySheet(
       context,
-      onConfirm: (qty, weight) {
+      onConfirm: (qty, weight, _) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
@@ -915,142 +918,472 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
   }
 }
 
-/// Lean quantity + weight sheet. Calls [onConfirm] with the entered values as
-/// strings (matching DeliveryChallanItem's quantityPcs/weight).
+/// Quantity + weight sheet. Calls [onConfirm] with the entered values as strings
+/// (matching DeliveryChallanItem's quantityPcs/weight) plus the per-sheet weight
+/// breakdown. When [sheetMode] is on, weight is required and the total is spread
+/// across one card per sheet — each sheet's weight is editable and Confirm stays
+/// disabled until they sum to the allocated total (total-in = total-out). When
+/// off (raw-material / legacy flows) it behaves as a lean optional-weight sheet
+/// and returns an empty sheet list.
 void showPurchaseQuantitySheet(
   BuildContext context, {
-  required void Function(String qty, String weight) onConfirm,
+  required void Function(String qty, String weight, List<double> sheetWeights) onConfirm,
+  String itemName = '',
+  bool sheetMode = false,
 }) {
-  int qty = 1;
-  final weightController = TextEditingController();
-
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) {
-      return StatefulBuilder(
-        builder: (ctx, setModalState) {
-          return Container(
-            padding: EdgeInsets.only(
-              left: 24,
-              right: 24,
-              top: 20,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 50,
-                    height: 6,
-                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Set Quantity', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Pieces', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                    Row(
-                      children: [
-                        _StepButton(icon: Icons.remove, color: Colors.red, onTap: () => setModalState(() { if (qty > 1) qty--; })),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text('$qty', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-                        ),
-                        _StepButton(icon: Icons.add, color: Colors.green, onTap: () => setModalState(() => qty++)),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: weightController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                        decoration: InputDecoration(
-                          labelText: 'Weight (kg) — optional',
-                          filled: true,
-                          fillColor: const Color(0xFFF8F9FD),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        backgroundColor: SoftErpTheme.accent.withOpacity(0.1),
-                        foregroundColor: SoftErpTheme.accent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 0,
-                      ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('Fetching weight...'), behavior: SnackBarBehavior.floating),
-                        );
-                      },
-                      icon: const Icon(Icons.bluetooth_connected_rounded, size: 20),
-                      label: const Text('Fetch\nWeight', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, height: 1.1, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(54),
-                    backgroundColor: SoftErpTheme.accent,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  ),
-                  onPressed: () {
-                    final weight = double.tryParse(weightController.text.trim()) ?? 0.0;
-                    Navigator.of(ctx).pop();
-                    onConfirm('$qty', weight == 0 ? '0.0' : '$weight');
-                  },
-                  child: const Text('Confirm Details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
+    builder: (ctx) => _PurchaseQuantitySheet(
+      itemName: itemName,
+      sheetMode: sheetMode,
+      onConfirm: onConfirm,
+    ),
   );
 }
 
-class _StepButton extends StatelessWidget {
+class _PurchaseQuantitySheet extends StatefulWidget {
+  const _PurchaseQuantitySheet({
+    required this.itemName,
+    required this.sheetMode,
+    required this.onConfirm,
+  });
+
+  final String itemName;
+  final bool sheetMode;
+  final void Function(String qty, String weight, List<double> sheetWeights) onConfirm;
+
+  @override
+  State<_PurchaseQuantitySheet> createState() => _PurchaseQuantitySheetState();
+}
+
+class _PurchaseQuantitySheetState extends State<_PurchaseQuantitySheet> {
+  int _qty = 1;
+  // Only used in the legacy/raw-material (non-sheet) flow — a single optional
+  // weight. In sheet mode the total is derived from the per-sheet weights below.
+  final TextEditingController _totalWeightController = TextEditingController();
+  final List<TextEditingController> _sheetControllers = <TextEditingController>[];
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.sheetMode) _totalWeightController.addListener(_rebuild);
+    _syncControllers();
+  }
+
+  @override
+  void dispose() {
+    _totalWeightController.removeListener(_rebuild);
+    _totalWeightController.dispose();
+    for (final controller in _sheetControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _rebuild() => setState(() {});
+
+  double _sheetWeightAt(int i) =>
+      double.tryParse(_sheetControllers[i].text.trim()) ?? 0.0;
+
+  // Total weight is the sum of the individually weighed sheets — so the operator
+  // can weigh each sheet on the spot and immediately see a shortfall vs. what
+  // the vendor claims (miscalculation / theft surfaces at the point of delivery).
+  double get _sheetSum {
+    var sum = 0.0;
+    for (final controller in _sheetControllers) {
+      sum += double.tryParse(controller.text.trim()) ?? 0.0;
+    }
+    return sum;
+  }
+
+  double get _total => widget.sheetMode
+      ? _sheetSum
+      : (double.tryParse(_totalWeightController.text.trim()) ?? 0.0);
+
+  int get _weighedCount {
+    var count = 0;
+    for (final controller in _sheetControllers) {
+      if ((double.tryParse(controller.text.trim()) ?? 0.0) > 0) count++;
+    }
+    return count;
+  }
+
+  // Every sheet must be weighed before the line can be confirmed; legacy flows
+  // keep weight optional.
+  bool get _allWeighed => _qty > 0 && _weighedCount == _qty;
+
+  bool get _canConfirm => widget.sheetMode ? _allWeighed : true;
+
+  void _syncControllers() {
+    while (_sheetControllers.length < _qty) {
+      _sheetControllers.add(TextEditingController());
+    }
+    while (_sheetControllers.length > _qty) {
+      _sheetControllers.removeLast().dispose();
+    }
+  }
+
+  String _fmt(double value) {
+    final rounded = double.parse(value.toStringAsFixed(3));
+    if (rounded == rounded.roundToDouble()) return rounded.toStringAsFixed(0);
+    return rounded.toString();
+  }
+
+  void _changeQty(int next) {
+    // Adding/removing sheets preserves the weights already typed; new sheets
+    // start blank for the operator to weigh.
+    setState(() {
+      _qty = next < 1 ? 1 : next;
+      _syncControllers();
+    });
+  }
+
+  void _confirm() {
+    if (!_canConfirm) return;
+    final qtyStr = '$_qty';
+    if (widget.sheetMode) {
+      final sheets = List<double>.generate(_qty, _sheetWeightAt);
+      Navigator.of(context).pop();
+      widget.onConfirm(qtyStr, _fmt(_sheetSum), sheets);
+    } else {
+      final weight = _total;
+      Navigator.of(context).pop();
+      widget.onConfirm(qtyStr, weight == 0 ? '0.0' : _fmt(weight), const <double>[]);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allWeighed = _allWeighed;
+    final total = _total;
+    final weighed = _weighedCount;
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 50,
+              height: 6,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text('Set Quantity', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
+          const SizedBox(height: 20),
+          // Sheets pile up here at the top, scrolling within their own region —
+          // so adding sheets never pushes the +/- stepper or Confirm around.
+          if (widget.sheetMode) ...[
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _qty,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, i) => _SheetWeightCard(
+                  itemName: widget.itemName,
+                  index: i + 1,
+                  controller: _sheetControllers[i],
+                  onChanged: () => setState(() {}),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Live total = sum of the sheets weighed so far. Turns green once
+            // every sheet has a weight; until then it shows how many are left.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: allWeighed ? Colors.green.shade50 : Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: allWeighed ? Colors.green.shade200 : Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    allWeighed ? Icons.check_circle_rounded : Icons.scale_rounded,
+                    size: 20,
+                    color: allWeighed ? Colors.green.shade700 : Colors.orange.shade800,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total weight',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+                        ),
+                        Text(
+                          '${_fmt(total)} kg',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: allWeighed ? Colors.green.shade900 : Colors.orange.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    allWeighed ? '$_qty sheets' : 'weighed $weighed of $_qty',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: allWeighed ? Colors.green.shade800 : Colors.orange.shade900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(widget.sheetMode ? 'Sheets' : 'Pieces', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              Row(
+                children: [
+                  _StepButton(icon: Icons.remove, color: Colors.red, onTap: () => _changeQty(_qty - 1)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text('$_qty', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                  ),
+                  _StepButton(icon: Icons.add, color: Colors.green, onTap: () => _changeQty(_qty + 1)),
+                ],
+              ),
+            ],
+          ),
+          if (!widget.sheetMode) ...[
+            const SizedBox(height: 20),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _totalWeightController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    decoration: InputDecoration(
+                      labelText: 'Weight (kg) — optional',
+                      filled: true,
+                      fillColor: const Color(0xFFF8F9FD),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    backgroundColor: SoftErpTheme.accent.withOpacity(0.1),
+                    foregroundColor: SoftErpTheme.accent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Fetching weight...'), behavior: SnackBarBehavior.floating),
+                    );
+                  },
+                  icon: const Icon(Icons.bluetooth_connected_rounded, size: 20),
+                  label: const Text('Fetch\nWeight', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, height: 1.1, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 20),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              backgroundColor: SoftErpTheme.accent,
+              disabledBackgroundColor: Colors.grey.shade300,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            ),
+            onPressed: _canConfirm ? _confirm : null,
+            child: const Text('Confirm Details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One sheet's card in the quantity overlay: item short code (= item name) and a
+/// barcode glyph on top, `Sheet N` and an editable weight field below. The real
+/// scannable barcode is minted on the Done step (it needs the challan number);
+/// this preview is purely visual.
+class _SheetWeightCard extends StatelessWidget {
+  const _SheetWeightCard({
+    required this.itemName,
+    required this.index,
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final String itemName;
+  final int index;
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = itemName.trim().isEmpty ? 'Item' : itemName.trim();
+    final previewData =
+        '${label.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '')}-$index';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FD),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE8ECF5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: SoftErpTheme.textPrimary),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 96,
+                height: 30,
+                child: BarcodeWidget(
+                  barcode: Barcode.code128(),
+                  data: previewData.isEmpty ? 'ITEM-$index' : previewData,
+                  drawText: false,
+                  color: SoftErpTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text('Sheet $index', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 130,
+                child: TextField(
+                  controller: controller,
+                  onChanged: (_) => onChanged(),
+                  textAlign: TextAlign.right,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'weigh',
+                    suffixText: 'kg',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Circular +/- button. A tap steps by one; press-and-hold auto-repeats and
+/// accelerates so large sheet counts are quick to reach.
+class _StepButton extends StatefulWidget {
   const _StepButton({required this.icon, required this.color, required this.onTap});
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
 
   @override
+  State<_StepButton> createState() => _StepButtonState();
+}
+
+class _StepButtonState extends State<_StepButton> {
+  Timer? _holdTimer;
+  int _ticks = 0;
+  bool _suppressTap = false;
+
+  void _startHold() {
+    _ticks = 0;
+    _suppressTap = false;
+    _scheduleNext(const Duration(milliseconds: 320));
+  }
+
+  void _scheduleNext(Duration delay) {
+    _holdTimer?.cancel();
+    _holdTimer = Timer(delay, () {
+      widget.onTap();
+      _ticks++;
+      // Accelerate as the hold continues, flooring the interval at 40 ms.
+      final next = (300 - _ticks * 25).clamp(40, 300);
+      _scheduleNext(Duration(milliseconds: next));
+    });
+  }
+
+  void _stopHold() {
+    if (_holdTimer != null) {
+      _holdTimer!.cancel();
+      _holdTimer = null;
+    }
+    // If the hold produced any repeats, swallow the tap-up that follows so the
+    // count doesn't gain one extra step.
+    _suppressTap = _ticks > 0;
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Material(
-      color: color.withOpacity(0.12),
+      color: widget.color.withOpacity(0.12),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(padding: const EdgeInsets.all(10), child: Icon(icon, color: color, size: 22)),
+        onTapDown: (_) => _startHold(),
+        onTapUp: (_) => _stopHold(),
+        onTapCancel: _stopHold,
+        onTap: () {
+          if (_suppressTap) {
+            _suppressTap = false;
+            return;
+          }
+          widget.onTap();
+        },
+        child: Padding(padding: const EdgeInsets.all(10), child: Icon(widget.icon, color: widget.color, size: 22)),
       ),
     );
   }
@@ -1317,7 +1650,7 @@ class _VendorHistoryBrowseScreenState extends State<VendorHistoryBrowseScreen> {
   void _pickHistoryItem(DeliveryChallanItem historyItem) {
     showPurchaseQuantitySheet(
       context,
-      onConfirm: (qty, weight) {
+      onConfirm: (qty, weight, _) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,

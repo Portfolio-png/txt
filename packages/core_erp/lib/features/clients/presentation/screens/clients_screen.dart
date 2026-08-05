@@ -6,7 +6,9 @@ import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
+import '../../../../core/services/party_import_service.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/party_import_dialog.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -68,20 +70,35 @@ class ClientsScreen extends StatelessWidget {
             title: 'Clients',
             subtitle:
                 'Manage client master data for sales flows, billing details, and downstream transaction forms.',
-            action: AppButton(
-              label: clients.viewType == ClientMasterView.subContractors
-                  ? 'Add Sub-contractor'
-                  : 'Add Client',
-              icon: Icons.add,
-              isLoading: clients
-                  .isSaving, // Or check if SubContractorsProvider is saving if needed
-              onPressed: () {
-                if (clients.viewType == ClientMasterView.subContractors) {
-                  _openSubContractorEditor(context);
-                } else {
-                  _openClientEditor(context);
-                }
-              },
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Sub-contractors have their own shape; the template covers
+                // clients only.
+                if (clients.viewType != ClientMasterView.subContractors) ...[
+                  AppButton(
+                    label: 'Import from Excel',
+                    icon: Icons.table_view_outlined,
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => _openImport(context),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                AppButton(
+                  label: clients.viewType == ClientMasterView.subContractors
+                      ? 'Add Sub-contractor'
+                      : 'Add Client',
+                  icon: Icons.add,
+                  isLoading: clients.isSaving,
+                  onPressed: () {
+                    if (clients.viewType == ClientMasterView.subContractors) {
+                      _openSubContractorEditor(context);
+                    } else {
+                      _openClientEditor(context);
+                    }
+                  },
+                ),
+              ],
             ),
             toolbar: const _ClientsToolbar(),
             messages: [
@@ -103,6 +120,32 @@ class ClientsScreen extends StatelessWidget {
                 : _ClientsTable(clients: clients.filteredClients),
           ),
         );
+      },
+    );
+  }
+
+  /// Bulk-create clients from the Excel template. Rows go through the same
+  /// provider call as the form, so validation and permissions are identical.
+  static Future<void> _openImport(BuildContext context) async {
+    final provider = context.read<ClientsProvider>();
+    await PartyImportDialog.open(
+      context,
+      kind: PartyKind.client,
+      existingNames: provider.clients
+          .map((client) => client.name)
+          .toList(growable: false),
+      onImportRow: (values) async {
+        final created = await provider.createClient(
+          CreateClientInput(
+            name: values['name'] ?? '',
+            alias: values['alias'] ?? '',
+            gstNumber: values['gstNumber'] ?? '',
+            address: values['address'] ?? '',
+          ),
+        );
+        return created == null
+            ? (provider.errorMessage ?? 'Could not be saved.')
+            : null;
       },
     );
   }

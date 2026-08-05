@@ -14,6 +14,7 @@ import 'package:core_erp/features/inventory/presentation/providers/inventory_pro
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/delivery_challans/presentation/widgets/company_profile_dialog.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import '../../features/machines/presentation/providers/machine_provider.dart';
 import '../../features/dies/presentation/providers/die_provider.dart';
@@ -475,6 +476,15 @@ class TopStripProfileCard extends StatelessWidget {
             onSelected: (value) => _onAccountAction(context, value),
             itemBuilder: (menuContext) => const [
               PopupMenuItem<String>(
+                value: 'company_profile',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.storefront_outlined),
+                  title: Text('Company profile'),
+                  subtitle: Text('Challan letterhead'),
+                ),
+              ),
+              PopupMenuItem<String>(
                 value: 'clear_mine',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -557,6 +567,10 @@ class TopStripProfileCard extends StatelessWidget {
   }
 
   Future<void> _onAccountAction(BuildContext context, String value) async {
+    if (value == 'company_profile') {
+      await CompanyProfileDialog.open(context);
+      return;
+    }
     final auth = context.read<AuthProvider>();
     if (value == 'sign_out') {
       await auth.logoutRemote();

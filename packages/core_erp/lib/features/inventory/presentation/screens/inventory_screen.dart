@@ -57,6 +57,7 @@ import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 import '../../domain/variation_stock_record.dart';
 import '../providers/inventory_provider.dart';
+import '../../../items/presentation/utils/quantity_formatter.dart';
 import '../widgets/inventory_set_editor_dialog.dart';
 
 enum _InventoryViewMode { groups, items, sets, jobWork }
@@ -6123,28 +6124,28 @@ class _InventoryDetailSheet extends StatelessWidget {
                           children: [
                             _Badge(
                               label:
-                                  'On hand ${_formatQuantity(material.onHand)}',
+                                  'On hand ${QuantityFormatter.format(material.onHand)}',
                               color: const Color(0xFFE7F8EE),
                               borderColor: const Color(0xFF9CD3AF),
                               textColor: const Color(0xFF106B36),
                             ),
                             _Badge(
                               label:
-                                  'Reserved ${_formatQuantity(material.reserved)}',
+                                  'Reserved ${QuantityFormatter.format(material.reserved)}',
                               color: const Color(0xFFFFF3E6),
                               borderColor: const Color(0xFFE9C69A),
                               textColor: const Color(0xFF8A4D00),
                             ),
                             _Badge(
                               label:
-                                  'ATP ${_formatQuantity(material.availableToPromise)}',
+                                  'ATP ${QuantityFormatter.format(material.availableToPromise)}',
                               color: const Color(0xFFEAF2FF),
                               borderColor: const Color(0xFFB2CAFA),
                               textColor: const Color(0xFF1F4DBA),
                             ),
                             _Badge(
                               label:
-                                  'Incoming ${_formatQuantity(material.incoming)}',
+                                  'Incoming ${QuantityFormatter.format(material.incoming)}',
                               color: const Color(0xFFF4EEFF),
                               borderColor: const Color(0xFFD4C2FF),
                               textColor: const Color(0xFF5D35B4),
@@ -6311,11 +6312,7 @@ class _InventoryDetailSheet extends StatelessWidget {
   }
 
   String _formatQuantity(double value) {
-    final rounded = value.roundToDouble();
-    if ((value - rounded).abs() < 0.0001) {
-      return rounded.toStringAsFixed(0);
-    }
-    return value.toStringAsFixed(2);
+    return QuantityFormatter.format(value);
   }
 }
 
@@ -6921,11 +6918,7 @@ String _movementProvenanceLabel(InventoryMovement movement) {
 }
 
 String _formatQty(double value) {
-  final rounded = value.roundToDouble();
-  if ((value - rounded).abs() < 0.0001) {
-    return rounded.toStringAsFixed(0);
-  }
-  return value.toStringAsFixed(2);
+  return QuantityFormatter.format(value);
 }
 
 String _alertLabel(InventoryAlertSeverity severity) {
@@ -8447,7 +8440,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         .itemGroups
         .where((g) => !g.isArchived)
         .toList(growable: false);
-    final units = context.watch<UnitsProvider>().activeUnits;
+    final units = context.watch<UnitsProvider>().includedUnitsFor(null, 'inventory');
     final items = context
         .watch<ItemsProvider>()
         .items
@@ -9570,7 +9563,7 @@ class _InventoryCreateGroupEditorState
             .toSet()
             .toList(growable: false)
           ..sort();
-    final units = context.watch<UnitsProvider>().activeUnits;
+    final units = context.watch<UnitsProvider>().includedUnitsFor(null, 'inventory');
     final inheritedProperties = _derivedInheritedProperties(items);
     final selectedCount = _selectedItemIds.length;
     final activeInheritedProperties = _inheritPropertiesFromItems
@@ -10984,12 +10977,19 @@ class _InventoryCreateGroupEditorState
       final unitGovernanceByUnitId = <int, _UnitGovernanceDraft>{};
 
       for (final draft in configuration.propertyDrafts) {
+        // Retired fields are retained for the values items still hold, not
+        // offered for editing — they must not reappear as active here, and
+        // leaving them out of the payload keeps them retired on save.
+        if (draft.state == governance.GroupPropertyState.retired) {
+          continue;
+        }
         final state = switch (draft.state) {
           governance.GroupPropertyState.active => _EditorPropertyState.active,
           governance.GroupPropertyState.unlinked =>
             _EditorPropertyState.unlinked,
           governance.GroupPropertyState.overridden =>
             _EditorPropertyState.overridden,
+          governance.GroupPropertyState.retired => _EditorPropertyState.active,
         };
         final sourceItemIds =
             draft.sources
@@ -12906,7 +12906,7 @@ class _UnitPickerSheetState extends State<_UnitPickerSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<UnitsProvider>();
     final query = _normalizeUnitQuery(_searchController.text);
-    final units = provider.activeUnits
+    final units = provider.includedUnitsFor(null, 'inventory')
         .where((unit) {
           if (query.isEmpty) {
             return true;
@@ -12917,7 +12917,7 @@ class _UnitPickerSheetState extends State<_UnitPickerSheet> {
         .toList(growable: false);
     final canCreate =
         query.isNotEmpty &&
-        !provider.activeUnits.any(
+        !provider.includedUnitsFor(null, 'inventory').any(
           (unit) =>
               _normalizeUnitQuery(unit.name) == query ||
               _normalizeUnitQuery(unit.symbol) == query,

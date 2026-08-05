@@ -13,6 +13,12 @@ abstract class ItemRepository {
 
   Future<void> deleteItem(int id);
   Future<ItemDefinition> reassignItemGroup(int id, int groupId);
+  /// Mints a fresh, short-lived download link for the item's CAD file. The item
+  /// stores a permanent object key, so the link is signed per request.
+  Future<Uri> createCadFileReadUrl(int itemId);
+
+  /// Same as [createCadFileReadUrl], for one of the item's extra named files.
+  Future<Uri> createAttachmentReadUrl(int itemId, int attachmentId);
   Future<List<ItemAsset>> getItemAssets(int itemId);
   Future<ItemAssetUploadIntent> createAssetUploadIntent(
     ItemAssetUploadIntentInput input,

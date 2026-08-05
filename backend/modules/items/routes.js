@@ -35,6 +35,8 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     getItemRowById,
     getGroupRowById,
     getEffectiveSchema,
+    getItemVariationTree,
+    normalizePropertyKey,
     trackCreate,
     trackUpdate,
     trackDelete,
@@ -505,6 +507,79 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Scarcity → abundance.
+  //
+  // Lists the fields the group now asks for that existing items have no value
+  // for, plus the items concerned, so the UI can ask the user to fill them in.
+  // Nothing is back-filled automatically: until someone supplies a value the
+  // field simply reads as nil on those items.
+  app.get('/api/groups/:id/schema-impact', requirePermission('config.read'), async (req, res) => {
+    try {
+      const groupId = Number(req.params.id);
+      const group = await getGroupRowById(groupId);
+      if (!group) {
+        const error = new Error('Group not found.');
+        error.statusCode = 404;
+        throw error;
+      }
+      const schema = await getEffectiveSchema(groupId);
+      const items = await all(
+        'SELECT id, name, display_name FROM items WHERE group_id = ? AND is_archived = 0 ORDER BY LOWER(COALESCE(NULLIF(display_name, \'\'), name)) ASC',
+        [groupId],
+      );
+
+      const missingByProperty = new Map();
+      for (const item of items) {
+        const tree = await getItemVariationTree(item.id);
+        const presentKeys = new Set(
+          (Array.isArray(tree) ? tree : [])
+            .filter((node) => node.kind === 'property')
+            .map((node) => normalizePropertyKey(node.name))
+            .filter(Boolean),
+        );
+        for (const draft of schema.propertyDrafts || []) {
+          if (presentKeys.has(draft.propertyKey)) {
+            continue;
+          }
+          if (!missingByProperty.has(draft.propertyKey)) {
+            missingByProperty.set(draft.propertyKey, {
+              propertyKey: draft.propertyKey,
+              displayName: draft.name || draft.propertyKey,
+              mandatory: Boolean(draft.mandatory),
+              items: [],
+            });
+          }
+          missingByProperty.get(draft.propertyKey).items.push({
+            id: item.id,
+            name: item.display_name || item.name || `Item #${item.id}`,
+          });
+        }
+      }
+
+      const missingProperties = [...missingByProperty.values()];
+      res.json({
+        success: true,
+        groupId,
+        itemCount: items.length,
+        missingProperties,
+        retiredProperties: (schema.retiredPropertyDrafts || []).map((draft) => ({
+          propertyKey: draft.propertyKey,
+          displayName: draft.name || draft.propertyKey,
+        })),
+        error: null,
+      });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        groupId: null,
+        itemCount: 0,
+        missingProperties: [],
+        retiredProperties: [],
+        error: error.message,
+      });
     }
   });
 

@@ -116,6 +116,13 @@ class ItemDto {
     required this.propertySchema,
     this.baseItemId,
     this.photoUrl = '',
+    this.cadFileKey = '',
+    this.cadFileName = '',
+    this.attachments = const <ItemAttachmentDefinition>[],
+    this.developedForClientId,
+    this.developedForClientName = '',
+    this.machines = const <ItemMachineLink>[],
+    this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
     this.availableForPurchase = false,
   });
@@ -140,6 +147,13 @@ class ItemDto {
   final List<ItemPropertySchemaEntryDto> propertySchema;
   final int? baseItemId;
   final String photoUrl;
+  final String cadFileKey;
+  final String cadFileName;
+  final List<ItemAttachmentDefinition> attachments;
+  final List<ItemMachineLink> machines;
+  final List<ItemDieLink> dies;
+  final int? developedForClientId;
+  final String developedForClientName;
   final List<int> combinationGroupIds;
   final bool availableForPurchase;
 
@@ -187,6 +201,40 @@ class ItemDto {
           .toList(growable: false),
       baseItemId: json['baseItemId'] as int?,
       photoUrl: json['photoUrl'] as String? ?? '',
+      cadFileKey: json['cadFileKey'] as String? ?? '',
+      cadFileName: json['cadFileName'] as String? ?? '',
+      attachments: (json['attachments'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (entry) => ItemAttachmentDefinition(
+              id: entry['id'] as int?,
+              label: entry['label'] as String? ?? '',
+              objectKey: entry['objectKey'] as String? ?? '',
+              fileName: entry['fileName'] as String? ?? '',
+            ),
+          )
+          .toList(growable: false),
+      machines: (json['machines'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (entry) => ItemMachineLink(
+              id: entry['id']?.toString() ?? '',
+              name: entry['name'] as String? ?? '',
+              assetId: entry['assetId'] as String? ?? '',
+            ),
+          )
+          .toList(growable: false),
+      dies: (json['dies'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (entry) => ItemDieLink(
+              id: entry['id']?.toString() ?? '',
+              toolCode: entry['toolCode'] as String? ?? '',
+            ),
+          )
+          .toList(growable: false),
+      developedForClientId: json['developedForClientId'] as int?,
+      developedForClientName: json['developedForClientName'] as String? ?? '',
       combinationGroupIds:
           (json['combinationGroupIds'] as List<dynamic>? ?? const [])
               .map((e) => e as int)
@@ -223,6 +271,13 @@ class ItemDto {
           .toList(growable: false),
       baseItemId: baseItemId,
       photoUrl: photoUrl,
+      cadFileKey: cadFileKey,
+      cadFileName: cadFileName,
+      attachments: attachments,
+      machines: machines,
+      dies: dies,
+      developedForClientId: developedForClientId,
+      developedForClientName: developedForClientName,
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
     );
@@ -430,6 +485,12 @@ class CreateItemRequest {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.cadFileKey = '',
+    this.cadFileName = '',
+    this.attachments = const [],
+    this.machineIds = const [],
+    this.dieIds = const [],
+    this.developedForClientId,
     this.availableForPurchase = false,
   });
 
@@ -444,6 +505,12 @@ class CreateItemRequest {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final String cadFileKey;
+  final String cadFileName;
+  final List<ItemAttachmentInput> attachments;
+  final List<String> machineIds;
+  final List<String> dieIds;
+  final int? developedForClientId;
   final bool availableForPurchase;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
@@ -463,6 +530,12 @@ class CreateItemRequest {
       defaultPipelineId: input.defaultPipelineId,
       baseItemId: input.baseItemId,
       photoUrl: input.photoUrl,
+      cadFileKey: input.cadFileKey,
+      cadFileName: input.cadFileName,
+      attachments: input.attachments,
+      machineIds: input.machineIds,
+      dieIds: input.dieIds,
+      developedForClientId: input.developedForClientId,
       availableForPurchase: input.availableForPurchase,
     );
   }
@@ -484,6 +557,20 @@ class CreateItemRequest {
       if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
       if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
+      'cadFileKey': cadFileKey,
+      'cadFileName': cadFileName,
+      'attachments': attachments
+          .map(
+            (entry) => <String, dynamic>{
+              'label': entry.label,
+              'objectKey': entry.objectKey,
+              'fileName': entry.fileName,
+            },
+          )
+          .toList(growable: false),
+      'machineIds': machineIds,
+      'dieIds': dieIds,
+      'developedForClientId': developedForClientId,
       'availableForPurchase': availableForPurchase,
     };
   }
@@ -502,6 +589,12 @@ class UpdateItemRequest {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.cadFileKey = '',
+    this.cadFileName = '',
+    this.attachments = const [],
+    this.machineIds = const [],
+    this.dieIds = const [],
+    this.developedForClientId,
     this.availableForPurchase = false,
   });
 
@@ -516,6 +609,12 @@ class UpdateItemRequest {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final String cadFileKey;
+  final String cadFileName;
+  final List<ItemAttachmentInput> attachments;
+  final List<String> machineIds;
+  final List<String> dieIds;
+  final int? developedForClientId;
   final bool availableForPurchase;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
@@ -535,6 +634,12 @@ class UpdateItemRequest {
       defaultPipelineId: input.defaultPipelineId,
       baseItemId: input.baseItemId,
       photoUrl: input.photoUrl,
+      cadFileKey: input.cadFileKey,
+      cadFileName: input.cadFileName,
+      attachments: input.attachments,
+      machineIds: input.machineIds,
+      dieIds: input.dieIds,
+      developedForClientId: input.developedForClientId,
       availableForPurchase: input.availableForPurchase,
     );
   }
@@ -556,6 +661,20 @@ class UpdateItemRequest {
       if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
       if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
+      'cadFileKey': cadFileKey,
+      'cadFileName': cadFileName,
+      'attachments': attachments
+          .map(
+            (entry) => <String, dynamic>{
+              'label': entry.label,
+              'objectKey': entry.objectKey,
+              'fileName': entry.fileName,
+            },
+          )
+          .toList(growable: false),
+      'machineIds': machineIds,
+      'dieIds': dieIds,
+      'developedForClientId': developedForClientId,
       'availableForPurchase': availableForPurchase,
     };
   }

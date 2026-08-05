@@ -393,7 +393,7 @@ class _UseRawMaterialWizardScreenState extends State<UseRawMaterialWizardScreen>
                       trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
                       onTap: () => showPurchaseQuantitySheet(
                         context,
-                        onConfirm: (qtyStr, weightStr) => _addLine(r, qtyStr, weightStr),
+                        onConfirm: (qtyStr, weightStr, _) => _addLine(r, qtyStr, weightStr),
                       ),
                     );
                   },

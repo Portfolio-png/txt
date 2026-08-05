@@ -7,4 +7,5 @@ abstract class UnitRepository {
   Future<UnitDefinition> createUnit(CreateUnitInput input);
   Future<UnitDefinition> updateUnit(UpdateUnitInput input);
   Future<void> deleteUnit(int id);
+  Future<List<ConversionPoint>> getGaugePoints();
 }

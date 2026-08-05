@@ -76,8 +76,8 @@ class GroupsScreen extends StatelessWidget {
           child: SoftMasterDataPage(
             title: mode == 'machines' ? 'Machine Groups' : 'Groups',
             subtitle: mode == 'machines'
-                ? 'Create hierarchical groups for machine classification.'
-                : 'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
+                ? 'Create nestable groups for machine classification.'
+                : 'Create item and component groups, each mapped to a reusable unit from Configurator Units.',
             action: AppButton(
               label: 'Add Group',
               icon: Icons.add,

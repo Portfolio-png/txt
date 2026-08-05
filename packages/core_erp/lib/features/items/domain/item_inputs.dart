@@ -10,6 +10,18 @@ class ItemUnitConversionInput {
   final double factorToPrimary;
 }
 
+class ItemAttachmentInput {
+  const ItemAttachmentInput({
+    required this.label,
+    required this.objectKey,
+    required this.fileName,
+  });
+
+  final String label;
+  final String objectKey;
+  final String fileName;
+}
+
 class ItemVariationNodeInput {
   const ItemVariationNodeInput({
     this.id,
@@ -47,6 +59,12 @@ class CreateItemInput {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.cadFileKey = '',
+    this.cadFileName = '',
+    this.attachments = const [],
+    this.machineIds = const [],
+    this.dieIds = const [],
+    this.developedForClientId,
     this.availableForPurchase = false,
   });
 
@@ -61,6 +79,12 @@ class CreateItemInput {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final String cadFileKey;
+  final String cadFileName;
+  final List<ItemAttachmentInput> attachments;
+  final List<String> machineIds;
+  final List<String> dieIds;
+  final int? developedForClientId;
   final bool availableForPurchase;
 }
 
@@ -78,6 +102,12 @@ class UpdateItemInput {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.cadFileKey = '',
+    this.cadFileName = '',
+    this.attachments = const [],
+    this.machineIds = const [],
+    this.dieIds = const [],
+    this.developedForClientId,
     this.availableForPurchase = false,
   });
 
@@ -93,5 +123,11 @@ class UpdateItemInput {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final String cadFileKey;
+  final String cadFileName;
+  final List<ItemAttachmentInput> attachments;
+  final List<String> machineIds;
+  final List<String> dieIds;
+  final int? developedForClientId;
   final bool availableForPurchase;
 }

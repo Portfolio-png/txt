@@ -15,6 +15,8 @@ import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../../core/services/feature_flags.dart';
+import '../../../clients/domain/client_definition.dart';
+import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
@@ -26,6 +28,8 @@ import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../data/services/item_link_options_service.dart';
+import '../providers/item_form_sections_provider.dart';
 
 import '../providers/items_provider.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
@@ -79,13 +83,20 @@ class ItemsScreen extends StatefulWidget {
 
     return showDialog<ItemDefinition?>(
       context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1380),
-          child: body,
-        ),
-      ),
+      builder: (context) {
+        // Let a wide monitor earn a third column instead of capping at two and
+        // leaving the sections to stack.
+        final available = MediaQuery.of(context).size.width - 64;
+        return Dialog(
+          insetPadding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: available >= 1700 ? 1680 : 1380,
+            ),
+            child: body,
+          ),
+        );
+      },
     );
   }
 
@@ -1058,6 +1069,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late final TextEditingController _aliasController;
   late final TextEditingController _displayNameController;
   late final TextEditingController _photoUrlController;
+  late final TextEditingController _cadFileKeyController;
+  late final TextEditingController _cadFileNameController;
+  final List<_AttachmentDraft> _attachments = [];
+  final Set<String> _selectedMachineIds = <String>{};
+  final Set<String> _selectedDieIds = <String>{};
+  List<ItemLinkOption> _machineOptions = const <ItemLinkOption>[];
+  List<ItemLinkOption> _dieOptions = const <ItemLinkOption>[];
+  bool _isLoadingLinkOptions = false;
   final List<_NodeDraft> _rootNodes = [];
   final ScrollController _variationTreeScrollController = ScrollController();
   int? _selectedGroupId;
@@ -1073,6 +1092,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String? _defaultPipelineId;
   List<Map<String, String>> _availablePipelines = [];
   bool _availableForPurchase = false;
+  int? _developedForClientId;
 
   bool get _isReadOnly => false;
 
@@ -1089,11 +1109,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _photoUrlController = TextEditingController(
       text: widget.item?.photoUrl ?? '',
     );
+    _cadFileKeyController = TextEditingController(
+      text: widget.item?.cadFileKey ?? '',
+    );
+    _cadFileNameController = TextEditingController(
+      text: widget.item?.cadFileName ?? '',
+    );
     _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
     _selectedUnitId = widget.item?.unitId;
     _namingFormat = widget.item?.namingFormat.toList() ?? [];
     _defaultPipelineId = widget.item?.defaultPipelineId;
     _availableForPurchase = widget.item?.availableForPurchase ?? false;
+    _developedForClientId = widget.item?.developedForClientId;
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -1121,6 +1148,31 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       );
     }
     _fetchPipelines();
+    for (final attachment
+        in widget.item?.attachments ??
+            const <ItemAttachmentDefinition>[]) {
+      _attachments.add(
+        _AttachmentDraft(
+          id: attachment.id,
+          label: attachment.label,
+          objectKey: attachment.objectKey,
+          fileName: attachment.fileName,
+          onChanged: _handleChange,
+        ),
+      );
+    }
+    _selectedMachineIds.addAll(
+      (widget.item?.machines ?? const <ItemMachineLink>[]).map((m) => m.id),
+    );
+    _selectedDieIds.addAll(
+      (widget.item?.dies ?? const <ItemDieLink>[]).map((d) => d.id),
+    );
+    // Both touch providers that notify, so they run after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<ItemFormSectionsProvider>().ensureLoaded();
+      _loadLinkOptions();
+    });
     for (final conversion in widget.item?.unitConversions ?? const []) {
       final unit = context.read<UnitsProvider>().findById(conversion.unitId);
       final factorToV = conversion.factorToPrimary <= 0
@@ -1680,6 +1732,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _aliasController.dispose();
     _displayNameController.dispose();
     _photoUrlController.dispose();
+    _cadFileKeyController.dispose();
+    _cadFileNameController.dispose();
+    for (final attachment in _attachments) {
+      attachment.dispose();
+    }
     _variationTreeScrollController.dispose();
     for (final node in _rootNodes) {
       node.dispose();
@@ -1695,6 +1752,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final itemsProvider = context.watch<ItemsProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final unitsProvider = context.watch<UnitsProvider>();
+    // A group can carry its own section layout (component groups author one in
+    // the group editor). When it does it wins over the user's own default, so
+    // every item filed under that group asks for the same things.
+    final groupSectionOverride = groupsProvider
+        .findById(_selectedGroupId)
+        ?.itemFormSections;
+    final hasGroupSectionOverride = groupSectionOverride != null;
+    final sections =
+        groupSectionOverride ??
+        context.watch<ItemFormSectionsProvider>().sections;
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
@@ -2025,6 +2092,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           ],
           const SizedBox(height: 12),
           _WarningText(warning: duplicate.warning),
+          if (sections.developedFor) ...[
+            const SizedBox(height: 12),
+            _DevelopedForField(
+              clientId: _developedForClientId,
+              readOnly: _isReadOnly,
+              onChanged: (clientId) {
+                setState(() {
+                  _developedForClientId = clientId;
+                  _handleChange();
+                });
+              },
+            ),
+          ],
           // Compact, flag-gated: adds no height for clients without the flag.
           if (FeatureFlags.isEnabled(FeatureKeys.catalogPurchaseItems))
             SwitchListTile.adaptive(
@@ -2052,12 +2132,95 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         readOnly: _isReadOnly,
       ),
     );
+    final cadFileSection = _SectionCard(
+      title: 'CAD File',
+      child: _CadFilePickerField(
+        keyController: _cadFileKeyController,
+        nameController: _cadFileNameController,
+        readOnly: _isReadOnly,
+      ),
+    );
+    final additionalFilesSection = _SectionCard(
+      title: 'Additional Files',
+      action: _isReadOnly
+          ? null
+          : AppButton(
+              label: 'Add File',
+              icon: Icons.attach_file,
+              variant: AppButtonVariant.secondary,
+              onPressed: _addAttachment,
+            ),
+      child: _attachments.isEmpty
+          ? const Text(
+              'No extra files. Add datasheets, test reports or anything else '
+              'this item needs — each with its own label.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            )
+          : Column(
+              children: [
+                for (var index = 0; index < _attachments.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 10),
+                  _AttachmentRow(
+                    draft: _attachments[index],
+                    readOnly: _isReadOnly,
+                    onRemove: () {
+                      final removed = _attachments.removeAt(index);
+                      setState(() {});
+                      removed.dispose();
+                      _handleChange();
+                    },
+                  ),
+                ],
+              ],
+            ),
+    );
+    final machinesSection = _SectionCard(
+      title: 'Machines',
+      child: _LinkOptionPicker(
+        options: _machineOptions,
+        selectedIds: _selectedMachineIds,
+        readOnly: _isReadOnly,
+        isLoading: _isLoadingLinkOptions,
+        emptyMessage: 'No machines available to link.',
+        hintText: 'Add a machine',
+        searchHintText: 'Search machines',
+        onChanged: (ids) {
+          setState(() {
+            _selectedMachineIds
+              ..clear()
+              ..addAll(ids);
+          });
+          _handleChange();
+        },
+      ),
+    );
+    final diesSection = _SectionCard(
+      title: 'Dies',
+      child: _LinkOptionPicker(
+        options: _dieOptions,
+        selectedIds: _selectedDieIds,
+        readOnly: _isReadOnly,
+        isLoading: _isLoadingLinkOptions,
+        emptyMessage: 'No dies available to link.',
+        hintText: 'Add a die',
+        searchHintText: 'Search dies',
+        onChanged: (ids) {
+          setState(() {
+            _selectedDieIds
+              ..clear()
+              ..addAll(ids);
+          });
+          _handleChange();
+        },
+      ),
+    );
     final variationTreeSection = _SectionCard(
       title: 'Variation Tree',
       action: _isReadOnly
           ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
+          : Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 AppButton(
                   label: 'Add Top-Level Property',
@@ -2065,7 +2228,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   variant: AppButtonVariant.secondary,
                   onPressed: _addTopLevelProperty,
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   label: 'Variation Creation',
                   icon: Icons.account_tree_outlined,
@@ -2209,6 +2371,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               : 'Edit Item',
                         ),
                       ),
+                      // The section layout is configured in Settings → Item
+                      // Creation (or on the group, for components) — not from
+                      // the form it controls.
                       IconButton(
                         onPressed: () => Navigator.of(context).maybePop(),
                         icon: const Icon(Icons.close),
@@ -2376,52 +2541,74 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                       );
 
-                      if (wideComposer) {
-                        return Row(
+                      // Section visibility is the user's saved item-form
+                      // layout, so the same choice applies everywhere the
+                      // editor opens.
+                      final showPipeline =
+                          sections.defaultPipeline && !isRawMaterialGroup;
+
+                      // Sections are packed by estimated height rather than
+                      // assigned to fixed columns: turning sections on and off
+                      // otherwise leaves one column long and the other empty,
+                      // which is what forces scrolling on a wide screen.
+                      final entries = <_SectionEntry>[
+                        _SectionEntry(
+                          detailsSection,
+                          5.5 + _secondaryUnitConversions.length * 0.6,
+                        ),
+                        if (sections.variationTree)
+                          _SectionEntry(
+                            variationTreeSection,
+                            3.0 + _rootNodes.length * 1.6,
+                          ),
+                        _SectionEntry(namingFormatSection, 3.6),
+                        if (sections.itemImage)
+                          _SectionEntry(photoSection, 2.2),
+                        if (sections.cadFile)
+                          _SectionEntry(cadFileSection, 2.2),
+                        if (sections.additionalFiles)
+                          _SectionEntry(
+                            additionalFilesSection,
+                            1.8 + _attachments.length * 0.7,
+                          ),
+                        if (sections.machines)
+                          _SectionEntry(machinesSection, 2.0),
+                        if (sections.dies) _SectionEntry(diesSection, 2.0),
+                        if (showPipeline)
+                          _SectionEntry(defaultPipelineSection, 2.0),
+                      ];
+
+                      // A third column is only worth it when each one still
+                      // clears ~600px. The variation tree packs a name field
+                      // and eight controls into a row; below that width the
+                      // name becomes unreadable.
+                      final columnCount = constraints.maxWidth >= 1860
+                          ? 3
+                          : (wideComposer ? 2 : 1);
+                      if (columnCount == 1) {
+                        return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 5,
-                              child: Column(
-                                children: [
-                                  detailsSection,
-                                  const SizedBox(height: 16),
-                                  photoSection,
-                                  if (!isRawMaterialGroup) ...[
-                                    const SizedBox(height: 16),
-                                    defaultPipelineSection,
-                                  ],
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 18),
-                            Expanded(
-                              flex: 6,
-                              child: Column(
-                                children: [
-                                  variationTreeSection,
-                                  const SizedBox(height: 16),
-                                  namingFormatSection,
-                                ],
-                              ),
-                            ),
-                          ],
+                          children: _withSectionGaps(
+                            entries
+                                .map((entry) => entry.child)
+                                .toList(growable: false),
+                          ),
                         );
                       }
-                      return Column(
+
+                      final columns = _packSections(entries, columnCount);
+                      return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          detailsSection,
-                          const SizedBox(height: 16),
-                          photoSection,
-                          const SizedBox(height: 16),
-                          variationTreeSection,
-                          const SizedBox(height: 16),
-                          namingFormatSection,
-                          if (!isRawMaterialGroup) ...[
-                            const SizedBox(height: 16),
-                            defaultPipelineSection,
-                          ],
+                          for (var index = 0; index < columns.length; index++)
+                            ...[
+                              if (index > 0) const SizedBox(width: 18),
+                              Expanded(
+                                child: Column(
+                                  children: _withSectionGaps(columns[index]),
+                                ),
+                              ),
+                            ],
                         ],
                       );
                     },
@@ -3026,6 +3213,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               defaultPipelineId: _defaultPipelineId,
               baseItemId: widget.item?.id,
               photoUrl: _photoUrlController.text.trim(),
+              cadFileKey: _cadFileKeyController.text.trim(),
+              cadFileName: _cadFileNameController.text.trim(),
+              attachments: _attachmentInputs,
+              machineIds: _selectedMachineIds.toList(growable: false),
+              dieIds: _selectedDieIds.toList(growable: false),
+              developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             );
             final created = await itemsProvider.createItem(input);
@@ -3297,6 +3490,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               variationTree: _variationTreeInputs,
               defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
+              cadFileKey: _cadFileKeyController.text.trim(),
+              cadFileName: _cadFileNameController.text.trim(),
+              attachments: _attachmentInputs,
+              machineIds: _selectedMachineIds.toList(growable: false),
+              dieIds: _selectedDieIds.toList(growable: false),
+              developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             ),
           )
@@ -3321,6 +3520,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               variationTree: _variationTreeInputs,
               defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
+              cadFileKey: _cadFileKeyController.text.trim(),
+              cadFileName: _cadFileNameController.text.trim(),
+              attachments: _attachmentInputs,
+              machineIds: _selectedMachineIds.toList(growable: false),
+              dieIds: _selectedDieIds.toList(growable: false),
+              developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             ),
           );
@@ -3454,6 +3659,167 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
     return current;
   }
+
+  /// Inserts the standard 16px gap between whichever sections are visible, so
+  /// hiding one never leaves a double gap behind.
+  /// Greedy shortest-column packing.
+  ///
+  /// Each section goes to whichever column is currently shortest, so the
+  /// columns finish at roughly the same height however many sections are
+  /// switched on. Item Details is placed first and so always anchors column 1.
+  List<List<Widget>> _packSections(List<_SectionEntry> entries, int columns) {
+    final buckets = List.generate(columns, (_) => <Widget>[], growable: false);
+    final heights = List<double>.filled(columns, 0);
+    for (final entry in entries) {
+      var target = 0;
+      for (var index = 1; index < columns; index++) {
+        if (heights[index] < heights[target]) {
+          target = index;
+        }
+      }
+      buckets[target].add(entry.child);
+      heights[target] += entry.weight;
+    }
+    // Drop trailing empties so a spare column never renders as dead space.
+    return buckets.where((bucket) => bucket.isNotEmpty).toList(growable: false);
+  }
+
+  List<Widget> _withSectionGaps(List<Widget> sections) {
+    final spaced = <Widget>[];
+    for (var index = 0; index < sections.length; index++) {
+      if (index > 0) {
+        spaced.add(const SizedBox(height: 16));
+      }
+      spaced.add(sections[index]);
+    }
+    return spaced;
+  }
+
+  /// Loads the machine and die pickers' options. Failure is non-fatal — the
+  /// pickers just show an empty list and the rest of the form still works.
+  Future<void> _loadLinkOptions() async {
+    final sections = context.read<ItemFormSectionsProvider>().sections;
+    if (!sections.machines && !sections.dies) {
+      return;
+    }
+    ItemLinkOptionsService? service;
+    try {
+      service = context.read<ItemLinkOptionsService>();
+    } catch (_) {
+      // Host app hasn't provided the service (e.g. a lean embedding); the
+      // machine/die pickers simply stay empty.
+      return;
+    }
+    setState(() => _isLoadingLinkOptions = true);
+    try {
+      final machines = sections.machines
+          ? await service.fetchMachines()
+          : const <ItemLinkOption>[];
+      final dies = sections.dies
+          ? await service.fetchDies()
+          : const <ItemLinkOption>[];
+      if (!mounted) return;
+      setState(() {
+        _machineOptions = machines;
+        _dieOptions = dies;
+      });
+    } catch (_) {
+      // Swallow: an unreachable machines/dies list must not block item saving.
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingLinkOptions = false);
+      }
+    }
+  }
+
+  Future<void> _addAttachment() async {
+    final file = await openFile();
+    if (file == null || !mounted) {
+      return;
+    }
+
+    final sizeBytes = await file.length();
+    if (sizeBytes > _kMaxAttachmentBytes) {
+      showAppSnack(
+        const SnackBar(
+          content: Text('Files are limited to 50 MB.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final draft = _AttachmentDraft(
+      label: '',
+      objectKey: '',
+      fileName: file.name,
+      onChanged: _handleChange,
+    );
+    setState(() {
+      draft.isUploading = true;
+      _attachments.add(draft);
+    });
+
+    final service = _resolveAssetService(context);
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name) ??
+          'application/octet-stream';
+
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+      final response = await http.put(
+        intent.uploadUrl,
+        headers: intent.headers,
+        body: bytes,
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          _describeS3UploadFailure(response.statusCode, response.body),
+        );
+      }
+      if (intent.objectKey.isEmpty) {
+        throw Exception('Upload did not return an object key.');
+      }
+      if (!mounted) return;
+      setState(() {
+        draft.objectKey = intent.objectKey;
+        draft.isUploading = false;
+      });
+      _handleChange();
+    } catch (error) {
+      if (mounted) {
+        // Drop the half-created row rather than leave an un-uploadable stub
+        // that would be silently skipped on save.
+        setState(() {
+          _attachments.remove(draft);
+        });
+        draft.dispose();
+      }
+      showAppSnack(SnackBar(content: Text('File upload failed: $error')));
+    }
+  }
+
+  List<ItemAttachmentInput> get _attachmentInputs => _attachments
+      .where((draft) => draft.objectKey.trim().isNotEmpty)
+      .map(
+        (draft) => ItemAttachmentInput(
+          label: draft.labelController.text.trim(),
+          objectKey: draft.objectKey.trim(),
+          fileName: draft.fileName,
+        ),
+      )
+      .toList(growable: false);
 
   Future<void> _fetchPipelines() async {
     final provider = context.read<ItemsProvider>();
@@ -3640,7 +4006,14 @@ class _TreeNodeEditor extends StatelessWidget {
                       const SizedBox(width: 8),
                       if (draft.isNameEditing && !readOnly)
                         Expanded(
-                          child: Row(
+                          // The optional Code field yields its space when the
+                          // row is tight, so the name being typed stays legible
+                          // instead of both shrinking to a few characters.
+                          child: LayoutBuilder(
+                            builder: (context, nameConstraints) {
+                            final showCodeField =
+                                nameConstraints.maxWidth >= 260;
+                            return Row(
                             children: [
                               Expanded(
                                 flex: 3,
@@ -3665,6 +4038,7 @@ class _TreeNodeEditor extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              if (showCodeField) ...[
                               const SizedBox(width: 8),
                               Expanded(
                                 flex: 2,
@@ -3686,7 +4060,10 @@ class _TreeNodeEditor extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              ],
                             ],
+                          );
+                            },
                           ),
                         )
                       else
@@ -3955,18 +4332,24 @@ class _SectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          // Wrap, not Row: an Expanded title next to a wide action row gets
+          // squeezed toward zero width in a narrow column and then renders one
+          // letter per line. Wrapping lets the action drop to its own line
+          // instead, and the title keeps its natural width.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 10,
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1F2937),
-                  ),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1F2937),
                 ),
               ),
-              action ?? const SizedBox.shrink(),
+              if (action != null) action!,
             ],
           ),
           const SizedBox(height: 16),
@@ -4233,6 +4616,77 @@ class _UnitConversionRow extends StatelessWidget {
   }
 }
 
+/// The upload service every file picker in this editor uses.
+///
+/// `/api/upload/generic` sits behind the same auth as everything else, so the
+/// intent call has to go out on the app's authenticated client. Building a bare
+/// [GenericAssetService] here fails with "Authentication required"; the host
+/// registers a configured one instead.
+///
+/// The fallback keeps lean embeddings that don't register it working, in mock
+/// mode — the only mode a client with no credentials could succeed in.
+/// A section card plus a rough height estimate, used to balance the columns.
+///
+/// The weight only needs to be right relative to the other sections — it drives
+/// which column a card lands in, never how it is laid out.
+class _SectionEntry {
+  const _SectionEntry(this.child, this.weight);
+
+  final Widget child;
+  final double weight;
+}
+
+/// Turns a failed S3 upload into a message that says what actually went wrong.
+///
+/// S3 answers a rejected presigned PUT with an XML body whose `<Code>` is the
+/// only thing distinguishing the causes — `SignatureDoesNotMatch` (the request
+/// didn't match what was signed, usually Content-Type), `AccessDenied` (the
+/// signing identity lacks s3:PutObject, or a bucket policy blocked it),
+/// `ExpiredToken`, and so on. Reporting the bare status code throws that away.
+String _describeS3UploadFailure(int statusCode, String body) {
+  String? tagValue(String tag) {
+    final match = RegExp('<$tag>(.*?)</$tag>', dotAll: true).firstMatch(body);
+    return match?.group(1)?.trim();
+  }
+
+  final code = tagValue('Code');
+  final message = tagValue('Message');
+  if (code == null && message == null) {
+    return 'upload rejected with status $statusCode.';
+  }
+  return '$statusCode ${code ?? ''}${message == null ? '' : ' — $message'}'
+      .trim();
+}
+
+/// Opens the system file picker, reporting failure instead of throwing past the
+/// caller.
+///
+/// A type group the host platform rejects makes openFile throw before any of
+/// the upload code runs, which presents as a button that does nothing.
+Future<XFile?> _pickFileOrNull(XTypeGroup group, String what) async {
+  try {
+    return await openFile(acceptedTypeGroups: <XTypeGroup>[group]);
+  } catch (error) {
+    showAppSnack(
+      SnackBar(content: Text('Could not open the $what picker: $error')),
+    );
+    return null;
+  }
+}
+
+GenericAssetService _resolveAssetService(BuildContext context) {
+  try {
+    return context.read<GenericAssetService>();
+  } catch (_) {
+    return GenericAssetService(
+      baseUrl: const String.fromEnvironment(
+        'PAPER_API_BASE_URL',
+        defaultValue: 'http://localhost:8080',
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Item Photo Picker
 // ---------------------------------------------------------------------------
@@ -4279,25 +4733,22 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
   }
 
   Future<void> _pickAndUploadImage() async {
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(
-          label: 'Images',
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-          extensions: ['png', 'jpg', 'jpeg', 'webp'],
-        ),
-      ],
+    // Extensions only. Declaring mimeTypes as well makes the macOS picker
+    // reject the type group outright, and openFile then throws before the
+    // try below — which looked like the button doing nothing at all.
+    final file = await _pickFileOrNull(
+      const XTypeGroup(
+        label: 'Images',
+        extensions: ['png', 'jpg', 'jpeg', 'webp'],
+      ),
+      'image',
     );
     if (file == null || !mounted) {
       return;
     }
 
     setState(() => _isUploading = true);
-    final baseUrl = const String.fromEnvironment(
-      'PAPER_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
-    );
-    final service = GenericAssetService(baseUrl: baseUrl);
+    final service = _resolveAssetService(context);
 
     try {
       final bytes = await file.readAsBytes();
@@ -4324,7 +4775,7 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
         );
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw Exception(
-            'Image upload failed with status ${response.statusCode}.',
+            _describeS3UploadFailure(response.statusCode, response.body),
           );
         }
       }
@@ -4435,6 +4886,544 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
                   ],
                 ],
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Developed for" — links the item to the client it was developed for, so it
+/// can be listed under them. Renders as a button until a client is picked, then
+/// as a clearable chip.
+class _DevelopedForField extends StatelessWidget {
+  const _DevelopedForField({
+    required this.clientId,
+    required this.readOnly,
+    required this.onChanged,
+  });
+
+  final int? clientId;
+  final bool readOnly;
+  final ValueChanged<int?> onChanged;
+
+  Future<void> _pick(BuildContext context, List<ClientDefinition> clients) async {
+    final selected = await showSearchableSelectDialog<int>(
+      context: context,
+      title: 'Developed for',
+      searchHintText: 'Search clients',
+      options: clients
+          .map(
+            (client) => SearchableSelectOption<int>(
+              value: client.id,
+              label: client.name,
+              searchText: client.name,
+            ),
+          )
+          .toList(growable: false),
+      selectedValue: clientId,
+    );
+    if (selected != null) {
+      onChanged(selected.value);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clients = context
+        .watch<ClientsProvider>()
+        .clients
+        .where((client) => !client.isArchived)
+        .toList(growable: false);
+    final selected = clients.where((c) => c.id == clientId).firstOrNull;
+
+    return Row(
+      children: [
+        const Text(
+          'Developed for',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF334155),
+          ),
+        ),
+        const SizedBox(width: 12),
+        if (selected != null)
+          Chip(
+            label: Text(selected.name, style: const TextStyle(fontSize: 12.5)),
+            onDeleted: readOnly ? null : () => onChanged(null),
+          )
+        else if (clientId != null)
+          // The client was archived or removed after this item was saved.
+          Chip(
+            label: Text(
+              'Client #$clientId',
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            onDeleted: readOnly ? null : () => onChanged(null),
+          ),
+        if (!readOnly) ...[
+          const SizedBox(width: 8),
+          AppButton(
+            label: clientId == null ? 'Select client' : 'Change',
+            icon: Icons.person_search_outlined,
+            variant: AppButtonVariant.secondary,
+            onPressed: () => _pick(context, clients),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A presigned PUT sends the whole file from memory, so cap the size.
+const int _kMaxAttachmentBytes = 50 * 1024 * 1024;
+
+/// One in-progress extra file: the user's label plus the uploaded object key.
+class _AttachmentDraft {
+  _AttachmentDraft({
+    this.id,
+    required String label,
+    required this.objectKey,
+    required this.fileName,
+    required VoidCallback onChanged,
+  }) : labelController = TextEditingController(text: label) {
+    labelController.addListener(onChanged);
+  }
+
+  final int? id;
+  final TextEditingController labelController;
+  String objectKey;
+  final String fileName;
+  bool isUploading = false;
+
+  void dispose() {
+    labelController.dispose();
+  }
+}
+
+class _AttachmentRow extends StatelessWidget {
+  const _AttachmentRow({
+    required this.draft,
+    required this.readOnly,
+    required this.onRemove,
+  });
+
+  final _AttachmentDraft draft;
+  final bool readOnly;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFDDE1F0)),
+          ),
+          child: draft.isUploading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 19,
+                  color: Color(0xFF64748B),
+                ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: TextFormField(
+            controller: draft.labelController,
+            readOnly: readOnly,
+            decoration: InputDecoration(
+              labelText: 'Label',
+              hintText: 'e.g. Datasheet',
+              helperText: draft.fileName,
+              isDense: true,
+              filled: true,
+              fillColor: const Color(0xFFF9FAFB),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+              ),
+            ),
+          ),
+        ),
+        if (!readOnly) ...[
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Remove file',
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, size: 18),
+            color: const Color(0xFF64748B),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Multi-select for machines and dies: a searchable "add" field plus a chip per
+/// selection.
+class _LinkOptionPicker extends StatelessWidget {
+  const _LinkOptionPicker({
+    required this.options,
+    required this.selectedIds,
+    required this.readOnly,
+    required this.isLoading,
+    required this.emptyMessage,
+    required this.hintText,
+    required this.searchHintText,
+    required this.onChanged,
+  });
+
+  final List<ItemLinkOption> options;
+  final Set<String> selectedIds;
+  final bool readOnly;
+  final bool isLoading;
+  final String emptyMessage;
+  final String hintText;
+  final String searchHintText;
+  final ValueChanged<Set<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final optionsById = {for (final option in options) option.id: option};
+    final addable = options
+        .where((option) => !selectedIds.contains(option.id))
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (selectedIds.isEmpty)
+          Text(
+            isLoading ? 'Loading…' : emptyMessage,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final id in selectedIds)
+                Chip(
+                  label: Text(
+                    // An id with no matching option means the record was
+                    // deleted after this item was saved; show the raw id
+                    // rather than dropping the link silently.
+                    optionsById[id]?.label ?? 'Removed ($id)',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  onDeleted: readOnly
+                      ? null
+                      : () => onChanged({...selectedIds}..remove(id)),
+                ),
+            ],
+          ),
+        if (!readOnly && addable.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SearchableSelectField<String>(
+            options: addable
+                .map(
+                  (option) => SearchableSelectOption<String>(
+                    value: option.id,
+                    label: option.label,
+                    searchText: '${option.label} ${option.subtitle}',
+                  ),
+                )
+                .toList(growable: false),
+            value: null,
+            onChanged: (value) {
+              if (value == null) return;
+              onChanged({...selectedIds}..add(value));
+            },
+            decoration: InputDecoration(hintText: hintText),
+            searchHintText: searchHintText,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CAD File Picker
+// ---------------------------------------------------------------------------
+
+class _CadFilePickerField extends StatefulWidget {
+  const _CadFilePickerField({
+    required this.keyController,
+    required this.nameController,
+    required this.readOnly,
+  });
+
+  /// Permanent S3 object key of the uploaded drawing. Presigned URLs expire,
+  /// so the key — not a link — is what gets saved on the item.
+  final TextEditingController keyController;
+
+  /// Original file name, shown instead of the opaque object key.
+  final TextEditingController nameController;
+  final bool readOnly;
+
+  @override
+  State<_CadFilePickerField> createState() => _CadFilePickerFieldState();
+}
+
+class _CadFilePickerFieldState extends State<_CadFilePickerField> {
+  /// Deliberately broad — shops exchange native part files as often as the
+  /// neutral interchange formats.
+  static const List<String> _cadExtensions = [
+    'dwg',
+    'dxf',
+    'step',
+    'stp',
+    'iges',
+    'igs',
+    'stl',
+    'sat',
+    'sldprt',
+    'sldasm',
+    'ipt',
+    'iam',
+    'catpart',
+    'catproduct',
+    'prt',
+    'asm',
+    '3dm',
+    'obj',
+    'x_t',
+    'x_b',
+    'f3d',
+  ];
+
+  /// A presigned PUT sends the whole file from memory, so cap the size rather
+  /// than let a large assembly stall the editor.
+  static const int _maxSizeBytes = 50 * 1024 * 1024;
+
+  bool _isUploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.keyController.addListener(_rebuild);
+    widget.nameController.addListener(_rebuild);
+  }
+
+  @override
+  void dispose() {
+    widget.keyController.removeListener(_rebuild);
+    widget.nameController.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  String get _extension {
+    final name = widget.nameController.text.trim();
+    if (!name.contains('.')) {
+      return 'CAD';
+    }
+    return name.split('.').last.toUpperCase();
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  }
+
+  Future<void> _pickAndUploadCadFile() async {
+    final file = await _pickFileOrNull(
+      const XTypeGroup(label: 'CAD files', extensions: _cadExtensions),
+      'CAD file',
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    final sizeBytes = await file.length();
+    if (sizeBytes > _maxSizeBytes) {
+      showAppSnack(
+        SnackBar(
+          content: Text(
+            'CAD file is ${_formatSize(sizeBytes)} — the limit is '
+            '${_formatSize(_maxSizeBytes)}.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isUploading = true);
+    final service = _resolveAssetService(context);
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      // CAD formats have no registered MIME type, so octet-stream is the norm.
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name) ??
+          'application/octet-stream';
+
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+
+      final response = await http.put(
+        intent.uploadUrl,
+        headers: intent.headers,
+        body: bytes,
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          _describeS3UploadFailure(response.statusCode, response.body),
+        );
+      }
+
+      if (intent.objectKey.isEmpty) {
+        throw Exception('Upload did not return an object key.');
+      }
+
+      // Store the key, not intent.readUrl — that link expires, the key does not.
+      widget.keyController.text = intent.objectKey;
+      widget.nameController.text = file.name;
+      showAppSnack(
+        SnackBar(content: Text('${file.name} uploaded successfully.')),
+      );
+    } catch (error) {
+      showAppSnack(SnackBar(content: Text('CAD upload failed: $error')));
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = widget.nameController.text.trim();
+    final hasFile = widget.keyController.text.trim().isNotEmpty;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDE1F0)),
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hasFile
+                    ? Icons.description_outlined
+                    : Icons.architecture_outlined,
+                size: 34,
+                color: hasFile
+                    ? const Color(0xFF64748B)
+                    : const Color(0xFFCBD5E1),
+              ),
+              if (hasFile) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _extension,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                hasFile
+                    ? (fileName.isEmpty ? 'CAD file attached' : fileName)
+                    : 'No CAD file attached',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: hasFile
+                      ? const Color(0xFF1F2937)
+                      : const Color(0xFF94A3B8),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                hasFile
+                    ? 'Stays attached to this item until you remove it. '
+                          'Download it from the item view.'
+                    : 'Optional — DWG, DXF, STEP, IGES, STL, SLDPRT and similar',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              if (!widget.readOnly) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    AppButton(
+                      label: hasFile ? 'Replace' : 'Upload CAD File',
+                      icon: Icons.upload_file,
+                      variant: AppButtonVariant.secondary,
+                      isLoading: _isUploading,
+                      onPressed: _pickAndUploadCadFile,
+                    ),
+                    if (hasFile)
+                      AppButton(
+                        label: 'Remove',
+                        icon: Icons.delete_outline,
+                        variant: AppButtonVariant.secondary,
+                        onPressed: () {
+                          widget.keyController.clear();
+                          widget.nameController.clear();
+                        },
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -31,6 +31,8 @@ import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
+import '../../../items/presentation/utils/quantity_formatter.dart';
+
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
@@ -3810,6 +3812,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               value: group.id,
               label: group.isCombination
                   ? '${group.name} (combination)'
+                  : group.isComponent
+                  ? '${group.name} (component)'
                   : group.name,
             ),
           ),
@@ -3912,13 +3916,17 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final line = _lines[index];
     final unitsProvider = context.watch<UnitsProvider>();
     final selectedItem = _selectedItemForLine(items, line.selectedItemId);
+    final primaryUnit = unitsProvider.findById(selectedItem?.unitId);
+    final familyBaseId = primaryUnit?.conversionBaseUnitId ?? primaryUnit?.id;
+    final includedUnits = unitsProvider.includedUnitsFor(familyBaseId, 'sales');
+    
     final options = _unitOptionsForItem(
       selectedItem,
       unitsProvider.activeUnits,
     );
     final addableUnits = _addableUnitsForItem(
       selectedItem,
-      unitsProvider.activeUnits,
+      includedUnits,
     );
     final value = _effectiveUnitIdForLine(line, selectedItem, options);
     final fieldKey = index == 0
@@ -4153,7 +4161,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     final unitsProvider = context.read<UnitsProvider>();
-    var addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
+    final primaryUnit = unitsProvider.findById(item.unitId);
+    final familyBaseId = primaryUnit?.conversionBaseUnitId ?? primaryUnit?.id;
+    final includedUnits = unitsProvider.includedUnitsFor(familyBaseId, 'sales');
+    var addableUnits = _addableUnitsForItem(item, includedUnits);
     if (addableUnits.isEmpty) {
       showAppSnack(
         SnackBar(
@@ -4166,8 +4177,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     final initialUnit = _bestUnitMatch(query, addableUnits);
-    final primaryUnit = unitsProvider.findById(item.unitId);
-
     // One dialog either way: unknown units are created and linked to the
     // item in a single step instead of a create-then-convert dialog chain.
     final Widget dialog = initialUnit == null
@@ -6863,13 +6872,7 @@ String _formatCompactNumber(double value) {
   if (!value.isFinite) {
     return '0';
   }
-  if (value == value.truncateToDouble()) {
-    return value.toStringAsFixed(0);
-  }
-  return value
-      .toStringAsFixed(2)
-      .replaceFirst(RegExp(r'0+$'), '')
-      .replaceFirst(RegExp(r'\.$'), '');
+  return QuantityFormatter.format(value);
 }
 
 class _OrderPoDocumentsSection extends StatelessWidget {

@@ -63,15 +63,29 @@ test('master usage guards, simple orders, and material variation links stay cons
         }),
       /Used clients cannot change name or GST number/,
     );
+    // Used groups are editable (fields come and go over a group's life); the
+    // one frozen property is the unit, because existing quantities under the
+    // group are denominated in it.
+    const renamedUsedGroup = await backend.saveGroup({
+      id: activeGroup.id,
+      name: `${activeGroup.name} Renamed`,
+      parentGroupId: activeGroup.parent_group_id || null,
+      unitId: activeGroup.unit_id,
+    });
+    assert.equal(renamedUsedGroup.name, `${activeGroup.name} Renamed`);
+    const otherUnit = (await backend.getUnitsWithUsage()).find(
+      (unit) => unit.id !== activeGroup.unit_id && !unit.is_archived,
+    );
+    assert.ok(otherUnit, 'expected an alternate unit for the unit-change guard');
     await assert.rejects(
       () =>
         backend.saveGroup({
           id: activeGroup.id,
           name: `${activeGroup.name} Renamed`,
           parentGroupId: activeGroup.parent_group_id || null,
-          unitId: activeGroup.unit_id,
+          unitId: otherUnit.id,
         }),
-      /Used groups cannot be edited/,
+      /unit cannot be changed while it has items/,
     );
     await assert.rejects(
       () =>

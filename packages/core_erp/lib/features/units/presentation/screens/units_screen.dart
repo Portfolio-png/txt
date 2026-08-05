@@ -12,6 +12,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/unit_definition.dart';
 import '../../domain/unit_inputs.dart';
 import '../providers/units_provider.dart';
+import '../widgets/global_units_dialog.dart';
 
 class UnitsScreen extends StatelessWidget {
   const UnitsScreen({super.key});
@@ -26,8 +27,26 @@ class UnitsScreen extends StatelessWidget {
 
         return SoftMasterDataPage(
           title: 'Units',
-          subtitle:
-              'Create the measurement units and symbols your team uses across materials and configurator flows.',
+          subtitleWidget: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => GlobalUnitsLibraryDialog.show(context),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.public, color: SoftErpTheme.accent, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Global Units Library',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: SoftErpTheme.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           action: AppButton(
             label: 'Add Unit',
             icon: Icons.add,

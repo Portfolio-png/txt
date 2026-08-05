@@ -1,3 +1,5 @@
+import '../../items/domain/item_form_sections.dart';
+
 class CreateGroupInput {
   const CreateGroupInput({
     required this.name,
@@ -6,6 +8,7 @@ class CreateGroupInput {
     this.description = '',
     this.unitId,
     this.parentGroupId,
+    this.itemFormSections,
   });
 
   final String name;
@@ -16,6 +19,10 @@ class CreateGroupInput {
   final String description;
   final int? parentGroupId;
   final int? unitId;
+
+  /// Per-group override of the item-form section layout. Null leaves whatever
+  /// is stored alone (and, for a new group, means no override).
+  final ItemFormSections? itemFormSections;
 }
 
 class UpdateGroupInput {
@@ -27,6 +34,7 @@ class UpdateGroupInput {
     this.description = '',
     this.unitId,
     this.parentGroupId,
+    this.itemFormSections,
   });
 
   final int id;
@@ -36,4 +44,8 @@ class UpdateGroupInput {
   final String description;
   final int? parentGroupId;
   final int? unitId;
+
+  /// Per-group override of the item-form section layout. Null leaves whatever
+  /// is stored alone (and, for a new group, means no override).
+  final ItemFormSections? itemFormSections;
 }

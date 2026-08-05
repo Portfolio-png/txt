@@ -8,7 +8,9 @@ import 'package:mime/mime.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
+import '../../../../core/services/party_import_service.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/party_import_dialog.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -64,11 +66,23 @@ class VendorsScreen extends StatelessWidget {
             title: 'Vendors',
             subtitle:
                 'Manage inbound supplier records used by reception challans and purchasing references.',
-            action: AppButton(
-              label: 'Add Vendor',
-              icon: Icons.add,
-              isLoading: vendors.isSaving,
-              onPressed: () => _openEditor(context),
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppButton(
+                  label: 'Import from Excel',
+                  icon: Icons.table_view_outlined,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => _openImport(context),
+                ),
+                const SizedBox(width: 10),
+                AppButton(
+                  label: 'Add Vendor',
+                  icon: Icons.add,
+                  isLoading: vendors.isSaving,
+                  onPressed: () => _openEditor(context),
+                ),
+              ],
             ),
             toolbar: const _VendorsToolbar(),
             messages: [
@@ -105,6 +119,35 @@ class VendorsScreen extends StatelessWidget {
     BuildContext context, {
     VendorDefinition? vendor,
   }) => openEditor(context, vendor: vendor);
+
+  /// Bulk-create vendors from the Excel template. Rows go through the same
+  /// provider call as the form, so validation and permissions are identical.
+  static Future<void> _openImport(BuildContext context) async {
+    final provider = context.read<VendorsProvider>();
+    await PartyImportDialog.open(
+      context,
+      kind: PartyKind.vendor,
+      existingNames: provider.vendors
+          .map((vendor) => vendor.name)
+          .toList(growable: false),
+      onImportRow: (values) async {
+        final created = await provider.createVendor(
+          CreateVendorInput(
+            name: values['name'] ?? '',
+            alias: values['alias'] ?? '',
+            gstNumber: values['gstNumber'] ?? '',
+            address: values['address'] ?? '',
+            contactName: values['contactName'] ?? '',
+            phone: values['phone'] ?? '',
+            email: values['email'] ?? '',
+          ),
+        );
+        return created == null
+            ? (provider.errorMessage ?? 'Could not be saved.')
+            : null;
+      },
+    );
+  }
 }
 
 class _VendorsToolbar extends StatelessWidget {

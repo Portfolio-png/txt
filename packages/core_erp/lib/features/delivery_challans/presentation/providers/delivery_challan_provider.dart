@@ -264,6 +264,17 @@ class ChallanProvider extends ChangeNotifier {
 
   Future<void> recordPrint(int id) => _repository.recordPrint(id);
 
+  /// Persists the piece/sheet barcodes generated on the wizard's Done step.
+  /// Returns the refreshed challan, or null on failure (message in [errorMessage]).
+  Future<DeliveryChallan?> savePieceBarcodes(
+    int challanId,
+    List<Map<String, dynamic>> barcodes,
+  ) async {
+    return _saveChallan(
+      () => _repository.savePieceBarcodes(challanId, barcodes),
+    );
+  }
+
   Future<DeliveryChallan?> updateChallanReportGroups(
     int id,
     List<String> reportGroupCodes,
