@@ -4841,6 +4841,38 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_unit_conversion_points_unit_id ON unit_conversion_points(unit_id)');
   await ensureColumnExists('order_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('delivery_challan_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
+  // Bootstrap parity with migrations/027-stock-leaf-guards.sql: synthetic
+  // negative variation ids (typed Gauge/Numeric selections) must never persist
+  // as stock identity, no matter which future code path writes the row.
+  for (const [table, guard] of [
+    ['delivery_challan_items', 'NEW.variation_leaf_node_id < 0'],
+    ['order_items', 'NEW.variation_leaf_node_id < 0'],
+  ]) {
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS trg_${table}_leaf_nonneg_ins
+      BEFORE INSERT ON ${table}
+      WHEN ${guard}
+      BEGIN
+        SELECT RAISE(ABORT, '${table}.variation_leaf_node_id must reference a real node (>= 0)');
+      END
+    `);
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS trg_${table}_leaf_nonneg_upd
+      BEFORE UPDATE OF variation_leaf_node_id ON ${table}
+      WHEN ${guard}
+      BEGIN
+        SELECT RAISE(ABORT, '${table}.variation_leaf_node_id must reference a real node (>= 0)');
+      END
+    `);
+  }
+  await run(`
+    CREATE TRIGGER IF NOT EXISTS trg_variation_stock_leaf_positive_ins
+    BEFORE INSERT ON variation_stock
+    WHEN NEW.variation_leaf_node_id <= 0
+    BEGIN
+      SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must reference a real node (> 0)');
+    END
+  `);
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
