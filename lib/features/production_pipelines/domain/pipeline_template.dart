@@ -1,4 +1,5 @@
 import 'material_flow.dart';
+import 'pen_paper_baseline.dart';
 import 'process_node.dart';
 
 enum PipelineTemplateStatus { draft, active, archived }
@@ -21,6 +22,7 @@ class PipelineTemplate {
     this.linkedOrderId,
     this.linkedOrderNo,
     this.linkedClientName,
+    this.penPaperBaseline,
   });
 
   final String id;
@@ -39,6 +41,7 @@ class PipelineTemplate {
   final int? linkedOrderId;
   final String? linkedOrderNo;
   final String? linkedClientName;
+  final PenPaperBaseline? penPaperBaseline;
 
   List<ProcessNode> get stages => nodes;
 
@@ -72,6 +75,11 @@ class PipelineTemplate {
       linkedOrderId: json['linkedOrderId'] as int?,
       linkedOrderNo: json['linkedOrderNo'] as String?,
       linkedClientName: json['linkedClientName'] as String?,
+      penPaperBaseline: json['penPaperBaseline'] != null
+          ? PenPaperBaseline.fromJson(json['penPaperBaseline'] as Map<String, dynamic>)
+          : (json['pen_paper_baseline'] != null
+              ? PenPaperBaseline.fromJson(json['pen_paper_baseline'] as Map<String, dynamic>)
+              : null),
     );
   }
 
@@ -92,6 +100,7 @@ class PipelineTemplate {
     int? linkedOrderId,
     String? linkedOrderNo,
     String? linkedClientName,
+    PenPaperBaseline? penPaperBaseline,
   }) {
     return PipelineTemplate(
       id: id ?? this.id,
@@ -110,6 +119,7 @@ class PipelineTemplate {
       linkedOrderId: linkedOrderId ?? this.linkedOrderId,
       linkedOrderNo: linkedOrderNo ?? this.linkedOrderNo,
       linkedClientName: linkedClientName ?? this.linkedClientName,
+      penPaperBaseline: penPaperBaseline ?? this.penPaperBaseline,
     );
   }
 
@@ -131,6 +141,7 @@ class PipelineTemplate {
       'linkedOrderId': linkedOrderId,
       'linkedOrderNo': linkedOrderNo,
       'linkedClientName': linkedClientName,
+      'penPaperBaseline': penPaperBaseline?.toJson(),
     };
   }
 }

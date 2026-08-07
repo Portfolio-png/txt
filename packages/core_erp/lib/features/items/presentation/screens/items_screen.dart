@@ -31,6 +31,9 @@ import '../../domain/item_inputs.dart';
 import '../../data/services/item_link_options_service.dart';
 import '../providers/item_form_sections_provider.dart';
 
+import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
+import 'package:core_erp/features/production_pipelines/presentation/widgets/pen_paper_baseline_widget.dart';
+
 import '../providers/items_provider.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
 import '../../domain/item_asset.dart';
@@ -1091,6 +1094,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _isLoadingGroupSchema = false;
   String? _defaultPipelineId;
   List<Map<String, String>> _availablePipelines = [];
+  PenPaperBaseline _penPaperBaseline = PenPaperBaseline.createDefault();
   bool _availableForPurchase = false;
   int? _developedForClientId;
 
@@ -2537,6 +2541,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 label: const Text('Create New Pipeline'),
                               ),
                             ],
+                            if (_defaultPipelineId != null &&
+                                _defaultPipelineId!.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              PenPaperBaselineWidget(
+                                baseline: _penPaperBaseline,
+                                readOnly: _isReadOnly,
+                                onChanged: (updated) {
+                                  setState(() {
+                                    _penPaperBaseline = updated;
+                                    _handleChange();
+                                  });
+                                },
+                              ),
+                            ],
                           ],
                         ),
                       );
@@ -2575,7 +2593,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           _SectionEntry(machinesSection, 2.0),
                         if (sections.dies) _SectionEntry(diesSection, 2.0),
                         if (showPipeline)
-                          _SectionEntry(defaultPipelineSection, 2.0),
+                          _SectionEntry(
+                            defaultPipelineSection,
+                            (_defaultPipelineId != null &&
+                                    _defaultPipelineId!.isNotEmpty)
+                                ? 8.5
+                                : 2.0,
+                          ),
                       ];
 
                       // A third column is only worth it when each one still

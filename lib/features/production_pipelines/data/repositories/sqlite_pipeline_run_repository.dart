@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
 
 import '../../domain/barcode_input.dart';
@@ -43,13 +44,17 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     final newTemplate = template.copyWith(
       id: template.id.isEmpty ? _uuid.v4() : template.id,
     );
-    await db.insert('pipeline_templates', {
-      'id': newTemplate.id,
-      'shop_floor_id': newTemplate.shopFloorId,
-      'name': newTemplate.name,
-      'data': jsonEncode(newTemplate.toJson()),
-      'created_at': DateTime.now().toIso8601String(),
-    });
+    await db.insert(
+      'pipeline_templates',
+      {
+        'id': newTemplate.id,
+        'shop_floor_id': newTemplate.shopFloorId,
+        'name': newTemplate.name,
+        'data': jsonEncode(newTemplate.toJson()),
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
     return newTemplate;
   }
 
@@ -57,7 +62,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   Future<PipelineTemplate> updateTemplate(PipelineTemplate template) async {
     final db = await _dbHelper.database;
     await _ensureTemplateColumns(db);
-    await db.update(
+    final count = await db.update(
       'pipeline_templates',
       {
         'name': template.name,
@@ -67,6 +72,19 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
       where: 'id = ?',
       whereArgs: [template.id],
     );
+    if (count == 0) {
+      await db.insert(
+        'pipeline_templates',
+        {
+          'id': template.id,
+          'shop_floor_id': template.shopFloorId,
+          'name': template.name,
+          'data': jsonEncode(template.toJson()),
+          'created_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
     return template;
   }
 

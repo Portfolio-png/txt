@@ -2649,6 +2649,7 @@ function rowToTemplate(row) {
     nodes: parseJson(row.nodes_json, []),
     flows: parseJson(row.flows_json, []),
     intermediateNamingConvention: row.intermediate_naming_convention || '',
+    penPaperBaseline: parseJson(row.pen_paper_baseline_json, null),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -5010,6 +5011,7 @@ async function initDb() {
   await ensureColumnExists('pipeline_templates', 'factory_id', "TEXT DEFAULT ''");
   await ensureColumnExists('pipeline_templates', 'shop_floor_id', "TEXT DEFAULT ''");
   await ensureColumnExists('pipeline_templates', 'intermediate_naming_convention', "TEXT DEFAULT ''");
+  await ensureColumnExists('pipeline_templates', 'pen_paper_baseline_json', "TEXT DEFAULT '{}'");
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -23095,10 +23097,10 @@ app.post('/api/production/pipeline-templates', requirePermission('config.write')
     
     await run(
       `
-      INSERT INTO pipeline_templates (
+      INSERT OR REPLACE INTO pipeline_templates (
         id, factory_id, shop_floor_id, name, description, version, status,
-        stage_labels_json, lane_labels_json, nodes_json, flows_json, intermediate_naming_convention, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        stage_labels_json, lane_labels_json, nodes_json, flows_json, intermediate_naming_convention, pen_paper_baseline_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         data.id,
@@ -23113,6 +23115,7 @@ app.post('/api/production/pipeline-templates', requirePermission('config.write')
         JSON.stringify(data.nodes || []),
         JSON.stringify(data.flows || []),
         data.intermediateNamingConvention || '',
+        data.penPaperBaseline ? JSON.stringify(data.penPaperBaseline) : '{}',
         now,
         now
       ]
@@ -23141,7 +23144,7 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
       `
       UPDATE pipeline_templates
       SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?,
-          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, intermediate_naming_convention = ?, updated_at = ?
+          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, intermediate_naming_convention = ?, pen_paper_baseline_json = ?, updated_at = ?
       WHERE id = ?
       `,
       [
@@ -23149,13 +23152,14 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
         data.shopFloorId ?? existing.shop_floor_id,
         data.name ?? existing.name,
         data.description ?? existing.description,
-        data.version ?? nextVersion,
+        data.version ?? 1,
         data.status ?? existing.status,
         data.stageLabels ? JSON.stringify(data.stageLabels) : existing.stage_labels_json,
         data.laneLabels ? JSON.stringify(data.laneLabels) : existing.lane_labels_json,
         data.nodes ? JSON.stringify(data.nodes) : existing.nodes_json,
         data.flows ? JSON.stringify(data.flows) : existing.flows_json,
         data.intermediateNamingConvention ?? existing.intermediate_naming_convention,
+        data.penPaperBaseline ? JSON.stringify(data.penPaperBaseline) : existing.pen_paper_baseline_json,
         now,
         id
       ]

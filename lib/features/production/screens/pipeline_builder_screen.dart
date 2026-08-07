@@ -24,9 +24,11 @@ import '../providers/pipeline_editor_provider.dart';
 import '../domain/default_floor_context.dart';
 import '../../production_pipelines/data/default_pipeline_templates.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../production_pipelines/domain/pipeline_item_endpoint.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
+import '../../production_pipelines/presentation/widgets/pen_paper_baseline_widget.dart';
 import '../../machines/domain/machine.dart';
 import '../../machines/presentation/providers/machine_provider.dart';
 import '../../machines/presentation/screens/machine_form_screen.dart';
@@ -1245,6 +1247,45 @@ class _BuilderHeader extends StatelessWidget {
     );
   }
 
+  void _showPenPaperBaselineDialog(BuildContext context) {
+    final baseline = provider.template.penPaperBaseline ?? PenPaperBaseline.createDefault();
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            width: 600,
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PenPaperBaselineWidget(
+                    baseline: baseline,
+                    onChanged: (updated) {
+                      final updatedTpl = provider.template.copyWith(penPaperBaseline: updated);
+                      provider.loadTemplate(updatedTpl);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<PipelineTemplate?> _saveTemplate(
     BuildContext context, {
     bool showError = true,
@@ -1426,6 +1467,13 @@ class _BuilderHeader extends StatelessWidget {
                   onPressed: () => provider.addNextStepFromSelection(
                     units: _activeUnitsFromContext(context),
                   ),
+                ),
+                const SizedBox(width: 8),
+                AppButton(
+                  label: 'Paper Baseline',
+                  icon: Icons.analytics_rounded,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => _showPenPaperBaselineDialog(context),
                 ),
                 const SizedBox(width: 8),
                 AppButton(
