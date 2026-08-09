@@ -2495,28 +2495,46 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SearchableSelectField<String>(
-                              options: _availablePipelines
-                                  .map(
-                                    (p) => SearchableSelectOption<String>(
-                                      value: p['id']!,
-                                      label: p['name']!,
-                                      searchText: p['name']!,
+                            Builder(
+                              builder: (context) {
+                                final pipelineOptions = _availablePipelines
+                                    .map(
+                                      (p) => SearchableSelectOption<String>(
+                                        value: p['id']!,
+                                        label: p['name']!,
+                                        searchText: p['name']!,
+                                      ),
+                                    )
+                                    .toList();
+                                if (_defaultPipelineId != null &&
+                                    _defaultPipelineId!.isNotEmpty &&
+                                    !pipelineOptions.any((p) => p.value == _defaultPipelineId)) {
+                                  final label = widget.item?.defaultPipelineName ?? _defaultPipelineId!;
+                                  pipelineOptions.insert(
+                                    0,
+                                    SearchableSelectOption<String>(
+                                      value: _defaultPipelineId!,
+                                      label: label,
+                                      searchText: label,
                                     ),
-                                  )
-                                  .toList(),
-                              value: _defaultPipelineId,
-                              fieldEnabled: !_isReadOnly,
-                              onChanged: (val) {
-                                setState(() {
-                                  _defaultPipelineId = val;
-                                  _handleChange();
-                                });
+                                  );
+                                }
+                                return SearchableSelectField<String>(
+                                  options: pipelineOptions,
+                                  value: _defaultPipelineId,
+                                  fieldEnabled: !_isReadOnly,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _defaultPipelineId = val;
+                                      _handleChange();
+                                    });
+                                  },
+                                  decoration: const InputDecoration(
+                                    hintText: 'Select a pipeline',
+                                  ),
+                                  searchHintText: 'Search pipelines',
+                                );
                               },
-                              decoration: const InputDecoration(
-                                hintText: 'Select a pipeline',
-                              ),
-                              searchHintText: 'Search pipelines',
                             ),
                             if (!_isReadOnly &&
                                 widget.onCreatePipeline != null) ...[

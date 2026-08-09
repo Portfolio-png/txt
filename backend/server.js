@@ -2629,6 +2629,8 @@ async function rowToItemDto(row) {
     developedForClientId: row.developed_for_client_id || null,
     developedForClientName: developedForClientRow?.name || '',
     availableForPurchase: Boolean(row.available_for_purchase),
+    defaultPipelineId: row.default_pipeline_id || null,
+    defaultPipelineName: row.default_pipeline_name || (row.default_pipeline_id ? (await get('SELECT name FROM pipeline_templates WHERE id = ?', [row.default_pipeline_id]))?.name || null : null),
   };
 }
 
@@ -15147,7 +15149,9 @@ async function saveItem({
           normalizedGroupId,
           normalizedUnitId,
           serializedNamingFormat,
-          defaultPipelineId || null,
+          defaultPipelineId !== undefined
+            ? (defaultPipelineId ? String(defaultPipelineId).trim() : null)
+            : (existing.default_pipeline_id || null),
           normalizedBaseItemId,
           photoUrl || null,
           // Same preservation rule as available_for_purchase: an internal

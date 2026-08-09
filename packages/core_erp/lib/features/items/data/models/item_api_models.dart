@@ -658,7 +658,7 @@ class UpdateItemRequest {
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
-      if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
+      'defaultPipelineId': defaultPipelineId,
       if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
       'cadFileKey': cadFileKey,
