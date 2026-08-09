@@ -21,6 +21,9 @@ import '../../domain/item_definition.dart';
 import '../../domain/item_usage_record.dart';
 import '../providers/items_provider.dart';
 
+import 'item_pipeline_metrics_card.dart';
+import 'item_pipeline_traceability_dialog.dart';
+
 Future<void> showItemDetailPanel(
   BuildContext context, {
   required ItemDefinition item,
@@ -36,7 +39,7 @@ Future<void> showItemDetailPanel(
     pageBuilder: (context, animation, secondaryAnimation) {
       final screenWidth = MediaQuery.sizeOf(context).width;
       final panelWidth = math.min(
-        screenWidth >= 980 ? 920.0 : 540.0,
+        screenWidth >= 1100 ? 1020.0 : (screenWidth >= 980 ? 920.0 : 560.0),
         screenWidth - 24,
       );
       final screenHeight = MediaQuery.sizeOf(context).height;
@@ -99,6 +102,7 @@ class ItemDetailPanel extends StatefulWidget {
 
 class _ItemDetailPanelState extends State<ItemDetailPanel> {
   bool _isUploading = false;
+  int _activeTab = 0;
 
   @override
   void initState() {
@@ -289,6 +293,30 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                     ),
                   ),
                 ),
+                if (item.defaultPipelineId != null &&
+                    item.defaultPipelineId!.isNotEmpty) ...[
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment<int>(
+                        value: 0,
+                        label: Text('Item Specifications'),
+                        icon: Icon(Icons.inventory_2_outlined, size: 15),
+                      ),
+                      ButtonSegment<int>(
+                        value: 1,
+                        label: Text('Pipeline & Mass Balance'),
+                        icon: Icon(Icons.analytics_outlined, size: 15),
+                      ),
+                    ],
+                    selected: {_activeTab},
+                    onSelectionChanged: (set) => setState(() => _activeTab = set.first),
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 IconButton(
                   tooltip: 'Close',
                   onPressed: () => Navigator.of(context).pop(),
@@ -301,111 +329,130 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             ),
           ),
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final useTwoColumn = constraints.maxWidth >= 760;
-                final sameNamingFormatItems = itemsProvider.items.where((
-                  other,
-                ) {
-                  if (other.namingFormat.length != item.namingFormat.length)
-                    return false;
-                  for (int i = 0; i < item.namingFormat.length; i++) {
-                    if (other.namingFormat[i] != item.namingFormat[i])
-                      return false;
-                  }
-                  return true;
-                }).toList();
+            child: _activeTab == 1 &&
+                    item.defaultPipelineId != null &&
+                    item.defaultPipelineId!.isNotEmpty
+                ? SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: ItemPipelineMetricsCard(item: item),
+                  )
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final useTwoColumn = constraints.maxWidth >= 760;
+                      final sameNamingFormatItems = itemsProvider.items.where((
+                        other,
+                      ) {
+                        if (other.namingFormat.length != item.namingFormat.length)
+                          return false;
+                        for (int i = 0; i < item.namingFormat.length; i++) {
+                          if (other.namingFormat[i] != item.namingFormat[i])
+                            return false;
+                        }
+                        return true;
+                      }).toList();
 
-                final imagePreview = _ItemImagePreview(
-                  item: item,
-                  primaryAsset: primaryAsset,
-                  isUploading: _isUploading || itemsProvider.isAssetUploading,
-                  onUpload: _pickAndUploadImage,
-                  onOpenImage:
-                      (primaryAsset?.readUrl?.toString() ?? item.photoUrl)
-                          .isEmpty
-                      ? null
-                      : () => _openImagePreview(
-                          primaryAsset?.readUrl?.toString() ?? item.photoUrl,
+                      final imagePreview = _ItemImagePreview(
+                        item: item,
+                        primaryAsset: primaryAsset,
+                        isUploading: _isUploading || itemsProvider.isAssetUploading,
+                        onUpload: _pickAndUploadImage,
+                        onOpenImage:
+                            (primaryAsset?.readUrl?.toString() ?? item.photoUrl)
+                                .isEmpty
+                            ? null
+                            : () => _openImagePreview(
+                                primaryAsset?.readUrl?.toString() ?? item.photoUrl,
+                              ),
+                        onDeleteImage: primaryAsset == null
+                            ? null
+                            : () => _deleteImage(primaryAsset),
+                      );
+                      final factsheet = _ItemFactsheet(
+                        item: item,
+                        groupName: groupName,
+                        unitLabel: unitLabel,
+                        generatedCodes: generatedNames,
+                        imageCount: assets.length,
+                        sameNamingFormatItems: sameNamingFormatItems,
+                      );
+                      final cadFileCard = item.cadFileKey.trim().isEmpty
+                          ? null
+                          : _ItemCadFileCard(item: item);
+                      final editButton = widget.onEdit == null
+                          ? null
+                          : AppButton(
+                              label: 'Edit Item',
+                              icon: Icons.edit_outlined,
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                widget.onEdit?.call();
+                              },
+                            );
+                      final originPipelinesButton = AppButton(
+                        label: 'View Origin Pipelines',
+                        icon: Icons.account_tree_outlined,
+                        onPressed: () => showItemPipelineTraceabilityDialog(
+                          context,
+                          item: item,
                         ),
-                  onDeleteImage: primaryAsset == null
-                      ? null
-                      : () => _deleteImage(primaryAsset),
-                );
-                final factsheet = _ItemFactsheet(
-                  item: item,
-                  groupName: groupName,
-                  unitLabel: unitLabel,
-                  generatedCodes: generatedNames,
-                  imageCount: assets.length,
-                  sameNamingFormatItems: sameNamingFormatItems,
-                );
-                final cadFileCard = item.cadFileKey.trim().isEmpty
-                    ? null
-                    : _ItemCadFileCard(item: item);
-                final editButton = widget.onEdit == null
-                    ? null
-                    : AppButton(
-                        label: 'Edit Item',
-                        icon: Icons.edit_outlined,
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          widget.onEdit?.call();
-                        },
                       );
 
-                final content = useTwoColumn
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 240,
-                            child: Column(
+                      final content = useTwoColumn
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 240,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      imagePreview,
+                                      if (cadFileCard != null) ...[
+                                        const SizedBox(height: 16),
+                                        cadFileCard,
+                                      ],
+                                      const SizedBox(height: 16),
+                                      originPipelinesButton,
+                                      if (editButton != null) ...[
+                                        const SizedBox(height: 12),
+                                        editButton,
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                SizedBox(width: 320, child: factsheet),
+                                const SizedBox(width: 16),
+                                Expanded(child: _ItemVariationSection(item: item)),
+                              ],
+                            )
+                          : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 imagePreview,
                                 if (cadFileCard != null) ...[
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 18),
                                   cadFileCard,
                                 ],
+                                const SizedBox(height: 18),
+                                factsheet,
+                                const SizedBox(height: 18),
+                                _ItemVariationSection(item: item),
+                                const SizedBox(height: 18),
+                                originPipelinesButton,
                                 if (editButton != null) ...[
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 12),
                                   editButton,
                                 ],
                               ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          SizedBox(width: 320, child: factsheet),
-                          const SizedBox(width: 16),
-                          Expanded(child: _ItemVariationSection(item: item)),
-                        ],
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          imagePreview,
-                          if (cadFileCard != null) ...[
-                            const SizedBox(height: 18),
-                            cadFileCard,
-                          ],
-                          const SizedBox(height: 18),
-                          factsheet,
-                          const SizedBox(height: 18),
-                          _ItemVariationSection(item: item),
-                          if (editButton != null) ...[
-                            const SizedBox(height: 18),
-                            editButton,
-                          ],
-                        ],
-                      );
+                            );
 
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(18),
-                  child: content,
-                );
-              },
-            ),
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.all(18),
+                        child: content,
+                      );
+                    },
+                  ),
           ),
         ],
       ),

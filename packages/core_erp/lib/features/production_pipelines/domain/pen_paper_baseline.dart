@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Single stage reconciliation entry recorded from historical pen & paper operations.
+/// Single stage or whole-pipeline reconciliation entry recorded from historical paper/sample logs.
 /// All quantities are measured in kilograms (kg).
 @immutable
 class PenPaperStageReconciliation {
@@ -106,28 +106,30 @@ class PenPaperStageReconciliation {
   }
 }
 
-/// Baseline paper record model containing stage-by-stage reconciliation logs.
+/// Baseline paper record model containing stage-by-stage or whole-pipeline reconciliation logs.
 @immutable
 class PenPaperBaseline {
   const PenPaperBaseline({
+    this.isGranular = false,
     this.keyEfficiencyBenchmark = 75.0,
     this.baselineOutputRate = 12.0,
     this.baselineScrapRate = 4.0,
     this.stageReconciliations = const [],
-    this.notes = 'Recorded from historical pen and paper production logs.',
+    this.notes = 'Recorded from sample production logs.',
   });
 
+  final bool isGranular;
   final double keyEfficiencyBenchmark;
   final double baselineOutputRate;
   final double baselineScrapRate;
   final List<PenPaperStageReconciliation> stageReconciliations;
   final String notes;
 
-  /// Overall pipeline input kg (input to Stage 1).
+  /// Overall pipeline input kg (input to Stage 1 or whole pipeline).
   double get totalInputKg =>
       stageReconciliations.isNotEmpty ? stageReconciliations.first.inputKg : 0.0;
 
-  /// Overall pipeline final output kg (good output of final stage).
+  /// Overall pipeline final output kg (good output of final stage or whole pipeline).
   double get totalFinalOutputKg => stageReconciliations.isNotEmpty
       ? stageReconciliations.last.outputKg
       : 0.0;
@@ -164,15 +166,15 @@ class PenPaperBaseline {
           scrapKg: scrap,
           rejectionKg: rejection,
           weightLossKg: loss,
-          notes: 'Paper log for $name',
+          notes: 'Log for $name',
         ),
       );
 
-      // Carry forward output kg to next stage input kg
       currentInput = output;
     }
 
     return PenPaperBaseline(
+      isGranular: false,
       keyEfficiencyBenchmark: 88.0,
       baselineOutputRate: 12.5,
       baselineScrapRate: 4.2,
@@ -183,6 +185,7 @@ class PenPaperBaseline {
   static PenPaperBaseline createDefault() => createDefaultForStages();
 
   PenPaperBaseline copyWith({
+    bool? isGranular,
     double? keyEfficiencyBenchmark,
     double? baselineOutputRate,
     double? baselineScrapRate,
@@ -190,6 +193,7 @@ class PenPaperBaseline {
     String? notes,
   }) {
     return PenPaperBaseline(
+      isGranular: isGranular ?? this.isGranular,
       keyEfficiencyBenchmark:
           keyEfficiencyBenchmark ?? this.keyEfficiencyBenchmark,
       baselineOutputRate: baselineOutputRate ?? this.baselineOutputRate,
@@ -201,6 +205,7 @@ class PenPaperBaseline {
 
   Map<String, dynamic> toJson() {
     return {
+      'isGranular': isGranular,
       'keyEfficiencyBenchmark': keyEfficiencyBenchmark,
       'baselineOutputRate': baselineOutputRate,
       'baselineScrapRate': baselineScrapRate,
@@ -215,6 +220,7 @@ class PenPaperBaseline {
         .toList();
 
     return PenPaperBaseline(
+      isGranular: json['isGranular'] as bool? ?? false,
       keyEfficiencyBenchmark:
           (json['keyEfficiencyBenchmark'] as num?)?.toDouble() ?? 88.0,
       baselineOutputRate:

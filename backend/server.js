@@ -24991,6 +24991,60 @@ app.delete('/runs/:id', async (req, res) => {
   }
 });
 
+app.get('/api/items/:id/pipeline-history', requirePermission('config.read'), async (req, res) => {
+  try {
+    const itemId = req.params.id;
+    const item = await get('SELECT * FROM items WHERE id = ?', [itemId]);
+    if (!item) {
+      res.status(404).json({ success: false, error: 'Item not found', runs: [] });
+      return;
+    }
+
+    let runRows = [];
+    if (item.default_pipeline_id) {
+      runRows = await all(
+        `SELECT DISTINCT pr.* 
+         FROM pipeline_runs pr
+         LEFT JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+         LEFT JOIN order_items oi ON opa.order_item_id = oi.id
+         WHERE pr.template_id = ? OR oi.item_id = ?
+         ORDER BY pr.created_at DESC`,
+        [item.default_pipeline_id, itemId]
+      );
+    } else {
+      runRows = await all(
+        `SELECT DISTINCT pr.* 
+         FROM pipeline_runs pr
+         JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+         JOIN order_items oi ON opa.order_item_id = oi.id
+         WHERE oi.item_id = ?
+         ORDER BY pr.created_at DESC`,
+        [itemId]
+      );
+    }
+
+    const runs = [];
+    for (const row of runRows) {
+      const run = await rowToRun(row);
+      if (run) {
+        const tmpl = await get('SELECT name FROM pipeline_templates WHERE id = ?', [run.templateId]);
+        run.pipelineName = tmpl?.name || run.name || 'Production Pipeline';
+        runs.push(run);
+      }
+    }
+
+    res.json({
+      success: true,
+      itemId: item.id,
+      itemName: item.name || item.display_name,
+      defaultPipelineId: item.default_pipeline_id,
+      runs,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message, runs: [] });
+  }
+});
+
 app.get('/runs', requirePermission('config.read'), async (req, res) => {
   try {
     const { template_id: templateId } = req.query;
