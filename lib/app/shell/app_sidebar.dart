@@ -61,6 +61,7 @@ class _AppSidebarState extends State<AppSidebar> {
       'Production',
       Icons.precision_manufacturing_outlined,
     ),
+    _SidebarItemData('insights', 'Insights', Icons.insights_outlined),
     _SidebarItemData('jobs', 'Jobs', Icons.engineering_outlined),
     _SidebarItemData(
       'action_center',
@@ -821,6 +822,42 @@ class _SettingsPreferencesDialogState
   }
 
   Future<void> _handleResetAndReseed(String scenarioId) async {
+    const labels = <String, String>{
+      'default': 'Electrical',
+      'manufacturing': 'Manufacturing',
+      'mobiles': 'Mobiles',
+      'scenario_a': 'Scenario A · Decoupled Stock',
+      'scenario_b': 'Scenario B · On-Demand Procurement',
+    };
+    final label = labels[scenarioId] ?? scenarioId;
+    // Loading a scenario wipes all business data first — always confirm.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Load demo scenario?'),
+        content: Text(
+          'This will WIPE all business data (orders, challans, inventory, '
+          'items, vendors) and load the "$label" demo. Users and permissions '
+          'are kept. This cannot be undone.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC0392B),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Wipe & load'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
     setState(() {
       _isResetting = true;
     });
@@ -1200,6 +1237,24 @@ class _SettingsPreferencesDialogState
             subtitle: 'Reset and reseed a mobiles trading workspace.',
             trailing: seedButton('mobiles'),
           ),
+          _SettingsRow(
+            icon: Icons.inventory_2_outlined,
+            iconTint: const Color(0xFF0D9488),
+            title: 'Scenario A · Decoupled Stock',
+            subtitle:
+                'Bulk vendor stock-in, then two orders consume from the shared '
+                'pool (500 → 350). Demonstrates aggregate consumption.',
+            trailing: seedButton('scenario_a'),
+          ),
+          _SettingsRow(
+            icon: Icons.assignment_ind_outlined,
+            iconTint: const Color(0xFFC2410C),
+            title: 'Scenario B · On-Demand Procurement',
+            subtitle:
+                'A reception challan procured for a specific client order '
+                '(reception→order link). Demonstrates custom sourcing.',
+            trailing: seedButton('scenario_b'),
+          ),
         ],
       ),
       const SizedBox(height: 18),
@@ -1553,9 +1608,18 @@ class _SidebarTile extends StatelessWidget {
                 boxShadow: isSelected ? SoftErpTheme.subtleShadow : const [],
               ),
               child: Row(
+                mainAxisAlignment: compact ? MainAxisAlignment.center : MainAxisAlignment.start,
                 children: [
-                  if (compact) Icon(item.icon, color: foreground, size: 18),
-                  if (!compact) ...[
+                  if (compact) ...[
+                    if (item.key == 'insights')
+                      Image.asset(
+                        'assets/sparkle.png',
+                        width: 20,
+                        height: 20,
+                      )
+                    else
+                      Icon(item.icon, color: foreground, size: 18),
+                  ] else ...[
                     Expanded(
                       child: Text(
                         item.label,

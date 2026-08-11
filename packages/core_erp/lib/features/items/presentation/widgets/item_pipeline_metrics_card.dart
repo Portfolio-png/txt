@@ -5,7 +5,6 @@ import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../domain/item_definition.dart';
 import '../providers/items_provider.dart';
 
-import 'item_pipeline_traceability_dialog.dart';
 
 enum PipelineGraphView { materialFlow, massBreakdown, efficiencyYield }
 
@@ -178,20 +177,6 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
                       style: TextStyle(color: theme.hintColor, fontSize: 11),
                     ),
                   ],
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => showItemPipelineTraceabilityDialog(
-                  context,
-                  item: widget.item,
-                ),
-                icon: const Icon(Icons.account_tree_outlined, size: 15),
-                label: const Text('View All Origin Pipelines'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF1E88E5),
-                  side: const BorderSide(color: Color(0xFF1E88E5)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],

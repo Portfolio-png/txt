@@ -93,6 +93,25 @@ class ApiMachineRepository implements MachineRepository {
   }
 
   @override
+  Future<List<MachineQueueItem>> fetchMachineQueue(String machineId) async {
+    if (useMockResponses) return const [];
+    final uri = Uri.parse('$baseUrl/api/machines/$machineId/queue');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to fetch machine queue',
+      );
+    }
+    final list = payload['queue'] as List<dynamic>? ?? [];
+    return list
+        .map((e) => MachineQueueItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
   Future<Machine> getMachine(String id) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 150));
@@ -360,6 +379,7 @@ class ApiMachineRepository implements MachineRepository {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       assetId: json['assetId'] as String? ?? '',
+      barcode: json['barcode'] as String? ?? '',
       primaryPhotoUrl: json['primaryPhotoUrl'] as String? ?? '',
       groupId: json['groupId'] as int?,
       makeModel: json['makeModel'] as String? ?? '',
@@ -396,6 +416,7 @@ class ApiMachineRepository implements MachineRepository {
       'id': m.id,
       'name': m.name,
       'assetId': m.assetId,
+      'barcode': m.barcode,
       'primaryPhotoUrl': m.primaryPhotoUrl,
       'groupId': m.groupId,
       'makeModel': m.makeModel,

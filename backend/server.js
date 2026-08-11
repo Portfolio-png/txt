@@ -4623,6 +4623,12 @@ async function initDb() {
   // line settled across scrap/leftover/lost/rejection/finished-goods. Empty
   // until the mobile In-use reconciliation flow settles the challan.
   await ensureColumnExists('delivery_challans', 'reconciliation_json', "TEXT NOT NULL DEFAULT ''");
+  // Structured internal-challan subtype (e.g. 'vendor_return') — replaces
+  // string-matching the free-text internal_purpose.
+  await ensureColumnExists('delivery_challans', 'internal_subtype', "TEXT NOT NULL DEFAULT ''");
+  // Vendor-return challans carry the scanned sheet tag codes so issuing can mark
+  // those piece_barcodes returned (and reject a double return).
+  await ensureColumnExists('delivery_challans', 'returned_sheet_codes_json', "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -5033,6 +5039,21 @@ async function initDb() {
   await ensureColumnExists('pipeline_runs', 'scrap_routing', "TEXT DEFAULT 'inventory'");
   await ensureColumnExists('pipeline_runs', 'node_metrics_json', "TEXT DEFAULT '{}'");
   await ensureColumnExists('pipeline_runs', 'batches_json', "TEXT DEFAULT '[]'");
+  // Machine queue popup metadata: who scheduled the run and its batch weight.
+  await ensureColumnExists('pipeline_runs', 'created_by', 'TEXT');
+  await ensureColumnExists('pipeline_runs', 'weight_kg', 'REAL DEFAULT 0');
+  // Real machine↔run-node assignment (replaces name-matching the JSON override)
+  // so a machine's pending queue is a first-class, indexable query.
+  await run(`
+    CREATE TABLE IF NOT EXISTS run_machine_assignments (
+      run_id TEXT NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL,
+      machine_id INTEGER REFERENCES machines(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (run_id, node_id)
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_run_machine_assignments_machine ON run_machine_assignments(machine_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS stage_reconciliations (
@@ -5081,6 +5102,39 @@ async function initDb() {
       scanned_at TEXT DEFAULT (datetime('now'))
     )
   `);
+  // Per-sheet consumption lineage: when the scanned code is a per-sheet vendor
+  // tag (piece_barcodes) rather than a SKU (materials), record which sheet it
+  // was so a run traces back to the exact original vendor sheet. Denormalized
+  // (piece_parent_code, not an FK) because piece_barcodes rows are regenerated.
+  await ensureColumnExists('run_barcode_inputs', 'source_kind', "TEXT DEFAULT 'sku'");
+  await ensureColumnExists('run_barcode_inputs', 'piece_parent_code', 'TEXT');
+  await ensureColumnExists('run_barcode_inputs', 'piece_child_code', 'TEXT');
+  await ensureColumnExists('run_barcode_inputs', 'challan_item_id', 'INTEGER');
+  await ensureColumnExists('run_barcode_inputs', 'consumed_weight', 'REAL DEFAULT 0');
+  await run('CREATE INDEX IF NOT EXISTS idx_run_barcode_inputs_parent ON run_barcode_inputs(piece_parent_code)');
+
+  // Customer return / defect events — a sibling entity to orders (a completed
+  // order can still have a return). Trigger for the backward QC lineage trace.
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_returns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_no TEXT NOT NULL UNIQUE,
+      order_no TEXT NOT NULL REFERENCES order_headers(order_no),
+      order_item_id INTEGER REFERENCES order_items(id),
+      quantity REAL NOT NULL DEFAULT 0,
+      unit TEXT DEFAULT 'pcs',
+      reason_code TEXT NOT NULL DEFAULT 'defect',
+      defect_description TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      returned_barcode TEXT DEFAULT '',
+      pipeline_run_id TEXT REFERENCES pipeline_runs(id),
+      logged_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_order_returns_order_no ON order_returns(order_no)');
+  await run('CREATE INDEX IF NOT EXISTS idx_order_returns_status ON order_returns(status)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS order_pipeline_assignments (
@@ -5202,6 +5256,7 @@ async function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       asset_id TEXT NOT NULL UNIQUE,
+      barcode TEXT NOT NULL DEFAULT '',
       primary_photo_url TEXT,
       group_id INTEGER REFERENCES groups(id),
       make_model TEXT,
@@ -5219,6 +5274,9 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
+  // Machine barcode: unique system-generated scan code (defaults to asset_id
+  // when unset, minted on create/update below).
+  await ensureColumnExists('machines', 'barcode', "TEXT NOT NULL DEFAULT ''");
 
   await run(`
     UPDATE groups 
@@ -5412,6 +5470,10 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_challan_item_id ON piece_barcodes(challan_item_id)');
   // Per-sheet weight printed on each barcode tag (added after initial release).
   await ensureColumnExists('piece_barcodes', 'weight', 'REAL NOT NULL DEFAULT 0');
+  // Vendor-return tracking: stamped when the sheet is returned to its vendor so a
+  // sheet cannot be returned twice.
+  await ensureColumnExists('piece_barcodes', 'returned_at', 'TEXT');
+  await ensureColumnExists('piece_barcodes', 'returned_challan_id', 'INTEGER');
 
   await bootstrapSuperAdminIfNeeded();
   // --- Constraint Migration (Triggers for existing tables) ---
@@ -8832,6 +8894,9 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     // Free-text purpose for internal challans (empty for delivery/reception).
     internal_purpose: row.internal_purpose || '',
     internalPurpose: row.internal_purpose || '',
+    // Structured internal subtype (e.g. 'vendor_return').
+    internal_subtype: row.internal_subtype || '',
+    internalSubtype: row.internal_subtype || '',
     // Per-line settlement breakdown once the challan has been reconciled
     // (scrap/leftover/lost/rejection/finished-goods); empty otherwise.
     reconciliation_json: row.reconciliation_json || '',
@@ -11031,6 +11096,16 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   const internalPurpose = String(
     input.internalPurpose ?? input.internal_purpose ?? existing?.internal_purpose ?? '',
   ).trim();
+  // Structured internal subtype (e.g. 'vendor_return') + the scanned sheet codes
+  // a vendor-return carries (used at issue time to flag those sheets returned).
+  const internalSubtype = String(
+    input.internalSubtype ?? input.internal_subtype ?? existing?.internal_subtype ?? '',
+  ).trim();
+  const returnedSheetCodesInput =
+    input.returnedSheetCodes ?? input.returned_sheet_codes ?? null;
+  const returnedSheetCodesJson = Array.isArray(returnedSheetCodesInput)
+    ? JSON.stringify(returnedSheetCodesInput.map((c) => String(c).trim()).filter(Boolean))
+    : (existing?.returned_sheet_codes_json ?? '[]');
   const customerName = challanType === 'delivery'
     ? (maintainStocks
       ? String(firstOrder?.client_name || '').trim()
@@ -11077,7 +11152,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     : '';
   const orderNo = challanType === 'delivery'
     ? [...new Set(orders.map((order) => String(order.order_no || '').trim()).filter(Boolean))].join(', ')
-    : '';
+    // On-demand procurement (Scenario B): a reception challan may name the client
+    // order it was procured for, so the vendor sheets tie back to that order.
+    : String(input.orderNo ?? input.order_no ?? existing?.order_no ?? '').trim();
   const notes = String(input.notes ?? existing?.notes ?? '').trim();
   const persistedOrderId = challanType === 'delivery' && maintainStocks ? (orderIds[0] || null) : null;
   const persistedVendorId = challanType === 'reception' && maintainStocks && vendor ? vendor.id : null;
@@ -11193,7 +11270,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
             customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
             material_owner_client_id = ?, material_owner_client_name = ?, material_owner_gstin = ?,
-            source_reference = ?, po_number = ?, po_date = ?, notes = ?, maintain_stocks = ?, purpose = ?, internal_purpose = ?, updated_by = ?, updated_at = ?
+            source_reference = ?, po_number = ?, po_date = ?, notes = ?, maintain_stocks = ?, purpose = ?, internal_purpose = ?, internal_subtype = ?, returned_sheet_codes_json = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -11218,6 +11295,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           maintainStocks ? 1 : 0,
           purpose,
           internalPurpose,
+          internalSubtype,
+          returnedSheetCodesJson,
           actor?.id || null,
           now,
           challanId,
@@ -11232,9 +11311,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
           vendor_id, vendor_name, vendor_gstin, material_owner_client_id, material_owner_client_name,
           material_owner_gstin, source_reference, po_number, po_date, notes, status,
-          maintain_stocks, purpose, internal_purpose, created_by, updated_by, created_at, updated_at
+          maintain_stocks, purpose, internal_purpose, internal_subtype, returned_sheet_codes_json, created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanType,
@@ -11258,6 +11337,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           maintainStocks ? 1 : 0,
           purpose,
           internalPurpose,
+          internalSubtype,
+          returnedSheetCodesJson,
           actor?.id || null,
           actor?.id || null,
           now,
@@ -11548,6 +11629,33 @@ async function issueDeliveryChallan(id, actor = null) {
         delta,
         now,
       });
+    }
+    // Vendor-return challans: flag each scanned sheet as returned to its vendor,
+    // rejecting a sheet that was already returned (double-return guard). Stock was
+    // deducted by the loop above via the generic internal-challan issue path.
+    if (String(existing.internal_subtype || '') === 'vendor_return') {
+      let returnedCodes = [];
+      try {
+        returnedCodes = JSON.parse(existing.returned_sheet_codes_json || '[]');
+      } catch (_) {
+        returnedCodes = [];
+      }
+      for (const code of returnedCodes) {
+        const sheet = await get(
+          'SELECT id, returned_at FROM piece_barcodes WHERE parent_code = ? OR child_code = ?',
+          [code, code],
+        );
+        if (!sheet) continue;
+        if (sheet.returned_at) {
+          const error = new Error(`Sheet ${code} has already been returned to the vendor.`);
+          error.statusCode = 409;
+          throw error;
+        }
+        await run(
+          'UPDATE piece_barcodes SET returned_at = ?, returned_challan_id = ? WHERE id = ?',
+          [now, id, sheet.id],
+        );
+      }
     }
     await run(
       `
@@ -18987,7 +19095,7 @@ async function ensureDemoMaterialsPresent() {
   }
 }
 
-async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting = 'inventory') {
+async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting = 'inventory', actor = null) {
   const templateRow = await get(
     'SELECT * FROM pipeline_templates WHERE id = ?',
     [templateId],
@@ -19006,8 +19114,8 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scr
     `
     INSERT INTO pipeline_runs (
       id, template_id, template_version, name, status, overrides_json,
-      node_status_json, scrap_routing, node_metrics_json, started_at, completed_at, created_at
-    ) VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, '{}', NULL, NULL, ?)
+      node_status_json, scrap_routing, node_metrics_json, started_at, completed_at, created_at, created_by
+    ) VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, '{}', NULL, NULL, ?, ?)
     `,
     [
       runId,
@@ -19022,6 +19130,7 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scr
       JSON.stringify(nodeStatuses),
       scrapRouting,
       now,
+      actor?.name || null,
     ],
   );
 
@@ -20792,6 +20901,7 @@ function machineRowToDto(r) {
     id: String(r.id),
     name: r.name,
     assetId: r.asset_id,
+    barcode: r.barcode && r.barcode.length ? r.barcode : r.asset_id,
     primaryPhotoUrl: r.primary_photo_url,
     groupId: r.group_id,
     makeModel: r.make_model,
@@ -20863,6 +20973,7 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
       id,
       name,
       assetId,
+      barcode,
       primaryPhotoUrl,
       groupId,
       makeModel,
@@ -20882,6 +20993,8 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
     if (!finalAssetId || finalAssetId.trim() === '') {
       finalAssetId = `MACH-${Date.now()}`;
     }
+    // Machine barcode defaults to the asset tag when the client doesn't supply one.
+    const finalBarcode = barcode && barcode.trim() !== '' ? barcode.trim() : finalAssetId;
     let resultId = id;
     let beforeRow = null;
     const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
@@ -20889,14 +21002,14 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
       // Update
       beforeRow = await get('SELECT * FROM machines WHERE id = ?', [Number(id)]);
       await run(
-        `UPDATE machines SET name = ?, asset_id = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
-        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, Number(id)]
+        `UPDATE machines SET name = ?, asset_id = ?, barcode = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
+        [name, finalAssetId, finalBarcode, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, Number(id)]
       );
     } else {
       // Create
       const info = await run(
-        `INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, now]
+        `INSERT INTO machines (name, asset_id, barcode, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, finalAssetId, finalBarcode, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, now]
       );
       resultId = String(info.lastID);
     }
@@ -23784,9 +23897,10 @@ app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res
     }
     
     const row = await get(`
-      SELECT pb.*, 
-             ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight, ci.note,
-             c.order_no, c.type as challan_type, c.vendor_name
+      SELECT pb.*,
+             ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight AS line_weight, ci.note,
+             ci.variation_leaf_node_id, ci.variation_path_label,
+             c.order_no, c.type as challan_type, c.vendor_id, c.vendor_name, c.vendor_gstin
       FROM piece_barcodes pb
       JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
       JOIN delivery_challans c ON ci.challan_id = c.id
@@ -24118,6 +24232,264 @@ app.get('/api/orders/:orderNo/production-report', requirePermission('config.read
     });
   } catch (error) {
     res.status(500).json({ success: false, report: null, error: error.message });
+  }
+});
+
+function orderReturnRowToDto(r) {
+  return {
+    id: r.id,
+    returnNo: r.return_no,
+    orderNo: r.order_no,
+    orderItemId: r.order_item_id ?? null,
+    quantity: Number(r.quantity || 0),
+    unit: r.unit || 'pcs',
+    reasonCode: r.reason_code || 'defect',
+    defectDescription: r.defect_description || '',
+    status: r.status || 'open',
+    returnedBarcode: r.returned_barcode || '',
+    pipelineRunId: r.pipeline_run_id || null,
+    loggedBy: r.logged_by || '',
+    createdAt: r.created_at || null,
+    updatedAt: r.updated_at || null,
+  };
+}
+
+async function nextOrderReturnNo() {
+  const row = await get('SELECT COUNT(*) AS n FROM order_returns');
+  const year = new Date().getFullYear();
+  return `RMA-${year}-${String((row?.n || 0) + 1).padStart(4, '0')}`;
+}
+
+// Machine queue: pending (non-terminal) pipeline runs assigned to this machine.
+// Assignment is read from the first-class run_machine_assignments table, falling
+// back to the template node machine + the name-keyed override for runs that
+// predate the assignment table.
+app.get('/api/machines/:id/queue', requirePermission('config.read'), async (req, res) => {
+  try {
+    const machine = await get('SELECT * FROM machines WHERE id = ?', [Number(req.params.id)]);
+    if (!machine) {
+      return res.status(404).json({ success: false, queue: [], error: 'Machine not found.' });
+    }
+    const keys = new Set(
+      [String(machine.id), machine.asset_id, machine.name]
+        .filter(Boolean)
+        .map((k) => String(k).trim()),
+    );
+    const assignedRunIds = new Set(
+      (await all('SELECT DISTINCT run_id FROM run_machine_assignments WHERE machine_id = ?', [machine.id]))
+        .map((r) => r.run_id),
+    );
+    const runRows = await all(`
+      SELECT * FROM pipeline_runs
+      WHERE status IN ('planned','in_progress','paused')
+      ORDER BY created_at ASC
+    `);
+    const templateCache = new Map();
+    const queue = [];
+    for (const runRow of runRows) {
+      let uses = assignedRunIds.has(runRow.id);
+      if (!uses) {
+        if (!templateCache.has(runRow.template_id)) {
+          templateCache.set(
+            runRow.template_id,
+            await get('SELECT nodes_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]),
+          );
+        }
+        const nodes = parseJson(templateCache.get(runRow.template_id)?.nodes_json, []);
+        const overrides = parseJson(runRow.overrides_json, {});
+        const overrideNames = Object.values(overrides.machineOverrideByNode || {}).map((v) => String(v).trim());
+        const nodeKeys = nodes.flatMap((n) =>
+          [n.machineId, n.machine_id, n.machineAssetId, n.machine, n.machineName]
+            .filter(Boolean)
+            .map((k) => String(k).trim()),
+        );
+        uses = [...nodeKeys, ...overrideNames].some((k) => keys.has(k));
+      }
+      if (!uses) continue;
+      let runDto = {};
+      try {
+        runDto = await rowToRun(runRow);
+      } catch (_) {
+        runDto = {};
+      }
+      queue.push({
+        runId: runRow.id,
+        runName: runRow.name || runDto.name || runRow.run_code || runRow.id,
+        createdBy: runRow.created_by || null,
+        clientName: runDto.clientName || '',
+        orderNo: runDto.orderNo || '',
+        weightKg: Number(runRow.weight_kg || 0),
+        status: runRow.status,
+      });
+    }
+    res.json({ success: true, queue, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, queue: [], error: error.message });
+  }
+});
+
+// Customer return / defect events on an order (trace trigger).
+app.get('/api/orders/:orderNo/returns', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await all('SELECT * FROM order_returns WHERE order_no = ? ORDER BY created_at DESC', [req.params.orderNo]);
+    res.json({ success: true, returns: rows.map(orderReturnRowToDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, returns: [], error: error.message });
+  }
+});
+
+app.post('/api/orders/:orderNo/returns', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderNo = req.params.orderNo;
+    const header = await get('SELECT order_no FROM order_headers WHERE order_no = ?', [orderNo]);
+    if (!header) {
+      return res.status(404).json({ success: false, return: null, error: 'Order not found.' });
+    }
+    const b = req.body || {};
+    const actor = actorFromRequest(req);
+    const now = new Date().toISOString();
+    const returnNo = await nextOrderReturnNo();
+    const info = await run(
+      `
+      INSERT INTO order_returns (
+        return_no, order_no, order_item_id, quantity, unit, reason_code,
+        defect_description, status, returned_barcode, logged_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+      `,
+      [
+        returnNo,
+        orderNo,
+        b.orderItemId ?? b.order_item_id ?? null,
+        Number(b.quantity || 0),
+        b.unit || 'pcs',
+        b.reasonCode ?? b.reason_code ?? 'defect',
+        b.defectDescription ?? b.defect_description ?? '',
+        b.returnedBarcode ?? b.returned_barcode ?? '',
+        actor?.name || null,
+        now,
+        now,
+      ],
+    );
+    const row = await get('SELECT * FROM order_returns WHERE id = ?', [info.lastID]);
+    res.status(201).json({ success: true, return: orderReturnRowToDto(row), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, return: null, error: error.message });
+  }
+});
+
+// Backward QC lineage: reverses the production report and adds the exact
+// consumed vendor sheet(s) per run. Emits return events → runs → [die + machine]
+// stages → consumed sheets → vendor.
+app.get('/api/orders/:orderNo/trace', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderNo = req.params.orderNo;
+    const header = await get(`
+      SELECT h.order_no, c.name AS client_name
+      FROM order_headers h LEFT JOIN clients c ON h.client_id = c.id
+      WHERE h.order_no = ?
+    `, [orderNo]);
+    if (!header) {
+      return res.status(404).json({ success: false, trace: null, error: 'Order not found.' });
+    }
+    const returns = (await all('SELECT * FROM order_returns WHERE order_no = ? ORDER BY created_at DESC', [orderNo]))
+      .map(orderReturnRowToDto);
+    const runRows = await all(`
+      SELECT pr.*, opa.order_item_id
+      FROM pipeline_runs pr
+      JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+      JOIN order_items i ON opa.order_item_id = i.id
+      WHERE i.order_no = ?
+      ORDER BY pr.created_at DESC
+    `, [orderNo]);
+
+    const machineByKey = new Map();
+    for (const row of await all('SELECT * FROM machines')) {
+      const dto = machineRowToDto(row);
+      [String(row.id), row.asset_id, row.name].forEach((k) => { if (k) machineByKey.set(String(k).trim(), dto); });
+    }
+    const dieByKey = new Map();
+    for (const row of await all('SELECT * FROM dies')) {
+      const dto = dieRowToDto(row);
+      [String(row.id), row.tool_code].forEach((k) => { if (k) dieByKey.set(String(k).trim(), dto); });
+    }
+
+    const templateCache = new Map();
+    const runs = [];
+    const unresolved = [];
+    for (const runRow of runRows) {
+      if (!templateCache.has(runRow.template_id)) {
+        templateCache.set(
+          runRow.template_id,
+          await get('SELECT nodes_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]),
+        );
+      }
+      const nodes = parseJson(templateCache.get(runRow.template_id)?.nodes_json, []);
+      const overrides = parseJson(runRow.overrides_json, {});
+      const stages = nodes
+        .slice()
+        .sort((a, b) => (a.stageIndex || 0) - (b.stageIndex || 0))
+        .map((node) => {
+          const overrideName = overrides.machineOverrideByNode?.[node.id];
+          const machineKey = String(
+            overrideName || node.machineId || node.machine_id || node.machineAssetId || node.machine || node.machineName || '',
+          ).trim();
+          const dieKey = String(node.dieId || node.die_id || '').trim();
+          const machine = machineByKey.get(machineKey) || null;
+          const die = dieByKey.get(dieKey) || null;
+          return {
+            nodeId: node.id,
+            name: node.name || '',
+            machineAssetId: machine?.assetId || machineKey || '',
+            machineName: machine?.name || '',
+            dieToolCode: die?.toolCode || dieKey || '',
+          };
+        });
+
+      const inputs = await all('SELECT * FROM run_barcode_inputs WHERE run_id = ?', [runRow.id]);
+      const sheets = [];
+      for (const inp of inputs) {
+        if (inp.source_kind === 'sheet' && inp.piece_parent_code) {
+          const sheet = await get(`
+            SELECT pb.parent_code, pb.child_code, pb.weight,
+                   c.vendor_id, c.vendor_name, c.challan_no AS reception_challan_no, c.date AS reception_date
+            FROM piece_barcodes pb
+            JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+            JOIN delivery_challans c ON ci.challan_id = c.id
+            WHERE pb.parent_code = ? OR pb.child_code = ?
+          `, [inp.piece_parent_code, inp.piece_parent_code]);
+          sheets.push(sheet ? {
+            parentCode: sheet.parent_code,
+            childCode: sheet.child_code,
+            weight: Number(sheet.weight || 0),
+            vendorId: sheet.vendor_id || null,
+            vendorName: sheet.vendor_name || '',
+            receptionChallanNo: sheet.reception_challan_no || '',
+            receptionDate: sheet.reception_date || '',
+          } : {
+            parentCode: inp.piece_parent_code,
+            weight: Number(inp.consumed_weight || 0),
+            retro: true,
+          });
+        } else {
+          unresolved.push({ runId: runRow.id, barcode: inp.barcode, retro: true });
+        }
+      }
+      runs.push({
+        runId: runRow.id,
+        runName: runRow.name || runRow.run_code || runRow.id,
+        orderItemId: runRow.order_item_id,
+        stages,
+        sheets,
+      });
+    }
+
+    res.json({
+      success: true,
+      trace: { orderNo, clientName: header.client_name || '', returns, runs, unresolved },
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, trace: null, error: error.message });
   }
 });
 
@@ -25075,7 +25447,7 @@ app.post('/runs', async (req, res) => {
       });
       return;
     }
-    const run = await createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting || 'inventory');
+    const run = await createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting || 'inventory', actorFromRequest(req));
     if (!run) {
       res.status(404).json({
         success: false,
@@ -25384,6 +25756,64 @@ app.post('/runs/:id/barcodes', async (req, res) => {
         run: null,
         error: 'nodeId and barcode are required.',
       });
+      return;
+    }
+
+    // Per-sheet lineage capture: if the scanned code is a vendor sheet tag
+    // (piece_barcodes) rather than a SKU (materials), record the exact sheet
+    // consumed so the run traces back to the original vendor sheet. Backward
+    // compatible — SKU scans fall through to the unchanged path below.
+    const sheet = await get(
+      `
+      SELECT pb.parent_code, pb.child_code, pb.weight, pb.challan_item_id,
+             ci.item_id, c.vendor_id, c.vendor_name, c.challan_no AS reception_challan_no
+      FROM piece_barcodes pb
+      JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+      JOIN delivery_challans c ON ci.challan_id = c.id
+      WHERE pb.parent_code = ? OR pb.child_code = ?
+      `,
+      [payload.barcode, payload.barcode],
+    );
+    if (sheet) {
+      const sheetInputId = `barcode-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      await run(
+        `
+        INSERT INTO run_barcode_inputs (
+          id, run_id, node_id, barcode, material_id, material_payload_json,
+          source_kind, piece_parent_code, piece_child_code, challan_item_id, consumed_weight, scanned_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'sheet', ?, ?, ?, ?, ?)
+        `,
+        [
+          sheetInputId,
+          req.params.id,
+          payload.nodeId,
+          sheet.parent_code,
+          null,
+          JSON.stringify({
+            barcode: sheet.parent_code,
+            materialName: 'Sheet',
+            vendorId: sheet.vendor_id,
+            vendorName: sheet.vendor_name,
+            receptionChallanNo: sheet.reception_challan_no,
+            sheetWeight: Number(sheet.weight || 0),
+          }),
+          sheet.parent_code,
+          sheet.child_code,
+          sheet.challan_item_id,
+          Number(sheet.weight || 0),
+          new Date().toISOString(),
+        ],
+      );
+      // Roll the consumed sheet weight into the run's batch weight (surfaced in
+      // the machine queue popup).
+      await run(
+        'UPDATE pipeline_runs SET weight_kg = COALESCE(weight_kg, 0) + ? WHERE id = ?',
+        [Number(sheet.weight || 0), req.params.id],
+      );
+      const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
+        req.params.id,
+      ]);
+      res.json({ success: true, run: await rowToRun(updatedRunRow) });
       return;
     }
 
@@ -26669,6 +27099,109 @@ async function ensureDemoInventoryPresent(scenarioId = 'default') {
   }
 }
 
+// Simulation scenarios (Settings → Demo Scenarios): compose a small, faithful
+// dataset that demonstrates the two stock-consumption realities documented in
+// Docs/SIMULATION_PLAYBOOK.md, using the real challan functions so stock actually
+// moves and provenance is recorded. Idempotent (guarded by a marker challan) and
+// non-destructive on its own — the Settings tiles run it after a reset.
+//   scenario_a — Decoupled: bulk vendor stock-in (500), then two orders consume
+//                50 + 100 from the shared aggregate pool → 350.
+//   scenario_b — On-demand: a reception challan linked to a client order
+//                (reception→order link), procuring specifically for that order.
+async function ensureSimulationScenario(scenarioId) {
+  const isA = scenarioId === 'scenario_a';
+  const isB = scenarioId === 'scenario_b';
+  if (!isA && !isB) return;
+
+  const markerNo = isA ? 'SIM-A-RECEIVE' : 'SIM-B-RECEIVE';
+  const already = await get(
+    'SELECT id FROM delivery_challans WHERE challan_no = ? LIMIT 1',
+    [markerNo],
+  );
+  if (already) return;
+
+  // A valid stock-managed (item, leaf) to demo against — reuse one the base seed
+  // already created so issuing succeeds.
+  let stockRow = await get(`
+    SELECT vs.item_id, vs.variation_leaf_node_id, i.name AS item_name
+    FROM variation_stock vs JOIN items i ON i.id = vs.item_id
+    WHERE vs.variation_leaf_node_id > 0 AND vs.item_id IS NOT NULL
+    ORDER BY vs.id ASC LIMIT 1
+  `);
+  if (!stockRow) {
+    stockRow = await get(`
+      SELECT oi.item_id, oi.variation_leaf_node_id, i.name AS item_name
+      FROM order_items oi JOIN items i ON i.id = oi.item_id
+      WHERE oi.variation_leaf_node_id > 0 AND oi.item_id IS NOT NULL
+      ORDER BY oi.id ASC LIMIT 1
+    `);
+  }
+  if (!stockRow) return;
+  const itemId = stockRow.item_id;
+  const leafId = stockRow.variation_leaf_node_id;
+  const itemName = stockRow.item_name || 'Sheet';
+
+  const vendorName = isA ? 'Alpha Metals Co.' : 'Beta Alloys Ltd.';
+  let vendorRow = await get('SELECT id FROM vendors WHERE name = ? LIMIT 1', [vendorName]);
+  if (!vendorRow) {
+    await saveVendor({ name: vendorName, address: 'Simulation vendor' });
+    vendorRow = await get('SELECT id FROM vendors WHERE name = ? LIMIT 1', [vendorName]);
+  }
+  if (!vendorRow) return;
+  const vendorId = vendorRow.id;
+  const actor = { id: null, name: 'Scenario Seed', role: 'super_admin' };
+  const today = new Date().toISOString().slice(0, 10);
+  const line = (qty) => ({
+    itemId,
+    variationLeafNodeId: leafId,
+    particulars: itemName,
+    quantityPcs: String(qty),
+    weight: '0',
+    hsnCode: '',
+    note: '',
+  });
+
+  if (isA) {
+    const rc = await saveDeliveryChallan({
+      type: 'reception',
+      vendorId,
+      challanNo: markerNo,
+      date: today,
+      location: 'MAIN',
+      maintainStocks: true,
+      items: [line(500)],
+    }, actor, null);
+    await issueDeliveryChallan(rc.id, actor);
+    for (const [no, qty] of [['SIM-A-USE-1', 50], ['SIM-A-USE-2', 100]]) {
+      const uc = await saveDeliveryChallan({
+        type: 'internal',
+        internalPurpose: 'Decoupled consumption (simulation)',
+        challanNo: no,
+        date: today,
+        location: 'MAIN',
+        maintainStocks: true,
+        items: [line(qty)],
+      }, actor, null);
+      await issueDeliveryChallan(uc.id, actor);
+    }
+  } else {
+    const order = await get('SELECT order_no FROM order_headers ORDER BY rowid ASC LIMIT 1');
+    const orderNo = order?.order_no || '';
+    const rc = await saveDeliveryChallan({
+      type: 'reception',
+      vendorId,
+      orderNo,
+      poNumber: 'PO-SIM-B',
+      challanNo: markerNo,
+      date: today,
+      location: 'MAIN',
+      maintainStocks: true,
+      items: [line(120)],
+    }, actor, null);
+    await issueDeliveryChallan(rc.id, actor);
+  }
+}
+
 async function reseedDemoData(scenarioId = 'default') {
   await seedMaterialsIfEmpty();
   await seedUnitsIfEmpty();
@@ -26686,6 +27219,12 @@ async function reseedDemoData(scenarioId = 'default') {
   }
   if (scenarioId === 'mobiles') {
     await ensureDemoMobilesPresent(scenarioId);
+  }
+  if (scenarioId === 'scenario_a' || scenarioId === 'scenario_b') {
+    // Base items + stock come from the manufacturing dataset; then layer the
+    // scenario-specific vendor/challan flow on top.
+    await ensureDemoInventoryPresent('manufacturing');
+    await ensureSimulationScenario(scenarioId);
   }
 }
 

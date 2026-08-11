@@ -25,6 +25,7 @@ import 'challan_mobile_editor_screen.dart';
 import 'internal_use_reconciliation_screens.dart';
 import 'purchase_wizard_screens.dart';
 import 'use_raw_material_wizard_screen.dart';
+import 'vendor_return_screen.dart';
 
 final List<DeliveryChallanItem> activePurchaseLines = [];
 
@@ -93,6 +94,21 @@ class ChallanTabScreen extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const UseRawMaterialWizardScreen()),
                       ),
                     ),
+
+                    // Vendor Return: scan a received sheet tag and log it back to
+                    // its vendor as an internal challan (deducts stock).
+                    if (canCreate)
+                      _ChoiceCard(
+                        title: 'Vendor Return',
+                        subtitle: 'Return a sheet to its supplier',
+                        icon: Icons.assignment_return_rounded,
+                        color: const Color(0xFFC2410C),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const VendorReturnScreen(),
+                          ),
+                        ),
+                      ),
 
                     // In-use: lists internal-use challans created by the Use
                     // flow and opens the reconciliation screen. Additive and

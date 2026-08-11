@@ -61,6 +61,11 @@ abstract class ChallanRepository {
     List<Map<String, dynamic>> barcodes,
   );
 
+  /// Resolves a scanned sheet tag (`parent_code`/`child_code`) to its origin —
+  /// item, weight, vendor and returned status — via `/api/barcode/lookup`.
+  /// Returns null when the code is not a known sheet.
+  Future<Map<String, dynamic>?> lookupSheetBarcode(String code);
+
   Future<DeliveryChallan> updateChallanReportGroups(
     int id,
     List<String> reportGroupCodes,
@@ -167,9 +172,12 @@ class ChallanDraftInput {
     required this.type,
     this.purpose = ChallanPurpose.trading,
     this.internalPurpose = '',
+    this.internalSubtype = '',
+    this.returnedSheetCodes = const <String>[],
     required this.challanNo,
     required this.orderId,
     required this.orderIds,
+    this.orderNo = '',
     this.reportGroupCodes = const <String>[],
     required this.vendorId,
     this.materialOwnerClientId,
@@ -193,9 +201,19 @@ class ChallanDraftInput {
 
   /// Free-text purpose for internal challans; ignored for delivery/reception.
   final String internalPurpose;
+
+  /// Structured internal subtype (e.g. 'vendor_return'); ignored otherwise.
+  final String internalSubtype;
+
+  /// Scanned sheet tag codes a vendor-return challan flags returned on issue.
+  final List<String> returnedSheetCodes;
   final String challanNo;
   final int orderId;
   final List<int> orderIds;
+
+  /// Optional client order this (reception/procurement) challan was made for —
+  /// Scenario B on-demand procurement ties the incoming sheets to an order.
+  final String orderNo;
   final List<String> reportGroupCodes;
   final int vendorId;
   final int? materialOwnerClientId;
@@ -219,9 +237,17 @@ class ChallanDraftInput {
       'purpose': purpose.name,
       if (internalPurpose.trim().isNotEmpty)
         'internal_purpose': internalPurpose.trim(),
+      if (internalSubtype.trim().isNotEmpty)
+        'internal_subtype': internalSubtype.trim(),
+      if (returnedSheetCodes.isNotEmpty)
+        'returned_sheet_codes': returnedSheetCodes
+            .map((c) => c.trim())
+            .where((c) => c.isNotEmpty)
+            .toList(growable: false),
       'challan_no': challanNo.trim(),
       if (orderId > 0) 'order_id': orderId,
       if (orderIds.isNotEmpty) 'order_ids': orderIds,
+      if (orderNo.trim().isNotEmpty) 'order_no': orderNo.trim(),
       if (reportGroupCodes.isNotEmpty)
         'report_group_codes': reportGroupCodes
             .map((code) => code.trim())

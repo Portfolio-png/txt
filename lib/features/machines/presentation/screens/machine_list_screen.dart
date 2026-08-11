@@ -1,9 +1,11 @@
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_empty_state.dart';
 import 'package:core_erp/core/widgets/soft_master_data.dart';
@@ -445,12 +447,23 @@ class _MachineCardState extends State<_MachineCard> {
                                 ),
                                 const SizedBox(height: 8),
                               ],
-                              SoftStatusPill(
-                                label: machine.status.name.toUpperCase(),
-                                background: statusColor.$1,
-                                textColor: statusColor.$2,
-                                borderColor: statusColor.$3,
+                              Row(
+                                children: [
+                                  SoftStatusPill(
+                                    label: machine.status.name.toUpperCase(),
+                                    background: statusColor.$1,
+                                    textColor: statusColor.$2,
+                                    borderColor: statusColor.$3,
+                                  ),
+                                  const Spacer(),
+                                  _MachineQueueBattery(
+                                    machineId: machine.id,
+                                    machineName: machine.name,
+                                  ),
+                                ],
                               ),
+                              const SizedBox(height: 8),
+                              _MachineBarcodeChip(machine: machine),
                             ],
                           ),
                         ),
@@ -512,6 +525,279 @@ class _MachineCardState extends State<_MachineCard> {
 }
 
 /// Three-dot more button shown on card hover.
+/// Compact scannable barcode chip on the machine card. Tapping enlarges it so an
+/// operator can scan the machine to load its queue or log a process.
+class _MachineBarcodeChip extends StatelessWidget {
+  const _MachineBarcodeChip({required this.machine});
+
+  final Machine machine;
+
+  String get _code =>
+      machine.barcode.isNotEmpty ? machine.barcode : machine.assetId;
+
+  void _showEnlarged(BuildContext context) {
+    if (_code.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(32),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                machine.name,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _code,
+                style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              InlineBarcodePreview(value: _code),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_code.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => _showEnlarged(context),
+      child: Tooltip(
+        message: 'Machine barcode — tap to enlarge / scan',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 24,
+              width: 88,
+              child: BarcodeWidget(
+                barcode: Barcode.code128(),
+                data: _code,
+                drawText: false,
+                color: SoftErpTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                _code,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  letterSpacing: 0.4,
+                  color: SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Battery-level indicator of a machine's pending run queue. Empty = idle, low
+/// (amber) = 1-2 queued, full (red) = 3+ queued (bottleneck). Tap opens the
+/// queue list. Loads its count lazily on first build.
+class _MachineQueueBattery extends StatefulWidget {
+  const _MachineQueueBattery({required this.machineId, required this.machineName});
+
+  final String machineId;
+  final String machineName;
+
+  @override
+  State<_MachineQueueBattery> createState() => _MachineQueueBatteryState();
+}
+
+class _MachineQueueBatteryState extends State<_MachineQueueBattery> {
+  List<MachineQueueItem>? _queue;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final q = await context
+          .read<MachinesProvider>()
+          .fetchMachineQueue(widget.machineId);
+      if (mounted) setState(() { _queue = q; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _queue = const []; _loading = false; });
+    }
+  }
+
+  int get _count => _queue?.length ?? 0;
+
+  (IconData, Color) get _battery {
+    if (_count >= 3) return (Icons.battery_full, Colors.red.shade600);
+    if (_count >= 1) return (Icons.battery_3_bar, Colors.orange.shade700);
+    return (Icons.battery_0_bar, SoftErpTheme.textSecondary);
+  }
+
+  void _openQueue() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _MachineQueueDialog(
+        machineName: widget.machineName,
+        queue: _queue ?? const [],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        width: 18,
+        height: 18,
+        child: Padding(
+          padding: EdgeInsets.all(2),
+          child: CircularProgressIndicator(strokeWidth: 1.5),
+        ),
+      );
+    }
+    final (icon, color) = _battery;
+    return Tooltip(
+      message:
+          'Active workload queue: $_count run${_count == 1 ? '' : 's'}. Tap to inspect pending batches.',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: _openQueue,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 2),
+            Text('$_count',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 12, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MachineQueueDialog extends StatelessWidget {
+  const _MachineQueueDialog({required this.machineName, required this.queue});
+
+  final String machineName;
+  final List<MachineQueueItem> queue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$machineName · Queue',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900, fontSize: 16)),
+              const SizedBox(height: 2),
+              Text(
+                  '${queue.length} pending run${queue.length == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                      color: SoftErpTheme.textSecondary, fontSize: 12)),
+              const SizedBox(height: 16),
+              if (queue.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('No pending runs.',
+                      style: TextStyle(color: SoftErpTheme.textSecondary)),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: queue.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) => _queueRow(queue[i]),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _queueRow(MachineQueueItem q) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F8FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8ECF5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(q.runName,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: SoftErpTheme.textPrimary)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: [
+              if (q.orderNo.isNotEmpty) _meta('Order', q.orderNo),
+              if (q.clientName.isNotEmpty) _meta('Client', q.clientName),
+              _meta('Created by', (q.createdBy ?? '').isEmpty ? '—' : q.createdBy!),
+              if (q.weightKg > 0)
+                _meta('Weight', '${q.weightKg.toStringAsFixed(q.weightKg == q.weightKg.roundToDouble() ? 0 : 2)} kg'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _meta(String k, String v) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 12, color: SoftErpTheme.textPrimary),
+        children: [
+          TextSpan(
+              text: '$k: ',
+              style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w500)),
+          TextSpan(text: v, style: const TextStyle(fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
 class _CardMoreButton extends StatelessWidget {
   const _CardMoreButton({
     required this.onEdit,

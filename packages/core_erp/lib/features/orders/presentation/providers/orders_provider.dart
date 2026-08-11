@@ -4,6 +4,7 @@ import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/order_production_report.dart';
+import '../../domain/order_trace.dart';
 import '../../domain/po_document.dart';
 import '../../data/repositories/order_repository.dart';
 
@@ -28,6 +29,15 @@ class OrdersProvider extends ChangeNotifier {
 
   Future<OrderProductionReport> loadProductionReport(String orderNo) =>
       _repository.getProductionReport(orderNo);
+
+  Future<List<OrderReturn>> loadOrderReturns(String orderNo) =>
+      _repository.getOrderReturns(orderNo);
+
+  Future<OrderReturn> logOrderReturn(CreateOrderReturnInput input) =>
+      _repository.createOrderReturn(input);
+
+  Future<OrderTrace> loadOrderTrace(String orderNo) =>
+      _repository.getOrderTrace(orderNo);
 
   List<OrderEntry> get orders => List<OrderEntry>.unmodifiable(_orders);
   String get searchQuery => _searchQuery;
@@ -77,6 +87,25 @@ class OrdersProvider extends ChangeNotifier {
       }
     }
     return map.values.toList();
+  }
+
+  /// Builds the [OrderGroup] for a given order number from all loaded orders
+  /// (unfiltered) — used to open an order's detail modal from another feature
+  /// (e.g. an inventory card's origin link). Returns null if not loaded.
+  OrderGroup? findGroupByOrderNo(String orderNo) {
+    final key = orderNo.trim();
+    if (key.isEmpty) return null;
+    final items = _orders.where((o) => o.orderNo == key).toList();
+    if (items.isEmpty) return null;
+    final first = items.first;
+    return OrderGroup(
+      orderNo: first.orderNo,
+      clientId: first.clientId,
+      clientName: first.clientName,
+      poNumber: first.poNumber,
+      createdAt: first.createdAt,
+      items: items,
+    );
   }
 
   void setSearchQuery(String value) {

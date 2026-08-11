@@ -72,6 +72,31 @@ class AppSettingsDialogState
   }
 
   Future<void> _handleResetAndReseed(String scenarioId) async {
+    // Loading a scenario wipes all business data first — always confirm.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Load demo scenario?'),
+        content: const Text(
+          'This wipes all business data (orders, challans, inventory, items, '
+          'vendors) and loads the selected demo. Users are kept. Cannot be undone.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC0392B)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Wipe & load'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
     setState(() {
       _isResetting = true;
     });
@@ -278,6 +303,26 @@ class AppSettingsDialogState
                       subtitle: const Text('Smartphone item with 5 properties, 5 values each.', style: TextStyle(fontSize: 12)),
                       trailing: ElevatedButton(
                         onPressed: _isResetting ? null : () => _handleResetAndReseed('mobiles'),
+                        child: const Text('Seed Scenario'),
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Scenario A · Decoupled Stock', style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Bulk vendor stock-in, two orders consume the shared pool (500 → 350).', style: TextStyle(fontSize: 12)),
+                      trailing: ElevatedButton(
+                        onPressed: _isResetting ? null : () => _handleResetAndReseed('scenario_a'),
+                        child: const Text('Seed Scenario'),
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Scenario B · On-Demand Procurement', style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Reception challan procured for a specific client order (reception→order link).', style: TextStyle(fontSize: 12)),
+                      trailing: ElevatedButton(
+                        onPressed: _isResetting ? null : () => _handleResetAndReseed('scenario_b'),
                         child: const Text('Seed Scenario'),
                       ),
                     ),

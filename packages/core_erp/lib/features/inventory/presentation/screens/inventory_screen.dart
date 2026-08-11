@@ -465,7 +465,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             _listingMode = value;
                           });
                         },
-                        showCardToggle: _viewMode == _InventoryViewMode.items,
+                        showCardToggle:
+                            _viewMode == _InventoryViewMode.items ||
+                            _viewMode == _InventoryViewMode.groups,
                         cardView: _cardView,
                         onCardViewChanged: (value) {
                           setState(() {
@@ -497,6 +499,31 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       Expanded(
                         child: _viewMode == _InventoryViewMode.jobWork
                             ? const _JobWorkStockTable()
+                            : (_viewMode == _InventoryViewMode.groups &&
+                                  _cardView)
+                            ? _InventoryGroupedCardView(
+                                rows: rows,
+                                onOpenDetails: _openDetails,
+                                onViewLineage: _openDetails,
+                                onOpenChallans: (record) {
+                                  final canBrowseChallans =
+                                      record.linkedItemId != null &&
+                                      record.linkedItemId! > 0;
+                                  if (!canBrowseChallans) {
+                                    _openDetails(record);
+                                    return;
+                                  }
+                                  _openItemChallansExcel(
+                                    context,
+                                    itemId: record.linkedItemId!,
+                                    variationLeafNodeId:
+                                        record.linkedVariationLeafNodeId,
+                                    customVariationValues:
+                                        record.customVariationValues,
+                                    label: record.name,
+                                  );
+                                },
+                              )
                             : (_viewMode == _InventoryViewMode.items &&
                                   _cardView)
                             ? _InventoryCardGrid(
@@ -4233,6 +4260,148 @@ class _InventoryCardGrid extends StatelessWidget {
   }
 }
 
+/// Grouped card view (Groups mode + Cards): renders each master-group header as a
+/// band with its rolled-up item count and stock, followed by a wrap of item /
+/// finished-good / raw-sheet cards. Each card exposes a "view lineage" affordance
+/// that opens the material's provenance (movements → run/challan → vendor).
+class _InventoryGroupedCardView extends StatelessWidget {
+  const _InventoryGroupedCardView({
+    required this.rows,
+    required this.onOpenDetails,
+    required this.onOpenChallans,
+    required this.onViewLineage,
+  });
+
+  final List<_InventoryRowEntry> rows;
+  final ValueChanged<MaterialRecord> onOpenDetails;
+  final ValueChanged<MaterialRecord> onOpenChallans;
+  final ValueChanged<MaterialRecord> onViewLineage;
+
+  static bool _isGroupHeader(_InventoryRowEntry e) =>
+      e.record.barcode.startsWith('GROUP-MASTER-');
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return const AppEmptyState(
+        title: 'No materials found',
+        message:
+            'Try a different search or filter, or create a new inventory group to populate this workspace.',
+        icon: Icons.inventory_2_outlined,
+      );
+    }
+    final sections = <Widget>[];
+    var pending = <_InventoryRowEntry>[];
+    void flush() {
+      if (pending.isEmpty) return;
+      final cards = pending;
+      pending = <_InventoryRowEntry>[];
+      sections.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final e in cards)
+                SizedBox(
+                  width: 320,
+                  height: 158,
+                  child: _InventoryItemCard(
+                    entry: e,
+                    onTap: () => onOpenChallans(e.record),
+                    onDetailsTap: () => onOpenDetails(e.record),
+                    onViewLineage: () => onViewLineage(e.record),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    for (final e in rows) {
+      if (_isGroupHeader(e)) {
+        flush();
+        sections.add(_GroupHeaderBand(entry: e));
+      } else {
+        pending.add(e);
+      }
+    }
+    flush();
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: sections,
+      ),
+    );
+  }
+}
+
+/// Group header band in the grouped card view: name + rolled-up item count and
+/// stock total, indented by tree depth.
+class _GroupHeaderBand extends StatelessWidget {
+  const _GroupHeaderBand({required this.entry});
+
+  final _InventoryRowEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = entry.displayName ?? entry.record.name;
+    final count = entry.directItemCount;
+    final stock = entry.aggregateStockLabel;
+    final textColor = _inventoryGroupTextColor(entry.depth);
+    return Container(
+      margin: EdgeInsets.only(
+        left: (entry.depth * 16).toDouble(),
+        top: 8,
+        bottom: 8,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _inventoryGroupBackgroundColor(entry.depth),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.folder_open_rounded, size: 18, color: textColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w800, color: textColor),
+            ),
+          ),
+          if (count != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Text(
+                '$count item${count == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: textColor),
+              ),
+            ),
+          if (stock != null && stock.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(
+                stock,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: textColor,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Boarding-pass style inventory card: large hero image, ticket-style details,
 /// and the material's scannable barcode. Gated behind the boardingPassCards flag.
 class _InventoryBoardingCard extends StatefulWidget {
@@ -4427,11 +4596,16 @@ class _InventoryItemCard extends StatefulWidget {
     required this.entry,
     required this.onTap,
     required this.onDetailsTap,
+    this.onViewLineage,
   });
 
   final _InventoryRowEntry entry;
   final VoidCallback onTap;
   final VoidCallback onDetailsTap;
+
+  /// When provided, renders a lineage/origin affordance that opens the material's
+  /// provenance (movements → run/challan → vendor). Used by the grouped card view.
+  final VoidCallback? onViewLineage;
 
   @override
   State<_InventoryItemCard> createState() => _InventoryItemCardState();
@@ -4579,6 +4753,25 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
                           ),
                         ),
                         const SizedBox(width: 4),
+                        if (widget.onViewLineage != null)
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: widget.onViewLineage,
+                              borderRadius: BorderRadius.circular(20),
+                              child: const Tooltip(
+                                message: 'View lineage / origin',
+                                child: Padding(
+                                  padding: EdgeInsets.all(4.0),
+                                  child: Icon(
+                                    Icons.account_tree_outlined,
+                                    size: 17,
+                                    color: SoftErpTheme.accent,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         Material(
                           color: Colors.transparent,
                           child: InkWell(

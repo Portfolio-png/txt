@@ -2,6 +2,7 @@ import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/order_production_report.dart';
+import '../../domain/order_trace.dart';
 import '../../domain/po_document.dart';
 import '../models/order_api_models.dart';
 
@@ -24,4 +25,13 @@ abstract class OrderRepository {
   Future<void> linkPoDocuments(int orderId, List<int> documentIds);
   Future<Uri> createPoDocumentReadUrl(int documentId);
   Future<OrderProductionReport> getProductionReport(String orderNo);
+
+  /// Customer return / defect events logged on an order.
+  Future<List<OrderReturn>> getOrderReturns(String orderNo);
+
+  /// Logs a new customer return / defect event.
+  Future<OrderReturn> createOrderReturn(CreateOrderReturnInput input);
+
+  /// Backward QC lineage for an order: returns → runs → die/machine → sheets.
+  Future<OrderTrace> getOrderTrace(String orderNo);
 }

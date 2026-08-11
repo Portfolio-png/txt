@@ -51,7 +51,9 @@ const MethodChannel _nativePrintingChannel = MethodChannel(
 const String _defaultChallanStorageLocation = 'MAIN';
 
 class ChallanScreen extends StatefulWidget {
-  const ChallanScreen({super.key});
+  const ChallanScreen({super.key, this.insightsView});
+
+  final Widget? insightsView;
 
   static Future<void> openEditor(
     BuildContext context, {

@@ -458,6 +458,26 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
+  Future<Map<String, dynamic>?> lookupSheetBarcode(String code) async {
+    if (useMockResponses) return null;
+    final uri = Uri.parse(
+      '$baseUrl/api/barcode/lookup',
+    ).replace(queryParameters: {'code': code});
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ChallanApiException(
+        'Failed to look up barcode (${response.statusCode}).',
+      );
+    }
+    final body = jsonDecode(response.body);
+    if (body is Map<String, dynamic> && body['result'] is Map<String, dynamic>) {
+      return body['result'] as Map<String, dynamic>;
+    }
+    return null;
+  }
+
+  @override
   Future<DeliveryChallan> updateChallanReportGroups(
     int id,
     List<String> reportGroupCodes,

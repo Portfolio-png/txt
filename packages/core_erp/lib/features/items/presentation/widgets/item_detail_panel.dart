@@ -12,7 +12,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
@@ -22,7 +21,7 @@ import '../../domain/item_usage_record.dart';
 import '../providers/items_provider.dart';
 
 import 'item_pipeline_metrics_card.dart';
-import 'item_pipeline_traceability_dialog.dart';
+
 
 Future<void> showItemDetailPanel(
   BuildContext context, {
@@ -388,14 +387,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                 widget.onEdit?.call();
                               },
                             );
-                      final originPipelinesButton = AppButton(
-                        label: 'View Origin Pipelines',
-                        icon: Icons.account_tree_outlined,
-                        onPressed: () => showItemPipelineTraceabilityDialog(
-                          context,
-                          item: item,
-                        ),
-                      );
+
 
                       final content = useTwoColumn
                           ? Row(
@@ -411,10 +403,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                         const SizedBox(height: 16),
                                         cadFileCard,
                                       ],
-                                      const SizedBox(height: 16),
-                                      originPipelinesButton,
                                       if (editButton != null) ...[
-                                        const SizedBox(height: 12),
+                                        const SizedBox(height: 16),
                                         editButton,
                                       ],
                                     ],
@@ -438,10 +428,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                 factsheet,
                                 const SizedBox(height: 18),
                                 _ItemVariationSection(item: item),
-                                const SizedBox(height: 18),
-                                originPipelinesButton,
                                 if (editButton != null) ...[
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 18),
                                   editButton,
                                 ],
                               ],

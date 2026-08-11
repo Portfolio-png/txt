@@ -160,4 +160,9 @@ class MachinesProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Pending production runs queued on a machine (machine queue popup).
+  Future<List<MachineQueueItem>> fetchMachineQueue(String machineId) {
+    return _repository.fetchMachineQueue(machineId);
+  }
 }

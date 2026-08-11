@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/services/feature_flags.dart';
@@ -39,6 +40,7 @@ import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../data/po_document_cache.dart';
 import '../../domain/order_entry.dart';
+import '../../domain/order_trace.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/po_document.dart';
@@ -82,7 +84,10 @@ class OrdersScreen extends StatefulWidget {
     this.onGoToProduction,
     this.getProductionStatus,
     this.onShowPipeline,
+    this.getProductionRuns,
   });
+
+  final Future<List<dynamic>> Function(String orderNo)? getProductionRuns;
 
   final Future<void> Function(
     BuildContext context,
@@ -114,6 +119,66 @@ class OrdersScreen extends StatefulWidget {
         horizontal: 16,
         vertical: 20,
       ),
+    );
+  }
+
+  /// Opens the read-only order **details** modal for a given order number, from
+  /// anywhere with an [OrdersProvider] in scope (e.g. an inventory card's origin
+  /// link). Shows the same modal (incl. the Trace tab) `_openLifecycleEditor`
+  /// uses, with production callbacks omitted.
+  static Future<void> openOrderDetailsByNo(
+    BuildContext context,
+    String orderNo,
+  ) async {
+    final provider = context.read<OrdersProvider>();
+    if (provider.orders.isEmpty) {
+      await provider.initialize();
+    }
+    if (!context.mounted) return;
+    final group = provider.findGroupByOrderNo(orderNo);
+    if (group == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Order $orderNo not found.')),
+      );
+      return;
+    }
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Order details',
+      barrierColor: const Color(0x7D100D1F),
+      pageBuilder: (ctx, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: LayoutBuilder(
+                builder: (ctx, constraints) {
+                  return SizedBox(
+                    width: math.min(1440, constraints.maxWidth),
+                    height: math.min(620, constraints.maxHeight),
+                    child: _OrderDetailsModal(
+                      orderGroup: group,
+                      onEditItem: (_) {},
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 220),
+      transitionBuilder: (ctx, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
+        );
+      },
     );
   }
 
@@ -432,6 +497,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       orderGroup: orderGroup,
                       onGoToProduction: widget.onGoToProduction,
                       getProductionStatus: widget.getProductionStatus,
+                      getProductionRuns: widget.getProductionRuns,
                       onShowPipeline: widget.onShowPipeline,
                       onEditItem: (item) {
                         Navigator.of(context).pop();
@@ -5703,8 +5769,11 @@ class _OrderDetailsModal extends StatefulWidget {
     required this.onEditItem,
     this.onGoToProduction,
     this.getProductionStatus,
+    this.getProductionRuns,
     this.onShowPipeline,
   });
+
+  final Future<List<dynamic>> Function(String orderNo)? getProductionRuns;
 
   final OrderGroup orderGroup;
   final ValueChanged<OrderEntry> onEditItem;
@@ -5771,7 +5840,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
   @override
   Widget build(BuildContext context) {
     final group = widget.orderGroup;
-    final tabs = ['Details', 'Timeline', 'Track'];
+    final tabs = ['Details', 'Timeline', 'Track', 'Insights', 'Trace'];
 
     final selectedContent = switch (_selectedTab) {
       0 => _OrderDetailsContent(
@@ -5793,6 +5862,11 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
         orderId: group.items.first.id,
       ), // Audit on first item for now
       2 => _OrderAuditContent(orderId: group.items.first.id),
+      3 => _OrderInsightsContent(
+        orderNo: group.orderNo,
+        getProductionRuns: widget.getProductionRuns,
+      ),
+      4 => _OrderTraceContent(orderNo: group.orderNo),
       _ => const SizedBox.shrink(),
     };
 
@@ -5826,6 +5900,11 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                     right: 24,
                     child: Row(
                       children: [
+                        const SizedBox(width: 8),
+                        _OrderDetailActionButton(
+                          label: 'Log Return',
+                          onPressed: () => _logReturn(context, group),
+                        ),
                         const SizedBox(width: 8),
                         _OrderDetailActionButton(
                           label: 'View Challans',
@@ -5916,6 +5995,20 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
     }
     Navigator.of(context).pop();
     context.read<AppNavigation>().select('delivery_challans');
+  }
+
+  Future<void> _logReturn(BuildContext context, OrderGroup group) async {
+    final saved = await showDialog<OrderReturn>(
+      context: context,
+      builder: (_) => _LogReturnDialog(group: group),
+    );
+    if (saved != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Return ${saved.returnNo} logged.')),
+      );
+      // Refresh the Trace tab if it's showing.
+      if (mounted) setState(() {});
+    }
   }
 }
 
@@ -6228,16 +6321,22 @@ class _OrderDetailsTabs extends StatelessWidget {
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      tabs[i],
-                      style: TextStyle(
-                        color: selectedIndex == i
-                            ? Colors.white
-                            : SoftErpTheme.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    child: tabs[i] == 'Insights'
+                        ? Image.asset(
+                            'assets/sparkle.png',
+                            width: 16,
+                            height: 16,
+                          )
+                        : Text(
+                            tabs[i],
+                            style: TextStyle(
+                              color: selectedIndex == i
+                                  ? Colors.white
+                                  : SoftErpTheme.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -7013,6 +7112,378 @@ class _OrderPoDocumentTile extends StatelessWidget {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
     return '$day-$month-${value.year}';
+  }
+}
+
+// ===================================================================== trace
+
+const _kReturnReasons = <String, String>{
+  'defect': 'Defect',
+  'wrong_item': 'Wrong item',
+  'damage_in_transit': 'Damage in transit',
+  'other': 'Other',
+};
+
+/// The Trace tab: the backward QC lineage tree for an order — logged returns,
+/// then each production run with its die+machine stages and the exact consumed
+/// vendor sheets (resolved to their supplier).
+class _OrderTraceContent extends StatefulWidget {
+  const _OrderTraceContent({required this.orderNo});
+
+  final String orderNo;
+
+  @override
+  State<_OrderTraceContent> createState() => _OrderTraceContentState();
+}
+
+class _OrderTraceContentState extends State<_OrderTraceContent> {
+  late Future<OrderTrace> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = context.read<OrdersProvider>().loadOrderTrace(widget.orderNo);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<OrderTrace>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(
+            child: Text('Failed to load trace: ${snap.error}',
+                style: const TextStyle(color: SoftErpTheme.textSecondary)),
+          );
+        }
+        final trace = snap.data!;
+        if (trace.runs.isEmpty && trace.returns.isEmpty) {
+          return const Center(
+            child: Text('No production lineage recorded for this order yet.',
+                style: TextStyle(color: SoftErpTheme.textSecondary)),
+          );
+        }
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (trace.returns.isNotEmpty) ...[
+                const _TraceSectionLabel('Returns / defects'),
+                for (final r in trace.returns) _returnCard(r),
+                const SizedBox(height: 12),
+              ],
+              const _TraceSectionLabel('Production lineage'),
+              for (final run in trace.runs) _runCard(run),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _returnCard(OrderReturn r) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF3C6C6)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.assignment_late_outlined, size: 18, color: Color(0xFFC0392B)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${r.returnNo} · ${_kReturnReasons[r.reasonCode] ?? r.reasonCode}'
+              '${r.defectDescription.isNotEmpty ? ' — ${r.defectDescription}' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+            ),
+          ),
+          Text(r.status, style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
+  Widget _runCard(OrderTraceRun run) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F8FC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.account_tree_outlined, size: 18, color: SoftErpTheme.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(run.runName,
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+              ),
+            ],
+          ),
+          if (run.stages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in run.stages)
+                  if (s.machineAssetId.isNotEmpty || s.dieToolCode.isNotEmpty)
+                    _stageChip(s),
+              ],
+            ),
+          ],
+          if (run.sheets.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Consumed vendor sheets',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SoftErpTheme.textSecondary)),
+            const SizedBox(height: 6),
+            for (final sheet in run.sheets) _sheetRow(sheet),
+          ] else ...[
+            const SizedBox(height: 8),
+            const Text('No per-sheet consumption captured for this run (SKU-level only).',
+                style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _stageChip(OrderTraceStage s) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF0FB),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        [
+          if (s.name.isNotEmpty) s.name,
+          if (s.machineAssetId.isNotEmpty) 'M:${s.machineAssetId}',
+          if (s.dieToolCode.isNotEmpty) 'D:${s.dieToolCode}',
+        ].join('  ·  '),
+        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF3B3599)),
+      ),
+    );
+  }
+
+  Widget _sheetRow(OrderTraceSheet sheet) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (sheet.parentCode.isNotEmpty)
+            SizedBox(
+              width: 120,
+              height: 30,
+              child: BarcodeWidget(
+                barcode: Barcode.code128(),
+                data: sheet.parentCode,
+                drawText: false,
+                color: SoftErpTheme.textPrimary,
+              ),
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(sheet.parentCode,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(
+                  [
+                    if (sheet.vendorName.isNotEmpty) 'Vendor: ${sheet.vendorName}',
+                    if (sheet.weight > 0) '${sheet.weight} kg',
+                    if (sheet.receptionChallanNo.isNotEmpty) 'RC ${sheet.receptionChallanNo}',
+                    if (sheet.retro) 'SKU-level (legacy)',
+                  ].join('  ·  '),
+                  style: const TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TraceSectionLabel extends StatelessWidget {
+  const _TraceSectionLabel(this.label);
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, top: 4),
+      child: Text(label.toUpperCase(),
+          style: const TextStyle(
+              fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: SoftErpTheme.textSecondary)),
+    );
+  }
+}
+
+/// Dialog to log a customer return / defect against an order line.
+class _LogReturnDialog extends StatefulWidget {
+  const _LogReturnDialog({required this.group});
+  final OrderGroup group;
+
+  @override
+  State<_LogReturnDialog> createState() => _LogReturnDialogState();
+}
+
+class _LogReturnDialogState extends State<_LogReturnDialog> {
+  OrderEntry? _item;
+  String _reason = 'defect';
+  final _qtyController = TextEditingController(text: '1');
+  final _descController = TextEditingController();
+  final _barcodeController = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _item = widget.group.items.isNotEmpty ? widget.group.items.first : null;
+  }
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    _descController.dispose();
+    _barcodeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      final saved = await context.read<OrdersProvider>().logOrderReturn(
+            CreateOrderReturnInput(
+              orderNo: widget.group.orderNo,
+              orderItemId: _item?.id,
+              quantity: double.tryParse(_qtyController.text.trim()) ?? 0,
+              reasonCode: _reason,
+              defectDescription: _descController.text.trim(),
+              returnedBarcode: _barcodeController.text.trim(),
+            ),
+          );
+      if (mounted) Navigator.of(context).pop(saved);
+    } catch (e) {
+      if (mounted) setState(() { _error = '$e'; _busy = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Log return · ${widget.group.orderNo}',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<OrderEntry>(
+                initialValue: _item,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Order line', border: OutlineInputBorder()),
+                items: [
+                  for (final it in widget.group.items)
+                    DropdownMenuItem(
+                      value: it,
+                      child: Text(
+                        it.variationPathLabel.isNotEmpty ? '${it.itemName} · ${it.variationPathLabel}' : it.itemName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _item = v),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _qtyController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Quantity', border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _reason,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Reason', border: OutlineInputBorder()),
+                      items: [
+                        for (final e in _kReturnReasons.entries)
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                      ],
+                      onChanged: (v) => setState(() => _reason = v ?? 'defect'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descController,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Defect description', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _barcodeController,
+                decoration: const InputDecoration(
+                  labelText: 'Returned finished-good barcode (optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: Color(0xFFC0392B), fontSize: 12)),
+              ],
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _busy ? null : _submit,
+                    child: _busy
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Log return'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -8809,6 +9280,221 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OrderInsightsContent extends StatelessWidget {
+  const _OrderInsightsContent({
+    required this.orderNo,
+    this.getProductionRuns,
+  });
+
+  final String orderNo;
+  final Future<List<dynamic>> Function(String orderNo)? getProductionRuns;
+
+  @override
+  Widget build(BuildContext context) {
+    if (getProductionRuns == null) {
+      return const Center(child: Text('Insights unavailable', style: TextStyle(color: SoftErpTheme.textSecondary)));
+    }
+
+    return FutureBuilder<List<dynamic>>(
+      future: getProductionRuns!(orderNo),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final runs = snapshot.data ?? [];
+        if (runs.isEmpty) {
+          return const Center(
+            child: Text(
+              'No production runs recorded for this order.',
+              style: TextStyle(color: SoftErpTheme.textSecondary),
+            ),
+          );
+        }
+
+        // Compute metrics
+        int totalProcessed = 0;
+        int totalScrap = 0;
+        int totalRejection = 0;
+        for (final run in runs) {
+          try {
+            // Safe access using reflection-free runtime lookup since runs might be dynamic
+            final map = run as Map<String, dynamic>? ?? {};
+            totalProcessed += (map['rawInputWeight'] as num?)?.toInt() ?? 0;
+            totalScrap += (map['scrapWeight'] as num?)?.toInt() ?? 0;
+            totalRejection += (map['rejectionWeight'] as num?)?.toInt() ?? 0;
+          } catch (_) {
+            // Try properties directly if it's an object instead of a map
+            try {
+              totalProcessed += (run.rawInputWeight as num?)?.toInt() ?? 0;
+              totalScrap += (run.scrapWeight as num?)?.toInt() ?? 0;
+              totalRejection += (run.rejectionWeight as num?)?.toInt() ?? 0;
+            } catch (_) {}
+          }
+        }
+
+        final goodOutput = totalProcessed - totalScrap - totalRejection;
+        final yieldPct = totalProcessed > 0
+            ? (goodOutput / totalProcessed * 100).toStringAsFixed(1)
+            : '0.0';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            Text(
+              'Order Yield & Performance Summary',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _MiniMetricCard(
+                    label: 'Recovery Yield',
+                    value: '$yieldPct%',
+                    color: const Color(0xFF10B981),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _MiniMetricCard(
+                    label: 'Total Scrap',
+                    value: '${totalScrap}kg',
+                    color: const Color(0xFFF59E0B),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _MiniMetricCard(
+                    label: 'Rejections',
+                    value: '${totalRejection}kg',
+                    color: const Color(0xFFEF4444),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: SoftErpTheme.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pipeline Runs',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: runs.length,
+                        separatorBuilder: (_, __) =>
+                            const Divider(height: 16, color: SoftErpTheme.border),
+                        itemBuilder: (context, index) {
+                          final run = runs[index];
+                          String label = 'Batch #${run.id}';
+                          String status = run.status ?? 'unknown';
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(label,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: SoftErpTheme.textPrimary)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: status == 'completed'
+                                      ? const Color(0xFFE6F4EA)
+                                      : const Color(0xFFFEF7E0),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: status == 'completed'
+                                        ? const Color(0xFF137333)
+                                        : const Color(0xFFB06000),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MiniMetricCard extends StatelessWidget {
+  const _MiniMetricCard({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/order_production_report.dart';
+import '../../domain/order_trace.dart';
 import '../../domain/po_document.dart';
 import '../models/order_api_models.dart';
 import 'order_repository.dart';
@@ -542,6 +543,70 @@ class ApiOrderRepository implements OrderRepository {
     return OrderProductionReport.fromJson(
       payload['report'] as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<List<OrderReturn>> getOrderReturns(String orderNo) async {
+    if (useMockResponses) return const [];
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/${Uri.encodeComponent(orderNo)}/returns',
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw OrderApiException(
+        payload['error'] as String? ?? 'Failed to fetch returns.',
+      );
+    }
+    return (payload['returns'] as List<dynamic>? ?? const [])
+        .map((e) => OrderReturn.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<OrderReturn> createOrderReturn(CreateOrderReturnInput input) async {
+    if (useMockResponses) {
+      return OrderReturn(id: 0, returnNo: 'RMA-MOCK', orderNo: input.orderNo);
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/${Uri.encodeComponent(input.orderNo)}/returns',
+    );
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(input.toJson()),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['return'] == null) {
+      throw OrderApiException(
+        payload['error'] as String? ?? 'Failed to log return.',
+      );
+    }
+    return OrderReturn.fromJson(payload['return'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<OrderTrace> getOrderTrace(String orderNo) async {
+    if (useMockResponses) return OrderTrace(orderNo: orderNo);
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/${Uri.encodeComponent(orderNo)}/trace',
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['trace'] == null) {
+      throw OrderApiException(
+        payload['error'] as String? ?? 'Failed to fetch trace.',
+      );
+    }
+    return OrderTrace.fromJson(payload['trace'] as Map<String, dynamic>);
   }
 
   @override

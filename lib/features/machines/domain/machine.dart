@@ -43,6 +43,7 @@ class Machine {
     required this.id,
     required this.name,
     required this.assetId,
+    this.barcode = '',
     required this.primaryPhotoUrl,
     required this.groupId,
     required this.makeModel,
@@ -64,6 +65,10 @@ class Machine {
   final String id;
   final String name;
   final String assetId;
+
+  /// Unique system-generated scan code for the machine (falls back to [assetId]
+  /// server-side when unset).
+  final String barcode;
   final String primaryPhotoUrl;
   final int? groupId;
   final String makeModel;
@@ -85,6 +90,7 @@ class Machine {
     String? id,
     String? name,
     String? assetId,
+    String? barcode,
     String? primaryPhotoUrl,
     int? groupId,
     String? makeModel,
@@ -106,6 +112,7 @@ class Machine {
       id: id ?? this.id,
       name: name ?? this.name,
       assetId: assetId ?? this.assetId,
+      barcode: barcode ?? this.barcode,
       primaryPhotoUrl: primaryPhotoUrl ?? this.primaryPhotoUrl,
       groupId: groupId ?? this.groupId,
       makeModel: makeModel ?? this.makeModel,
@@ -128,6 +135,39 @@ class Machine {
       capabilities: capabilities ?? this.capabilities,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+/// One pending production run in a machine's queue (machine queue popup).
+class MachineQueueItem {
+  const MachineQueueItem({
+    required this.runId,
+    required this.runName,
+    this.createdBy,
+    this.clientName = '',
+    this.orderNo = '',
+    this.weightKg = 0,
+    this.status = '',
+  });
+
+  final String runId;
+  final String runName;
+  final String? createdBy;
+  final String clientName;
+  final String orderNo;
+  final double weightKg;
+  final String status;
+
+  factory MachineQueueItem.fromJson(Map<String, dynamic> json) {
+    return MachineQueueItem(
+      runId: '${json['runId'] ?? ''}',
+      runName: '${json['runName'] ?? ''}',
+      createdBy: json['createdBy'] as String?,
+      clientName: (json['clientName'] as String?) ?? '',
+      orderNo: (json['orderNo'] as String?) ?? '',
+      weightKg: (json['weightKg'] as num?)?.toDouble() ?? 0,
+      status: (json['status'] as String?) ?? '',
     );
   }
 }

@@ -39,6 +39,8 @@ import '../../features/production_pipelines/presentation/screens/production_pipe
 import '../../features/machines/presentation/screens/machine_telemetry_screen.dart';
 import '../../features/production/widgets/start_production_dialog.dart';
 import '../../features/production/screens/live_production_monitor_screen.dart';
+import '../../features/production/screens/production_runs_screen.dart';
+import '../../features/production/screens/challan_insights_dashboard.dart';
 import '../../features/production/providers/production_provider.dart';
 import '../../features/production/providers/production_run_provider.dart';
 import '../../features/production_pipelines/data/repositories/pipeline_run_repository.dart';
@@ -757,6 +759,7 @@ class _ShellContentSwitcher extends StatelessWidget {
                 embeddedInShell: true,
                 mode: ProductionPipelinesScreenMode.production,
               ),
+              'insights' => const ProductionRunsScreen(initialTab: 'insights'),
               'production_pipelines' => const ProductionPipelinesScreen(
                 embeddedInShell: true,
                 mode: ProductionPipelinesScreenMode.manage,

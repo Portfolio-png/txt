@@ -151,11 +151,13 @@ class SoftSegmentOption<T> {
     required this.value,
     required this.label,
     this.count,
+    this.customLabel,
   });
 
   final T value;
   final String label;
   final int? count;
+  final Widget? customLabel;
 }
 
 class SoftSegmentedFilter<T> extends StatelessWidget {
@@ -234,14 +236,17 @@ class _SoftSegmentButton<T> extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                option.label,
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 13.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              if (option.customLabel != null)
+                option.customLabel!
+              else
+                Text(
+                  option.label,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 13.5,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  ),
                 ),
-              ),
               if (option.count != null) ...[
                 const SizedBox(width: 8),
                 Container(

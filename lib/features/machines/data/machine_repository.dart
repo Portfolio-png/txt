@@ -8,4 +8,7 @@ abstract class MachineRepository {
   Future<void> deleteMachine(String id);
   Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input);
   Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input);
+
+  /// Pending production runs queued on this machine (machine queue popup).
+  Future<List<MachineQueueItem>> fetchMachineQueue(String machineId);
 }

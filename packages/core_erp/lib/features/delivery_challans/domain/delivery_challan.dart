@@ -348,6 +348,7 @@ class DeliveryChallan {
     required this.type,
     this.purpose = ChallanPurpose.trading,
     this.internalPurpose = '',
+    this.internalSubtype = '',
     required this.orderId,
     required this.orderIds,
     this.reportGroupCodes = const <String>[],
@@ -383,6 +384,9 @@ class DeliveryChallan {
 
   /// Free-text purpose for internal challans; empty for delivery/reception.
   final String internalPurpose;
+
+  /// Structured internal-challan subtype (e.g. 'vendor_return'); empty otherwise.
+  final String internalSubtype;
   final int? orderId;
   final List<int> orderIds;
   final List<String> reportGroupCodes;
@@ -447,6 +451,9 @@ class DeliveryChallan {
       ),
       internalPurpose:
           (json['internalPurpose'] ?? json['internal_purpose']) as String? ??
+          '',
+      internalSubtype:
+          (json['internalSubtype'] ?? json['internal_subtype']) as String? ??
           '',
       orderId: json['orderId'] as int? ?? json['order_id'] as int?,
       orderIds:
@@ -540,6 +547,8 @@ class DeliveryChallan {
       id: id,
       type: type,
       purpose: purpose ?? this.purpose,
+      internalPurpose: internalPurpose,
+      internalSubtype: internalSubtype,
       orderId: orderId,
       orderIds: orderIds,
       reportGroupCodes: reportGroupCodes ?? this.reportGroupCodes,
