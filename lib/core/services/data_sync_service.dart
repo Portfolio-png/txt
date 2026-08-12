@@ -22,8 +22,8 @@ class DataSyncService {
     // Cancel any existing timer to avoid multiple polling loops
     _syncTimer?.cancel();
 
-    // Periodically sync every 30 seconds
-    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) => syncState());
+    // Periodically sync every 120 seconds
+    _syncTimer = Timer.periodic(const Duration(seconds: 120), (_) => syncState());
     
     // Trigger initial sync in background after a short delay
     Future.delayed(const Duration(seconds: 5), () => syncState());

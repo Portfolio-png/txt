@@ -9381,72 +9381,8 @@ class _OrderInsightsContent extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8F9FA),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: SoftErpTheme.border),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Pipeline Runs',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: SoftErpTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: runs.length,
-                        separatorBuilder: (_, __) =>
-                            const Divider(height: 16, color: SoftErpTheme.border),
-                        itemBuilder: (context, index) {
-                          final run = runs[index];
-                          String label = 'Batch #${run.id}';
-                          String status = run.status ?? 'unknown';
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(label,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: SoftErpTheme.textPrimary)),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: status == 'completed'
-                                      ? const Color(0xFFE6F4EA)
-                                      : const Color(0xFFFEF7E0),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  status.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: status == 'completed'
-                                        ? const Color(0xFF137333)
-                                        : const Color(0xFFB06000),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Pipeline Runs list intentionally hidden from the Insights tab —
+            // the aggregate yield/scrap/rejection summary above is what's shown.
           ],
         );
       },

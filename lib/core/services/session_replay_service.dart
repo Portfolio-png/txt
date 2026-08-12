@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
@@ -26,9 +25,9 @@ class SessionReplayService {
     _baseUrl = baseUrl;
     _clientId = clientId;
 
-    // Start sync timer every 30 seconds
+    // Start sync timer every 120 seconds to prevent background HTTP churn
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) => syncReplays());
+    _syncTimer = Timer.periodic(const Duration(seconds: 120), (_) => syncReplays());
   }
 
   int get _elapsedMs => DateTime.now().difference(_sessionStart).inMilliseconds;

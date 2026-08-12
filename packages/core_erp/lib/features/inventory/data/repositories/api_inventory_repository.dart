@@ -519,11 +519,16 @@ class ApiInventoryRepository implements InventoryRepository {
     final List<dynamic> rawList = payload['stock'] ?? [];
     return rawList.map((dynamic row) {
       final map = row as Map<String, dynamic>;
-      final namingFormatStr = map['naming_format'] as String? ?? '';
-      List<String> formatTokens = [];
-      if (namingFormatStr.isNotEmpty) {
+      // `naming_format` may arrive already-parsed as a List (the backend
+      // JSON.parses it) or as a JSON string ('[]' fallback) — handle both, or
+      // the whole inventory load throws a List-is-not-String cast error.
+      final rawNamingFormat = map['naming_format'];
+      List<String> formatTokens = <String>[];
+      if (rawNamingFormat is List) {
+        formatTokens = rawNamingFormat.map((e) => e.toString()).toList();
+      } else if (rawNamingFormat is String && rawNamingFormat.isNotEmpty) {
         try {
-          final decoded = jsonDecode(namingFormatStr);
+          final decoded = jsonDecode(rawNamingFormat);
           if (decoded is List) {
             formatTokens = decoded.map((e) => e.toString()).toList();
           }

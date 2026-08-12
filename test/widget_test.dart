@@ -7384,88 +7384,10 @@ void main() {
       await tester.tap(find.text('Settings &\nPreferences'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Workspace Data Controls'), findsOneWidget);
-      expect(find.text('Clear Data'), findsOneWidget);
-      expect(find.text('Reset + Reseed Demo'), findsOneWidget);
-      expect(find.text('Reseed Data'), findsNothing);
-
-      final initialInventoryFetches = inventoryRepository.getAllMaterialsCalls;
-      final initialGroupFetches = groupRepository.getGroupsCalls;
-      final initialUnitFetches = unitRepository.getUnitsCalls;
-      final initialClientFetches = clientRepository.getClientsCalls;
-      final initialItemFetches = itemRepository.getItemsCalls;
-      final initialOrderFetches = orderRepository.getOrdersCalls;
-      final initialChallanFetches = deliveryChallanRepository.getChallansCalls;
-
-      await tester.ensureVisible(
-        find.widgetWithText(FilledButton, 'Clear Data'),
-      );
-      await tester.tap(find.widgetWithText(FilledButton, 'Clear Data'));
-      await tester.pumpAndSettle();
-
-      expect(authProvider.clearCalls, 1);
-      expect(
-        find.text('Backend database cleared successfully.'),
-        findsOneWidget,
-      );
-      expect(
-        inventoryRepository.getAllMaterialsCalls,
-        greaterThan(initialInventoryFetches),
-      );
-      expect(groupRepository.getGroupsCalls, greaterThan(initialGroupFetches));
-      expect(unitRepository.getUnitsCalls, greaterThan(initialUnitFetches));
-      expect(
-        clientRepository.getClientsCalls,
-        greaterThan(initialClientFetches),
-      );
-      expect(itemRepository.getItemsCalls, greaterThan(initialItemFetches));
-      expect(orderRepository.getOrdersCalls, greaterThan(initialOrderFetches));
-      expect(
-        deliveryChallanRepository.getChallansCalls,
-        greaterThan(initialChallanFetches),
-      );
-
-      final postClearInventoryFetches =
-          inventoryRepository.getAllMaterialsCalls;
-      final postClearGroupFetches = groupRepository.getGroupsCalls;
-      final postClearUnitFetches = unitRepository.getUnitsCalls;
-      final postClearClientFetches = clientRepository.getClientsCalls;
-      final postClearItemFetches = itemRepository.getItemsCalls;
-      final postClearOrderFetches = orderRepository.getOrdersCalls;
-      final postClearChallanFetches =
-          deliveryChallanRepository.getChallansCalls;
-
-      await tester.ensureVisible(
-        find.widgetWithText(OutlinedButton, 'Reset + Reseed Demo'),
-      );
-      await tester.tap(
-        find.widgetWithText(OutlinedButton, 'Reset + Reseed Demo'),
-      );
-      await tester.pumpAndSettle();
-
-      expect(authProvider.resetCalls, 1);
-      expect(
-        inventoryRepository.getAllMaterialsCalls,
-        greaterThan(postClearInventoryFetches),
-      );
-      expect(
-        groupRepository.getGroupsCalls,
-        greaterThan(postClearGroupFetches),
-      );
-      expect(unitRepository.getUnitsCalls, greaterThan(postClearUnitFetches));
-      expect(
-        clientRepository.getClientsCalls,
-        greaterThan(postClearClientFetches),
-      );
-      expect(itemRepository.getItemsCalls, greaterThan(postClearItemFetches));
-      expect(
-        orderRepository.getOrdersCalls,
-        greaterThan(postClearOrderFetches),
-      );
-      expect(
-        deliveryChallanRepository.getChallansCalls,
-        greaterThan(postClearChallanFetches),
-      );
+      expect(find.text('Workspace Data'), findsNothing);
+      expect(find.text('Workspace Data Controls'), findsNothing);
+      expect(find.text('Clear Data'), findsNothing);
+      expect(find.text('Reset + Reseed Demo'), findsNothing);
     },
   );
 

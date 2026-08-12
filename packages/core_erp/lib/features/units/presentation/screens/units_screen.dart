@@ -128,26 +128,163 @@ class _UnitsToolbar extends StatelessWidget {
   }
 }
 
-class _UnitsTable extends StatelessWidget {
+class _UnitsTable extends StatefulWidget {
   const _UnitsTable({required this.units});
 
   final List<UnitDefinition> units;
 
   @override
+  State<_UnitsTable> createState() => _UnitsTableState();
+}
+
+class _UnitsTableState extends State<_UnitsTable> {
+  final Set<String> _collapsedFamilies = {};
+
+  @override
   Widget build(BuildContext context) {
-    return SoftMasterTable(
-      minWidth: 1120,
-      columns: const [
-        SoftTableColumn('Name', flex: 3),
-        SoftTableColumn('Symbol', flex: 2),
-        SoftTableColumn('Group', flex: 2),
-        SoftTableColumn('Conversion', flex: 1),
-        SoftTableColumn('Used In', flex: 1),
-        SoftTableColumn('Status', flex: 1),
-        SoftTableColumn('Actions', flex: 2),
-      ],
-      itemCount: units.length,
-      rowBuilder: (context, index) => _UnitRow(unit: units[index]),
+    // Group units by family (unitGroupName)
+    final Map<String, List<UnitDefinition>> grouped = {};
+    for (final unit in widget.units) {
+      final key = unit.unitGroupName ?? 'Ungrouped';
+      grouped.putIfAbsent(key, () => []).add(unit);
+    }
+
+    return ListView.builder(
+      itemCount: grouped.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemBuilder: (context, index) {
+        final familyName = grouped.keys.elementAt(index);
+        final familyUnits = grouped[familyName]!;
+        final isCollapsed = _collapsedFamilies.contains(familyName);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Interactive Group Header Band
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isCollapsed) {
+                        _collapsedFamilies.remove(familyName);
+                      } else {
+                        _collapsedFamilies.add(familyName);
+                      }
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: SoftErpTheme.accentSurface.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isCollapsed
+                              ? Icons.folder_rounded
+                              : Icons.folder_open_rounded,
+                          size: 18,
+                          color: SoftErpTheme.accent,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          familyName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: SoftErpTheme.textPrimary,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Text(
+                            '${familyUnits.length} unit${familyUnits.length == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: SoftErpTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          isCollapsed
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.keyboard_arrow_up_rounded,
+                          size: 20,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                alignment: Alignment.topCenter,
+                child: isCollapsed
+                    ? const SizedBox(width: double.infinity, height: 0)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              const minWidth = 1120.0;
+                              final width = constraints.maxWidth < minWidth
+                                  ? minWidth
+                                  : constraints.maxWidth;
+                              return SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                physics: constraints.maxWidth < minWidth
+                                    ? const ClampingScrollPhysics()
+                                    : const NeverScrollableScrollPhysics(),
+                                child: SizedBox(
+                                  width: width,
+                                  child: Column(
+                                    children: [
+                                      const SoftMasterHeaderStrip(
+                                        columns: [
+                                          SoftTableColumn('Name', flex: 3),
+                                          SoftTableColumn('Symbol', flex: 2),
+                                          SoftTableColumn('Group', flex: 2),
+                                          SoftTableColumn('Conversion', flex: 1),
+                                          SoftTableColumn('Used In', flex: 1),
+                                          SoftTableColumn('Status', flex: 1),
+                                          SoftTableColumn('Actions', flex: 2),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      for (int idx = 0; idx < familyUnits.length; idx++) ...[
+                                        _UnitRow(unit: familyUnits[idx]),
+                                        if (idx < familyUnits.length - 1)
+                                          const SizedBox(height: 10),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

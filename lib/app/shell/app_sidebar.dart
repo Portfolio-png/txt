@@ -704,22 +704,6 @@ class _SettingsPreferencesDialogState
             ],
           ),
         ],
-        <_SettingsNavItem>[
-          _SettingsNavItem(
-            pane: _SettingsPane.workspaceData,
-            label: 'Workspace Data',
-            icon: Icons.storage_rounded,
-            tint: Color(0xFFEF4444),
-            keywords: <String>[
-              'seed',
-              'demo',
-              'clear',
-              'reset',
-              'factory',
-              'scenario',
-            ],
-          ),
-        ],
       ];
 
   @override

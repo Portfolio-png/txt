@@ -29,7 +29,6 @@ import 'package:core_erp/features/clients/data/repositories/api_client_repositor
 import 'package:core_erp/features/clients/data/repositories/api_sub_contractor_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/sub_contractor_repository.dart';
-import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/delivery_challans/data/api_delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
@@ -133,8 +132,9 @@ Future<void> main() async {
       'PAPER_SENTRY_DSN',
       defaultValue: '',
     );
-    options.tracesSampleRate = 1.0;
-    options.experimental.replay.sessionSampleRate = 1.0;
+    // Lower trace and session replay sampling rates to eliminate client CPU profiling lag
+    options.tracesSampleRate = 0.1;
+    options.experimental.replay.sessionSampleRate = 0.05;
     options.experimental.replay.onErrorSampleRate = 1.0;
   }, appRunner: () => runApp(const MyApp()));
 }
