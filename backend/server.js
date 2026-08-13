@@ -2634,6 +2634,8 @@ async function rowToItemDto(row) {
     developedForClientId: row.developed_for_client_id || null,
     developedForClientName: developedForClientRow?.name || '',
     availableForPurchase: Boolean(row.available_for_purchase),
+    // null until a sample run is recorded on this specific item.
+    penPaperBaseline: parseJson(row.pen_paper_baseline_json, null),
     defaultPipelineId: row.default_pipeline_id || null,
     defaultPipelineName: row.default_pipeline_name || (row.default_pipeline_id ? (await get('SELECT name FROM pipeline_templates WHERE id = ?', [row.default_pipeline_id]))?.name || null : null),
   };
@@ -4826,12 +4828,18 @@ async function initDb() {
   // Whether this item can be ordered as a purchase (reception) line on the
   // mobile Purchase-challan flow. Curated per item in the desktop item editor.
   await ensureColumnExists('items', 'available_for_purchase', 'INTEGER NOT NULL DEFAULT 0');
+  // Per-item sample baseline (migrations/029). Separate from the pipeline
+  // template's copy, which every item on that template would otherwise share.
+  await ensureColumnExists('items', 'pen_paper_baseline_json', 'TEXT');
   await ensureColumnExists('item_unit_conversions', 'factor_to_primary', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'input_type', "TEXT NOT NULL DEFAULT 'Text'");
+  // Allowed range for 'Numeric' properties (migrations/028). NULL = unbounded.
+  await ensureColumnExists('item_variation_nodes', 'numeric_min', 'REAL');
+  await ensureColumnExists('item_variation_nodes', 'numeric_max', 'REAL');
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -7447,6 +7455,8 @@ async function getItemVariationTree(itemId) {
       displayName: row.display_name || '',
       inputType: row.input_type || 'Text',
       nameJoin: row.name_join || '',
+      numericMin: row.numeric_min == null ? null : Number(row.numeric_min),
+      numericMax: row.numeric_max == null ? null : Number(row.numeric_max),
       position: row.position || 0,
       isArchived: Boolean(row.is_archived),
       createdAt: row.created_at,
@@ -7976,6 +7986,38 @@ async function getItemUsageDetails(itemId) {
   return usage;
 }
 
+// Numeric variation properties may declare an allowed range, captured in the
+// item editor when the input type is switched to 'Numeric'. Either bound may be
+// omitted (open-ended); the range is dropped entirely for non-Numeric types so
+// switching a property back to Text/Gauge doesn't leave a stale range behind.
+function sanitizeNumericRange(node, inputType, propertyName) {
+  if (inputType !== 'Numeric') {
+    return { numericMin: null, numericMax: null };
+  }
+  const readBound = (raw, label) => {
+    if (raw === null || raw === undefined || raw === '') {
+      return null;
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+      const error = new Error(`Numeric property '${propertyName}' has an invalid ${label}.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    return value;
+  };
+  const numericMin = readBound(node.numericMin, 'minimum');
+  const numericMax = readBound(node.numericMax, 'maximum');
+  if (numericMin !== null && numericMax !== null && numericMin > numericMax) {
+    const error = new Error(
+      `Numeric property '${propertyName}' has a minimum greater than its maximum.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  return { numericMin, numericMax };
+}
+
 function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) {
   if (depth > 10) {
     const error = new Error('Variation tree is too deep.');
@@ -8009,13 +8051,18 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
     if (kind === 'property') {
       const hasPropertyChildren = (node.children || []).some(c => c.kind === 'property');
       const expectedChildKind = hasPropertyChildren ? 'property' : 'value';
+      const inputType = String(node.inputType || 'Text').trim() || 'Text';
+      const { numericMin, numericMax } = sanitizeNumericRange(node, inputType, trimmedName);
       return {
         id: nodeId,
         kind,
         name: trimmedName,
         code: String(node.code || '').trim(),
         displayName: '',
-        inputType: String(node.inputType || 'Text').trim() || 'Text',
+        inputType,
+        nameJoin: String(node.nameJoin || '').trim(),
+        numericMin,
+        numericMax,
         position: index,
         children: sanitizeNodes(node.children || [], expectedChildKind, pathSegments, trimmedName, depth + 1),
       };
@@ -15100,6 +15147,9 @@ async function saveItem({
   dieIds,
   developedForClientId,
   availableForPurchase,
+  // Same undefined-preserving contract: an update that doesn't mention the
+  // sample baseline keeps whatever is already recorded. `null` clears it.
+  penPaperBaseline,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -15210,8 +15260,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, available_for_purchase, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, available_for_purchase, pen_paper_baseline_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -15228,6 +15278,7 @@ async function saveItem({
           String(cadFileName || '').trim(),
           developedForClientId ? Number(developedForClientId) : null,
           availableForPurchase ? 1 : 0,
+          penPaperBaseline ? JSON.stringify(penPaperBaseline) : null,
           now,
           now,
         ],
@@ -15251,7 +15302,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, available_for_purchase = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -15265,7 +15316,12 @@ async function saveItem({
           defaultPipelineId !== undefined
             ? (defaultPipelineId ? String(defaultPipelineId).trim() : null)
             : (existing.default_pipeline_id || null),
-          normalizedBaseItemId,
+          // Same preservation rule as the CAD fields. The item editor's update
+          // payload omits baseItemId, so writing it unconditionally detached
+          // every spawned variant from its base on the first save.
+          baseItemId !== undefined && baseItemId !== null
+            ? normalizedBaseItemId
+            : (existing.base_item_id || null),
           photoUrl || null,
           // Same preservation rule as available_for_purchase: an internal
           // re-save that omits the CAD fields must not clear them.
@@ -15283,6 +15339,9 @@ async function saveItem({
           availableForPurchase !== undefined
             ? (availableForPurchase ? 1 : 0)
             : (existing.available_for_purchase ? 1 : 0),
+          penPaperBaseline !== undefined
+            ? (penPaperBaseline ? JSON.stringify(penPaperBaseline) : null)
+            : (existing.pen_paper_baseline_json || null),
           now,
           id,
         ],
@@ -15310,7 +15369,7 @@ async function saveItem({
           await run(
             `
             UPDATE item_variation_nodes
-            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, name_join = ?, position = ?, updated_at = ?
+            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, name_join = ?, numeric_min = ?, numeric_max = ?, position = ?, updated_at = ?
             WHERE id = ?
             `,
             [
@@ -15320,6 +15379,8 @@ async function saveItem({
               node.displayName,
               node.inputType || 'Text',
               node.nameJoin || '',
+              node.numericMin ?? null,
+              node.numericMax ?? null,
               node.position,
               now,
               nodeId,
@@ -15329,9 +15390,10 @@ async function saveItem({
           const result = await run(
             `
             INSERT INTO item_variation_nodes (
-              item_id, parent_node_id, kind, name, code, display_name, input_type, name_join, position,
+              item_id, parent_node_id, kind, name, code, display_name, input_type, name_join,
+              numeric_min, numeric_max, position,
               is_archived, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             `,
             [
               itemId,
@@ -15342,6 +15404,8 @@ async function saveItem({
               node.displayName,
               node.inputType || 'Text',
               node.nameJoin || '',
+              node.numericMin ?? null,
+              node.numericMax ?? null,
               node.position,
               now,
               now,

@@ -1,3 +1,5 @@
+import '../../production_pipelines/domain/pen_paper_baseline.dart';
+
 enum ItemVariationNodeKind { property, value }
 
 class ItemVariationNodeDefinition {
@@ -16,6 +18,8 @@ class ItemVariationNodeDefinition {
     required this.children,
     this.inputType = 'Text',
     this.nameJoin = '',
+    this.numericMin,
+    this.numericMax,
   });
 
   final int id;
@@ -35,6 +39,28 @@ class ItemVariationNodeDefinition {
   /// Separator between this property's combined child values in display
   /// names ('x' → "14 x 48"); empty follows the item's display format.
   final String nameJoin;
+
+  /// Inclusive bounds a 'Numeric' property accepts. Either may be null
+  /// (open-ended); both are null for Text/Gauge properties.
+  final double? numericMin;
+  final double? numericMax;
+
+  /// Whether this property constrains typed numbers to a range at all.
+  bool get hasNumericRange =>
+      inputType == 'Numeric' && (numericMin != null || numericMax != null);
+
+  /// Human-readable range for labels and hints — '1 – 40', '≥ 1', '≤ 40'.
+  String get numericRangeLabel {
+    String fmt(double value) => value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+    if (numericMin != null && numericMax != null) {
+      return '${fmt(numericMin!)} – ${fmt(numericMax!)}';
+    }
+    if (numericMin != null) return '≥ ${fmt(numericMin!)}';
+    if (numericMax != null) return '≤ ${fmt(numericMax!)}';
+    return '';
+  }
 
   bool get isLeafValue =>
       kind == ItemVariationNodeKind.value && activeChildren.isEmpty;
@@ -120,6 +146,7 @@ class ItemDefinition {
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
     this.availableForPurchase = false,
+    this.penPaperBaseline,
   });
 
   final int id;
@@ -173,6 +200,16 @@ class ItemDefinition {
   /// Whether this item can be ordered as a purchase (reception) line in the
   /// mobile Purchase-challan flow. Curated in the desktop item editor.
   final bool availableForPurchase;
+
+  /// Sample run recorded against this specific item — the pen & paper yield
+  /// baseline. Distinct from the pipeline template's copy, which every item on
+  /// that template shares. Null until a sample is recorded.
+  final PenPaperBaseline? penPaperBaseline;
+
+  /// A "basic item": spawned from a base item by Variation Creation, so it has
+  /// no variation tree of its own and inherits group, unit and naming from its
+  /// base. These open the trimmed basic-item editor.
+  bool get isBasicItem => baseItemId != null;
 
   bool get isUsed => usageCount > 0;
 

@@ -117,11 +117,52 @@ test('items module routes work end-to-end after evacuation', async () => {
             { kind: 'value', name: 'White', children: [] },
           ],
         },
+        {
+          kind: 'property',
+          name: 'Sheets',
+          inputType: 'Numeric',
+          numericMin: 1,
+          numericMax: 40,
+          children: [],
+        },
       ],
     });
     if (itemCreate.status !== 201) throw new Error("FAIL: " + JSON.stringify(itemCreate.body));
     const itemId = itemCreate.body.item.id;
-    assert.equal(itemCreate.body.item.variationTree.length, 1);
+    assert.equal(itemCreate.body.item.variationTree.length, 2);
+
+    // Numeric properties carry the range the item editor captured.
+    const numericNode = itemCreate.body.item.variationTree.find(
+      (node) => node.name === 'Sheets',
+    );
+    assert.equal(numericNode.inputType, 'Numeric');
+    assert.equal(numericNode.numericMin, 1);
+    assert.equal(numericNode.numericMax, 40);
+
+    // A range is only meaningful on Numeric properties — Text keeps null bounds.
+    const textNode = itemCreate.body.item.variationTree.find(
+      (node) => node.name === 'Color',
+    );
+    assert.equal(textNode.numericMin, null);
+    assert.equal(textNode.numericMax, null);
+
+    // An inverted range is rejected at the border.
+    const badRange = await sendJson('POST', '/api/items', {
+      name: 'Evacuation Test Item Bad Range',
+      groupId,
+      unitId,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Sheets',
+          inputType: 'Numeric',
+          numericMin: 40,
+          numericMax: 1,
+          children: [],
+        },
+      ],
+    });
+    assert.equal(badRange.status, 400);
 
     const itemGet = await getJson(`/api/items/${itemId}`);
     assert.equal(itemGet.status, 200);
@@ -152,6 +193,105 @@ test('items module routes work end-to-end after evacuation', async () => {
     });
     assert.equal(shortCode.status, 200);
     assert.equal(shortCode.body.item.shortCode, 'EV-01');
+
+    // --- basic items: spawned variants keep their base, and carry their own
+    // --- sample baseline ---
+    const variantCreate = await sendJson('POST', '/api/items', {
+      name: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+      baseItemId: itemId,
+      variationTree: [],
+    });
+    assert.equal(variantCreate.status, 201);
+    const variantId = variantCreate.body.item.id;
+    assert.equal(variantCreate.body.item.baseItemId, itemId);
+    assert.equal(variantCreate.body.item.penPaperBaseline, null);
+
+    // The item editor's update payload omits baseItemId; the variant must stay
+    // attached to its base rather than graduating into a base item.
+    const variantRename = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      displayName: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+    });
+    assert.equal(variantRename.status, 200);
+    assert.equal(variantRename.body.item.baseItemId, itemId);
+
+    const sampleBaseline = {
+      isGranular: true,
+      keyEfficiencyBenchmark: 88,
+      baselineOutputRate: 12.5,
+      baselineScrapRate: 4.2,
+      notes: 'Trial batch #7',
+      stageReconciliations: [
+        {
+          stageId: 'stage-1',
+          stageName: 'Raw Preparation',
+          inputKg: 100,
+          outputKg: 90,
+          scrapKg: 5,
+          rejectionKg: 3,
+          weightLossKg: 2,
+          notes: '',
+        },
+      ],
+    };
+    const withSample = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+      penPaperBaseline: sampleBaseline,
+    });
+    assert.equal(withSample.status, 200);
+    assert.deepEqual(withSample.body.item.penPaperBaseline, sampleBaseline);
+
+    // Omitting the field preserves the record; an explicit null clears it.
+    const untouched = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+    });
+    assert.equal(untouched.status, 200);
+    assert.deepEqual(untouched.body.item.penPaperBaseline, sampleBaseline);
+
+    const cleared = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+      penPaperBaseline: null,
+    });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.item.penPaperBaseline, null);
+
+    // A variant may be manufactured on its own route: its default pipeline is
+    // seeded from the base item but is not tied to it afterwards.
+    const baseWithPipeline = await sendJson('PATCH', `/api/items/${itemId}`, {
+      name: 'Evacuation Test Item',
+      groupId,
+      unitId,
+      defaultPipelineId: 'pipeline-base-route',
+    });
+    assert.equal(baseWithPipeline.status, 200);
+    assert.equal(baseWithPipeline.body.item.defaultPipelineId, 'pipeline-base-route');
+
+    const variantOwnPipeline = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+      defaultPipelineId: 'pipeline-variant-route',
+    });
+    assert.equal(variantOwnPipeline.status, 200);
+    assert.equal(
+      variantOwnPipeline.body.item.defaultPipelineId,
+      'pipeline-variant-route',
+    );
+    assert.equal(variantOwnPipeline.body.item.baseItemId, itemId);
+
+    // The base is untouched by the variant diverging.
+    const baseAfter = await getJson(`/api/items/${itemId}`);
+    assert.equal(baseAfter.body.item.defaultPipelineId, 'pipeline-base-route');
 
     // --- combination group membership ---
     const assign = await sendJson('POST', `/api/groups/${comboGroupId}/items`, {

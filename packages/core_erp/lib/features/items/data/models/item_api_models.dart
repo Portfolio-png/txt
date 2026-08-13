@@ -1,3 +1,4 @@
+import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 
@@ -27,6 +28,8 @@ class ItemVariationNodeDto {
     required this.children,
     this.inputType = 'Text',
     this.nameJoin = '',
+    this.numericMin,
+    this.numericMax,
   });
 
   final int id;
@@ -43,6 +46,8 @@ class ItemVariationNodeDto {
   final List<ItemVariationNodeDto> children;
   final String inputType;
   final String nameJoin;
+  final double? numericMin;
+  final double? numericMax;
 
   factory ItemVariationNodeDto.fromJson(Map<String, dynamic> json) {
     return ItemVariationNodeDto(
@@ -69,6 +74,8 @@ class ItemVariationNodeDto {
           .toList(growable: false),
       inputType: json['inputType'] as String? ?? 'Text',
       nameJoin: json['nameJoin'] as String? ?? '',
+      numericMin: (json['numericMin'] as num?)?.toDouble(),
+      numericMax: (json['numericMax'] as num?)?.toDouble(),
     );
   }
 
@@ -90,6 +97,8 @@ class ItemVariationNodeDto {
           .toList(growable: false),
       inputType: inputType,
       nameJoin: nameJoin,
+      numericMin: numericMin,
+      numericMax: numericMax,
     );
   }
 }
@@ -125,6 +134,7 @@ class ItemDto {
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
     this.availableForPurchase = false,
+    this.penPaperBaseline,
   });
 
   final int id;
@@ -156,6 +166,7 @@ class ItemDto {
   final String developedForClientName;
   final List<int> combinationGroupIds;
   final bool availableForPurchase;
+  final PenPaperBaseline? penPaperBaseline;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
     return ItemDto(
@@ -240,6 +251,11 @@ class ItemDto {
               .map((e) => e as int)
               .toList(growable: false),
       availableForPurchase: json['availableForPurchase'] as bool? ?? false,
+      penPaperBaseline: json['penPaperBaseline'] is Map<String, dynamic>
+          ? PenPaperBaseline.fromJson(
+              json['penPaperBaseline'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 
@@ -280,6 +296,7 @@ class ItemDto {
       developedForClientName: developedForClientName,
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
+      penPaperBaseline: penPaperBaseline,
     );
   }
 }
@@ -427,6 +444,8 @@ class ItemVariationNodeRequest {
     required this.inputType,
     required this.nameJoin,
     required this.children,
+    this.numericMin,
+    this.numericMax,
   });
 
   final int? id;
@@ -437,6 +456,8 @@ class ItemVariationNodeRequest {
   final String displayName;
   final String inputType;
   final String nameJoin;
+  final double? numericMin;
+  final double? numericMax;
   final List<ItemVariationNodeRequest> children;
 
   factory ItemVariationNodeRequest.fromInput(ItemVariationNodeInput input) {
@@ -449,6 +470,8 @@ class ItemVariationNodeRequest {
       displayName: input.displayName,
       inputType: input.inputType,
       nameJoin: input.nameJoin,
+      numericMin: input.numericMin,
+      numericMax: input.numericMax,
       children: input.children
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
@@ -465,6 +488,8 @@ class ItemVariationNodeRequest {
       'displayName': displayName,
       'inputType': inputType,
       'nameJoin': nameJoin,
+      'numericMin': numericMin,
+      'numericMax': numericMax,
       'children': children
           .map((entry) => entry.toJson())
           .toList(growable: false),
@@ -492,6 +517,7 @@ class CreateItemRequest {
     this.dieIds = const [],
     this.developedForClientId,
     this.availableForPurchase = false,
+    this.penPaperBaseline,
   });
 
   final String name;
@@ -512,6 +538,7 @@ class CreateItemRequest {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+  final PenPaperBaseline? penPaperBaseline;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
     return CreateItemRequest(
@@ -537,6 +564,7 @@ class CreateItemRequest {
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
       availableForPurchase: input.availableForPurchase,
+      penPaperBaseline: input.penPaperBaseline,
     );
   }
 
@@ -572,6 +600,11 @@ class CreateItemRequest {
       'dieIds': dieIds,
       'developedForClientId': developedForClientId,
       'availableForPurchase': availableForPurchase,
+      // Omitted rather than sent as null: the server preserves whatever is
+      // already recorded when the key is absent, and clears it on an explicit
+      // null. The editor only sends a baseline it actually has.
+      if (penPaperBaseline != null)
+        'penPaperBaseline': penPaperBaseline!.toJson(),
     };
   }
 }
@@ -596,6 +629,7 @@ class UpdateItemRequest {
     this.dieIds = const [],
     this.developedForClientId,
     this.availableForPurchase = false,
+    this.penPaperBaseline,
   });
 
   final String name;
@@ -616,6 +650,7 @@ class UpdateItemRequest {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+  final PenPaperBaseline? penPaperBaseline;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
     return UpdateItemRequest(
@@ -641,6 +676,7 @@ class UpdateItemRequest {
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
       availableForPurchase: input.availableForPurchase,
+      penPaperBaseline: input.penPaperBaseline,
     );
   }
 
@@ -676,6 +712,11 @@ class UpdateItemRequest {
       'dieIds': dieIds,
       'developedForClientId': developedForClientId,
       'availableForPurchase': availableForPurchase,
+      // Omitted rather than sent as null: the server preserves whatever is
+      // already recorded when the key is absent, and clears it on an explicit
+      // null. The editor only sends a baseline it actually has.
+      if (penPaperBaseline != null)
+        'penPaperBaseline': penPaperBaseline!.toJson(),
     };
   }
 }

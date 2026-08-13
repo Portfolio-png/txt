@@ -259,6 +259,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
         .map((i) => i.displayName)
         .toList(growable: false);
 
+    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+        item.name.toLowerCase().contains('scrap') ||
+        item.displayName.toLowerCase().contains('scrap');
+
     return Material(
       color: SoftErpTheme.shellSurface,
       elevation: 10,
@@ -281,15 +285,49 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: SoftErpTheme.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SoftErpTheme.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (isScrap) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.recycling_rounded, size: 13, color: Color(0xFFD97706)),
+                              SizedBox(width: 4),
+                              Text(
+                                'SCRAP MATERIAL',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFB45309),
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (item.defaultPipelineId != null &&

@@ -1,3 +1,4 @@
+import '../../production_pipelines/domain/pen_paper_baseline.dart';
 import 'item_definition.dart';
 
 class ItemUnitConversionInput {
@@ -32,6 +33,8 @@ class ItemVariationNodeInput {
     this.displayName = '',
     this.inputType = 'Text',
     this.nameJoin = '',
+    this.numericMin,
+    this.numericMax,
     this.children = const [],
   });
 
@@ -43,6 +46,10 @@ class ItemVariationNodeInput {
   final String displayName;
   final String inputType;
   final String nameJoin;
+
+  /// Inclusive bounds for a 'Numeric' property; null means open-ended.
+  final double? numericMin;
+  final double? numericMax;
   final List<ItemVariationNodeInput> children;
 }
 
@@ -66,6 +73,7 @@ class CreateItemInput {
     this.dieIds = const [],
     this.developedForClientId,
     this.availableForPurchase = false,
+    this.penPaperBaseline,
   });
 
   final String name;
@@ -86,6 +94,10 @@ class CreateItemInput {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+
+  /// Sample run recorded on this item. Null leaves whatever is already stored
+  /// untouched — the server preserves the column when the field is absent.
+  final PenPaperBaseline? penPaperBaseline;
 }
 
 class UpdateItemInput {
@@ -109,6 +121,7 @@ class UpdateItemInput {
     this.dieIds = const [],
     this.developedForClientId,
     this.availableForPurchase = false,
+    this.penPaperBaseline,
   });
 
   final int id;
@@ -130,4 +143,8 @@ class UpdateItemInput {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+
+  /// Sample run recorded on this item. Null leaves whatever is already stored
+  /// untouched — the server preserves the column when the field is absent.
+  final PenPaperBaseline? penPaperBaseline;
 }

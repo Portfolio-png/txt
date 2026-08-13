@@ -27,6 +27,10 @@ class BoardingPassCard extends StatelessWidget {
     this.token = 'IT',
     this.caption = 'No image',
     this.accent = const Color(0xFFE4C17C),
+    this.isScrap = false,
+    this.cardColor,
+    this.borderColor,
+    this.badge,
     this.onTap,
   });
 
@@ -41,25 +45,36 @@ class BoardingPassCard extends StatelessWidget {
   final String token;
   final String caption;
   final Color accent;
+  final bool isScrap;
+  final Color? cardColor;
+  final Color? borderColor;
+  final Widget? badge;
   final VoidCallback? onTap;
 
   bool get _hasBarcode => (barcode ?? '').trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
+    final effectiveCardColor = cardColor ?? (isScrap ? const Color(0xFFFFFDF8) : Colors.white);
+    final effectiveBorderColor = borderColor ?? (isScrap ? const Color(0xFFFED7AA) : const Color(0xFFE9EBF2));
+
     return Material(
-      color: Colors.white,
+      color: effectiveCardColor,
       borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: effectiveCardColor,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE9EBF2)),
-            boxShadow: const [
-              BoxShadow(color: Color(0x0F1B1F3B), blurRadius: 16, offset: Offset(0, 6)),
+            border: Border.all(color: effectiveBorderColor),
+            boxShadow: [
+              BoxShadow(
+                color: isScrap ? const Color(0x12B45309) : const Color(0x0F1B1F3B),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
             ],
           ),
           child: LayoutBuilder(
@@ -206,25 +221,83 @@ class BoardingPassCard extends StatelessWidget {
   // ---- pieces --------------------------------------------------------------
   Widget _hero(BuildContext context) {
     final url = (imageUrl ?? '').trim();
+    Widget imageWidget;
     if (url.isNotEmpty) {
-      return Image.network(
+      imageWidget = Image.network(
         url,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) => _placeholder(context),
         loadingBuilder: (context, child, progress) =>
             progress == null ? child : _placeholder(context, shimmer: true),
       );
+    } else {
+      imageWidget = _placeholder(context);
     }
-    return _placeholder(context);
+
+    if (isScrap || badge != null) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          imageWidget,
+          Positioned(
+            top: 8,
+            right: 8,
+            child: badge ?? _scrapBadge(),
+          ),
+        ],
+      );
+    }
+    return imageWidget;
+  }
+
+  Widget _scrapBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14B45309),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.recycling_rounded, size: 12, color: Color(0xFFD97706)),
+          SizedBox(width: 4),
+          Text(
+            'SCRAP',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFFB45309),
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _placeholder(BuildContext context, {bool shimmer = false}) {
+    final effectiveAccent = isScrap ? const Color(0xFFD97706) : accent;
+    final tokenBg = isScrap ? const Color(0xFFFEF3C7) : SoftErpTheme.accentSoft;
+    final tokenColor = isScrap ? const Color(0xFFB45309) : SoftErpTheme.accentDark;
+    final gradientColors = isScrap
+        ? const [Color(0xFFFFFDF8), Color(0xFFFEF3C7)]
+        : const [Color(0xFFFDFBF6), Color(0xFFEFF1F8)];
+
     return DecoratedBox(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFFDFBF6), Color(0xFFEFF1F8)],
+          colors: gradientColors,
         ),
       ),
       child: LayoutBuilder(
@@ -239,9 +312,9 @@ class BoardingPassCard extends StatelessWidget {
                   height: s,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: SoftErpTheme.accentSoft,
+                    color: tokenBg,
                     borderRadius: BorderRadius.circular(s * 0.3),
-                    border: Border.all(color: accent.withValues(alpha: 0.35)),
+                    border: Border.all(color: effectiveAccent.withValues(alpha: 0.35)),
                   ),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -249,9 +322,9 @@ class BoardingPassCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Text(
                         token,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          color: SoftErpTheme.accentDark,
+                          color: tokenColor,
                           fontSize: 22,
                         ),
                       ),
@@ -266,10 +339,10 @@ class BoardingPassCard extends StatelessWidget {
                       caption,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: SoftErpTheme.textSecondary,
+                        color: isScrap ? const Color(0xFF92400E) : SoftErpTheme.textSecondary,
                       ),
                     ),
                   ),

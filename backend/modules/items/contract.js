@@ -27,6 +27,9 @@ const variationNode = {
     displayName: { type: 'string' },
     inputType: { type: 'string', enum: ['Text', 'Numeric', 'Gauge'] },
     nameJoin: { type: 'string' },
+    // Allowed range for 'Numeric' properties; either bound may be omitted.
+    numericMin: { type: 'number', nullable: true },
+    numericMax: { type: 'number', nullable: true },
     position: { type: 'integer', min: 0 },
     children: { type: 'array', items: () => variationNode },
   },
@@ -60,6 +63,9 @@ const itemWrite = {
     baseItemId: { type: 'integer', nullable: true, min: 1 },
     photoUrl: { type: 'string', nullable: true },
     availableForPurchase: { type: 'boolean', nullable: true },
+    // Per-item sample baseline (pen & paper yield record). Shape is owned by
+    // the client's PenPaperBaseline model; the border only stores the JSON.
+    penPaperBaseline: { type: 'object', nullable: true, openFields: true, fields: {} },
   },
 };
 
@@ -87,6 +93,7 @@ const itemEgress = {
     'groupId', 'unitId', 'unitConversions', 'namingFormat', 'isArchived',
     'usageCount', 'createdAt', 'updatedAt', 'variationTree', 'propertySchema',
     'baseItemId', 'combinationGroupIds', 'photoUrl', 'availableForPurchase',
+    'penPaperBaseline',
   ],
 };
 

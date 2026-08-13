@@ -29,6 +29,7 @@ import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../../data/services/item_link_options_service.dart';
+import '../../domain/item_form_sections.dart';
 import '../providers/item_form_sections_provider.dart';
 
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
@@ -773,6 +774,9 @@ class _BoardingItemCardState extends State<_BoardingItemCard> {
     final imageUrl = asset?.readUrl?.toString() ?? item.photoUrl;
     final groupName =
         context.read<GroupsProvider>().findById(item.groupId)?.name ?? '—';
+    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+        item.name.toLowerCase().contains('scrap') ||
+        item.displayName.toLowerCase().contains('scrap');
     final unitLabel =
         context
             .read<UnitsProvider>()
@@ -786,14 +790,17 @@ class _BoardingItemCardState extends State<_BoardingItemCard> {
 
     return BoardingPassCard(
       title: title,
-      subtitle: leafCount == 0 ? 'Base item' : '$leafCount variant${leafCount == 1 ? '' : 's'}',
+      subtitle: isScrap
+          ? 'Scrap material'
+          : (leafCount == 0 ? 'Base item' : '$leafCount variant${leafCount == 1 ? '' : 's'}'),
       imageUrl: imageUrl,
       token: _boardingInitials(item.name.trim().isEmpty ? title : item.name),
-      caption: item.alias.trim().isEmpty ? 'No image' : item.alias,
+      caption: item.alias.trim().isEmpty ? (isScrap ? 'Scrap material' : 'No image') : item.alias,
+      isScrap: isScrap,
       details: [
         BoardingPassDetail('Group', groupName),
         BoardingPassDetail('Unit', unitLabel),
-        BoardingPassDetail('Variants', leafCount == 0 ? 'Base' : '$leafCount'),
+        BoardingPassDetail('Variants', isScrap ? 'Scrap' : (leafCount == 0 ? 'Base' : '$leafCount')),
       ],
       // Item master items have no barcode — the design stays consistent, the
       // barcode block is simply omitted.
@@ -840,6 +847,9 @@ class _ItemRow extends StatelessWidget {
     final unitsProvider = context.watch<UnitsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
     final groupName = groupsProvider.findById(item.groupId)?.name ?? 'Unknown';
+    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+        item.name.toLowerCase().contains('scrap') ||
+        item.displayName.toLowerCase().contains('scrap');
     final unitLabel =
         unitsProvider.units
             .where((unit) => unit.id == item.unitId)
@@ -891,10 +901,56 @@ class _ItemRow extends StatelessWidget {
                           weight: FontWeight.w600,
                         ),
                       ),
+                      if (isScrap) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: const Text(
+                            'SCRAP',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFB45309),
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   )
                 else
-                  SoftInlineText(item.displayName, weight: FontWeight.w700),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SoftInlineText(item.displayName, weight: FontWeight.w700),
+                      ),
+                      if (isScrap) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: const Text(
+                            'SCRAP',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFB45309),
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 if (item.alias.trim().isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Padding(
@@ -910,7 +966,39 @@ class _ItemRow extends StatelessWidget {
           ),
         ),
         Expanded(flex: 2, child: SoftInlineText(unitLabel)),
-        Expanded(flex: 2, child: SoftInlineText(groupName)),
+        Expanded(
+          flex: 2,
+          child: isScrap
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.recycling_rounded, size: 12, color: Color(0xFFD97706)),
+                          const SizedBox(width: 4),
+                          Text(
+                            groupName.isEmpty ? 'Scrap' : groupName,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFB45309),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : SoftInlineText(groupName),
+        ),
         Expanded(
           flex: 3,
           child: Column(
@@ -985,6 +1073,8 @@ class _NodeDraft {
     this.isNameEditing = false,
     this.displayNameTouched = false,
     this.inputType = 'Text',
+    this.numericMin,
+    this.numericMax,
     List<_NodeDraft>? children,
   }) : nameController = TextEditingController(text: name),
        codeController = TextEditingController(text: code),
@@ -1001,6 +1091,11 @@ class _NodeDraft {
   bool isNameEditing;
   bool displayNameTouched;
   String inputType;
+
+  /// Inclusive bounds a 'Numeric' property accepts, captured when the input
+  /// type is switched to Numeric. Null on either side means open-ended.
+  double? numericMin;
+  double? numericMax;
   bool inheritedFromGroup = false;
   bool inheritedMandatory = false;
   String? inheritedPropertyKey;
@@ -1011,6 +1106,29 @@ class _NodeDraft {
 
   bool get isLeafValue =>
       kind == ItemVariationNodeKind.value && children.isEmpty;
+
+  /// A property the user types a number into rather than picking a value node
+  /// from — the variation-creation dialog offers a number field for these.
+  bool get isNumericProperty =>
+      kind == ItemVariationNodeKind.property && inputType == 'Numeric';
+
+  /// Human-readable range for pills and hints — '1 – 40', '≥ 1', '≤ 40'.
+  String get numericRangeLabel {
+    if (numericMin != null && numericMax != null) {
+      return '${_formatNumericBound(numericMin!)} – ${_formatNumericBound(numericMax!)}';
+    }
+    if (numericMin != null) return '≥ ${_formatNumericBound(numericMin!)}';
+    if (numericMax != null) return '≤ ${_formatNumericBound(numericMax!)}';
+    return 'Any number';
+  }
+
+  /// Whether [value] falls inside the configured bounds (open-ended when a
+  /// bound is null).
+  bool acceptsNumber(double value) {
+    if (numericMin != null && value < numericMin!) return false;
+    if (numericMax != null && value > numericMax!) return false;
+    return true;
+  }
 
   bool get isLockedInheritedProperty =>
       inheritedFromGroup && kind == ItemVariationNodeKind.property;
@@ -1023,6 +1141,14 @@ class _NodeDraft {
       child.dispose();
     }
   }
+}
+
+/// Trims the trailing '.0' off whole numbers so ranges read '1 – 40', not
+/// '1.0 – 40.0'.
+String _formatNumericBound(double value) {
+  return value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
 }
 
 class _UnitConversionDraft {
@@ -1095,10 +1221,35 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String? _defaultPipelineId;
   List<Map<String, String>> _availablePipelines = [];
   PenPaperBaseline _penPaperBaseline = PenPaperBaseline.createDefault();
+
+  /// Whether [_penPaperBaseline] holds a real recording rather than the
+  /// untouched default. Only a recorded baseline is sent on save, so opening
+  /// and closing the editor never fabricates sample numbers.
+  bool _hasPenPaperBaseline = false;
   bool _availableForPurchase = false;
   int? _developedForClientId;
 
   bool get _isReadOnly => false;
+
+  /// A basic item: spawned from a base item by Variation Creation. It has no
+  /// variation tree of its own and inherits group, unit and naming from its
+  /// base, so the editor drops to the handful of things that are still its own
+  /// — name, media, pipeline and its sample record.
+  bool get _isBasicItem => widget.item?.isBasicItem ?? false;
+
+  /// The fixed section layout for a basic item. Deliberately not the user's
+  /// configurable default: what a spawned variant can carry is a property of
+  /// the item, not a form preference.
+  static const ItemFormSections _basicItemSections = ItemFormSections(
+    itemImage: true,
+    cadFile: true,
+    additionalFiles: true,
+    developedFor: false,
+    defaultPipeline: true,
+    variationTree: false,
+    machines: false,
+    dies: false,
+  );
 
   @override
   void initState() {
@@ -1125,6 +1276,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _defaultPipelineId = widget.item?.defaultPipelineId;
     _availableForPurchase = widget.item?.availableForPurchase ?? false;
     _developedForClientId = widget.item?.developedForClientId;
+    final storedBaseline = widget.item?.penPaperBaseline;
+    if (storedBaseline != null) {
+      _penPaperBaseline = storedBaseline;
+      _hasPenPaperBaseline = true;
+    }
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -1226,6 +1382,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       isNameEditing: false,
       displayNameTouched: node.displayName.trim().isNotEmpty,
       inputType: inputType,
+      numericMin: inputType == 'Numeric' ? node.numericMin : null,
+      numericMax: inputType == 'Numeric' ? node.numericMax : null,
     );
     draft.nameController.addListener(() {
       _syncLeafDisplayNames();
@@ -1762,10 +1920,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final groupSectionOverride = groupsProvider
         .findById(_selectedGroupId)
         ?.itemFormSections;
-    final hasGroupSectionOverride = groupSectionOverride != null;
-    final sections =
-        groupSectionOverride ??
-        context.watch<ItemFormSectionsProvider>().sections;
+    // A basic item's layout is fixed by what a spawned variant can own, so it
+    // outranks both the group override and the user's default.
+    final sections = _isBasicItem
+        ? _basicItemSections
+        : (groupSectionOverride ??
+              context.watch<ItemFormSectionsProvider>().sections);
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
@@ -1791,7 +1951,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final addableUnits = unitsProvider.units
         .where((u) => !u.isArchived && !alreadySelectedUnitIds.contains(u.id))
         .toList(growable: false);
-    final detailsSection = _SectionCard(
+    final fullDetailsSection = _SectionCard(
       title: 'Item Details',
       child: Column(
         children: [
@@ -2129,6 +2289,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ],
       ),
     );
+    // A basic item inherits group, unit and naming from its base item, so its
+    // details card shows those as context instead of as editable fields.
+    final detailsSection = _isBasicItem
+        ? _buildBasicItemDetailsSection(context, groupsProvider, unitsProvider)
+        : fullDetailsSection;
     final photoSection = _SectionCard(
       title: 'Item Photo',
       child: _ItemPhotoPickerField(
@@ -2329,15 +2494,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               _rootNodes[index].kind == ItemVariationNodeKind.property &&
                                       !_isReadOnly &&
                                       !_rootNodes[index].isLockedInheritedProperty
-                                  ? () {
-                                      setState(() {
-                                        _rootNodes[index].inputType =
-                                            _nextVariationInputType(
-                                              _rootNodes[index].inputType,
-                                            );
-                                      });
-                                      _handleChange();
-                                    }
+                                  ? () => _cycleNodeInputType(_rootNodes[index])
+                                  : null,
+                          onEditNumericRange:
+                              _rootNodes[index].isNumericProperty &&
+                                      !_isReadOnly &&
+                                      !_rootNodes[index].isLockedInheritedProperty
+                                  ? () =>
+                                      _editNodeNumericRange(_rootNodes[index])
                                   : null,
                           onRemove: () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
@@ -2372,6 +2536,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               ? 'Create Item'
                               : _isReadOnly
                               ? 'View Item'
+                              : _isBasicItem
+                              ? 'Edit Basic Item'
                               : 'Edit Item',
                         ),
                       ),
@@ -2495,6 +2661,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            // A variant is only seeded with its base item's
+                            // route. How it is actually made can differ, so the
+                            // pipeline is the variant's own field — this strip
+                            // says what the base uses and whether this one has
+                            // departed from it.
+                            if (_isBasicItem) ...[
+                              _buildBasePipelineStrip(context),
+                              const SizedBox(height: 12),
+                            ],
                             Builder(
                               builder: (context) {
                                 final pipelineOptions = _availablePipelines
@@ -2559,7 +2734,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 label: const Text('Create New Pipeline'),
                               ),
                             ],
-                            if (_defaultPipelineId != null &&
+                            // Basic items get the sample record as its own
+                            // always-visible card instead, so it can be filled
+                            // in before a pipeline is chosen.
+                            if (!_isBasicItem &&
+                                _defaultPipelineId != null &&
                                 _defaultPipelineId!.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               PenPaperBaselineWidget(
@@ -2568,6 +2747,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 onChanged: (updated) {
                                   setState(() {
                                     _penPaperBaseline = updated;
+                                    _hasPenPaperBaseline = true;
                                     _handleChange();
                                   });
                                 },
@@ -2575,6 +2755,50 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                             ],
                           ],
                         ),
+                      );
+
+                      // The sample record a basic item carries in its own
+                      // right: the pen & paper yield of a trial run of THIS
+                      // variant, not of the shared pipeline template.
+                      final sampleDataSection = _SectionCard(
+                        title: 'Sample Data',
+                        child: _hasPenPaperBaseline
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  PenPaperBaselineWidget(
+                                    baseline: _penPaperBaseline,
+                                    readOnly: _isReadOnly,
+                                    onChanged: (updated) {
+                                      setState(() {
+                                        _penPaperBaseline = updated;
+                                        _handleChange();
+                                      });
+                                    },
+                                  ),
+                                  if (!_isReadOnly) ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        onPressed: _clearSampleData,
+                                        icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Remove sample data'),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              SoftErpTheme.dangerText,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              )
+                            : _EmptySampleDataPrompt(
+                                onAdd: _isReadOnly ? null : _addSampleData,
+                              ),
                       );
 
                       // Section visibility is the user's saved item-form
@@ -2590,14 +2814,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       final entries = <_SectionEntry>[
                         _SectionEntry(
                           detailsSection,
-                          5.5 + _secondaryUnitConversions.length * 0.6,
+                          _isBasicItem
+                              ? 4.5
+                              : 5.5 + _secondaryUnitConversions.length * 0.6,
                         ),
                         if (sections.variationTree)
                           _SectionEntry(
                             variationTreeSection,
                             3.0 + _rootNodes.length * 1.6,
                           ),
-                        _SectionEntry(namingFormatSection, 3.6),
+                        // A basic item's name comes from its base item and its
+                        // variation values, so there is no format to arrange.
+                        if (!_isBasicItem)
+                          _SectionEntry(namingFormatSection, 3.6),
                         if (sections.itemImage)
                           _SectionEntry(photoSection, 2.2),
                         if (sections.cadFile)
@@ -2613,10 +2842,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         if (showPipeline)
                           _SectionEntry(
                             defaultPipelineSection,
-                            (_defaultPipelineId != null &&
+                            (!_isBasicItem &&
+                                    _defaultPipelineId != null &&
                                     _defaultPipelineId!.isNotEmpty)
                                 ? 8.5
                                 : 2.0,
+                          ),
+                        if (_isBasicItem)
+                          _SectionEntry(
+                            sampleDataSection,
+                            _hasPenPaperBaseline ? 7.5 : 2.2,
                           ),
                       ];
 
@@ -2746,12 +2981,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           child.kind == ItemVariationNodeKind.property &&
               !_isReadOnly &&
               !child.isLockedInheritedProperty
-          ? () {
-              setState(() {
-                child.inputType = _nextVariationInputType(child.inputType);
-              });
-              _handleChange();
-            }
+          ? () => _cycleNodeInputType(child)
+          : null,
+      onEditNumericRange:
+          child.isNumericProperty &&
+              !_isReadOnly &&
+              !child.isLockedInheritedProperty
+          ? () => _editNodeNumericRange(child)
           : null,
       onPromoteToGroup:
           child.kind == ItemVariationNodeKind.property &&
@@ -3130,6 +3366,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           ? node.displayNameController.text.trim()
           : '',
       inputType: node.inputType,
+      numericMin: node.isNumericProperty ? node.numericMin : null,
+      numericMax: node.isNumericProperty ? node.numericMax : null,
       children: node.children
           .map((child) => _toInput(child, node.id))
           .toList(growable: false),
@@ -3151,6 +3389,330 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return node.kind == ItemVariationNodeKind.property
         ? 'Unnamed Property'
         : 'Unnamed Value';
+  }
+
+  /// Shows the base item's production pipeline next to a basic item's own, so
+  /// it is obvious that this variant may be manufactured differently — and
+  /// obvious when it already is.
+  Widget _buildBasePipelineStrip(BuildContext context) {
+    final baseItem = _lookupBaseItem(context);
+    final basePipelineId = baseItem?.defaultPipelineId;
+    final basePipelineName = (baseItem?.defaultPipelineName ?? '').trim();
+    final hasBasePipeline =
+        basePipelineId != null && basePipelineId.trim().isNotEmpty;
+    final current = (_defaultPipelineId ?? '').trim();
+    final matchesBase = hasBasePipeline
+        ? current == basePipelineId.trim()
+        : current.isEmpty;
+
+    final (Color tone, Color toneBg, String status) = matchesBase
+        ? (
+            SoftErpTheme.textSecondary,
+            SoftErpTheme.cardSurfaceAlt,
+            'Same as base item',
+          )
+        : (SoftErpTheme.infoText, SoftErpTheme.infoBg, 'Different from base');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hasBasePipeline
+                      ? 'Base item makes this on ${basePipelineName.isEmpty ? basePipelineId.trim() : basePipelineName}'
+                      : 'Base item has no default pipeline',
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: toneBg,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: tone.withValues(alpha: 0.25)),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    color: tone,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'This variant can be manufactured on its own route — pick any '
+            'pipeline below.',
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 11.5,
+              height: 1.4,
+            ),
+          ),
+          if (!matchesBase && !_isReadOnly) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() {
+                  _defaultPipelineId = hasBasePipeline
+                      ? basePipelineId.trim()
+                      : null;
+                  _handleChange();
+                }),
+                icon: const Icon(Icons.undo_rounded, size: 15),
+                label: const Text("Use base item's pipeline"),
+                style: TextButton.styleFrom(
+                  foregroundColor: SoftErpTheme.accent,
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The item this variant was spawned from, when it is still in the catalogue.
+  ItemDefinition? _lookupBaseItem(BuildContext context) {
+    final baseItemId = widget.item?.baseItemId;
+    if (baseItemId == null) {
+      return null;
+    }
+    return context
+        .read<ItemsProvider>()
+        .items
+        .where((candidate) => candidate.id == baseItemId)
+        .firstOrNull;
+  }
+
+  /// Starts a sample record on this item, seeded with the default three-stage
+  /// skeleton for the user to overwrite with the trial's real numbers.
+  void _addSampleData() {
+    setState(() {
+      _penPaperBaseline = PenPaperBaseline.createDefault();
+      _hasPenPaperBaseline = true;
+      _handleChange();
+    });
+  }
+
+  void _clearSampleData() {
+    setState(() {
+      _penPaperBaseline = PenPaperBaseline.createDefault();
+      _hasPenPaperBaseline = false;
+      _handleChange();
+    });
+  }
+
+  /// The details card for a basic item. Group and unit are shown as inherited
+  /// context rather than fields: a spawned variant takes them from its base
+  /// item, and changing them on one variant would silently split the set.
+  Widget _buildBasicItemDetailsSection(
+    BuildContext context,
+    GroupsProvider groupsProvider,
+    UnitsProvider unitsProvider,
+  ) {
+    final item = widget.item;
+    final group = groupsProvider.findById(_selectedGroupId);
+    final unit = unitsProvider.findById(_selectedUnitId ?? -1);
+    final baseItem = _lookupBaseItem(context);
+    final combinationGroupNames = (item?.combinationGroupIds ?? const <int>[])
+        .map((id) => groupsProvider.findById(id)?.name ?? 'Group #$id')
+        .toList(growable: false);
+
+    return _SectionCard(
+      title: 'Item Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _formRow(
+            children: [
+              _buildTextField(
+                controller: _nameController,
+                label: 'Item Name',
+                helper: 'Name of this variant',
+                readOnly: _isReadOnly,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              _buildTextField(
+                controller: _displayNameController,
+                label: 'Display Name',
+                helper: 'How this variant is labelled across the app',
+                readOnly: _isReadOnly,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            decoration: BoxDecoration(
+              color: SoftErpTheme.sectionSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 14,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Inherited from the base item',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: SoftErpTheme.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _basicInheritedRow(
+                  context,
+                  'Base item',
+                  baseItem?.displayName.trim().isNotEmpty == true
+                      ? baseItem!.displayName
+                      : (baseItem?.name ?? 'Item #${item?.baseItemId}'),
+                ),
+                _basicInheritedRow(context, 'Group', group?.name ?? '—'),
+                _basicInheritedRow(
+                  context,
+                  'Unit',
+                  unit?.displayLabel ?? '—',
+                ),
+                _basicInheritedRow(
+                  context,
+                  'Combination group',
+                  combinationGroupNames.isEmpty
+                      ? 'Not in a combination group'
+                      : combinationGroupNames.join(', '),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _basicInheritedRow(BuildContext context, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Cycles a property through Text → Numeric → Gauge. Numeric properties are
+  /// entered by hand rather than picked from value nodes, so landing on Numeric
+  /// asks for the range of numbers the property accepts.
+  ///
+  /// The type is switched *before* the prompt on purpose: dismissing it leaves
+  /// the property Numeric with no limits (editable later from the range pill)
+  /// rather than snapping back to Text, which would make the next tap re-ask
+  /// and leave Gauge unreachable.
+  Future<void> _cycleNodeInputType(_NodeDraft node) async {
+    final next = _nextVariationInputType(node.inputType);
+    setState(() {
+      node.inputType = next;
+      // Whichever way we moved, the old range no longer applies.
+      node.numericMin = null;
+      node.numericMax = null;
+    });
+    _handleChange();
+    if (next != 'Numeric') {
+      return;
+    }
+    final range = await _showNumericRangeDialog(
+      context,
+      propertyName: node.nameController.text.trim(),
+    );
+    if (range == null || !mounted) {
+      return;
+    }
+    setState(() {
+      node.numericMin = range.min;
+      node.numericMax = range.max;
+    });
+    _handleChange();
+  }
+
+  /// Re-opens the range prompt for a property that is already Numeric.
+  Future<void> _editNodeNumericRange(_NodeDraft node) async {
+    final range = await _showNumericRangeDialog(
+      context,
+      propertyName: node.nameController.text.trim(),
+      initialMin: node.numericMin,
+      initialMax: node.numericMax,
+    );
+    if (range == null || !mounted) {
+      return;
+    }
+    setState(() {
+      node.numericMin = range.min;
+      node.numericMax = range.max;
+    });
+    _handleChange();
   }
 
   void _toggleNodeDetails(_NodeDraft node) {
@@ -3211,27 +3773,38 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
 
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _VariationCreationDialog(
+    await showErpFormDialog<void>(
+      context,
+      maxWidth: 960,
+      maxHeight: 660,
+      child: _VariationCreationDialog(
+        itemName: _nameController.text.trim(),
         topLevelProperties: properties,
+        groupStepEnabled: FeatureFlags.isEnabled(
+          FeatureKeys.catalogInventoryEnhancements,
+        ),
+        onAssignToGroup: _assignVariantsToCombinationGroup,
+        onEditItem: (item) => ItemsScreen.openEditor(
+          context,
+          item: item,
+          onCreatePipeline: widget.onCreatePipeline,
+        ),
         onSpawnItems: (combinations) async {
+          final messenger = ScaffoldMessenger.of(context);
           if (_selectedGroupId == null || _selectedUnitId == null) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            messenger.showSnackBar(
               const SnackBar(
                 content: Text(
                   'Select both a group and a unit for the base item before spawning variants.',
                 ),
               ),
             );
-            return;
+            return const <ItemDefinition>[];
           }
           final itemsProvider = context.read<ItemsProvider>();
-          final createdItemIds = <int>[];
+          final created = <ItemDefinition>[];
           for (final combo in combinations) {
-            final valuesStr = combo
-                .map((val) => val.nameController.text.trim())
-                .join(' - ');
+            final valuesStr = combo.map((option) => option.label).join(' - ');
             final newName = '${_nameController.text.trim()} - $valuesStr';
             final newDisplayName =
                 '${_displayNameController.text.trim()} - $valuesStr';
@@ -3263,52 +3836,26 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
             );
-            final created = await itemsProvider.createItem(input);
-            if (created != null) {
-              createdItemIds.add(created.id);
+            final createdItem = await itemsProvider.createItem(input);
+            if (createdItem != null) {
+              created.add(createdItem);
             }
           }
-          if (!context.mounted) {
-            return;
-          }
-          // Enhancement 2.2 — immediately offer to add the freshly spawned
-          // variants to a combination group.
-          if (FeatureFlags.isEnabled(
-                FeatureKeys.catalogInventoryEnhancements,
-              ) &&
-              createdItemIds.isNotEmpty) {
-            await _promptAddVariantsToCombinationGroup(context, createdItemIds);
-            if (!context.mounted) {
-              return;
-            }
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Successfully spawned ${combinations.length} variant items!',
-              ),
-            ),
-          );
-          Navigator.of(context).pop();
+          // The dialog stays open and moves to its group-and-summary steps, so
+          // there is no snackbar here — the footer reports the count.
+          return created;
         },
       ),
     );
   }
 
-  /// Enhancement 2.2 — follow-up flow after spawning variants: lets the user add
-  /// the new items to an existing combination group or create a new one.
-  Future<void> _promptAddVariantsToCombinationGroup(
-    BuildContext context,
+  /// Enhancement 2.2 — files freshly spawned variants into a combination group,
+  /// creating the group first when the sidebar asked for a new one. Returns null
+  /// on success, or a message for the dialog's error banner.
+  Future<String?> _assignVariantsToCombinationGroup(
     List<int> itemIds,
+    _CombinationGroupChoice choice,
   ) async {
-    final choice = await showDialog<_CombinationGroupChoice>(
-      context: context,
-      builder: (dialogContext) => const _AddToCombinationGroupDialog(),
-    );
-    if (choice == null || !context.mounted) {
-      return; // user skipped
-    }
-
     final groupsProvider = context.read<GroupsProvider>();
     int? groupId = choice.existingGroupId;
     if (choice.isCreateNew) {
@@ -3321,47 +3868,24 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ),
       );
       if (created == null) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                groupsProvider.errorMessage ??
-                    'Could not create the combination group.',
-              ),
-            ),
-          );
-        }
-        return;
+        return groupsProvider.errorMessage ??
+            'Could not create the combination group.';
       }
       groupId = created.id;
     }
     if (groupId == null) {
-      return;
+      return 'Select a combination group, or skip this step.';
     }
 
     final assigned = await groupsProvider.assignItemsToCombinationGroup(
       groupId: groupId,
       itemIds: itemIds,
     );
-    if (!context.mounted) {
-      return;
-    }
     if (assigned == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            groupsProvider.errorMessage ??
-                'Could not add variants to the combination group.',
-          ),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Added $assigned variant(s) to the combination group.'),
-        ),
-      );
+      return groupsProvider.errorMessage ??
+          'Could not add variants to the combination group.';
     }
+    return null;
   }
 
   void _addTopLevelProperty() {
@@ -3539,11 +4063,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               dieIds: _selectedDieIds.toList(growable: false),
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
+              penPaperBaseline: _hasPenPaperBaseline
+                  ? _penPaperBaseline
+                  : null,
             ),
           )
         : await itemsProvider.updateItem(
             UpdateItemInput(
               id: widget.item!.id,
+              // A spawned variant must stay attached to its base item across
+              // edits, or it silently graduates into a base item of its own.
+              baseItemId: widget.item!.baseItemId,
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
@@ -3569,6 +4099,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               dieIds: _selectedDieIds.toList(growable: false),
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
+              penPaperBaseline: _hasPenPaperBaseline
+                  ? _penPaperBaseline
+                  : null,
             ),
           );
 
@@ -3948,6 +4481,7 @@ class _TreeNodeEditor extends StatelessWidget {
     required this.buildChildEditor,
     this.onAddProperty,
     this.onToggleInputType,
+    this.onEditNumericRange,
     this.onPromoteToGroup,
     this.onAddValue,
   });
@@ -3963,6 +4497,7 @@ class _TreeNodeEditor extends StatelessWidget {
   final VoidCallback? onFinishNameEditing;
   final VoidCallback? onAddProperty;
   final VoidCallback? onToggleInputType;
+  final VoidCallback? onEditNumericRange;
   final VoidCallback? onPromoteToGroup;
   final VoidCallback? onAddValue;
   final VoidCallback? onMoveUp;
@@ -4162,6 +4697,13 @@ class _TreeNodeEditor extends StatelessWidget {
                             inputType: draft.inputType,
                             onTap: onToggleInputType!,
                           ),
+                        if (draft.isNumericProperty) ...[
+                          const SizedBox(width: 4),
+                          _NumericRangePill(
+                            label: draft.numericRangeLabel,
+                            onTap: onEditNumericRange,
+                          ),
+                        ],
                         if (onAddValue != null)
                           _TreeActionButton(
                             tooltip: 'Add value',
@@ -4671,6 +5213,41 @@ class _UnitConversionRow extends StatelessWidget {
 ///
 /// The weight only needs to be right relative to the other sections — it drives
 /// which column a card lands in, never how it is laid out.
+/// Shown in a basic item's Sample Data card before any trial run is recorded.
+class _EmptySampleDataPrompt extends StatelessWidget {
+  const _EmptySampleDataPrompt({required this.onAdd});
+
+  final VoidCallback? onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'No sample run recorded for this item yet. Add one to capture the '
+          'input, output, scrap and rejection weights of a trial batch.',
+          style: TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 12.5,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppButton(
+            label: 'Add sample data',
+            icon: Icons.science_outlined,
+            variant: AppButtonVariant.secondary,
+            onPressed: onAdd,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionEntry {
   const _SectionEntry(this.child, this.weight);
 
@@ -5474,14 +6051,80 @@ class _CadFilePickerFieldState extends State<_CadFilePickerField> {
   }
 }
 
-class _VariationCreationDialog extends StatefulWidget {
-  final List<_NodeDraft> topLevelProperties;
-  final Future<void> Function(List<List<_NodeDraft>>) onSpawnItems;
+/// One choice a property contributes to a variant: either a value node picked
+/// from the variation tree, or — for Numeric properties, which have no value
+/// nodes — a number typed by the user.
+class _VariantOption {
+  const _VariantOption.value(this.property, _NodeDraft node)
+    : valueNode = node,
+      typedNumber = null;
 
+  const _VariantOption.number(this.property, double number)
+    : valueNode = null,
+      typedNumber = number;
+
+  final _NodeDraft property;
+  final _NodeDraft? valueNode;
+  final double? typedNumber;
+
+  String get label {
+    if (typedNumber != null) {
+      return _formatNumericBound(typedNumber!);
+    }
+    final name = valueNode!.nameController.text.trim();
+    return name.isEmpty ? 'Unnamed Value' : name;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _VariantOption &&
+        identical(other.property, property) &&
+        identical(other.valueNode, valueNode) &&
+        other.typedNumber == typedNumber;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(identityHashCode(property), identityHashCode(valueNode), typedNumber);
+}
+
+/// The dialog runs as three steps in one window rather than a chain of popups:
+/// build the combinations, then file the spawned variants into a combination
+/// group from a sidebar, then be told what a basic item lets you edit.
+enum _SpawnPhase { building, chooseGroup, done }
+
+class _VariationCreationDialog extends StatefulWidget {
   const _VariationCreationDialog({
+    required this.itemName,
     required this.topLevelProperties,
     required this.onSpawnItems,
+    required this.onAssignToGroup,
+    required this.onEditItem,
+    required this.groupStepEnabled,
   });
+
+  /// Base item name, used for the generated-name preview.
+  final String itemName;
+  final List<_NodeDraft> topLevelProperties;
+
+  /// Creates the variants and returns them. An empty list means nothing was
+  /// created, which leaves the dialog on the building step.
+  final Future<List<ItemDefinition>> Function(List<List<_VariantOption>>)
+  onSpawnItems;
+
+  /// Files the spawned variants into a combination group. Returns null on
+  /// success, or a message to show in the error banner.
+  final Future<String?> Function(List<int> itemIds, _CombinationGroupChoice)
+  onAssignToGroup;
+
+  /// Opens the basic-item editor for one spawned variant, returning the saved
+  /// item so the list can pick up a rename.
+  final Future<ItemDefinition?> Function(ItemDefinition item) onEditItem;
+
+  /// Whether the combination-group step is offered at all (Enhancement 2.2 is
+  /// behind a feature flag). When off, spawning goes straight to the last step.
+  final bool groupStepEnabled;
 
   @override
   State<_VariationCreationDialog> createState() =>
@@ -5489,49 +6132,202 @@ class _VariationCreationDialog extends StatefulWidget {
 }
 
 class _VariationCreationDialogState extends State<_VariationCreationDialog> {
-  final Map<_NodeDraft, Set<_NodeDraft>> _selectedValues = {};
-  final List<List<_NodeDraft>> _createdCombinations = [];
+  /// Selections per property, in the order they were picked, so generated
+  /// combinations come out in a predictable order.
+  final Map<_NodeDraft, List<_VariantOption>> _selected = {};
+
+  /// Number field per Numeric property.
+  final Map<_NodeDraft, TextEditingController> _numberControllers = {};
+
+  final List<List<_VariantOption>> _createdCombinations = [];
   int? _selectedIndex;
+  String? _error;
+  bool _isSpawning = false;
+
+  _SpawnPhase _phase = _SpawnPhase.building;
+
+  /// The variants that were actually created, once spawning has run.
+  List<ItemDefinition> _spawnedItems = const <ItemDefinition>[];
+
+  // Combination-group sidebar state.
+  bool _createNewGroup = false;
+  int? _selectedCombinationGroupId;
+  final TextEditingController _groupNameController = TextEditingController();
+  final TextEditingController _groupDescriptionController =
+      TextEditingController();
+  bool _isAssigning = false;
+
+  /// Name of the group the variants ended up in, for the closing summary.
+  String? _assignedGroupName;
 
   @override
   void initState() {
     super.initState();
     for (final prop in widget.topLevelProperties) {
-      _selectedValues[prop] = {};
+      _selected[prop] = <_VariantOption>[];
+      if (prop.isNumericProperty) {
+        _numberControllers[prop] = TextEditingController();
+      }
     }
   }
 
+  @override
+  void dispose() {
+    for (final controller in _numberControllers.values) {
+      controller.dispose();
+    }
+    _groupNameController.dispose();
+    _groupDescriptionController.dispose();
+    super.dispose();
+  }
+
+  // --- selection -----------------------------------------------------------
+
+  bool get _isEditingCard => _selectedIndex != null;
+
+  bool get _hasAnySelection =>
+      _selected.values.any((options) => options.isNotEmpty);
+
+  List<_NodeDraft> _valuesOf(_NodeDraft property) => property.children
+      .where((child) => child.kind == ItemVariationNodeKind.value)
+      .toList(growable: false);
+
+  /// How many variants the current selection would produce.
+  int get _pendingCombinationCount {
+    var count = 0;
+    for (final options in _selected.values) {
+      if (options.isEmpty) continue;
+      count = count == 0 ? options.length : count * options.length;
+    }
+    return count;
+  }
+
+  void _toggleOption(_NodeDraft property, _VariantOption option) {
+    setState(() {
+      _error = null;
+      final options = _selected[property]!;
+      if (_isEditingCard) {
+        // Editing one variant: a property holds exactly one value, and the
+        // pick is written straight through to the card.
+        final combo = List<_VariantOption>.from(
+          _createdCombinations[_selectedIndex!],
+        );
+        combo.removeWhere((existing) => identical(existing.property, property));
+        if (!options.contains(option)) {
+          combo.add(option);
+          options
+            ..clear()
+            ..add(option);
+        } else {
+          options.clear();
+        }
+        // Keep the variant's values in variation-tree order so its generated
+        // name doesn't reshuffle when a value is edited.
+        combo.sort(
+          (a, b) => widget.topLevelProperties
+              .indexOf(a.property)
+              .compareTo(widget.topLevelProperties.indexOf(b.property)),
+        );
+        _createdCombinations[_selectedIndex!] = combo;
+        return;
+      }
+      if (options.contains(option)) {
+        options.remove(option);
+      } else {
+        options.add(option);
+      }
+    });
+  }
+
+  void _selectAllValues(_NodeDraft property) {
+    setState(() {
+      _error = null;
+      final options = _selected[property]!;
+      final all = _valuesOf(
+        property,
+      ).map((node) => _VariantOption.value(property, node)).toList();
+      if (options.length == all.length) {
+        options.clear();
+      } else {
+        options
+          ..clear()
+          ..addAll(all);
+      }
+    });
+  }
+
+  /// Commits whatever is typed in a Numeric property's field, after checking it
+  /// against the range configured on the variation tree.
+  void _addTypedNumber(_NodeDraft property) {
+    final controller = _numberControllers[property]!;
+    final raw = controller.text.trim();
+    if (raw.isEmpty) {
+      setState(() => _error = 'Enter a number for ${_propertyName(property)}.');
+      return;
+    }
+    final value = double.tryParse(raw);
+    if (value == null) {
+      setState(
+        () => _error = '"$raw" is not a valid number for '
+            '${_propertyName(property)}.',
+      );
+      return;
+    }
+    if (!property.acceptsNumber(value)) {
+      setState(
+        () => _error = '${_propertyName(property)} accepts '
+            '${property.numericRangeLabel}.',
+      );
+      return;
+    }
+    final option = _VariantOption.number(property, value);
+    if (_selected[property]!.contains(option)) {
+      setState(() {
+        _error = null;
+        controller.clear();
+      });
+      return;
+    }
+    controller.clear();
+    _toggleOption(property, option);
+  }
+
+  String _propertyName(_NodeDraft property) {
+    final name = property.nameController.text.trim();
+    return name.isEmpty ? 'Unnamed Property' : name;
+  }
+
+  // --- generated variants --------------------------------------------------
+
   void _selectCard(int index) {
     setState(() {
+      _error = null;
       _selectedIndex = index;
-      for (final prop in widget.topLevelProperties) {
-        _selectedValues[prop]!.clear();
+      for (final options in _selected.values) {
+        options.clear();
       }
-      final combo = _createdCombinations[index];
-      for (final val in combo) {
-        for (final prop in widget.topLevelProperties) {
-          if (prop.children.contains(val)) {
-            _selectedValues[prop]!.add(val);
-            break;
-          }
-        }
+      for (final option in _createdCombinations[index]) {
+        _selected[option.property]?.add(option);
       }
     });
   }
 
   void _deselectCard() {
     setState(() {
+      _error = null;
       _selectedIndex = null;
-      for (final prop in widget.topLevelProperties) {
-        _selectedValues[prop]!.clear();
+      for (final options in _selected.values) {
+        options.clear();
       }
     });
   }
 
   void _duplicateCard(int index) {
     setState(() {
-      final combo = List<_NodeDraft>.from(_createdCombinations[index]);
-      _createdCombinations.insert(index + 1, combo);
+      _createdCombinations.insert(
+        index + 1,
+        List<_VariantOption>.from(_createdCombinations[index]),
+      );
       _selectCard(index + 1);
     });
   }
@@ -5547,328 +6343,1197 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
     });
   }
 
-  void _createVariant() {
-    List<List<_NodeDraft>> newCombos = [[]];
+  void _clearAllCards() {
+    setState(() {
+      _createdCombinations.clear();
+      _deselectCard();
+    });
+  }
+
+  /// Cartesian product of the selected options, skipping combinations that are
+  /// already on the list.
+  void _generateCombinations() {
+    if (!_hasAnySelection) {
+      setState(
+        () => _error =
+            'Select at least one value before generating combinations.',
+      );
+      return;
+    }
+    var newCombos = <List<_VariantOption>>[<_VariantOption>[]];
     for (final prop in widget.topLevelProperties) {
-      final selectedForProp = _selectedValues[prop]!;
+      final selectedForProp = _selected[prop]!;
       if (selectedForProp.isEmpty) continue;
-      final temp = <List<_NodeDraft>>[];
+      final expanded = <List<_VariantOption>>[];
       for (final combo in newCombos) {
-        for (final val in selectedForProp) {
-          temp.add([...combo, val]);
+        for (final option in selectedForProp) {
+          expanded.add([...combo, option]);
         }
       }
-      newCombos = temp;
+      newCombos = expanded;
     }
-    if (newCombos.length == 1 && newCombos.first.isEmpty) {
-      newCombos.clear();
-    }
+
+    var added = 0;
     setState(() {
-      for (final c in newCombos) {
-        bool exists = _createdCombinations.any((existing) {
-          if (existing.length != c.length) return false;
-          for (int i = 0; i < c.length; i++) {
-            if (existing[i] != c[i]) return false;
+      _error = null;
+      for (final combo in newCombos) {
+        final exists = _createdCombinations.any((existing) {
+          if (existing.length != combo.length) return false;
+          for (var i = 0; i < combo.length; i++) {
+            if (existing[i] != combo[i]) return false;
           }
           return true;
         });
         if (!exists) {
-          _createdCombinations.add(c);
+          _createdCombinations.add(combo);
+          added++;
         }
+      }
+      if (added == 0) {
+        _error = 'Those combinations are already on the list.';
       }
     });
   }
 
-  void _save() {
-    widget.onSpawnItems(_createdCombinations);
+  String _comboLabel(List<_VariantOption> combo) =>
+      combo.map((option) => option.label).join(' - ');
+
+  Future<void> _spawn() async {
+    if (_createdCombinations.isEmpty) {
+      setState(() => _error = 'Generate at least one variant before spawning.');
+      return;
+    }
+    // Editing a variant down to no values would spawn an item named after the
+    // base item alone — make the user give it at least one value back.
+    final emptyIndex = _createdCombinations.indexWhere((c) => c.isEmpty);
+    if (emptyIndex != -1) {
+      setState(() {
+        _error = 'Variant #${emptyIndex + 1} has no values. Give it at least '
+            'one value or remove it.';
+      });
+      return;
+    }
+    setState(() {
+      _error = null;
+      _isSpawning = true;
+    });
+    final spawned = await widget.onSpawnItems(_createdCombinations);
+    if (!mounted) return;
+    setState(() {
+      _isSpawning = false;
+      if (spawned.isEmpty) {
+        _error = 'No variants were created. Check the messages above and retry.';
+        return;
+      }
+      _spawnedItems = spawned;
+      _deselectCard();
+      // Nothing to pick from on a fresh install, so open on the create form.
+      _createNewGroup = context.read<GroupsProvider>().combinationGroups.isEmpty;
+      // The window stays open and grows a sidebar instead of handing off to a
+      // popup: filing the variants and learning what they can carry is part of
+      // creating them, not a separate errand.
+      _phase = widget.groupStepEnabled
+          ? _SpawnPhase.chooseGroup
+          : _SpawnPhase.done;
+    });
   }
+
+  /// Opens one variant's editor and folds any rename back into the list, so the
+  /// row keeps matching the item after the editor closes.
+  Future<void> _editSpawnedItem(int index) async {
+    final updated = await widget.onEditItem(_spawnedItems[index]);
+    if (!mounted || updated == null) {
+      return;
+    }
+    setState(() {
+      final next = List<ItemDefinition>.from(_spawnedItems);
+      next[index] = updated;
+      _spawnedItems = next;
+    });
+  }
+
+  // --- combination-group sidebar -------------------------------------------
+
+  Future<void> _assignToGroup() async {
+    final choice = _createNewGroup
+        ? _CombinationGroupChoice.create(
+            newName: _groupNameController.text.trim(),
+            newDescription: _groupDescriptionController.text.trim(),
+          )
+        : (_selectedCombinationGroupId == null
+              ? null
+              : _CombinationGroupChoice.existing(_selectedCombinationGroupId!));
+    if (choice == null) {
+      setState(() => _error = 'Select a combination group, or skip this step.');
+      return;
+    }
+    if (choice.isCreateNew && choice.newName.isEmpty) {
+      setState(
+        () => _error = 'Enter a name for the new combination group.',
+      );
+      return;
+    }
+
+    setState(() {
+      _error = null;
+      _isAssigning = true;
+    });
+    final failure = await widget.onAssignToGroup(
+      _spawnedItems.map((item) => item.id).toList(growable: false),
+      choice,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isAssigning = false;
+      if (failure != null) {
+        _error = failure;
+        return;
+      }
+      _assignedGroupName = choice.isCreateNew
+          ? choice.newName
+          : context
+                    .read<GroupsProvider>()
+                    .findById(choice.existingGroupId)
+                    ?.name ??
+                'the combination group';
+      _phase = _SpawnPhase.done;
+    });
+  }
+
+  void _skipGroupStep() {
+    setState(() {
+      _error = null;
+      _phase = _SpawnPhase.done;
+    });
+  }
+
+  // --- build ---------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 900,
-        height: 600,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final building = _phase == _SpawnPhase.building;
+    return ErpFormScaffold(
+      title: 'Variation Creation',
+      subtitle: switch (_phase) {
+        _SpawnPhase.building =>
+          'Pick the values each property should contribute, generate every '
+              'combination, then spawn them as their own items.',
+        _SpawnPhase.chooseGroup =>
+          'Your variants exist. File them into a combination group so they '
+              'stay together across orders and inventory.',
+        _SpawnPhase.done =>
+          'Your variants are basic items — each one can now carry its own '
+              'photo, files, pipeline and sample data.',
+      },
+      bodyScrollable: false,
+      bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      eyebrow: widget.itemName.trim().isEmpty
+          ? null
+          : SoftStatusPill(label: widget.itemName.trim()),
+      errorBanner: _error == null
+          ? null
+          : ErpFormMessageBanner(message: _error!),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 720;
+          final panes = building
+              ? <Widget>[_buildPickerPane(), _buildResultsPane()]
+              : <Widget>[_buildSpawnedPane(), _buildSidebar()];
+          if (stacked) {
+            return Column(
               children: [
-                const Text(
-                  'Variation Creation',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                Expanded(child: panes[0]),
+                const SizedBox(height: 14),
+                Expanded(child: panes[1]),
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: building ? 5 : 6, child: panes[0]),
+              const SizedBox(width: 16),
+              // Post-spawn the second pane is a true sidebar: a fixed, narrower
+              // rail beside the variants rather than an equal half.
+              building
+                  ? Expanded(flex: 4, child: panes[1])
+                  : SizedBox(width: 320, child: panes[1]),
+            ],
+          );
+        },
+      ),
+      footer: switch (_phase) {
+        _SpawnPhase.building => _buildBuildingFooter(),
+        _SpawnPhase.chooseGroup => _buildGroupFooter(),
+        _SpawnPhase.done => _buildDoneFooter(),
+      },
+    );
+  }
+
+  Widget _buildBuildingFooter() {
+    final variantCount = _createdCombinations.length;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            variantCount == 0
+                ? 'No variants generated yet.'
+                : '$variantCount variant${variantCount == 1 ? '' : 's'} ready to spawn.',
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.secondary,
+          onPressed: _isSpawning ? null : () => Navigator.of(context).pop(),
+        ),
+        const SizedBox(width: 12),
+        AppButton(
+          label: variantCount == 0
+              ? 'Spawn Variants'
+              : 'Spawn $variantCount Variant${variantCount == 1 ? '' : 's'}',
+          icon: Icons.auto_awesome_rounded,
+          isLoading: _isSpawning,
+          onPressed: variantCount == 0 || _isSpawning ? null : _spawn,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupFooter() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} spawned.',
+            style: const TextStyle(
+              color: SoftErpTheme.successText,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        AppButton(
+          label: 'Skip for now',
+          variant: AppButtonVariant.secondary,
+          onPressed: _isAssigning ? null : _skipGroupStep,
+        ),
+        const SizedBox(width: 12),
+        AppButton(
+          label: 'Add to group',
+          icon: Icons.playlist_add_rounded,
+          isLoading: _isAssigning,
+          onPressed: _isAssigning ? null : _assignToGroup,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDoneFooter() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            _assignedGroupName == null
+                ? '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} spawned.'
+                : '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} added to $_assignedGroupName.',
+            style: const TextStyle(
+              color: SoftErpTheme.successText,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        AppButton(
+          label: 'Done',
+          icon: Icons.check_rounded,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  // --- post-spawn: the variants and the sidebar ----------------------------
+
+  Widget _buildSpawnedPane() {
+    final canEdit = _phase == _SpawnPhase.done;
+    return _paneShell(
+      title: 'Spawned variants',
+      caption: canEdit
+          ? 'Open one to add its photo, files, pipeline or sample data.'
+          : 'These items now exist in the catalogue.',
+      child: ListView.separated(
+        padding: const EdgeInsets.all(12),
+        itemCount: _spawnedItems.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final item = _spawnedItems[index];
+          final label = item.displayName.trim().isEmpty
+              ? item.name
+              : item.displayName;
+          return Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            decoration: BoxDecoration(
+              color: SoftErpTheme.cardSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 18,
+                  color: SoftErpTheme.successText,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: SoftErpTheme.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
+                if (canEdit)
+                  TextButton.icon(
+                    onPressed: () => _editSpawnedItem(index),
+                    icon: const Icon(Icons.edit_outlined, size: 15),
+                    label: const Text('Edit'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: SoftErpTheme.accent,
+                      textStyle: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
               ],
             ),
-            const SizedBox(height: 20),
-            Expanded(
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSidebar() {
+    return _phase == _SpawnPhase.chooseGroup
+        ? _buildGroupSidebar()
+        : _buildBasicItemSidebar();
+  }
+
+  Widget _buildGroupSidebar() {
+    final combinationGroups = context.watch<GroupsProvider>().combinationGroups;
+    return _paneShell(
+      title: 'Combination group',
+      caption: 'Keeps this variant set together.',
+      child: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          for (final group in combinationGroups)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _SidebarChoiceTile(
+                label: group.name,
+                subtitle: group.description.trim().isEmpty
+                    ? null
+                    : group.description,
+                selected:
+                    !_createNewGroup && _selectedCombinationGroupId == group.id,
+                onTap: () => setState(() {
+                  _error = null;
+                  _createNewGroup = false;
+                  _selectedCombinationGroupId = group.id;
+                }),
+              ),
+            ),
+          _SidebarChoiceTile(
+            label: 'Create a new group',
+            subtitle: combinationGroups.isEmpty
+                ? 'No combination groups exist yet.'
+                : null,
+            icon: Icons.add_rounded,
+            selected: _createNewGroup,
+            onTap: () => setState(() {
+              _error = null;
+              _createNewGroup = true;
+              _selectedCombinationGroupId = null;
+            }),
+          ),
+          if (_createNewGroup) ...[
+            const SizedBox(height: 12),
+            _sidebarField(
+              controller: _groupNameController,
+              label: 'Group name',
+              hint: 'e.g. Brass Sheet variants',
+            ),
+            const SizedBox(height: 10),
+            _sidebarField(
+              controller: _groupDescriptionController,
+              label: 'Description',
+              hint: 'Optional',
+              maxLines: 2,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The closing step: says plainly what a spawned variant can carry, because
+  /// the trimmed basic-item editor is otherwise easy to never discover.
+  Widget _buildBasicItemSidebar() {
+    const editable = <(IconData, String, String?)>[
+      (Icons.image_outlined, 'Item photo', null),
+      (Icons.view_in_ar_outlined, 'CAD file', null),
+      (Icons.attach_file_rounded, 'Additional files', null),
+      (
+        Icons.account_tree_outlined,
+        'Default pipeline',
+        'Starts as the base item\'s, but a variant can be made on its own route.',
+      ),
+      (
+        Icons.science_outlined,
+        'Sample data',
+        'This variant\'s own trial run, not the pipeline\'s.',
+      ),
+    ];
+    return _paneShell(
+      title: 'What you can edit',
+      caption: 'Per variant, from its Edit button.',
+      child: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accentSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(
+                color: SoftErpTheme.accent.withValues(alpha: 0.25),
+              ),
+            ),
+            child: const Text(
+              'These are basic items. They inherit their group, unit and name '
+              'format from the base item, so their editor only asks for what '
+              'is genuinely their own:',
+              style: TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final (icon, label, note) in editable)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(8),
-                              ),
-                            ),
-                            width: double.infinity,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  _selectedIndex == null
-                                      ? 'Bulk Creation Tree'
-                                      : 'Editing Selected Variant',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (_selectedIndex != null)
-                                  TextButton(
-                                    onPressed: _deselectCard,
-                                    child: const Text('Return to Bulk Mode'),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              padding: const EdgeInsets.all(8),
-                              itemCount: widget.topLevelProperties.length,
-                              itemBuilder: (context, index) {
-                                final prop = widget.topLevelProperties[index];
-                                final values = prop.children
-                                    .where(
-                                      (c) =>
-                                          c.kind == ItemVariationNodeKind.value,
-                                    )
-                                    .toList();
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 8,
-                                      ),
-                                      child: Text(
-                                        prop.nameController.text.isEmpty
-                                            ? 'Unnamed Property'
-                                            : prop.nameController.text,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    if (values.isEmpty)
-                                      const Padding(
-                                        padding: EdgeInsets.only(
-                                          left: 16,
-                                          bottom: 8,
-                                        ),
-                                        child: Text(
-                                          'No values',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ),
-                                    for (final val in values)
-                                      CheckboxListTile(
-                                        dense: true,
-                                        title: Text(
-                                          val.nameController.text.isEmpty
-                                              ? 'Unnamed Value'
-                                              : val.nameController.text,
-                                        ),
-                                        value: _selectedValues[prop]!.contains(
-                                          val,
-                                        ),
-                                        onChanged: (checked) {
-                                          setState(() {
-                                            if (_selectedIndex != null) {
-                                              if (checked == true) {
-                                                final activeCombo =
-                                                    List<_NodeDraft>.from(
-                                                      _createdCombinations[_selectedIndex!],
-                                                    );
-                                                final propValues = prop.children
-                                                    .where(
-                                                      (c) =>
-                                                          c.kind ==
-                                                          ItemVariationNodeKind
-                                                              .value,
-                                                    )
-                                                    .toSet();
-                                                activeCombo.removeWhere(
-                                                  (val) =>
-                                                      propValues.contains(val),
-                                                );
-                                                activeCombo.add(val);
-                                                _createdCombinations[_selectedIndex!] =
-                                                    activeCombo;
-                                                _selectedValues[prop]!.clear();
-                                                _selectedValues[prop]!.add(val);
-                                              } else {
-                                                final activeCombo =
-                                                    List<_NodeDraft>.from(
-                                                      _createdCombinations[_selectedIndex!],
-                                                    );
-                                                activeCombo.remove(val);
-                                                _createdCombinations[_selectedIndex!] =
-                                                    activeCombo;
-                                                _selectedValues[prop]!.remove(
-                                                  val,
-                                                );
-                                              }
-                                            } else {
-                                              if (checked == true) {
-                                                _selectedValues[prop]!.add(val);
-                                              } else {
-                                                _selectedValues[prop]!.remove(
-                                                  val,
-                                                );
-                                              }
-                                            }
-                                          });
-                                        },
-                                      ),
-                                    const Divider(),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: _selectedIndex == null
-                                ? FilledButton.icon(
-                                    onPressed: _createVariant,
-                                    icon: const Icon(Icons.auto_awesome),
-                                    label: const Text('Generate Combinations'),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        ],
-                      ),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Icon(icon, size: 16, color: SoftErpTheme.accent),
                   ),
-                  const SizedBox(width: 20),
+                  const SizedBox(width: 10),
                   Expanded(
-                    flex: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(8),
-                              ),
-                            ),
-                            width: double.infinity,
-                            child: const Text(
-                              'Generated Combinations',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: SoftErpTheme.textPrimary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
                           ),
-                          Expanded(
-                            child: _createdCombinations.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                      'No variants created yet.',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    padding: const EdgeInsets.all(8),
-                                    itemCount: _createdCombinations.length,
-                                    itemBuilder: (context, index) {
-                                      final combo = _createdCombinations[index];
-                                      final label = combo
-                                          .map((n) => n.nameController.text)
-                                          .join(' - ');
-                                      return ListTile(
-                                        selected: _selectedIndex == index,
-                                        selectedTileColor: Theme.of(context)
-                                            .colorScheme
-                                            .primaryContainer
-                                            .withOpacity(0.3),
-                                        onTap: () => _selectCard(index),
-                                        title: Text(label),
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.copy,
-                                                size: 20,
-                                              ),
-                                              tooltip: 'Duplicate',
-                                              onPressed: () =>
-                                                  _duplicateCard(index),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.delete_outline,
-                                                color: Colors.red,
-                                                size: 20,
-                                              ),
-                                              tooltip: 'Delete',
-                                              onPressed: () =>
-                                                  _deleteCard(index),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
+                        ),
+                        if (note != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            note,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 11,
+                              height: 1.35,
+                            ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+          const SizedBox(height: 4),
+          const Text(
+            'You can come back to any of this later from the items list.',
+            style: TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 11.5,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sidebarField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      onChanged: (_) => setState(() => _error = null),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+        filled: true,
+        fillColor: SoftErpTheme.cardSurfaceAlt,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+      ),
+    );
+  }
+
+  Widget _paneShell({
+    required String title,
+    required String caption,
+    Widget? headerAction,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+            child: Row(
               children: [
-                OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        caption,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 12),
-                FilledButton(
-                  onPressed: _save,
-                  child: const Text('Spawn Variants'),
-                ),
+                if (headerAction != null) ...[
+                  const SizedBox(width: 8),
+                  headerAction,
+                ],
               ],
             ),
+          ),
+          const Divider(height: 1, color: SoftErpTheme.border),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
+  // --- left pane: pick values ---------------------------------------------
+
+  Widget _buildPickerPane() {
+    final editing = _isEditingCard;
+    final pending = _pendingCombinationCount;
+    return _paneShell(
+      title: editing ? 'Editing variant #${_selectedIndex! + 1}' : 'Choose values',
+      caption: editing
+          ? 'Picks replace that variant\'s value for the property.'
+          : 'Every selected value is crossed with the others.',
+      headerAction: editing
+          ? TextButton.icon(
+              onPressed: _deselectCard,
+              icon: const Icon(Icons.arrow_back_rounded, size: 16),
+              label: const Text('Bulk mode'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accent,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                visualDensity: VisualDensity.compact,
+              ),
+            )
+          : null,
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: widget.topLevelProperties.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) =>
+                  _buildPropertyCard(widget.topLevelProperties[index]),
+            ),
+          ),
+          if (!editing)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: SoftErpTheme.border)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppButton(
+                    label: pending <= 1
+                        ? 'Generate Combinations'
+                        : 'Generate $pending Combinations',
+                    icon: Icons.grid_view_rounded,
+                    onPressed: _hasAnySelection ? _generateCombinations : null,
+                  ),
+                  if (!_hasAnySelection) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Select at least one value to continue.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPropertyCard(_NodeDraft property) {
+    final selectedCount = _selected[property]!.length;
+    final values = _valuesOf(property);
+    final isNumeric = property.isNumericProperty;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(
+          color: selectedCount > 0
+              ? SoftErpTheme.accent.withValues(alpha: 0.35)
+              : SoftErpTheme.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _propertyName(property),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _InputTypePill.static(inputType: property.inputType),
+              if (isNumeric) ...[
+                const SizedBox(width: 6),
+                _NumericRangePill(
+                  label: property.numericRangeLabel,
+                  onTap: null,
+                ),
+              ],
+              if (!isNumeric && values.length > 1 && !_isEditingCard) ...[
+                const SizedBox(width: 4),
+                TextButton(
+                  onPressed: () => _selectAllValues(property),
+                  style: TextButton.styleFrom(
+                    foregroundColor: SoftErpTheme.accent,
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: Text(
+                    selectedCount == values.length ? 'Clear' : 'All',
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (isNumeric)
+            _buildNumericPicker(property)
+          else if (values.isEmpty)
+            _buildEmptyValuesNote(property)
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final value in values)
+                  _SelectableChip(
+                    label: value.nameController.text.trim().isEmpty
+                        ? 'Unnamed Value'
+                        : value.nameController.text.trim(),
+                    selected: _selected[property]!.contains(
+                      _VariantOption.value(property, value),
+                    ),
+                    onTap: () => _toggleOption(
+                      property,
+                      _VariantOption.value(property, value),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyValuesNote(_NodeDraft property) {
+    final message = property.inputType == 'Gauge'
+        ? 'Gauge values are entered on orders and challans, not on variants.'
+        : 'No values yet — add them to this property in the variation tree.';
+    return Text(
+      message,
+      style: const TextStyle(
+        color: SoftErpTheme.textSecondary,
+        fontSize: 12,
+        fontStyle: FontStyle.italic,
+      ),
+    );
+  }
+
+  /// Numeric properties have no value nodes, so the user types the numbers that
+  /// should become variants. Each accepted number becomes a removable chip.
+  Widget _buildNumericPicker(_NodeDraft property) {
+    final controller = _numberControllers[property]!;
+    final chosen = _selected[property]!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(
+                    RegExp(r'^-?[0-9]*\.?[0-9]*'),
+                  ),
+                ],
+                onSubmitted: (_) => _addTypedNumber(property),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Enter a number (${property.numericRangeLabel})',
+                  hintStyle: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12.5,
+                  ),
+                  filled: true,
+                  fillColor: SoftErpTheme.cardSurfaceAlt,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: SoftErpTheme.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: SoftErpTheme.border),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SoftIconButton(
+              icon: Icons.add_rounded,
+              tooltip: 'Add this number',
+              onTap: () => _addTypedNumber(property),
+            ),
           ],
+        ),
+        if (chosen.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in chosen)
+                _SelectableChip(
+                  label: option.label,
+                  selected: true,
+                  trailing: Icons.close_rounded,
+                  onTap: () => _toggleOption(property, option),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  // --- right pane: generated variants --------------------------------------
+
+  Widget _buildResultsPane() {
+    return _paneShell(
+      title: 'Generated variants',
+      caption: 'Tap one to edit its values, or remove it.',
+      headerAction: _createdCombinations.isEmpty
+          ? null
+          : TextButton.icon(
+              onPressed: _clearAllCards,
+              icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+              label: const Text('Clear'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.dangerText,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+      child: _createdCombinations.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_outlined,
+                      size: 30,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'Nothing generated yet',
+                      style: TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Pick values on the left, then generate.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: _createdCombinations.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) => _buildVariantCard(index),
+            ),
+    );
+  }
+
+  Widget _buildVariantCard(int index) {
+    final combo = _createdCombinations[index];
+    final label = _comboLabel(combo);
+    final selected = _selectedIndex == index;
+    final base = widget.itemName.trim();
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => selected ? _deselectCard() : _selectCard(index),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? SoftErpTheme.accentSurface
+                : SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.cardSurfaceAlt,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: selected ? Colors.white : SoftErpTheme.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label.isEmpty ? 'No values' : label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (base.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '$base - $label',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              SoftIconButton(
+                icon: Icons.copy_rounded,
+                size: 30,
+                tooltip: 'Duplicate',
+                onTap: () => _duplicateCard(index),
+              ),
+              const SizedBox(width: 6),
+              SoftIconButton(
+                icon: Icons.delete_outline_rounded,
+                size: 30,
+                iconColor: SoftErpTheme.dangerText,
+                tooltip: 'Delete',
+                onTap: () => _deleteCard(index),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A full-width selectable row in the post-spawn sidebar.
+class _SidebarChoiceTile extends StatelessWidget {
+  const _SidebarChoiceTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.subtitle,
+    this.icon,
+  });
+
+  final String label;
+  final String? subtitle;
+  final IconData? icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? SoftErpTheme.accentSoft
+                : SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon ??
+                    (selected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded),
+                size: 16,
+                color: selected
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected
+                            ? SoftErpTheme.accentDeeper
+                            : SoftErpTheme.textPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pill-shaped toggle used for variation values and typed numbers — the
+/// selected state carries the accent fill rather than a Material checkbox.
+class _SelectableChip extends StatelessWidget {
+  const _SelectableChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? SoftErpTheme.accentSoft
+                : SoftErpTheme.cardSurfaceAlt,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 15,
+                color: selected
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? SoftErpTheme.accentDeeper
+                      : SoftErpTheme.textPrimary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 6),
+                Icon(trailing, size: 14, color: SoftErpTheme.accentDeeper),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -5896,167 +7561,217 @@ class _CombinationGroupChoice {
   final String newDescription;
 }
 
-/// Bottom dialog shown right after variants are spawned, offering to add them to
-/// an existing combination group or to create a new one.
-class _AddToCombinationGroupDialog extends StatefulWidget {
-  const _AddToCombinationGroupDialog();
+/// The inclusive bounds a Numeric variation property accepts. Either side may
+/// be null, meaning "no limit in that direction".
+class _NumericRange {
+  const _NumericRange(this.min, this.max);
 
-  @override
-  State<_AddToCombinationGroupDialog> createState() =>
-      _AddToCombinationGroupDialogState();
+  final double? min;
+  final double? max;
 }
 
-class _AddToCombinationGroupDialogState
-    extends State<_AddToCombinationGroupDialog> {
-  bool _createNew = false;
-  int? _selectedGroupId;
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _descriptionController = TextEditingController();
+/// Asks for the range a Numeric property accepts. Returns null when dismissed —
+/// callers treat that as "leave the property's input type alone".
+Future<_NumericRange?> _showNumericRangeDialog(
+  BuildContext context, {
+  required String propertyName,
+  double? initialMin,
+  double? initialMax,
+}) {
+  return showErpFormDialog<_NumericRange>(
+    context,
+    maxWidth: 460,
+    maxHeight: 420,
+    child: _NumericRangeDialog(
+      propertyName: propertyName,
+      initialMin: initialMin,
+      initialMax: initialMax,
+    ),
+  );
+}
+
+class _NumericRangeDialog extends StatefulWidget {
+  const _NumericRangeDialog({
+    required this.propertyName,
+    this.initialMin,
+    this.initialMax,
+  });
+
+  final String propertyName;
+  final double? initialMin;
+  final double? initialMax;
+
+  @override
+  State<_NumericRangeDialog> createState() => _NumericRangeDialogState();
+}
+
+class _NumericRangeDialogState extends State<_NumericRangeDialog> {
+  late final TextEditingController _minController;
+  late final TextEditingController _maxController;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    // Default to "create new" when there are no combination groups yet.
-    final existing = context.read<GroupsProvider>().combinationGroups;
-    _createNew = existing.isEmpty;
+    _minController = TextEditingController(
+      text: widget.initialMin == null
+          ? ''
+          : _formatNumericBound(widget.initialMin!),
+    );
+    _maxController = TextEditingController(
+      text: widget.initialMax == null
+          ? ''
+          : _formatNumericBound(widget.initialMax!),
+    );
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _descriptionController.dispose();
+    _minController.dispose();
+    _maxController.dispose();
     super.dispose();
   }
 
-  void _confirm() {
-    if (_createNew) {
-      final name = _nameController.text.trim();
-      if (name.isEmpty) {
-        setState(() => _error = 'Enter a name for the new combination group.');
-        return;
-      }
-      Navigator.of(context).pop(
-        _CombinationGroupChoice.create(
-          newName: name,
-          newDescription: _descriptionController.text.trim(),
+  void _submit() {
+    final rawMin = _minController.text.trim();
+    final rawMax = _maxController.text.trim();
+    final min = rawMin.isEmpty ? null : double.tryParse(rawMin);
+    final max = rawMax.isEmpty ? null : double.tryParse(rawMax);
+    if (rawMin.isNotEmpty && min == null) {
+      setState(() => _error = 'Minimum must be a number.');
+      return;
+    }
+    if (rawMax.isNotEmpty && max == null) {
+      setState(() => _error = 'Maximum must be a number.');
+      return;
+    }
+    if (min != null && max != null && min > max) {
+      setState(() => _error = 'Minimum cannot be greater than maximum.');
+      return;
+    }
+    Navigator.of(context).pop(_NumericRange(min, max));
+  }
+
+  Widget _boundField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(
+        decimal: true,
+        signed: true,
+      ),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^-?[0-9]*\.?[0-9]*')),
+      ],
+      onSubmitted: (_) => _submit(),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+        filled: true,
+        fillColor: SoftErpTheme.cardSurfaceAlt,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
         ),
-      );
-      return;
-    }
-    if (_selectedGroupId == null) {
-      setState(() => _error = 'Select a combination group.');
-      return;
-    }
-    Navigator.of(
-      context,
-    ).pop(_CombinationGroupChoice.existing(_selectedGroupId!));
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final combinationGroups = context.watch<GroupsProvider>().combinationGroups;
-    return AlertDialog(
-      title: const Text('Add variants to a combination group?'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            RadioListTile<bool>(
-              value: false,
-              groupValue: _createNew,
-              onChanged: combinationGroups.isEmpty
-                  ? null
-                  : (value) => setState(() {
-                      _createNew = false;
-                      _error = null;
-                    }),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Select existing'),
-            ),
-            if (!_createNew)
-              Padding(
-                padding: const EdgeInsets.only(left: 16, bottom: 8),
-                child: SearchableSelectField<int>(
-                  value: _selectedGroupId,
-                  decoration: const InputDecoration(
-                    hintText: 'Choose combination group',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+    final name = widget.propertyName.trim().isEmpty
+        ? 'This property'
+        : widget.propertyName.trim();
+    return ErpFormScaffold(
+      title: 'Number range',
+      subtitle:
+          '$name is entered as a number. Set the range it accepts so variants '
+          'and orders can be checked against it.',
+      eyebrow: const _InputTypePill.static(inputType: 'Numeric'),
+      errorBanner: _error == null
+          ? null
+          : ErpFormMessageBanner(message: _error!),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _boundField(
+                  controller: _minController,
+                  label: 'Minimum',
+                  hint: 'No limit',
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                child: Text(
+                  '–',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontWeight: FontWeight.w700,
                   ),
-                  dialogTitle: 'Combination group',
-                  searchHintText: 'Search group',
-                  emptyText: 'No combination groups yet',
-                  options: combinationGroups
-                      .map(
-                        (group) => SearchableSelectOption<int>(
-                          value: group.id,
-                          label: group.name,
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (value) => setState(() {
-                    _selectedGroupId = value;
-                    _error = null;
-                  }),
                 ),
               ),
-            RadioListTile<bool>(
-              value: true,
-              groupValue: _createNew,
-              onChanged: (value) => setState(() {
-                _createNew = true;
-                _error = null;
-              }),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Create new'),
-            ),
-            if (_createNew)
-              Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Group name',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _descriptionController,
-                      minLines: 1,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Description (optional)',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ],
+              Expanded(
+                child: _boundField(
+                  controller: _maxController,
+                  label: 'Maximum',
+                  hint: 'No limit',
                 ),
-              ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
               ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 16,
+                color: SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Leave a side blank for no limit on that end. Both blank '
+                  'accepts any number.',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12.5,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Skip'),
-        ),
-        FilledButton(onPressed: _confirm, child: const Text('Add to group')),
-      ],
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(width: 12),
+          AppButton(label: 'Save range', onPressed: _submit),
+        ],
+      ),
     );
   }
 }
@@ -6072,11 +7787,16 @@ String _nextVariationInputType(String current) {
   }
 }
 
+/// The A / 1 / G marker on a property row; tapping cycles Text -> Numeric ->
+/// Gauge.
 class _InputTypePill extends StatelessWidget {
   const _InputTypePill({required this.inputType, required this.onTap});
 
+  /// Non-interactive variant, for headers and legends.
+  const _InputTypePill.static({required this.inputType}) : onTap = null;
+
   final String inputType;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -6090,13 +7810,13 @@ class _InputTypePill extends StatelessWidget {
         : inputType == 'Gauge'
         ? 'G'
         : 'A';
-    final tooltip = inputType == 'Numeric'
-        ? 'Numeric input — tap to change'
+    final name = inputType == 'Numeric'
+        ? 'Numeric input'
         : inputType == 'Gauge'
-        ? 'Gauge input (SWG) — tap to change'
-        : 'Text input — tap to change';
+        ? 'Gauge input (SWG)'
+        : 'Text input';
     return Tooltip(
-      message: tooltip,
+      message: onTap == null ? name : '$name — tap to change',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(4),
@@ -6113,6 +7833,44 @@ class _InputTypePill extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.bold,
               color: color[700],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows (and edits) the range a Numeric property accepts, sitting next to its
+/// input-type pill in the variation tree.
+class _NumericRangePill extends StatelessWidget {
+  const _NumericRangePill({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: onTap == null
+          ? 'Accepted range: $label'
+          : 'Accepted range: $label — tap to edit',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.blue.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.blue[700],
             ),
           ),
         ),
