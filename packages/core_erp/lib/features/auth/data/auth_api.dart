@@ -105,10 +105,15 @@ class AuthApi {
     }
   }
 
+  /// The phrase the backend requires before it will wipe everything. Kept as a
+  /// constant so the confirmation dialog and the request cannot drift apart.
+  static const String factoryResetConfirmation = 'FACTORY RESET';
+
   Future<void> factoryResetDatabase() async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/admin/factory-reset'),
-      headers: _authHeaders,
+      headers: {..._authHeaders, 'Content-Type': 'application/json'},
+      body: jsonEncode({'confirm': factoryResetConfirmation}),
     );
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||

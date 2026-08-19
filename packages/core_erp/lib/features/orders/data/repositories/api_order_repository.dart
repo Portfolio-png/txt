@@ -1,3 +1,4 @@
+import '../../domain/order_fulfilment.dart';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -607,6 +608,25 @@ class ApiOrderRepository implements OrderRepository {
       );
     }
     return OrderTrace.fromJson(payload['trace'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<OrderFulfilment>> getFulfilment() async {
+    if (useMockResponses) return const <OrderFulfilment>[];
+    final uri = Uri.parse('$baseUrl/api/orders/fulfilment');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw OrderApiException(
+        payload['error'] as String? ?? 'Failed to fetch fulfilment.',
+      );
+    }
+    return (payload['fulfilment'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(OrderFulfilment.fromJson)
+        .toList(growable: false);
   }
 
   @override

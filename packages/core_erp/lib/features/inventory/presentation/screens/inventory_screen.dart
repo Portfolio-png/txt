@@ -1343,6 +1343,55 @@ class _InventoryScreenState extends State<InventoryScreen> {
         .join(' + ');
   }
 
+  /// The barcode of the materials row backing a produced set. The server sends
+  /// it; deriving from the origin is the fallback for a set minted before the
+  /// field existed.
+  static String _setBarcode(InventorySetDefinition set) {
+    final fromServer = set.materialBarcode;
+    if (fromServer != null && fromServer.isNotEmpty) return fromServer;
+    if (set.isTemporary &&
+        set.originRunId != null &&
+        set.originNodeId != null) {
+      return 'SET-${set.originRunId}-${set.originNodeId}';
+    }
+    return 'SET-${set.id}';
+  }
+
+  /// A defined set is a recipe — its "stock" is just how many items it lists.
+  /// A produced set holds real stock, and once it has been issued to a worker
+  /// that is zero, however many items its composition names.
+  static String _setDisplayStock(InventorySetDefinition set) {
+    final onHand = set.onHandQty;
+    if (!set.isTemporary || onHand == null) {
+      return '${set.totalItemCount} Items';
+    }
+    final formatted = onHand == onHand.roundToDouble()
+        ? onHand.toStringAsFixed(0)
+        : onHand.toStringAsFixed(2);
+    return '$formatted in stock';
+  }
+
+  /// Sets now arrive two ways: defined by hand, or produced by an assembly
+  /// step on a production run. A produced one leads with its origin — which run
+  /// it came off and when it was completed — since that is what identifies it.
+  static String _setRowMetadata(InventorySetDefinition set) {
+    final lineCount =
+        '${set.lines.length} item${set.lines.length == 1 ? '' : 's'}';
+    if (!set.isTemporary) return lineCount;
+    final parts = <String>['From production'];
+    if (set.originRunId != null) parts.add(set.originRunId!);
+    final producedAt = set.producedAt;
+    if (producedAt != null) {
+      parts.add(
+        '${producedAt.day.toString().padLeft(2, '0')}'
+        '/${producedAt.month.toString().padLeft(2, '0')}'
+        '/${producedAt.year}',
+      );
+    }
+    parts.add(lineCount);
+    return parts.join(' · ');
+  }
+
   List<_InventoryRowEntry> _buildRows(
     List<MaterialRecord> scopedRecords, {
     required InventorySetDefinition? activeSet,
@@ -1514,7 +1563,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
             (setDefinition) => _InventoryRowEntry(
               record: MaterialRecord(
                 id: setDefinition.id,
-                barcode: 'SET-${setDefinition.id}',
+                // A produced set is backed by a real materials row, keyed on
+                // the run and stage that made it — that barcode is what the
+                // detail view and its ledger are fetched by.
+                barcode: _setBarcode(setDefinition),
                 name: setDefinition.name,
                 type: 'set',
                 grade: '',
@@ -1526,18 +1578,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 numberOfChildren: 0,
                 linkedChildBarcodes: const [],
                 scanCount: 0,
-                displayStock: '${setDefinition.totalItemCount} Items',
+                displayStock: _setDisplayStock(setDefinition),
                 createdBy: 'Demo Admin',
                 workflowStatus: 'active',
                 updatedAt: setDefinition.updatedAt,
               ),
               displayName: setDefinition.name,
               displayId: 'SET-${setDefinition.id}',
-              displayMetadata:
-                  '${setDefinition.lines.length} item${setDefinition.lines.length == 1 ? '' : 's'}',
+              // A produced set says where it came from; a defined one just
+              // counts its lines.
+              displayMetadata: _setRowMetadata(setDefinition),
               directItemCount: setDefinition.totalItemCount,
               inventorySet: setDefinition,
-              opensDetails: false,
+              // Only a produced set has a detail view to open.
+              opensDetails: setDefinition.isTemporary,
             ),
           )
           .toList(growable: false)
@@ -5126,6 +5180,14 @@ class _InventoryTableState extends State<_InventoryTable> {
                             widget.viewMode == _InventoryViewMode.sets
                             ? (inventorySet == null
                                   ? () {}
+                                  // A set produced by an assembly step holds
+                                  // stock, so tapping it opens the same detail
+                                  // view an item gets — including the ledger of
+                                  // what came in from production and what went
+                                  // out to a worker. A hand-defined set has no
+                                  // stock, so it still opens its composition.
+                                  : inventorySet.isTemporary
+                                  ? () => widget.onOpenDetails(record)
                                   : () => widget.onOpenSetItems(inventorySet))
                             : widget.viewMode == _InventoryViewMode.groups &&
                                   entry.canExpand

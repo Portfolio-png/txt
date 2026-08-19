@@ -1541,6 +1541,14 @@ class InventorySetDto {
     required this.createdAt,
     required this.updatedAt,
     required this.lines,
+    this.isTemporary = false,
+    this.originRunId,
+    this.originNodeId,
+    this.sourceSetId,
+    this.producedAt,
+    this.onHandQty,
+    this.materialBarcode,
+    this.photoUrl,
   });
 
   final int id;
@@ -1549,6 +1557,14 @@ class InventorySetDto {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<InventorySetLineDto> lines;
+  final bool isTemporary;
+  final String? originRunId;
+  final String? originNodeId;
+  final int? sourceSetId;
+  final DateTime? producedAt;
+  final double? onHandQty;
+  final String? materialBarcode;
+  final String? photoUrl;
 
   factory InventorySetDto.fromJson(Map<String, dynamic> json) {
     return InventorySetDto(
@@ -1567,6 +1583,14 @@ class InventorySetDto {
                 InventorySetLineDto.fromJson(item as Map<String, dynamic>),
           )
           .toList(growable: false),
+      isTemporary: json['isTemporary'] as bool? ?? false,
+      originRunId: json['originRunId'] as String?,
+      originNodeId: json['originNodeId'] as String?,
+      sourceSetId: (json['sourceSetId'] as num?)?.toInt(),
+      producedAt: DateTime.tryParse(json['producedAt'] as String? ?? ''),
+      onHandQty: (json['onHandQty'] as num?)?.toDouble(),
+      materialBarcode: json['materialBarcode'] as String?,
+      photoUrl: json['photoUrl'] as String?,
     );
   }
 
@@ -1578,6 +1602,14 @@ class InventorySetDto {
       createdAt: createdAt,
       updatedAt: updatedAt,
       lines: lines.map((line) => line.toDomain()).toList(growable: false),
+      isTemporary: isTemporary,
+      originRunId: originRunId,
+      originNodeId: originNodeId,
+      sourceSetId: sourceSetId,
+      producedAt: producedAt,
+      onHandQty: onHandQty,
+      materialBarcode: materialBarcode,
+      photoUrl: photoUrl,
     );
   }
 }

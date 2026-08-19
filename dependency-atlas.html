@@ -1,0 +1,660 @@
+<title>Paper Dependency Atlas</title>
+<style>
+:root{
+  --ground:#FBFAFC; --surface:#FFFFFF; --surface-2:#F5F3FA;
+  --ink:#17151F; --ink-2:#56526A; --ink-3:#8A85A0;
+  --line:#E6E3EF; --line-2:#D6D1E6;
+  --accent:#5B45D9; --accent-soft:#EFECFD; --accent-line:#C9BFF7;
+  --ok:#1F7A4D; --ok-bg:#E6F4EC; --warn:#8A5A00; --warn-bg:#FCF1DC;
+  --bad:#A81F17; --bad-bg:#FBE9E7; --off:#8A85A0; --off-bg:#F1EFF6;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#131118; --surface:#1B1823; --surface-2:#221E2D;
+  --ink:#F2F0F7; --ink-2:#A9A3BE; --ink-3:#7A7490;
+  --line:#2C2838; --line-2:#3A3550;
+  --accent:#A594FF; --accent-soft:#241F38; --accent-line:#463C6E;
+  --ok:#5FD39B; --ok-bg:#14301F; --warn:#E0A93C; --warn-bg:#332612;
+  --bad:#FF8A7D; --bad-bg:#3A1A17; --off:#7A7490; --off-bg:#221E2D;
+}}
+:root[data-theme="dark"]{
+  --ground:#131118; --surface:#1B1823; --surface-2:#221E2D;
+  --ink:#F2F0F7; --ink-2:#A9A3BE; --ink-3:#7A7490;
+  --line:#2C2838; --line-2:#3A3550;
+  --accent:#A594FF; --accent-soft:#241F38; --accent-line:#463C6E;
+  --ok:#5FD39B; --ok-bg:#14301F; --warn:#E0A93C; --warn-bg:#332612;
+  --bad:#FF8A7D; --bad-bg:#3A1A17; --off:#7A7490; --off-bg:#221E2D;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);
+  line-height:1.55;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px 96px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+h1{font-size:clamp(30px,5vw,46px);line-height:1.08;letter-spacing:-.022em;
+  font-weight:680;margin:0 0 14px;text-wrap:balance}
+h2{font-size:24px;letter-spacing:-.014em;font-weight:660;margin:0 0 6px;text-wrap:balance}
+h3{font-size:15px;font-weight:660;margin:0;letter-spacing:-.005em}
+p{color:var(--ink-2);margin:0 0 14px;max-width:66ch}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:12.5px}
+header.top{border-bottom:1px solid var(--line);padding:56px 0 34px;margin-bottom:38px}
+.lede{font-size:17px;color:var(--ink-2);max-width:64ch;margin:0}
+section.blk{margin:0 0 54px;scroll-margin-top:70px}
+.sec-h{display:flex;flex-direction:column;gap:2px;margin-bottom:20px;
+  padding-bottom:12px;border-bottom:1px solid var(--line)}
+.sec-h .sub{font-size:14px;color:var(--ink-3);margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:26px 0 0}
+.stat{background:var(--surface);padding:16px 18px}
+.stat .v{font-family:var(--mono);font-size:26px;font-weight:640;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;display:block;line-height:1.15}
+.stat .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);display:block;margin-top:5px}
+.stat.is-bad .v{color:var(--bad)} .stat.is-warn .v{color:var(--warn)}
+nav.jump{position:sticky;top:0;z-index:5;background:var(--ground);
+  border-bottom:1px solid var(--line);padding:11px 0;margin-bottom:34px;
+  display:flex;gap:6px;flex-wrap:wrap}
+nav.jump a{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-decoration:none;
+  color:var(--ink-2);padding:5px 10px;border:1px solid var(--line);border-radius:99px}
+nav.jump a:hover,nav.jump a:focus-visible{border-color:var(--accent-line);color:var(--accent);
+  background:var(--accent-soft);outline:none}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.defect{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start;
+  padding:18px 0;border-bottom:1px solid var(--line)}
+.defect:last-child{border-bottom:0}
+.dnum{font-family:var(--mono);font-size:11px;font-weight:640;color:var(--bad);
+  background:var(--bad-bg);border-radius:6px;padding:4px 8px;white-space:nowrap}
+.dnum.fixed{color:var(--ok);background:var(--ok-bg)}
+.defect h4{margin:0 0 5px;font-size:15px;font-weight:640;letter-spacing:-.005em}
+.defect p{margin:0 0 6px;font-size:14px}
+.defect .where{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+.dom{margin-bottom:26px}
+.dom-h{display:flex;align-items:center;gap:9px;margin-bottom:9px;flex-wrap:wrap}
+.tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;padding:3px 8px;border-radius:99px;
+  background:var(--off-bg);color:var(--off)}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.warn{background:var(--warn-bg);color:var(--warn)}
+.tag.bad{background:var(--bad-bg);color:var(--bad)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}
+th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;font-weight:500;padding:9px 12px;
+  border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td code{color:var(--ink);font-weight:520}
+th.n,td.n{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);white-space:nowrap}
+td.par{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);line-height:1.45}
+tr.bad td code{color:var(--bad)}
+.pill{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:99px;
+  background:var(--off-bg);color:var(--off);white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.layer{display:grid;grid-template-columns:120px 1fr;gap:16px;padding:14px 0;
+  border-bottom:1px solid var(--line);align-items:start}
+.layer:last-child{border-bottom:0}
+.layer-h{display:flex;flex-direction:column;gap:2px}
+.ln{font-family:var(--mono);font-size:17px;font-weight:640;color:var(--accent);letter-spacing:-.01em}
+.lc{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.04em}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:6px;
+  background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);cursor:default}
+.chip.ok{background:var(--ok-bg);color:var(--ok);border-color:transparent}
+.chip.bad{background:var(--bad-bg);color:var(--bad);border-color:transparent}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;
+  color:var(--ink-3);margin-bottom:18px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.off{background:var(--off)}
+pre.mermaid{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:20px;overflow-x:auto;text-align:center}
+.next{counter-reset:step}
+.next li{margin-bottom:13px;color:var(--ink-2);font-size:14.5px}
+.next li strong{color:var(--ink);font-weight:640}
+footer{border-top:1px solid var(--line);padding-top:20px;margin-top:56px;
+  font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+@media (max-width:640px){.layer{grid-template-columns:1fr;gap:8px}
+  .defect{grid-template-columns:1fr;gap:8px}.dnum{justify-self:start}}
+
+.mapwrap{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:22px 18px;overflow-x:auto}
+svg.dmap{display:block;width:100%;min-width:720px;height:auto}
+svg.dmap .nd rect{fill:var(--surface-2);stroke:var(--line-2);stroke-width:1}
+svg.dmap .nd.full rect{fill:var(--ok-bg);stroke:var(--ok)}
+svg.dmap .nd.part rect{fill:var(--warn-bg);stroke:var(--warn)}
+svg.dmap .nd.none rect{fill:var(--bad-bg);stroke:var(--bad)}
+svg.dmap .nt{font-family:var(--sans);font-size:13px;font-weight:640;fill:var(--ink)}
+svg.dmap .ns{font-family:var(--mono);font-size:10.5px;fill:var(--ink-2)}
+svg.dmap .nd.full .nt,svg.dmap .nd.full .ns{fill:var(--ok)}
+svg.dmap .nd.part .nt,svg.dmap .nd.part .ns{fill:var(--warn)}
+svg.dmap .nd.none .nt,svg.dmap .nd.none .ns{fill:var(--bad)}
+svg.dmap .ec{font-family:var(--mono);font-size:10px;fill:var(--ink-3);text-anchor:middle}
+@media print{
+  nav.jump{display:none}
+  body{background:#fff}
+  .tw,.card,.mapwrap{break-inside:avoid}
+  section.blk{break-inside:avoid-page}
+  a{text-decoration:none;color:inherit}
+}
+</style>
+<div class="wrap">
+<header class="top">
+  <p class="eyebrow">Paper ERP · data dependency reference</p>
+  <h1>Dependency Atlas</h1>
+  <p class="lede">Every table in the factory database, what it depends on, what depends on it,
+  and how much of it the demo scenario actually fills. Built by reading the live schema and the
+  foreign-key graph out of <code>paper.db</code>, then re-seeding a scratch database to measure
+  real coverage.</p>
+  <div class="stats">
+    <div class="stat"><span class="v">119</span><span class="k">tables</span></div>
+    <div class="stat"><span class="v">140</span><span class="k">FK edges</span></div>
+    <div class="stat"><span class="v">6</span><span class="k">seed layers</span></div>
+    <div class="stat is-warn"><span class="v">24</span><span class="k">seeded tables</span></div>
+    <div class="stat is-bad"><span class="v">9</span><span class="k">dead hubs</span></div>
+    <div class="stat is-bad"><span class="v">4</span><span class="k">empty domains</span></div>
+  </div>
+</header>
+
+<nav class="jump">
+  <a href="#defects">Defects</a><a href="#map">Domain map</a><a href="#order">Seed order</a>
+  <a href="#tables">Table reference</a><a href="#gaps">Gaps</a><a href="#next">What to seed next</a>
+</nav>
+
+<section class="blk" id="defects">
+  <div class="sec-h"><h2>What was actually broken</h2>
+  <p class="sub">Why the seeded pipelines looked empty when you opened them.</p></div>
+  <div class="card">
+    <div class="defect">
+      <span class="dnum fixed">FIXED</span>
+      <div>
+        <h4>Seeded pipelines used a status the app doesn't know</h4>
+        <p>The seeder wrote <code>status: 'published'</code>. The Flutter enum is
+        <code>{draft, active, archived}</code>, and <code>firstWhere</code> falls back to
+        <code>draft</code> — so every seeded template parsed as a draft, sat outside the default
+        <em>Active</em> filter, and failed the <code>canRun</code> check. Now seeds as
+        <code>active</code>.</p>
+        <p class="where">backend/server.js — 4 sites · verified by re-seeding a scratch DB</p>
+      </div>
+    </div>
+    <div class="defect">
+      <span class="dnum fixed">FIXED</span>
+      <div>
+        <h4>Two templates had no factory or shop floor</h4>
+        <p><code>dolly</code> and <code>assembly</code> seeded with empty
+        <code>factory_id</code>/<code>shop_floor_id</code> while the app opens on floor
+        <code>1/1</code>. <code>belongsToDefaultFloor</code> happens to treat empty as a match, so
+        this was survivable — but it made the floor filter meaningless for half the library.</p>
+        <p class="where">backend/server.js · buildSeedTemplates()</p>
+      </div>
+    </div>
+    <div class="defect">
+      <span class="dnum">OPEN</span>
+      <div>
+        <h4>Pipeline stages reference machines that don't exist</h4>
+        <p>Seeded nodes carry <code>machine: "Cutter 04"</code>, <code>"Rack A1"</code> — plain
+        strings. The <code>machines</code> table has <strong>zero rows</strong>, so every stage
+        opens Unassigned and no stage can resolve a real machine or die.</p>
+        <p class="where">machines: 0 rows, 2 dependents · dies: 0 rows</p>
+      </div>
+    </div>
+    <div class="defect">
+      <span class="dnum">OPEN</span>
+      <div>
+        <h4>No stage binds an input or output item</h4>
+        <p>Not one seeded node sets <code>inputItem</code>/<code>outputItem</code>. That is what
+        drives item continuity, unit conversion, the process-code generator — and, since last
+        change, whether an Assembly stage can raise a job at all. A stage with no bound output
+        now logs a warning and raises nothing.</p>
+        <p class="where">buildSeedTemplates() · every node in all 3 templates</p>
+      </div>
+    </div>
+    <div class="defect">
+      <span class="dnum">OPEN</span>
+      <div>
+        <h4>The assembly → jobs → worker path cannot complete</h4>
+        <p><code>employees</code>, <code>freelancer_jobs</code> and <code>item_bom_lines</code> are
+        all empty. Even with an Assembly node firing correctly, the job it opens would carry zero
+        tasks (the BOM loop finds nothing) and there is no worker to assign it to.</p>
+        <p class="where">employees: 0 rows, 7 dependents · item_bom_lines: 0 rows</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="map">
+  <div class="sec-h"><h2>Domain map</h2>
+  <p class="sub">Arrows point from a domain to the domains that hold foreign keys into it —
+  read them as "must exist first". Edge labels count the FK columns.</p></div>
+<figure class="mapwrap"><svg viewBox="0 0 900 372" role="img" aria-label="Domain dependency map" xmlns="http://www.w3.org/2000/svg" class="dmap">
+<defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6"
+ markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="var(--line-2)"/>
+ </marker></defs>
+<path d="M192,39.0 C211.5,39.0 211.5,76.0 231,76.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="212" y="54">4</text>
+<path d="M192,113.0 C211.5,113.0 211.5,76.0 231,76.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="212" y="90">2</text>
+<path d="M192,113.0 C211.5,113.0 211.5,187.0 231,187.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="212" y="146">2</text>
+<path d="M192,187.0 C322.5,187.0 322.5,113.0 453,113.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="322" y="146">4</text>
+<path d="M192,187.0 C322.5,187.0 322.5,224.0 453,224.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="322" y="202">3</text>
+<path d="M192,187.0 C322.5,187.0 322.5,298.0 453,298.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="322" y="238">2</text>
+<path d="M414,76.0 C433.5,76.0 433.5,39.0 453,39.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="434" y="54">2</text>
+<path d="M414,187.0 C433.5,187.0 433.5,113.0 453,113.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="434" y="146">2</text>
+<path d="M414,76.0 C544.5,76.0 544.5,128.0 675,128.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="544" y="98">2</text>
+<path d="M414,187.0 C544.5,187.0 544.5,128.0 675,128.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<path d="M414,76.0 C544.5,76.0 544.5,39.0 675,39.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<path d="M636,39.0 C655.5,39.0 655.5,39.0 675,39.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<path d="M636,113.0 C655.5,113.0 655.5,224.0 675,224.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="656" y="164">2</text>
+<path d="M192,261.0 C433.5,261.0 433.5,224.0 675,224.0" fill="none" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ah)"/>
+<text class="ec" x="434" y="238">2</text>
+<g class="nd part"><rect x="16" y="10" width="176" height="58" rx="9"/><text class="nt" x="29" y="34">Masters · Units</text><text class="ns" x="29" y="52">3 tables · 1 seeded</text></g>
+<g class="nd part"><rect x="16" y="84" width="176" height="58" rx="9"/><text class="nt" x="29" y="108">Masters · Assets</text><text class="ns" x="29" y="126">3 tables · 1 seeded</text></g>
+<g class="nd part"><rect x="16" y="158" width="176" height="58" rx="9"/><text class="nt" x="29" y="182">Masters · Parties</text><text class="ns" x="29" y="200">4 tables · 2 seeded</text></g>
+<g class="nd full"><rect x="16" y="232" width="176" height="58" rx="9"/><text class="nt" x="29" y="256">Auth &amp; RBAC</text><text class="ns" x="29" y="274">8 tables · 7 seeded</text></g>
+<g class="nd part"><rect x="238" y="47" width="176" height="58" rx="9"/><text class="nt" x="251" y="71">Masters · Items</text><text class="ns" x="251" y="89">13 tables · 4 seeded</text></g>
+<g class="nd part"><rect x="238" y="158" width="176" height="58" rx="9"/><text class="nt" x="251" y="182">Production</text><text class="ns" x="251" y="200">5 tables · 3 seeded</text></g>
+<g class="nd full"><rect x="460" y="10" width="176" height="58" rx="9"/><text class="nt" x="473" y="34">Inventory</text><text class="ns" x="473" y="52">7 tables · 5 seeded</text></g>
+<g class="nd part"><rect x="460" y="84" width="176" height="58" rx="9"/><text class="nt" x="473" y="108">Orders</text><text class="ns" x="473" y="126">8 tables · 4 seeded</text></g>
+<g class="nd none"><rect x="460" y="195" width="176" height="58" rx="9"/><text class="nt" x="473" y="219">People &amp; Payroll</text><text class="ns" x="473" y="237">10 tables · 0 seeded</text></g>
+<g class="nd none"><rect x="460" y="269" width="176" height="58" rx="9"/><text class="nt" x="473" y="293">Portal</text><text class="ns" x="473" y="311">3 tables · 0 seeded</text></g>
+<g class="nd full"><rect x="682" y="10" width="176" height="58" rx="9"/><text class="nt" x="695" y="34">Challans</text><text class="ns" x="695" y="52">10 tables · 6 seeded</text></g>
+<g class="nd none"><rect x="682" y="99" width="176" height="58" rx="9"/><text class="nt" x="695" y="123">Jobs &amp; Freelance</text><text class="ns" x="695" y="141">3 tables · 0 seeded</text></g>
+<g class="nd none"><rect x="682" y="195" width="176" height="58" rx="9"/><text class="nt" x="695" y="219">Procurement</text><text class="ns" x="695" y="237">4 tables · 0 seeded</text></g>
+</svg>
+</figure>
+</section>
+
+<section class="blk" id="order">
+  <div class="sec-h"><h2>Seed order</h2>
+  <p class="sub">Topological layers of the FK graph. Everything in L0 has no parents and can be
+  written first; nothing in L<em>n</em> can be written before L<em>n−1</em> exists. This is the
+  order a seeder has to follow.</p></div>
+  <div class="legend">
+    <span><i class="dot ok"></i>seeded</span>
+    <span><i class="dot bad"></i>empty, but ≥2 tables depend on it</span>
+    <span><i class="dot off"></i>empty leaf</span>
+  </div>
+  <div class="card">
+<div class="layer"><div class="layer-h"><span class="ln">L0</span><span class="lc">37 tables · 9 seeded</span></div><div class="chips">
+<span class="chip ok" title="clients — 6 rows, 12 dependents">clients</span>
+<span class="chip ok" title="units — 9 rows, 9 dependents">units</span>
+<span class="chip ok" title="materials — 17 rows, 4 dependents">materials</span>
+<span class="chip ok" title="permission_templates — 4 rows, 2 dependents">permission_templates</span>
+<span class="chip off" title="challan_templates — 0 rows, 1 dependents">challan_templates</span>
+<span class="chip off" title="departments — 0 rows, 1 dependents">departments</span>
+<span class="chip off" title="dies — 0 rows, 1 dependents">dies</span>
+<span class="chip off" title="inventory_sets — 0 rows, 1 dependents">inventory_sets</span>
+<span class="chip ok" title="pipeline_templates — 3 rows, 1 dependents">pipeline_templates</span>
+<span class="chip off" title="po_documents — 0 rows, 1 dependents">po_documents</span>
+<span class="chip off" title="report_groups — 0 rows, 1 dependents">report_groups</span>
+<span class="chip off" title="_migrations — 0 rows, 0 dependents">_migrations</span>
+<span class="chip off" title="asset_upload_sessions — 0 rows, 0 dependents">asset_upload_sessions</span>
+<span class="chip off" title="challan_template_upload_sessions — 0 rows, 0 dependents">challan_template_upload_sessions</span>
+<span class="chip ok" title="changelog — 19 rows, 0 dependents">changelog</span>
+<span class="chip ok" title="company_profiles — 1 rows, 0 dependents">company_profiles</span>
+<span class="chip off" title="deleted_records — 0 rows, 0 dependents">deleted_records</span>
+<span class="chip off" title="entity_activity_log — 0 rows, 0 dependents">entity_activity_log</span>
+<span class="chip off" title="inventory_alerts — 0 rows, 0 dependents">inventory_alerts</span>
+<span class="chip off" title="inventory_movements — 0 rows, 0 dependents">inventory_movements</span>
+<span class="chip off" title="inventory_reservations — 0 rows, 0 dependents">inventory_reservations</span>
+<span class="chip off" title="inventory_stock_positions — 0 rows, 0 dependents">inventory_stock_positions</span>
+<span class="chip ok" title="material_activity — 28 rows, 0 dependents">material_activity</span>
+<span class="chip off" title="po_upload_sessions — 0 rows, 0 dependents">po_upload_sessions</span>
+<span class="chip off" title="reconciliation_conversion_overrides — 0 rows, 0 dependents">reconciliation_conversion_overrides</span>
+<span class="chip ok" title="role_permissions — 357 rows, 0 dependents">role_permissions</span>
+<span class="chip off" title="sandbox_activated_machines — 0 rows, 0 dependents">sandbox_activated_machines</span>
+<span class="chip off" title="sandbox_client_configs — 0 rows, 0 dependents">sandbox_client_configs</span>
+<span class="chip off" title="sandbox_client_pins — 0 rows, 0 dependents">sandbox_client_pins</span>
+<span class="chip off" title="sandbox_client_users — 0 rows, 0 dependents">sandbox_client_users</span>
+<span class="chip off" title="sandbox_replays — 0 rows, 0 dependents">sandbox_replays</span>
+<span class="chip off" title="sandbox_sync_states — 0 rows, 0 dependents">sandbox_sync_states</span>
+<span class="chip off" title="scan_history — 0 rows, 0 dependents">scan_history</span>
+<span class="chip off" title="unit_groups — 0 rows, 0 dependents">unit_groups</span>
+<span class="chip off" title="uploaded_assets — 0 rows, 0 dependents">uploaded_assets</span>
+<span class="chip off" title="user_record_permissions — 0 rows, 0 dependents">user_record_permissions</span>
+<span class="chip off" title="vendors — 0 rows, 0 dependents">vendors</span>
+</div></div>
+<div class="layer"><div class="layer-h"><span class="ln">L1</span><span class="lc">17 tables · 5 seeded</span></div><div class="chips">
+<span class="chip ok" title="users — 1 rows, 13 dependents">users</span>
+<span class="chip bad" title="employees — 0 rows, 7 dependents">employees</span>
+<span class="chip ok" title="pipeline_runs — 3 rows, 6 dependents">pipeline_runs</span>
+<span class="chip ok" title="groups — 3 rows, 4 dependents">groups</span>
+<span class="chip bad" title="portal_users — 0 rows, 4 dependents">portal_users</span>
+<span class="chip bad" title="leave_types — 0 rows, 2 dependents">leave_types</span>
+<span class="chip bad" title="payroll_components — 0 rows, 2 dependents">payroll_components</span>
+<span class="chip bad" title="payroll_runs — 0 rows, 2 dependents">payroll_runs</span>
+<span class="chip bad" title="sub_contractors — 0 rows, 2 dependents">sub_contractors</span>
+<span class="chip off" title="challan_template_mappings — 0 rows, 0 dependents">challan_template_mappings</span>
+<span class="chip ok" title="material_group_preferences — 11 rows, 0 dependents">material_group_preferences</span>
+<span class="chip off" title="material_group_properties — 0 rows, 0 dependents">material_group_properties</span>
+<span class="chip off" title="material_group_units — 0 rows, 0 dependents">material_group_units</span>
+<span class="chip ok" title="permission_template_permissions — 59 rows, 0 dependents">permission_template_permissions</span>
+<span class="chip off" title="portal_invites — 0 rows, 0 dependents">portal_invites</span>
+<span class="chip off" title="statutory_config — 0 rows, 0 dependents">statutory_config</span>
+<span class="chip off" title="unit_conversion_points — 0 rows, 0 dependents">unit_conversion_points</span>
+</div></div>
+<div class="layer"><div class="layer-h"><span class="ln">L2</span><span class="lc">26 tables · 4 seeded</span></div><div class="chips">
+<span class="chip ok" title="items — 13 rows, 20 dependents">items</span>
+<span class="chip bad" title="delivery_challans — 0 rows, 6 dependents">delivery_challans</span>
+<span class="chip bad" title="procurement_requests — 0 rows, 3 dependents">procurement_requests</span>
+<span class="chip bad" title="machines — 0 rows, 2 dependents">machines</span>
+<span class="chip ok" title="order_headers — 4 rows, 2 dependents">order_headers</span>
+<span class="chip off" title="employee_salary_structures — 0 rows, 1 dependents">employee_salary_structures</span>
+<span class="chip off" title="freelancer_job_batches — 0 rows, 1 dependents">freelancer_job_batches</span>
+<span class="chip off" title="invoice_headers — 0 rows, 1 dependents">invoice_headers</span>
+<span class="chip off" title="attendance_records — 0 rows, 0 dependents">attendance_records</span>
+<span class="chip off" title="auth_events — 0 rows, 0 dependents">auth_events</span>
+<span class="chip off" title="auth_sessions — 0 rows, 0 dependents">auth_sessions</span>
+<span class="chip off" title="combination_groups — 0 rows, 0 dependents">combination_groups</span>
+<span class="chip off" title="delete_requests — 0 rows, 0 dependents">delete_requests</span>
+<span class="chip off" title="global_audit_logs — 0 rows, 0 dependents">global_audit_logs</span>
+<span class="chip off" title="leave_balances — 0 rows, 0 dependents">leave_balances</span>
+<span class="chip off" title="leave_requests — 0 rows, 0 dependents">leave_requests</span>
+<span class="chip off" title="payroll_run_details — 0 rows, 0 dependents">payroll_run_details</span>
+<span class="chip off" title="payslips — 0 rows, 0 dependents">payslips</span>
+<span class="chip off" title="production_scrap — 0 rows, 0 dependents">production_scrap</span>
+<span class="chip ok" title="run_barcode_inputs — 3 rows, 0 dependents">run_barcode_inputs</span>
+<span class="chip off" title="search_clicks — 0 rows, 0 dependents">search_clicks</span>
+<span class="chip off" title="search_history — 0 rows, 0 dependents">search_history</span>
+<span class="chip ok" title="stage_reconciliations — 2 rows, 0 dependents">stage_reconciliations</span>
+<span class="chip off" title="user_permission_overrides — 0 rows, 0 dependents">user_permission_overrides</span>
+<span class="chip off" title="user_permission_templates — 0 rows, 0 dependents">user_permission_templates</span>
+<span class="chip off" title="user_preferences — 0 rows, 0 dependents">user_preferences</span>
+</div></div>
+<div class="layer"><div class="layer-h"><span class="ln">L3</span><span class="lc">24 tables · 4 seeded</span></div><div class="chips">
+<span class="chip ok" title="order_items — 4 rows, 8 dependents">order_items</span>
+<span class="chip bad" title="delivery_challan_items — 0 rows, 2 dependents">delivery_challan_items</span>
+<span class="chip ok" title="item_variation_nodes — 42 rows, 2 dependents">item_variation_nodes</span>
+<span class="chip bad" title="procurement_request_lines — 0 rows, 2 dependents">procurement_request_lines</span>
+<span class="chip off" title="freelancer_jobs — 0 rows, 1 dependents">freelancer_jobs</span>
+<span class="chip off" title="item_variation_dimensions — 0 rows, 1 dependents">item_variation_dimensions</span>
+<span class="chip off" title="item_variations — 0 rows, 1 dependents">item_variations</span>
+<span class="chip off" title="client_portal_catalog — 0 rows, 0 dependents">client_portal_catalog</span>
+<span class="chip off" title="delivery_challan_activity_log — 0 rows, 0 dependents">delivery_challan_activity_log</span>
+<span class="chip off" title="delivery_challan_report_groups — 0 rows, 0 dependents">delivery_challan_report_groups</span>
+<span class="chip off" title="employee_salary_structure_lines — 0 rows, 0 dependents">employee_salary_structure_lines</span>
+<span class="chip off" title="group_item_memberships — 0 rows, 0 dependents">group_item_memberships</span>
+<span class="chip off" title="item_attachments — 0 rows, 0 dependents">item_attachments</span>
+<span class="chip off" title="item_bom_lines — 0 rows, 0 dependents">item_bom_lines</span>
+<span class="chip off" title="item_dies — 0 rows, 0 dependents">item_dies</span>
+<span class="chip off" title="item_machines — 0 rows, 0 dependents">item_machines</span>
+<span class="chip off" title="item_property_schema — 0 rows, 0 dependents">item_property_schema</span>
+<span class="chip ok" title="item_unit_conversions — 11 rows, 0 dependents">item_unit_conversions</span>
+<span class="chip off" title="material_group_item_links — 0 rows, 0 dependents">material_group_item_links</span>
+<span class="chip off" title="portal_carts — 0 rows, 0 dependents">portal_carts</span>
+<span class="chip ok" title="production_runs — 4 rows, 0 dependents">production_runs</span>
+<span class="chip off" title="reconciliation_waste_audit — 0 rows, 0 dependents">reconciliation_waste_audit</span>
+<span class="chip off" title="run_machine_assignments — 0 rows, 0 dependents">run_machine_assignments</span>
+<span class="chip off" title="user_favorite_items — 0 rows, 0 dependents">user_favorite_items</span>
+</div></div>
+<div class="layer"><div class="layer-h"><span class="ln">L4</span><span class="lc">14 tables · 2 seeded</span></div><div class="chips">
+<span class="chip off" title="order_material_requirements — 0 rows, 1 dependents">order_material_requirements</span>
+<span class="chip off" title="delivery_challan_order_items — 0 rows, 0 dependents">delivery_challan_order_items</span>
+<span class="chip off" title="freelancer_job_tasks — 0 rows, 0 dependents">freelancer_job_tasks</span>
+<span class="chip off" title="inventory_set_lines — 0 rows, 0 dependents">inventory_set_lines</span>
+<span class="chip off" title="invoice_lines — 0 rows, 0 dependents">invoice_lines</span>
+<span class="chip off" title="item_variation_values — 0 rows, 0 dependents">item_variation_values</span>
+<span class="chip ok" title="order_activity_log — 4 rows, 0 dependents">order_activity_log</span>
+<span class="chip ok" title="order_pipeline_assignments — 3 rows, 0 dependents">order_pipeline_assignments</span>
+<span class="chip off" title="order_po_documents — 0 rows, 0 dependents">order_po_documents</span>
+<span class="chip off" title="order_returns — 0 rows, 0 dependents">order_returns</span>
+<span class="chip off" title="order_status_history — 0 rows, 0 dependents">order_status_history</span>
+<span class="chip off" title="piece_barcodes — 0 rows, 0 dependents">piece_barcodes</span>
+<span class="chip off" title="procurement_activity_log — 0 rows, 0 dependents">procurement_activity_log</span>
+<span class="chip off" title="variation_stock — 0 rows, 0 dependents">variation_stock</span>
+</div></div>
+<div class="layer"><div class="layer-h"><span class="ln">L5</span><span class="lc">1 tables · 0 seeded</span></div><div class="chips">
+<span class="chip off" title="procurement_request_line_sources — 0 rows, 0 dependents">procurement_request_line_sources</span>
+</div></div>
+  </div>
+</section>
+
+<section class="blk" id="tables">
+  <div class="sec-h"><h2>Table reference</h2>
+  <p class="sub">All 119 tables by domain. <strong>L</strong> is the seed layer;
+  <strong>Dependents</strong> counts tables holding a foreign key into this one.</p></div>
+  <div class="legend">
+    <span><i class="dot ok"></i>has seed rows</span>
+    <span><i class="dot bad"></i>dead hub — empty with dependents</span>
+    <span><i class="dot off"></i>empty leaf</span>
+  </div>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Masters · Units</h3><span class="tag warn">1/3 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>units</code></td><td class="n">0</td><td class="par">—</td><td class="n">9</td><td class="n"><span class="pill ok">9</span></td></tr>
+<tr class="off"><td><code>unit_groups</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>unit_conversion_points</code></td><td class="n">1</td><td class="par">units</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Masters · Items</h3><span class="tag warn">4/13 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>groups</code></td><td class="n">1</td><td class="par">units</td><td class="n">4</td><td class="n"><span class="pill ok">3</span></td></tr>
+<tr class="ok"><td><code>items</code></td><td class="n">2</td><td class="par">groups, units</td><td class="n">20</td><td class="n"><span class="pill ok">13</span></td></tr>
+<tr class="ok"><td><code>item_variation_nodes</code></td><td class="n">3</td><td class="par">items</td><td class="n">2</td><td class="n"><span class="pill ok">42</span></td></tr>
+<tr class="off"><td><code>item_variation_dimensions</code></td><td class="n">3</td><td class="par">items</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>item_variations</code></td><td class="n">3</td><td class="par">items</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>group_item_memberships</code></td><td class="n">3</td><td class="par">groups, items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>item_attachments</code></td><td class="n">3</td><td class="par">items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>item_bom_lines</code></td><td class="n">3</td><td class="par">items, units</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>item_dies</code></td><td class="n">3</td><td class="par">dies, items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>item_machines</code></td><td class="n">3</td><td class="par">items, machines</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>item_property_schema</code></td><td class="n">3</td><td class="par">items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>item_unit_conversions</code></td><td class="n">3</td><td class="par">items, units</td><td class="n">—</td><td class="n"><span class="pill ok">11</span></td></tr>
+<tr class="off"><td><code>item_variation_values</code></td><td class="n">4</td><td class="par">item_variation_dimensions, item_variations</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Masters · Parties</h3><span class="tag warn">1/4 seeded</span><span class="tag bad">1 dead hub</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>clients</code></td><td class="n">0</td><td class="par">—</td><td class="n">12</td><td class="n"><span class="pill ok">6</span></td></tr>
+<tr class="off"><td><code>vendors</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="bad"><td><code>sub_contractors</code></td><td class="n">1</td><td class="par">clients</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="off"><td><code>client_portal_catalog</code></td><td class="n">3</td><td class="par">clients, items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Masters · Assets</h3><span class="tag warn">1/3 seeded</span><span class="tag bad">1 dead hub</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="off"><td><code>dies</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>pipeline_templates</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill ok">3</span></td></tr>
+<tr class="bad"><td><code>machines</code></td><td class="n">2</td><td class="par">groups</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Auth &amp; RBAC</h3><span class="tag warn">4/8 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>permission_templates</code></td><td class="n">0</td><td class="par">—</td><td class="n">2</td><td class="n"><span class="pill ok">4</span></td></tr>
+<tr class="off"><td><code>entity_activity_log</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>role_permissions</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill ok">357</span></td></tr>
+<tr class="ok"><td><code>users</code></td><td class="n">1</td><td class="par">clients</td><td class="n">13</td><td class="n"><span class="pill ok">1</span></td></tr>
+<tr class="ok"><td><code>permission_template_permissions</code></td><td class="n">1</td><td class="par">permission_templates</td><td class="n">—</td><td class="n"><span class="pill ok">59</span></td></tr>
+<tr class="off"><td><code>auth_events</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>auth_sessions</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>delete_requests</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Inventory</h3><span class="tag warn">1/7 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>materials</code></td><td class="n">0</td><td class="par">—</td><td class="n">4</td><td class="n"><span class="pill ok">17</span></td></tr>
+<tr class="off"><td><code>inventory_sets</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>inventory_alerts</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>inventory_movements</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>inventory_reservations</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>inventory_stock_positions</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>inventory_set_lines</code></td><td class="n">4</td><td class="par">inventory_sets, item_variation_nodes, items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Orders</h3><span class="tag warn">4/8 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>order_headers</code></td><td class="n">2</td><td class="par">clients, portal_users, sub_contractors</td><td class="n">2</td><td class="n"><span class="pill ok">4</span></td></tr>
+<tr class="ok"><td><code>order_items</code></td><td class="n">3</td><td class="par">clients, items, order_headers, sub_contractors, units</td><td class="n">8</td><td class="n"><span class="pill ok">4</span></td></tr>
+<tr class="off"><td><code>order_material_requirements</code></td><td class="n">4</td><td class="par">order_items</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>order_activity_log</code></td><td class="n">4</td><td class="par">order_items</td><td class="n">—</td><td class="n"><span class="pill ok">4</span></td></tr>
+<tr class="ok"><td><code>order_pipeline_assignments</code></td><td class="n">4</td><td class="par">order_items, pipeline_runs</td><td class="n">—</td><td class="n"><span class="pill ok">3</span></td></tr>
+<tr class="off"><td><code>order_po_documents</code></td><td class="n">4</td><td class="par">order_items, po_documents</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>order_returns</code></td><td class="n">4</td><td class="par">order_headers, order_items, pipeline_runs</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>order_status_history</code></td><td class="n">4</td><td class="par">order_items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Challans</h3><span class="tag warn">1/10 seeded</span><span class="tag bad">2 dead hubs</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="off"><td><code>challan_templates</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>challan_template_upload_sessions</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>challan_template_mappings</code></td><td class="n">1</td><td class="par">challan_templates</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="bad"><td><code>delivery_challans</code></td><td class="n">2</td><td class="par">portal_users, users</td><td class="n">6</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="ok"><td><code>run_barcode_inputs</code></td><td class="n">2</td><td class="par">pipeline_runs</td><td class="n">—</td><td class="n"><span class="pill ok">3</span></td></tr>
+<tr class="bad"><td><code>delivery_challan_items</code></td><td class="n">3</td><td class="par">delivery_challans</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="off"><td><code>delivery_challan_activity_log</code></td><td class="n">3</td><td class="par">delivery_challans</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>delivery_challan_report_groups</code></td><td class="n">3</td><td class="par">delivery_challans, report_groups</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>delivery_challan_order_items</code></td><td class="n">4</td><td class="par">delivery_challans, order_items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>piece_barcodes</code></td><td class="n">4</td><td class="par">delivery_challan_items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Production</h3><span class="tag warn">3/5 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="ok"><td><code>pipeline_runs</code></td><td class="n">1</td><td class="par">pipeline_templates</td><td class="n">6</td><td class="n"><span class="pill ok">3</span></td></tr>
+<tr class="off"><td><code>production_scrap</code></td><td class="n">2</td><td class="par">pipeline_runs</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>stage_reconciliations</code></td><td class="n">2</td><td class="par">pipeline_runs</td><td class="n">—</td><td class="n"><span class="pill ok">2</span></td></tr>
+<tr class="ok"><td><code>production_runs</code></td><td class="n">3</td><td class="par">items</td><td class="n">—</td><td class="n"><span class="pill ok">4</span></td></tr>
+<tr class="off"><td><code>run_machine_assignments</code></td><td class="n">3</td><td class="par">machines, pipeline_runs</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="bad">
+<header class="dom-h"><h3>Jobs &amp; Freelance</h3><span class="tag bad">0/3 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="off"><td><code>freelancer_job_batches</code></td><td class="n">2</td><td class="par">employees</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>freelancer_jobs</code></td><td class="n">3</td><td class="par">freelancer_job_batches, items</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>freelancer_job_tasks</code></td><td class="n">4</td><td class="par">freelancer_jobs, items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="bad">
+<header class="dom-h"><h3>People &amp; Payroll</h3><span class="tag bad">0/10 seeded</span><span class="tag bad">4 dead hubs</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="bad"><td><code>employees</code></td><td class="n">1</td><td class="par">departments</td><td class="n">7</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="bad"><td><code>leave_types</code></td><td class="n">1</td><td class="par">clients</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="bad"><td><code>payroll_components</code></td><td class="n">1</td><td class="par">clients</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="bad"><td><code>payroll_runs</code></td><td class="n">1</td><td class="par">clients</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="off"><td><code>employee_salary_structures</code></td><td class="n">2</td><td class="par">employees</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>attendance_records</code></td><td class="n">2</td><td class="par">employees</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>leave_balances</code></td><td class="n">2</td><td class="par">employees, leave_types</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>leave_requests</code></td><td class="n">2</td><td class="par">employees, leave_types</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>payroll_run_details</code></td><td class="n">2</td><td class="par">employees, payroll_components, payroll_runs</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>employee_salary_structure_lines</code></td><td class="n">3</td><td class="par">employee_salary_structures, payroll_components</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="bad">
+<header class="dom-h"><h3>Procurement</h3><span class="tag bad">0/4 seeded</span><span class="tag bad">2 dead hubs</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="bad"><td><code>procurement_requests</code></td><td class="n">2</td><td class="par">users</td><td class="n">3</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="bad"><td><code>procurement_request_lines</code></td><td class="n">3</td><td class="par">procurement_requests, units</td><td class="n">2</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="off"><td><code>procurement_activity_log</code></td><td class="n">4</td><td class="par">procurement_request_lines, procurement_requests, users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>procurement_request_line_sources</code></td><td class="n">5</td><td class="par">order_items, order_material_requirements, procurement_request_lines, procurement_requests</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="bad">
+<header class="dom-h"><h3>Portal</h3><span class="tag bad">0/3 seeded</span><span class="tag bad">1 dead hub</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="bad"><td><code>portal_users</code></td><td class="n">1</td><td class="par">clients</td><td class="n">4</td><td class="n"><span class="pill bad">dead hub</span></td></tr>
+<tr class="off"><td><code>portal_invites</code></td><td class="n">1</td><td class="par">clients</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>portal_carts</code></td><td class="n">3</td><td class="par">items, portal_users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+<section class="dom" data-state="warn">
+<header class="dom-h"><h3>Other / Platform</h3><span class="tag warn">4/38 seeded</span></header>
+<div class="tw"><table><thead><tr><th>Table</th><th class="n">L</th><th>Depends on (FK parents)</th><th class="n">Dependents</th><th class="n">Seed rows</th></tr></thead><tbody>
+<tr class="off"><td><code>departments</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>po_documents</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>report_groups</code></td><td class="n">0</td><td class="par">—</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>_migrations</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>asset_upload_sessions</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>changelog</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill ok">19</span></td></tr>
+<tr class="ok"><td><code>company_profiles</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill ok">1</span></td></tr>
+<tr class="off"><td><code>deleted_records</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>material_activity</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill ok">28</span></td></tr>
+<tr class="off"><td><code>po_upload_sessions</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>reconciliation_conversion_overrides</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>sandbox_activated_machines</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>sandbox_client_configs</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>sandbox_client_pins</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>sandbox_client_users</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>sandbox_replays</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>sandbox_sync_states</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>scan_history</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>uploaded_assets</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>user_record_permissions</code></td><td class="n">0</td><td class="par">—</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="ok"><td><code>material_group_preferences</code></td><td class="n">1</td><td class="par">materials</td><td class="n">—</td><td class="n"><span class="pill ok">11</span></td></tr>
+<tr class="off"><td><code>material_group_properties</code></td><td class="n">1</td><td class="par">materials</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>material_group_units</code></td><td class="n">1</td><td class="par">materials, units</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>statutory_config</code></td><td class="n">1</td><td class="par">clients</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>invoice_headers</code></td><td class="n">2</td><td class="par">clients, portal_users</td><td class="n">1</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>combination_groups</code></td><td class="n">2</td><td class="par">groups, units</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>global_audit_logs</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>payslips</code></td><td class="n">2</td><td class="par">employees, payroll_runs</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>search_clicks</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>search_history</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>user_permission_overrides</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>user_permission_templates</code></td><td class="n">2</td><td class="par">permission_templates, users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>user_preferences</code></td><td class="n">2</td><td class="par">users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>material_group_item_links</code></td><td class="n">3</td><td class="par">items, materials</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>reconciliation_waste_audit</code></td><td class="n">3</td><td class="par">delivery_challans</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>user_favorite_items</code></td><td class="n">3</td><td class="par">items, users</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>invoice_lines</code></td><td class="n">4</td><td class="par">delivery_challan_items, delivery_challans, invoice_headers</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+<tr class="off"><td><code>variation_stock</code></td><td class="n">4</td><td class="par">item_variation_nodes, items</td><td class="n">—</td><td class="n"><span class="pill off">empty</span></td></tr>
+</tbody></table></div></section>
+</section>
+
+<section class="blk" id="gaps">
+  <div class="sec-h"><h2>Dead hubs</h2>
+  <p class="sub">Empty tables that other tables are built to hang off. Each one silently
+  disables everything downstream of it — the feature exists in the app, it just has nothing
+  to show.</p></div>
+  <div class="tw"><table>
+    <thead><tr><th>Table</th><th class="n">Dependents</th><th>What stays dark</th></tr></thead>
+    <tbody>
+      <tr class="bad"><td><code>employees</code></td><td class="n">7</td>
+        <td>Payroll, attendance, leave, salary advances, and assigning any job to a worker.</td></tr>
+      <tr class="bad"><td><code>portal_users</code></td><td class="n">4</td>
+        <td>The whole client portal — logins, messages, order visibility.</td></tr>
+      <tr class="bad"><td><code>procurement_requests</code></td><td class="n">3</td>
+        <td>Order-linked procurement and its approval chain.</td></tr>
+      <tr class="bad"><td><code>machines</code></td><td class="n">2</td>
+        <td>Machine assignment on a stage, machine queues, barcodes, utilisation.</td></tr>
+      <tr class="bad"><td><code>payroll_components</code></td><td class="n">2</td>
+        <td>Salary structure; every payroll run computes against nothing.</td></tr>
+      <tr class="bad"><td><code>payroll_runs</code></td><td class="n">2</td>
+        <td>Payslips and payout history.</td></tr>
+      <tr class="bad"><td><code>leave_types</code></td><td class="n">2</td>
+        <td>Leave requests and balances.</td></tr>
+      <tr class="bad"><td><code>sub_contractors</code></td><td class="n">2</td>
+        <td>Job-work routing and outsourced stage tracking.</td></tr>
+      <tr class="bad"><td><code>procurement_request_lines</code></td><td class="n">2</td>
+        <td>Line-level procurement against order demand.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="blk" id="next">
+  <div class="sec-h"><h2>What to seed next</h2>
+  <p class="sub">In FK order, so nothing is written before its parents exist.</p></div>
+  <ol class="next">
+    <li><strong>Machines and dies (L0).</strong> Seed the four machines the pipeline nodes already
+    name — <code>Cutter 04</code>, <code>Rack A1</code>, and the weld/polish stations — plus a die
+    master. Then change the node fixtures to carry real ids rather than loose strings.</li>
+    <li><strong>Bind every stage to an item (L1).</strong> Give each node an
+    <code>inputItem</code>/<code>outputItem</code> pointing at a seeded item and unit. This lights
+    up item continuity, unit conversion and process codes, and is a hard requirement for an
+    Assembly stage to raise a job.</li>
+    <li><strong>Bills of material (L2).</strong> <code>item_bom_lines</code> for the assembled
+    items, so an Assembly job arrives with real component tasks instead of an empty list.</li>
+    <li><strong>Employees (L0) and a sub-contractor.</strong> Unblocks 7 dependent tables and
+    completes the assembly → job → worker path end to end.</li>
+    <li><strong>Then the remaining three dark domains</strong> — payroll (components → runs →
+    payslips), procurement (requests → lines), portal (portal users → messages) — each of which
+    is a self-contained chain once its hub table exists.</li>
+  </ol>
+</section>
+
+<footer>Generated from the live schema of backend/paper.db and a fresh
+resetAndSeedDemoData() run. Coverage counts are from the fresh seed, not the drifted dev database.</footer>
+</div>

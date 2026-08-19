@@ -378,6 +378,7 @@ class LocalInventoryRepository implements InventoryRepository {
             CREATE TABLE IF NOT EXISTS inventory_sets (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               name TEXT NOT NULL,
+              photo_url TEXT NOT NULL DEFAULT '',
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             )
@@ -1408,6 +1409,7 @@ class LocalInventoryRepository implements InventoryRepository {
       if (input.id == null) {
         setId = await txn.insert('inventory_sets', {
           'name': input.name.trim(),
+          'photo_url': input.photoUrl.trim(),
           'created_at': now,
           'updated_at': now,
         });
@@ -1425,7 +1427,11 @@ class LocalInventoryRepository implements InventoryRepository {
         createdAt = existing.first['created_at'] as String? ?? now;
         await txn.update(
           'inventory_sets',
-          {'name': input.name.trim(), 'updated_at': now},
+          {
+            'name': input.name.trim(),
+            'photo_url': input.photoUrl.trim(),
+            'updated_at': now,
+          },
           where: 'id = ?',
           whereArgs: [setId],
         );
@@ -1525,6 +1531,9 @@ class LocalInventoryRepository implements InventoryRepository {
     return InventorySetDefinition(
       id: setId,
       name: row['name'] as String? ?? '',
+      photoUrl: (row['photo_url'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : row['photo_url'] as String,
       totalItemCount: lines.fold<int>(
         0,
         (sum, line) => sum + ((line['quantity'] as num?)?.toInt() ?? 0),

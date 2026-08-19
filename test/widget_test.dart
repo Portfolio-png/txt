@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 
 import 'package:paper/app/shell/navigation_provider.dart';
 import 'package:core_erp/app/reports/domain/reconciliation_report.dart';
+import 'package:core_erp/features/delivery_challans/domain/models/cancel_challan_options.dart';
+import 'package:core_erp/features/orders/domain/order_trace.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/domain/challan_template.dart';
@@ -14,6 +16,7 @@ import 'package:core_erp/features/groups/data/repositories/group_repository.dart
 import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/domain/group_inputs.dart';
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
+import 'package:core_erp/features/inventory/domain/variation_stock_record.dart';
 import 'package:core_erp/features/inventory/domain/create_parent_material_input.dart';
 import 'package:core_erp/features/inventory/domain/effective_group_schema.dart';
 import 'package:core_erp/features/inventory/domain/group_property_draft.dart';
@@ -803,6 +806,10 @@ class FakeInventoryRepository extends InventoryRepository {
   Future<void> deleteSet(int setId) async {
     _sets.removeWhere((set) => set.id == setId);
   }
+
+  @override
+  Future<List<VariationStockRecord>> getVariationStock() async =>
+      const <VariationStockRecord>[];
 }
 
 class FakeUnitRepository extends UnitRepository {
@@ -817,6 +824,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionFactor: 1,
       conversionBaseUnitId: null,
       conversionBaseUnitName: null,
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: false,
       usageCount: 3,
       createdAt: DateTime(2024),
@@ -832,6 +843,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionFactor: 1,
       conversionBaseUnitId: null,
       conversionBaseUnitName: null,
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: false,
       usageCount: 2,
       createdAt: DateTime(2024),
@@ -847,6 +862,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionFactor: 1,
       conversionBaseUnitId: null,
       conversionBaseUnitName: null,
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: true,
       usageCount: 0,
       createdAt: DateTime(2024),
@@ -889,6 +908,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionBaseUnitName: input.unitGroupName.trim().isEmpty
           ? null
           : 'Kilogram',
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: false,
       usageCount: 0,
       createdAt: DateTime.now(),
@@ -929,6 +952,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionBaseUnitName: input.unitGroupName.trim().isEmpty
           ? null
           : 'Kilogram',
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: current.isArchived,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -952,6 +979,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionFactor: current.conversionFactor,
       conversionBaseUnitId: current.conversionBaseUnitId,
       conversionBaseUnitName: current.conversionBaseUnitName,
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: true,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -975,6 +1006,10 @@ class FakeUnitRepository extends UnitRepository {
       conversionFactor: current.conversionFactor,
       conversionBaseUnitId: current.conversionBaseUnitId,
       conversionBaseUnitName: current.conversionBaseUnitName,
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: false,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -983,6 +1018,13 @@ class FakeUnitRepository extends UnitRepository {
     _units[index] = updated;
     return updated;
   }
+
+  @override
+  Future<void> deleteUnit(int id) async {}
+
+  @override
+  Future<List<ConversionPoint>> getGaugePoints() async =>
+      const <ConversionPoint>[];
 }
 
 class FakeGroupRepository extends GroupRepository {
@@ -1040,10 +1082,8 @@ class FakeGroupRepository extends GroupRepository {
   Future<void> init() async {}
 
   @override
-  Future<void> assignItemsToGroup({
-    required int groupId,
-    required List<int> itemIds,
-  }) async {
+  Future<int> assignItemsToGroup(int groupId, List<int> itemIds) async {
+    return itemIds.length;
     // Stub
   }
 
@@ -1268,6 +1308,12 @@ class FakeClientRepository extends ClientRepository {
     _clients[index] = updated;
     return updated;
   }
+
+  @override
+  Future<ClientDefinition?> getClient(int id) async => null;
+
+  @override
+  Future<void> deleteClient(int id) async {}
 }
 
 class FakeVendorRepository extends VendorRepository {
@@ -1401,6 +1447,12 @@ class FakeVendorRepository extends VendorRepository {
     _vendors[index] = updated;
     return updated;
   }
+
+  @override
+  Future<VendorDefinition?> getVendor(int id) async => null;
+
+  @override
+  Future<void> deleteVendor(int id) async {}
 }
 
 class FakeItemRepository extends ItemRepository {
@@ -2397,6 +2449,18 @@ class FakeItemRepository extends ItemRepository {
       );
     }
   }
+
+  @override
+  Future<ItemDefinition?> getItem(int id) async =>
+      _items.where((item) => item.id == id).firstOrNull;
+
+  @override
+  Future<ItemDefinition> updateShortCode(int id, String shortCode) async =>
+      throw UnimplementedError('updateShortCode is not exercised by this test');
+
+  @override
+  Future<Map<String, List<String>>> getPipelineStageLabels() async =>
+      const <String, List<String>>{};
 }
 
 class FakeOrderRepository extends OrderRepository {
@@ -2735,6 +2799,18 @@ class FakeOrderRepository extends OrderRepository {
     return left.toUtc().millisecondsSinceEpoch ==
         right.toUtc().millisecondsSinceEpoch;
   }
+
+  @override
+  Future<List<OrderReturn>> getOrderReturns(String orderNo) async =>
+      const <OrderReturn>[];
+
+  @override
+  Future<OrderReturn> createOrderReturn(CreateOrderReturnInput input) async =>
+      throw UnimplementedError('order returns are not exercised here');
+
+  @override
+  Future<OrderTrace> getOrderTrace(String orderNo) async =>
+      throw UnimplementedError('order trace is not exercised here');
 }
 
 class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
@@ -2795,6 +2871,8 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
 
   @override
   Future<List<DeliveryChallan>> getChallans({
+    bool mineOnly = false,
+    int? variationLeafNodeId,
     ChallanType? type,
     DeliveryChallanStatus? status,
     String search = '',
@@ -2898,6 +2976,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
       status: current.status,
       items: input.items,
       itemsCount: input.items.length,
+      assets: const [],
       createdAt: current.createdAt,
       updatedAt: DateTime.now(),
       usedInReport: current.usedInReport,
@@ -2935,6 +3014,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
       status: DeliveryChallanStatus.issued,
       items: current.items,
       itemsCount: current.itemsCount,
+      assets: const [],
       createdAt: current.createdAt,
       updatedAt: DateTime.now(),
       usedInReport: current.usedInReport,
@@ -2944,7 +3024,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   }
 
   @override
-  Future<DeliveryChallan> cancelChallan(int id) async {
+  Future<DeliveryChallan> cancelChallan(int id, {String? actionType}) async {
     throw UnimplementedError();
   }
 
@@ -3337,6 +3417,32 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     _companyProfile = profile;
     return profile;
   }
+
+  @override
+  Future<DeliveryChallan> reconcileChallan(
+    int id,
+    ChallanReconcileInput input,
+  ) async => throw UnimplementedError('reconcile is not exercised here');
+
+  @override
+  Future<CancelChallanOptions> getCancelOptions(int id) async =>
+      throw UnimplementedError('cancel options are not exercised here');
+
+  @override
+  Future<Map<String, dynamic>?> lookupSheetBarcode(String code) async => null;
+
+  @override
+  Future<void> deleteInvoice(int id) async {}
+
+  @override
+  Future<DeliveryChallan> savePieceBarcodes(
+    int challanId,
+    List<Map<String, dynamic>> barcodes,
+  ) async => throw UnimplementedError('piece barcodes are not exercised here');
+
+  @override
+  Future<InvoiceHeader> updateInvoice(int id, InvoiceDraftInput input) async =>
+      throw UnimplementedError('invoice update is not exercised here');
 }
 
 class FailureDeliveryChallanRepository extends FakeDeliveryChallanRepository {
@@ -3601,6 +3707,25 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Item groups collapse by default, so the master list shows group rows
+  /// until they are opened. Taps each closed group in turn.
+  Future<void> expandAllItemGroups(WidgetTester tester) async {
+    // SoftRowCard staggers its entrance with a bare Future.delayed, which
+    // pumpAndSettle does not wait on — tapping before it fires hits a row that
+    // is still transparent and offset, so the gesture misses silently.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    for (var guard = 0; guard < 20; guard++) {
+      final closed = find.text('Click to open');
+      if (closed.evaluate().isEmpty) return;
+      await tester.ensureVisible(closed.first);
+      await tester.pumpAndSettle();
+      await tester.tap(closed.first, warnIfMissed: false);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+    }
+  }
+
   Future<void> openChallansScreen(WidgetTester tester) async {
     final context = tester.element(find.byType(Scaffold).first);
     context.read<NavigationProvider>().select(
@@ -3782,6 +3907,7 @@ void main() {
         ),
       ],
       itemsCount: 1,
+      assets: const [],
       createdAt: DateTime(2026, 5, 19),
       updatedAt: DateTime(2026, 5, 19),
       usedInReport: false,
@@ -3827,6 +3953,7 @@ void main() {
         ),
       ],
       itemsCount: 1,
+      assets: const [],
       createdAt: DateTime(2026, 5, 20, 9, 30),
       updatedAt: DateTime(2026, 5, 20, 10, 15),
     );
@@ -4069,6 +4196,7 @@ void main() {
           status: DeliveryChallanStatus.draft,
           items: const <DeliveryChallanItem>[],
           itemsCount: 1,
+          assets: const [],
           createdAt: DateTime(2026, 5, 11),
           updatedAt: DateTime(2026, 5, 11),
           usedInReport: false,
@@ -4097,6 +4225,7 @@ void main() {
           status: DeliveryChallanStatus.issued,
           items: const <DeliveryChallanItem>[],
           itemsCount: 1,
+          assets: const [],
           createdAt: DateTime(2026, 5, 11),
           updatedAt: DateTime(2026, 5, 11),
           usedInReport: false,
@@ -4164,6 +4293,7 @@ void main() {
               ),
             ],
             itemsCount: 1,
+            assets: const [],
             createdAt: DateTime(2026, 5, 11),
             updatedAt: DateTime(2026, 5, 11),
             usedInReport: false,
@@ -4207,6 +4337,7 @@ void main() {
               ),
             ],
             itemsCount: 1,
+            assets: const [],
             createdAt: DateTime(2026, 5, 11),
             updatedAt: DateTime(2026, 5, 11),
             usedInReport: false,
@@ -4234,6 +4365,7 @@ void main() {
             status: DeliveryChallanStatus.issued,
             items: const <DeliveryChallanItem>[],
             itemsCount: 0,
+            assets: const [],
             createdAt: DateTime(2026, 5, 12),
             updatedAt: DateTime(2026, 5, 12),
             usedInReport: false,
@@ -4262,6 +4394,7 @@ void main() {
             status: DeliveryChallanStatus.issued,
             items: const <DeliveryChallanItem>[],
             itemsCount: 0,
+            assets: const [],
             createdAt: DateTime(2026, 5, 12),
             updatedAt: DateTime(2026, 5, 12),
             usedInReport: false,
@@ -4718,6 +4851,7 @@ void main() {
               ),
             ],
             itemsCount: 1,
+            assets: const [],
             createdAt: DateTime(2026, 5, 18),
             updatedAt: DateTime(2026, 5, 18),
             usedInReport: false,
@@ -4745,6 +4879,7 @@ void main() {
             status: DeliveryChallanStatus.issued,
             items: const <DeliveryChallanItem>[],
             itemsCount: 0,
+            assets: const [],
             createdAt: DateTime(2026, 5, 18),
             updatedAt: DateTime(2026, 5, 18),
             usedInReport: false,
@@ -6619,9 +6754,12 @@ void main() {
   });
 
   testWidgets('items screen shows seeded and archived items', (tester) async {
-    await pumpApp(tester);
+    // Tall viewport: the items table is a lazy ListView and group rows make it
+    // longer, so a short surface never builds the rows further down.
+    await pumpApp(tester, viewSize: const Size(1440, 2200));
 
     await openItemsScreen(tester);
+    await expandAllItemGroups(tester);
 
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Switch Action Dolly - 1'), findsOneWidget);
@@ -6631,6 +6769,7 @@ void main() {
 
     await tester.tap(find.text('Archived'));
     await tester.pumpAndSettle();
+    await expandAllItemGroups(tester);
 
     expect(find.text('Legacy Stock - 5'), findsWidgets);
   });

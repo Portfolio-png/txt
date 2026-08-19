@@ -2169,6 +2169,33 @@ class ApiItemRepository implements ItemRepository {
       return {'id': map['id'].toString(), 'name': map['name'].toString()};
     }).toList();
   }
+
+  @override
+  Future<Map<String, List<String>>> getPipelineStageLabels() async {
+    if (useMockResponses) {
+      return const <String, List<String>>{
+        '1': <String>['Cutting', 'Molding', 'Finishing'],
+      };
+    }
+    final uri = Uri.parse('$baseUrl/api/production/pipeline-templates');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to fetch pipeline templates',
+      );
+    }
+    final result = <String, List<String>>{};
+    for (final entry in payload['templates'] as List<dynamic>? ?? const []) {
+      final map = entry as Map<String, dynamic>;
+      result[map['id'].toString()] =
+          (map['stageLabels'] as List<dynamic>? ?? const [])
+              .map((label) => label.toString())
+              .where((label) => label.trim().isNotEmpty)
+              .toList(growable: false);
+    }
+    return result;
+  }
 }
 
 class ItemApiException implements Exception {

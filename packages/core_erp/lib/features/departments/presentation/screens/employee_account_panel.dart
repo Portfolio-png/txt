@@ -34,7 +34,7 @@ class EmployeeAccountPanel extends StatelessWidget {
             'Their basic details need to be saved before a login can be managed.',
       );
     }
-    if (emp.employmentType != 'in-house') {
+    if (!emp.isInHouse) {
       return const _InfoCard(
         icon: Icons.badge_outlined,
         title: 'Freelancers don’t hold a login',
@@ -196,7 +196,7 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
           const SizedBox(height: 14),
           if (isSuperAdmin)
             DropdownButtonFormField<String>(
-              initialValue: _role,
+              value: (_role == 'admin' || _role == 'user') ? _role : 'user',
               decoration: _fieldDecoration('Access level'),
               items: const [
                 DropdownMenuItem(value: 'user', child: Text('Staff')),

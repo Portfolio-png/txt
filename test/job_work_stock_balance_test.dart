@@ -63,6 +63,7 @@ void main() {
         maintainStocks: true,
         status: DeliveryChallanStatus.issued, // Must be issued to be tracked
         itemsCount: 1,
+        assets: const [],
         items: const [
           DeliveryChallanItem(
             id: 101,
@@ -106,6 +107,7 @@ void main() {
         maintainStocks: true,
         status: DeliveryChallanStatus.issued, // Must be issued
         itemsCount: 1,
+        assets: const [],
         items: const [
           DeliveryChallanItem(
             id: 102,
@@ -149,6 +151,7 @@ void main() {
         maintainStocks: true,
         status: DeliveryChallanStatus.issued,
         itemsCount: 1,
+        assets: const [],
         items: const [
           DeliveryChallanItem(
             id: 103,

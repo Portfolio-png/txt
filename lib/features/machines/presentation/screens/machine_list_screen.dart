@@ -157,7 +157,7 @@ class _MachinesToolbar extends StatelessWidget {
             color: SoftErpTheme.border,
             margin: const EdgeInsets.symmetric(horizontal: 4),
           ),
-        _ViewToggleButton(isGridView: isGridView, onTap: onToggleView),
+        SoftViewToggleButton(isGridView: isGridView, onTap: onToggleView),
         if (isGridView)
           _CardScaleControl(scale: cardScale, onChanged: onCardScaleChanged),
       ],
@@ -165,51 +165,6 @@ class _MachinesToolbar extends StatelessWidget {
   }
 }
 
-class _ViewToggleButton extends StatelessWidget {
-  const _ViewToggleButton({required this.isGridView, required this.onTap});
-
-  final bool isGridView;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: SoftErpTheme.cardSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: SoftErpTheme.border),
-            boxShadow: SoftErpTheme.insetShadow,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isGridView ? Icons.view_headline_rounded : Icons.grid_view_rounded,
-                size: 18,
-                color: SoftErpTheme.textPrimary,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                isGridView ? 'List View' : 'Card View',
-                style: const TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _CardScaleControl extends StatelessWidget {
   const _CardScaleControl({required this.scale, required this.onChanged});
@@ -336,6 +291,10 @@ class _MachineCardState extends State<_MachineCard> {
         : 'No Group';
 
     final statusColor = _statusColors(machine.status);
+    // Same rule the barcode chip uses to decide whether it renders at all.
+    final hasBarcodeRow =
+        (machine.barcode.isNotEmpty ? machine.barcode : machine.assetId)
+            .isNotEmpty;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -463,26 +422,44 @@ class _MachineCardState extends State<_MachineCard> {
                                 ],
                               ),
                               const SizedBox(height: 8),
-                              _MachineBarcodeChip(machine: machine),
+                              // The barcode chip is narrow, so the menu rides
+                              // the end of its row rather than taking one of
+                              // its own. A machine with no barcode has no row
+                              // to ride, and gets the image corner instead.
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _MachineBarcodeChip(machine: machine),
+                                  ),
+                                  if (hasBarcodeRow)
+                                    _HoverReveal(
+                                      visible: _hovered,
+                                      child: _CardMoreButton(
+                                        onEdit: () => _edit(context),
+                                        onDuplicate: () => _duplicate(context),
+                                        onDelete: () => _delete(context),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
                       ],
                     ),
-                    // Hover overlay: `...` button
-                    Positioned(
-                      right: 8,
-                      bottom: 48,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 150),
-                        opacity: _hovered ? 1.0 : 0.0,
-                        child: _CardMoreButton(
-                          onEdit: () => _edit(context),
-                          onDuplicate: () => _duplicate(context),
-                          onDelete: () => _delete(context),
+                    if (!hasBarcodeRow)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: _HoverReveal(
+                          visible: _hovered,
+                          child: _CardMoreButton(
+                            onEdit: () => _edit(context),
+                            onDuplicate: () => _duplicate(context),
+                            onDelete: () => _delete(context),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -527,6 +504,24 @@ class _MachineCardState extends State<_MachineCard> {
 /// Three-dot more button shown on card hover.
 /// Compact scannable barcode chip on the machine card. Tapping enlarges it so an
 /// operator can scan the machine to load its queue or log a process.
+/// Fades a card affordance in on hover while always reserving its space, so
+/// nothing shifts as the pointer moves in and out.
+class _HoverReveal extends StatelessWidget {
+  const _HoverReveal({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 150),
+      opacity: visible ? 1.0 : 0.0,
+      child: IgnorePointer(ignoring: !visible, child: child),
+    );
+  }
+}
+
 class _MachineBarcodeChip extends StatelessWidget {
   const _MachineBarcodeChip({required this.machine});
 
@@ -648,6 +643,67 @@ class _MachineQueueBatteryState extends State<_MachineQueueBattery> {
     return (Icons.battery_0_bar, SoftErpTheme.textSecondary);
   }
 
+  /// What this machine is actually carrying, rather than a generic sentence:
+  /// the queue depth and the runs making it up, so hovering answers "why is
+  /// this one red" without opening the dialog.
+  TextSpan _queueTooltip() {
+    const heading = TextStyle(
+      color: Colors.white,
+      fontSize: 12.5,
+      fontWeight: FontWeight.w800,
+      height: 1.4,
+    );
+    const body = TextStyle(
+      color: Color(0xFFE2E8F0),
+      fontSize: 11.5,
+      height: 1.5,
+    );
+    const muted = TextStyle(
+      color: Color(0xFF94A3B8),
+      fontSize: 11,
+      fontStyle: FontStyle.italic,
+      height: 1.5,
+    );
+
+    if (_count == 0) {
+      return TextSpan(children: [
+        TextSpan(text: '${widget.machineName}\n', style: heading),
+        const TextSpan(text: 'Idle — nothing queued.', style: body),
+      ]);
+    }
+
+    final queue = _queue ?? const <MachineQueueItem>[];
+    final shown = queue.take(4).toList(growable: false);
+    final overflow = queue.length - shown.length;
+    return TextSpan(children: [
+      TextSpan(text: '${widget.machineName}\n', style: heading),
+      TextSpan(
+        text: '$_count run${_count == 1 ? '' : 's'} queued'
+            '${_count >= 3 ? ' · bottleneck' : ''}\n',
+        style: body.copyWith(fontWeight: FontWeight.w700),
+      ),
+      for (final run in shown) TextSpan(text: '• ${_runLine(run)}\n', style: body),
+      if (overflow > 0) TextSpan(text: '+$overflow more\n', style: muted),
+      const TextSpan(text: 'Tap to inspect pending batches.', style: muted),
+    ]);
+  }
+
+  String _runLine(MachineQueueItem run) {
+    final parts = <String>[
+      if (run.orderNo.trim().isNotEmpty) run.orderNo.trim(),
+      if (run.runName.trim().isNotEmpty) run.runName.trim(),
+      if (run.clientName.trim().isNotEmpty) run.clientName.trim(),
+    ];
+    final label = parts.isEmpty ? run.runId : parts.join(' · ');
+    if (run.weightKg > 0) {
+      final kg = run.weightKg == run.weightKg.roundToDouble()
+          ? run.weightKg.toStringAsFixed(0)
+          : run.weightKg.toStringAsFixed(2);
+      return '$label · ${kg}kg';
+    }
+    return label;
+  }
+
   void _openQueue() {
     showDialog<void>(
       context: context,
@@ -672,8 +728,9 @@ class _MachineQueueBatteryState extends State<_MachineQueueBattery> {
     }
     final (icon, color) = _battery;
     return Tooltip(
-      message:
-          'Active workload queue: $_count run${_count == 1 ? '' : 's'}. Tap to inspect pending batches.',
+      richMessage: _queueTooltip(),
+      waitDuration: const Duration(milliseconds: 250),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: _openQueue,

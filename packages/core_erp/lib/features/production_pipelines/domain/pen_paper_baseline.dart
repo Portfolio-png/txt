@@ -116,7 +116,16 @@ class PenPaperBaseline {
     this.baselineScrapRate = 4.0,
     this.stageReconciliations = const [],
     this.notes = 'Recorded from sample production logs.',
+    this.pipelineId,
+    this.pipelineName = '',
   });
+
+  /// The production pipeline this sample was measured on. A baseline only means
+  /// something in the context of a route, so it is stamped at capture time —
+  /// if the item's default pipeline later changes, the record still says which
+  /// pipeline the weights came from.
+  final String? pipelineId;
+  final String pipelineName;
 
   final bool isGranular;
   final double keyEfficiencyBenchmark;
@@ -191,6 +200,8 @@ class PenPaperBaseline {
     double? baselineScrapRate,
     List<PenPaperStageReconciliation>? stageReconciliations,
     String? notes,
+    String? pipelineId,
+    String? pipelineName,
   }) {
     return PenPaperBaseline(
       isGranular: isGranular ?? this.isGranular,
@@ -200,6 +211,8 @@ class PenPaperBaseline {
       baselineScrapRate: baselineScrapRate ?? this.baselineScrapRate,
       stageReconciliations: stageReconciliations ?? this.stageReconciliations,
       notes: notes ?? this.notes,
+      pipelineId: pipelineId ?? this.pipelineId,
+      pipelineName: pipelineName ?? this.pipelineName,
     );
   }
 
@@ -211,6 +224,8 @@ class PenPaperBaseline {
       'baselineScrapRate': baselineScrapRate,
       'stageReconciliations': stageReconciliations.map((e) => e.toJson()).toList(),
       'notes': notes,
+      'pipelineId': pipelineId,
+      'pipelineName': pipelineName,
     };
   }
 
@@ -230,6 +245,8 @@ class PenPaperBaseline {
       stageReconciliations:
           stages.isNotEmpty ? stages : createDefaultForStages().stageReconciliations,
       notes: json['notes'] as String? ?? '',
+      pipelineId: json['pipelineId'] as String?,
+      pipelineName: json['pipelineName'] as String? ?? '',
     );
   }
 }

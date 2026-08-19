@@ -248,13 +248,29 @@ class JobCardPrinter {
               pw.SizedBox(height: 10),
               pw.TableHelper.fromTextArray(
                 context: context,
-                headers: const ['Job', 'Assembly output', 'Quantity', 'Status'],
+                headers: const [
+                  'Job',
+                  'Assembly output',
+                  'Assigned',
+                  'Rejected',
+                  'Accepted',
+                  'Status',
+                ],
                 data: jobs
                     .map(
                       (job) => [
                         '#${job.id}',
                         'Item #${job.itemId}',
                         job.quantity.toString(),
+                        // Pieces the assembler rejected off this job — the
+                        // assembly-line equivalent of a stage's scrap.
+                        job.rejectedQuantity == 0
+                            ? '—'
+                            : job.rejectedQuantity
+                                .toStringAsFixed(
+                                  job.rejectedQuantity % 1 == 0 ? 0 : 2,
+                                ),
+                        job.acceptedQuantity.toString(),
                         _statusLabel(job.status),
                       ],
                     )

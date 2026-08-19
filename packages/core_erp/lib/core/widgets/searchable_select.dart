@@ -17,6 +17,24 @@ class SearchableSelectOption<T> {
   final Color? highlightColor;
 
   String get normalizedSearchText => (searchText ?? label).trim().toLowerCase();
+
+  /// Every whitespace-separated term has to appear somewhere in the search
+  /// text, in any order. A single contiguous match is the one-term case, so
+  /// this only ever widens what matches — "roma 10" finds "Anchor Roma Classic
+  /// Socket 10A", which a substring match on the whole query would miss.
+  bool matchesQuery(String query) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) {
+      return true;
+    }
+    final haystack = normalizedSearchText;
+    for (final term in normalizedQuery.split(RegExp(r'\s+'))) {
+      if (term.isNotEmpty && !haystack.contains(term)) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 typedef SearchableSelectCanCreateOption<T> =
@@ -301,10 +319,7 @@ class _SearchableSelectDialogState<T>
   Widget build(BuildContext context) {
     final query = _searchController.text.trim().toLowerCase();
     final visibleOptions = widget.options
-        .where(
-          (option) =>
-              query.isEmpty || option.normalizedSearchText.contains(query),
-        )
+        .where((option) => option.matchesQuery(query))
         .toList(growable: false);
     return Material(
       color: Colors.transparent,

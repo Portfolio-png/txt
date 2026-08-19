@@ -28,4 +28,8 @@ abstract class ItemRepository {
   Future<void> deleteAsset(int assetId);
   Future<List<ItemUsageRecord>> getItemUsage(int itemId);
   Future<List<Map<String, String>>> getPipelineTemplates();
+
+  /// Stage labels per pipeline template id, so a sample baseline recorded
+  /// against a pipeline can use that pipeline's real stages.
+  Future<Map<String, List<String>>> getPipelineStageLabels();
 }

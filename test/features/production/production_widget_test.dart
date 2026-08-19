@@ -1139,6 +1139,13 @@ class _FakeUnitRepository implements UnitRepository {
   Future<UnitDefinition> restoreUnit(int id) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> deleteUnit(int id) async {}
+
+  @override
+  Future<List<ConversionPoint>> getGaugePoints() async =>
+      const <ConversionPoint>[];
 }
 
 class _FakeItemRepository implements ItemRepository {
@@ -1223,6 +1230,17 @@ class _FakeItemRepository implements ItemRepository {
 
   @override
   Future<List<Map<String, String>>> getPipelineTemplates() async => const [];
+
+  @override
+  Future<ItemDefinition?> getItem(int id) async => null;
+
+  @override
+  Future<ItemDefinition> updateShortCode(int id, String shortCode) async =>
+      throw UnimplementedError('updateShortCode is not exercised by this test');
+
+  @override
+  Future<Map<String, List<String>>> getPipelineStageLabels() async =>
+      const <String, List<String>>{};
 }
 
 List<UnitDefinition> _unitDefinitions() {
@@ -1238,6 +1256,10 @@ List<UnitDefinition> _unitDefinitions() {
       conversionFactor: 1,
       conversionBaseUnitId: null,
       conversionBaseUnitName: null,
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: false,
       usageCount: 0,
       createdAt: now,
@@ -1253,6 +1275,10 @@ List<UnitDefinition> _unitDefinitions() {
       conversionFactor: 0.001,
       conversionBaseUnitId: 1,
       conversionBaseUnitName: 'Kilogram',
+      conversionType: 'linear',
+      precision: null,
+      unitGroupDimension: null,
+      unitGroupBaseUnitId: null,
       isArchived: false,
       usageCount: 0,
       createdAt: now,

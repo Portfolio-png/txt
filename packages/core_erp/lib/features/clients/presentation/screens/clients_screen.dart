@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
@@ -28,8 +29,49 @@ import '../../../../core/widgets/export_preview_dialog.dart';
 import '../widgets/sub_contractors_sheet.dart';
 import '../providers/sub_contractors_provider.dart';
 
-class ClientsScreen extends StatelessWidget {
+class ClientsScreen extends StatefulWidget {
   const ClientsScreen({super.key});
+
+  /// Stays on the widget, not the state: the shell and shortcut handlers open
+  /// the client editor without a ClientsScreen mounted.
+  static Future<ClientDefinition?> openEditor(
+    BuildContext context, {
+    ClientDefinition? client,
+    String? initialName,
+  }) {
+    return showErpFormDialog<ClientDefinition?>(
+      context,
+      maxWidth: 760,
+      maxHeight: 760,
+      child: _ClientEditorSheet(client: client, initialName: initialName),
+    );
+  }
+
+  @override
+  State<ClientsScreen> createState() => _ClientsScreenState();
+}
+
+class _ClientsScreenState extends State<ClientsScreen> {
+  static const _prefsKey = 'clients_grid_view';
+  bool _isGridView = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreGridView();
+  }
+
+  Future<void> _restoreGridView() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _isGridView = prefs.getBool(_prefsKey) ?? false);
+  }
+
+  Future<void> _setGridView(bool value) async {
+    setState(() => _isGridView = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsKey, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +142,10 @@ class ClientsScreen extends StatelessWidget {
                 ),
               ],
             ),
-            toolbar: const _ClientsToolbar(),
+            toolbar: _ClientsToolbar(
+              isGridView: _isGridView,
+              onToggleView: () => _setGridView(!_isGridView),
+            ),
             messages: [
               if (clients.errorMessage != null)
                 _ClientsMessageBanner(
@@ -117,6 +162,8 @@ class ClientsScreen extends StatelessWidget {
                         'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
                     icon: Icons.groups_outlined,
                   )
+                : _isGridView
+                ? _ClientsCardGrid(clients: clients.filteredClients)
                 : _ClientsTable(clients: clients.filteredClients),
           ),
         );
@@ -150,24 +197,11 @@ class ClientsScreen extends StatelessWidget {
     );
   }
 
-  static Future<ClientDefinition?> openEditor(
-    BuildContext context, {
-    ClientDefinition? client,
-    String? initialName,
-  }) {
-    return showErpFormDialog<ClientDefinition?>(
-      context,
-      maxWidth: 760,
-      maxHeight: 760,
-      child: _ClientEditorSheet(client: client, initialName: initialName),
-    );
-  }
-
   static Future<ClientDefinition?> _openClientEditor(
     BuildContext context, {
     ClientDefinition? client,
   }) {
-    return openEditor(context, client: client);
+    return ClientsScreen.openEditor(context, client: client);
   }
 
   static Future<SubContractorDefinition?> _openSubContractorEditor(
@@ -183,7 +217,10 @@ class ClientsScreen extends StatelessWidget {
 }
 
 class _ClientsToolbar extends StatelessWidget {
-  const _ClientsToolbar();
+  const _ClientsToolbar({required this.isGridView, required this.onToggleView});
+
+  final bool isGridView;
+  final VoidCallback onToggleView;
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +252,46 @@ class _ClientsToolbar extends StatelessWidget {
             ),
           ],
         ),
+        // Cards apply to the client list; the sub-contractor view is its own
+        // table and keeps the toggle out of the way.
+        if (provider.viewType == ClientMasterView.clients)
+          SoftViewToggleButton(isGridView: isGridView, onTap: onToggleView),
       ],
+    );
+  }
+}
+
+class _ClientsCardGrid extends StatelessWidget {
+  const _ClientsCardGrid({required this.clients});
+
+  final List<ClientDefinition> clients;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftEntityCardGrid(
+      itemCount: clients.length,
+      itemBuilder: (context, index) {
+        final client = clients[index];
+        return SoftEntityCard(
+          title: client.name,
+          subtitle: client.alias,
+          photoUrl: client.photoUrl.isNotEmpty ? client.photoUrl : client.logoUrl,
+          fallbackIcon: Icons.groups_outlined,
+          onTap: () => ClientsScreen.openEditor(context, client: client),
+          details: [
+            SoftEntityDetail(
+              icon: Icons.badge_outlined,
+              label: 'GST',
+              value: client.gstNumber,
+            ),
+            SoftEntityDetail(
+              icon: Icons.place_outlined,
+              label: 'Address',
+              value: client.address,
+            ),
+          ],
+        );
+      },
     );
   }
 }

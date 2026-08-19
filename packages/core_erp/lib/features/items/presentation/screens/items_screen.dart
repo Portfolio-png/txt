@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +24,7 @@ import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../inventory/domain/group_property_draft.dart' as governance;
+import '../../../inventory/domain/inventory_set_definition.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
@@ -54,6 +56,48 @@ class ItemsScreen extends StatefulWidget {
 
   final int initialTab;
   final Future<String?> Function()? onCreatePipeline;
+
+  /// The whole item-creation flow in one window: define the item, build and
+  /// spawn its variants, file them into a combination group, then fill in each
+  /// spawned basic item. Separate from [openEditor], which stays the plain
+  /// single-item edit surface for the twelve places that call it.
+  static Future<ItemDefinition?> openWorkflow(
+    BuildContext context, {
+    ItemDefinition? item,
+    String initialName = '',
+    int? initialGroupId,
+    Future<String?> Function()? onCreatePipeline,
+    bool startAtVariations = false,
+  }) {
+    final size = MediaQuery.of(context).size;
+    return showDialog<ItemDefinition?>(
+      context: context,
+      // The workflow spans several steps and has already written rows to the
+      // server by step 3 — a stray scrim tap must not discard it silently.
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(28),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: size.width - 112 >= 1500 ? 1480 : 1240,
+            // The rail-and-pane layout needs a bounded height; the plain
+            // editor's content-driven sizing does not survive Expanded.
+            maxHeight: size.height - 96,
+          ),
+          child: SubmitFormShortcuts(
+            child: _ItemWorkflowWindow(
+            item: item,
+            initialName: initialName,
+            initialGroupId: initialGroupId,
+            onCreatePipeline: onCreatePipeline,
+            startAtVariations: startAtVariations,
+          ),
+          ),
+        ),
+      ),
+    );
+  }
 
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
@@ -110,6 +154,11 @@ class ItemsScreen extends StatefulWidget {
 
 class _ItemsScreenState extends State<ItemsScreen> {
   bool _isGridView = false;
+
+  /// Sets view. Kept separate from [_isGridView] rather than folded into a
+  /// three-way enum: the List/Card button is asserted as a strict two-cycle by
+  /// the items widget tests, and a third state on it would break them.
+  bool _isSetsView = false;
   double _cardWidth = 200;
   double _cardHeight = 250;
   // Boarding-pass card view: number of columns the resize slider requests
@@ -171,13 +220,25 @@ class _ItemsScreenState extends State<ItemsScreen> {
               label: 'Add Item',
               icon: Icons.add,
               isLoading: items.isSaving,
-              onPressed: () => ItemsScreen.openEditor(
+              // Creating an item is the front of a workflow — define it, build
+              // its variants, file them, fill them in — so it opens the
+              // stepped window rather than the bare form.
+              onPressed: () => ItemsScreen.openWorkflow(
                 context,
                 onCreatePipeline: widget.onCreatePipeline,
               ),
             ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
+              isSetsView: _isSetsView,
+              onToggleSets: () {
+                setState(() => _isSetsView = !_isSetsView);
+                if (_isSetsView) {
+                  // Sets belong to the inventory provider, which this screen
+                  // otherwise never touches. Idempotent.
+                  context.read<InventoryProvider>().initialize();
+                }
+              },
               boardingPass: FeatureFlags.isEnabled(FeatureKeys.boardingPassCards),
               cardWidth: _cardWidth,
               cardHeight: _cardHeight,
@@ -210,7 +271,13 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   isError: true,
                 ),
             ],
-            body: items.filteredItems.isEmpty
+            body: _isSetsView
+                ? _ItemsSetsView(
+                    isGridView: _isGridView,
+                    cardWidth: _cardWidth,
+                    cardHeight: _cardHeight,
+                  )
+                : items.filteredItems.isEmpty
                 ? const AppEmptyState(
                     title: 'No items found',
                     message:
@@ -241,9 +308,331 @@ class _ItemsScreenState extends State<ItemsScreen> {
   }
 }
 
+/// Inventory sets in the item master. Each set opens on click — same
+/// no-chevron affordance as a group row — to show its members, colour-coded
+/// item vs variant with the per-line quantity.
+/// A set on a card, led by its own photo. Falls back to initials on a soft
+/// ground when none has been uploaded — same treatment an item card gives a
+/// picture-less item, so a mixed grid reads evenly.
+class _SetCard extends StatelessWidget {
+  const _SetCard({required this.set, required this.variantCount});
+
+  final InventorySetDefinition set;
+  final int variantCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final photoUrl = set.photoUrl;
+    final baseCount = set.lines.length - variantCount;
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: photoUrl == null || photoUrl.isEmpty
+                  ? _SetCardPlaceholder(name: set.name)
+                  : Image.network(
+                      photoUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          _SetCardPlaceholder(name: set.name),
+                    ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              color: SoftErpTheme.cardSurface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    set.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: SoftErpTheme.textPrimary,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _CountPill(
+                        count: baseCount,
+                        label: 'items',
+                        color: SoftErpTheme.entityItem,
+                        background: SoftErpTheme.entityItemBg,
+                        border: SoftErpTheme.entityItemBorder,
+                      ),
+                      if (variantCount > 0)
+                        _CountPill(
+                          count: variantCount,
+                          label: variantCount == 1 ? 'variant' : 'variants',
+                          color: SoftErpTheme.entityVariant,
+                          background: SoftErpTheme.entityVariantBg,
+                          border: SoftErpTheme.entityVariantBorder,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SetCardPlaceholder extends StatelessWidget {
+  const _SetCardPlaceholder({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = name
+        .split(RegExp(r'\s+'))
+        .where((part) => part.trim().isNotEmpty)
+        .take(2)
+        .map((part) => part.substring(0, 1).toUpperCase());
+    final token = parts.isEmpty ? 'ST' : parts.join();
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFFDFBF6), Color(0xFFF1F5F9)],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              token,
+              style: const TextStyle(
+                color: SoftErpTheme.accentDark,
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'No photo yet',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ItemsSetsView extends StatefulWidget {
+  const _ItemsSetsView({
+    this.isGridView = false,
+    this.cardWidth = 240,
+    this.cardHeight = 260,
+  });
+
+  final bool isGridView;
+  final double cardWidth;
+  final double cardHeight;
+
+  @override
+  State<_ItemsSetsView> createState() => _ItemsSetsViewState();
+}
+
+class _ItemsSetsViewState extends State<_ItemsSetsView> {
+  final Set<int> _expandedSetIds = <int>{};
+
+  /// Lines pointing at spawned "basic" items rather than base items.
+  static int _variantCountOf(
+    InventorySetDefinition set,
+    List<ItemDefinition> items,
+  ) {
+    return set.lines.where((line) {
+      final item = items
+          .where((candidate) => candidate.id == line.itemId)
+          .firstOrNull;
+      return item?.isBasicItem ?? false;
+    }).length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inventory = context.watch<InventoryProvider>();
+    final items = context.watch<ItemsProvider>().items;
+    final sets = inventory.sets;
+
+    if (inventory.isLoading && sets.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (sets.isEmpty) {
+      return const AppEmptyState(
+        title: 'No sets yet',
+        message:
+            'A set bundles items and variants as quantity lines — a kit. '
+            'Create one from Inventory, or while spawning variants in the item '
+            'workflow.',
+        icon: Icons.inventory_2_outlined,
+      );
+    }
+
+    if (widget.isGridView) {
+      return GridView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: widget.cardWidth,
+          mainAxisExtent: widget.cardHeight,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: sets.length,
+        itemBuilder: (context, index) => _SetCard(
+          set: sets[index],
+          variantCount: _variantCountOf(sets[index], items),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      itemCount: sets.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final set = sets[index];
+        final expanded = _expandedSetIds.contains(set.id);
+        final variantCount = set.lines.where((line) {
+          final item = items
+              .where((candidate) => candidate.id == line.itemId)
+              .firstOrNull;
+          return item?.isBasicItem ?? false;
+        }).length;
+        return SoftMasterRow(
+          onTap: () => setState(() {
+            if (!_expandedSetIds.remove(set.id)) {
+              _expandedSetIds.add(set.id);
+            }
+          }),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        expanded
+                            ? Icons.folder_open_rounded
+                            : Icons.inventory_2_outlined,
+                        size: 18,
+                        color: expanded
+                            ? SoftErpTheme.accent
+                            : SoftErpTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          set.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: expanded
+                                ? SoftErpTheme.accentDeeper
+                                : SoftErpTheme.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      _CountPill(
+                        count: set.lines.length - variantCount,
+                        label: 'items',
+                        color: SoftErpTheme.entityItem,
+                        background: SoftErpTheme.entityItemBg,
+                        border: SoftErpTheme.entityItemBorder,
+                      ),
+                      if (variantCount > 0) ...[
+                        const SizedBox(width: 8),
+                        _CountPill(
+                          count: variantCount,
+                          label: variantCount == 1 ? 'variant' : 'variants',
+                          color: SoftErpTheme.entityVariant,
+                          background: SoftErpTheme.entityVariantBg,
+                          border: SoftErpTheme.entityVariantBorder,
+                        ),
+                      ],
+                      const SizedBox(width: 10),
+                      Text(
+                        '${set.totalItemCount} total',
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (expanded) ...[
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: SoftErpTheme.border),
+                    const SizedBox(height: 10),
+                    if (set.lines.isEmpty)
+                      const Text(
+                        'Empty set.',
+                        style: TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    else
+                      for (final line in set.lines)
+                        _MemberRow(
+                          label: line.itemDisplayName.trim().isNotEmpty
+                              ? line.itemDisplayName
+                              : (line.itemName.trim().isNotEmpty
+                                    ? line.itemName
+                                    : 'Item #${line.itemId}'),
+                          isVariant:
+                              items
+                                  .where(
+                                    (candidate) =>
+                                        candidate.id == line.itemId,
+                                  )
+                                  .firstOrNull
+                                  ?.isBasicItem ??
+                              false,
+                          quantity: line.quantity,
+                        ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _ItemsToolbar extends StatelessWidget {
   const _ItemsToolbar({
     required this.isGridView,
+    required this.isSetsView,
+    required this.onToggleSets,
     required this.boardingPass,
     required this.cardWidth,
     required this.cardHeight,
@@ -255,6 +644,8 @@ class _ItemsToolbar extends StatelessWidget {
   });
 
   final bool isGridView;
+  final bool isSetsView;
+  final VoidCallback onToggleSets;
   final bool boardingPass;
   final double cardWidth;
   final double cardHeight;
@@ -269,18 +660,25 @@ class _ItemsToolbar extends StatelessWidget {
     final provider = context.watch<ItemsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
 
+    // Items, Groups and Sets are the three things this master holds, so they
+    // sit in one switch rather than two controls that mean the same kind of
+    // thing. Groups still hands off to its own screen.
     final tabSegment = SoftSegmentedFilter<String>(
-      selected: 'items',
+      selected: isSetsView ? 'sets' : 'items',
       onChanged: (value) {
         if (value == 'groups') {
           try {
             context.read<AppNavigation>().select('configurator_groups');
           } catch (_) {}
+          return;
         }
+        final wantsSets = value == 'sets';
+        if (wantsSets != isSetsView) onToggleSets();
       },
       options: const [
-        SoftSegmentOption<String>(value: 'items', label: 'Items Catalog'),
+        SoftSegmentOption<String>(value: 'items', label: 'Items'),
         SoftSegmentOption<String>(value: 'groups', label: 'Item Groups'),
+        SoftSegmentOption<String>(value: 'sets', label: 'Sets'),
       ],
     );
 
@@ -300,14 +698,15 @@ class _ItemsToolbar extends StatelessWidget {
             onChanged: provider.setSearchQuery,
           ),
 
+        // Card/List applies to both the item list and the set list.
         _ItemsViewToggleButton(isGridView: isGridView, onTap: onToggleView),
-        if (isGridView && boardingPass)
+        if (!isSetsView && isGridView && boardingPass)
           _ItemsColumnSlider(
             columnCount: columnCount,
             maxColumns: _maxColumnsForWidth(MediaQuery.of(context).size.width),
             onChanged: onColumnCountChanged,
           )
-        else if (isGridView)
+        else if (!isSetsView && isGridView)
           _ItemsGridSizeControls(
             cardWidth: cardWidth,
             cardHeight: cardHeight,
@@ -495,6 +894,7 @@ class _ItemsGridSlider extends StatelessWidget {
   }
 }
 
+/// Flips the master list between items and inventory sets.
 class _ItemsViewToggleButton extends StatelessWidget {
   const _ItemsViewToggleButton({required this.isGridView, required this.onTap});
 
@@ -554,23 +954,87 @@ class _ItemsTable extends StatefulWidget {
   State<_ItemsTable> createState() => _ItemsTableState();
 }
 
+/// One rendered line of the items table. The table is a flat list, so nesting
+/// has to be pre-flattened into tagged rows.
+class _ItemsTableRow {
+  const _ItemsTableRow.group(this.group, this.itemCount, this.variantCount)
+    : item = null;
+  const _ItemsTableRow.item(this.item)
+    : group = null,
+      itemCount = 0,
+      variantCount = 0;
+
+  final GroupDefinition? group;
+  final ItemDefinition? item;
+  final int itemCount;
+  final int variantCount;
+
+  bool get isGroup => group != null;
+}
+
 class _ItemsTableState extends State<_ItemsTable> {
   final Set<int> _expandedBaseItemIds = <int>{};
 
+  /// Groups the user has opened. Collapsed by default: the master list reads
+  /// as a compact set of groups you drill into, which is the point of grouping
+  /// it. Clicking a group row opens and closes it — there is no chevron.
+  final Set<int> _expandedGroupIds = <int>{};
+
   @override
   Widget build(BuildContext context) {
-    final topLevelItems = widget.items
-        .where((i) => i.baseItemId == null)
-        .toList();
-    final displayItems = <ItemDefinition>[];
+    final groupsProvider = context.watch<GroupsProvider>();
+    final rows = <_ItemsTableRow>[];
 
-    for (final baseItem in topLevelItems) {
-      displayItems.add(baseItem);
-      if (_expandedBaseItemIds.contains(baseItem.id)) {
-        final variants = widget.items
-            .where((i) => i.baseItemId == baseItem.id)
-            .toList();
-        displayItems.addAll(variants);
+    // Bucket by group, preserving the provider's ordering of groups and the
+    // filtered order of items within each.
+    final byGroup = <int, List<ItemDefinition>>{};
+    for (final item in widget.items) {
+      if (item.baseItemId != null) continue;
+      byGroup.putIfAbsent(item.groupId, () => <ItemDefinition>[]).add(item);
+    }
+
+    void addItemAndVariants(ItemDefinition item) {
+      rows.add(_ItemsTableRow.item(item));
+      if (_expandedBaseItemIds.contains(item.id)) {
+        for (final variant in widget.items.where(
+          (candidate) => candidate.baseItemId == item.id,
+        )) {
+          rows.add(_ItemsTableRow.item(variant));
+        }
+      }
+    }
+
+    final orderedGroupIds = <int>[
+      for (final group in groupsProvider.itemGroups)
+        if (byGroup.containsKey(group.id)) group.id,
+      // Items whose group is missing or archived must not vanish from the
+      // master list just because their group is not in itemGroups.
+      ...byGroup.keys.where(
+        (id) => groupsProvider.itemGroups.every((group) => group.id != id),
+      ),
+    ];
+
+    for (final groupId in orderedGroupIds) {
+      final groupItems = byGroup[groupId] ?? const <ItemDefinition>[];
+      final group = groupsProvider.findById(groupId);
+      final variantCount = widget.items
+          .where(
+            (candidate) =>
+                candidate.baseItemId != null &&
+                groupItems.any((base) => base.id == candidate.baseItemId),
+          )
+          .length;
+      rows.add(
+        _ItemsTableRow.group(
+          group ?? _ungroupedPlaceholder(groupId),
+          groupItems.length,
+          variantCount,
+        ),
+      );
+      if (_expandedGroupIds.contains(groupId)) {
+        for (final item in groupItems) {
+          addItemAndVariants(item);
+        }
       }
     }
 
@@ -584,9 +1048,25 @@ class _ItemsTableState extends State<_ItemsTable> {
         SoftTableColumn('Status', flex: 1),
         SoftTableColumn('Actions', flex: 2),
       ],
-      itemCount: displayItems.length,
+      itemCount: rows.length,
       rowBuilder: (context, index) {
-        final item = displayItems[index];
+        final row = rows[index];
+        if (row.isGroup) {
+          final groupId = row.group!.id;
+          return _GroupHeaderRow(
+            group: row.group!,
+            itemCount: row.itemCount,
+            variantCount: row.variantCount,
+            expanded: _expandedGroupIds.contains(groupId),
+            // No chevron: the row itself is the control.
+            onTap: () => setState(() {
+              if (!_expandedGroupIds.remove(groupId)) {
+                _expandedGroupIds.add(groupId);
+              }
+            }),
+          );
+        }
+        final item = row.item!;
         final isVariant = item.baseItemId != null;
         return _ItemRow(
           item: item,
@@ -605,6 +1085,137 @@ class _ItemsTableState extends State<_ItemsTable> {
                 },
         );
       },
+    );
+  }
+}
+
+/// Stand-in for a group that is archived or otherwise not in `itemGroups`, so
+/// its items still appear in the master list instead of silently vanishing.
+GroupDefinition _ungroupedPlaceholder(int groupId) => GroupDefinition(
+  id: groupId,
+  name: 'Ungrouped',
+  parentGroupId: null,
+  groupType: 'item',
+  isArchived: false,
+  usageCount: 0,
+  createdAt: DateTime.now(),
+  updatedAt: DateTime.now(),
+);
+
+/// A group line in the items table. Clicking anywhere on it opens or closes the
+/// group — deliberately no chevron, per the brief; the open state is carried by
+/// the tint, the weight and the counts.
+class _GroupHeaderRow extends StatelessWidget {
+  const _GroupHeaderRow({
+    required this.group,
+    required this.itemCount,
+    required this.variantCount,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final GroupDefinition group;
+  final int itemCount;
+  final int variantCount;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftMasterRow(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+            Icon(
+              expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+              size: 18,
+              color: expanded
+                  ? SoftErpTheme.accent
+                  : SoftErpTheme.textSecondary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                group.name,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: expanded
+                      ? SoftErpTheme.accentDeeper
+                      : SoftErpTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            _CountPill(
+              count: itemCount,
+              label: itemCount == 1 ? 'item' : 'items',
+              color: SoftErpTheme.entityItem,
+              background: SoftErpTheme.entityItemBg,
+              border: SoftErpTheme.entityItemBorder,
+            ),
+            if (variantCount > 0) ...[
+              const SizedBox(width: 8),
+              _CountPill(
+                count: variantCount,
+                label: variantCount == 1 ? 'variant' : 'variants',
+                color: SoftErpTheme.entityVariant,
+                background: SoftErpTheme.entityVariantBg,
+                border: SoftErpTheme.entityVariantBorder,
+              ),
+            ],
+            const SizedBox(width: 12),
+              Text(
+                expanded ? 'Click to collapse' : 'Click to open',
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CountPill extends StatelessWidget {
+  const _CountPill({
+    required this.count,
+    required this.label,
+    required this.color,
+    required this.background,
+    required this.border,
+  });
+
+  final int count;
+  final String label;
+  final Color color;
+  final Color background;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        '$count $label',
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
@@ -896,9 +1507,14 @@ class _ItemRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: SoftInlineText(
+                        child: Text(
                           item.displayName,
-                          weight: FontWeight.w600,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SoftErpTheme.entityVariant,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       if (isScrap) ...[
@@ -926,8 +1542,26 @@ class _ItemRow extends StatelessWidget {
                 else
                   Row(
                     children: [
+                      // Base items carry the item dot; variants are teal above.
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: SoftErpTheme.entityItem,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: SoftInlineText(item.displayName, weight: FontWeight.w700),
+                        child: Text(
+                          item.displayName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SoftErpTheme.entityItem,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                       if (isScrap) ...[
                         const SizedBox(width: 6),
@@ -1175,12 +1809,67 @@ String _formatUnitConversionFactor(double value) {
   return value.toString();
 }
 
+/// A read-only snapshot of the editor's identity fields, published upward so a
+/// hosting workflow can render a context rail without reaching into the state.
+class _ItemEditorSummary {
+  const _ItemEditorSummary({
+    required this.displayName,
+    required this.groupName,
+    required this.unitLabel,
+    required this.propertyCount,
+    required this.propertyNames,
+    required this.isSaved,
+    required this.isDirty,
+  });
+
+  final String displayName;
+  final String groupName;
+  final String unitLabel;
+  final int propertyCount;
+  final List<String> propertyNames;
+
+  /// Whether the item has been persisted at least once (has an id).
+  final bool isSaved;
+
+  /// Whether there are edits that have not been saved since the last write.
+  final bool isDirty;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ItemEditorSummary &&
+      other.displayName == displayName &&
+      other.groupName == groupName &&
+      other.unitLabel == unitLabel &&
+      other.propertyCount == propertyCount &&
+      other.isSaved == isSaved &&
+      other.isDirty == isDirty &&
+      listEquals(other.propertyNames, propertyNames);
+
+  @override
+  int get hashCode => Object.hash(
+    displayName,
+    groupName,
+    unitLabel,
+    propertyCount,
+    isSaved,
+    isDirty,
+    Object.hashAll(propertyNames),
+  );
+}
+
 class _ItemEditorSheet extends StatefulWidget {
   const _ItemEditorSheet({
+    super.key,
     this.item,
     this.initialName = '',
     this.initialGroupId,
     this.onCreatePipeline,
+    this.embedded = false,
+    this.onFinished,
+    this.onRequestClose,
+    this.onSummaryChanged,
+    this.onCreateVariant,
+    this.keyScope = '',
   });
 
   final ItemDefinition? item;
@@ -1188,12 +1877,56 @@ class _ItemEditorSheet extends StatefulWidget {
   final int? initialGroupId;
   final Future<String?> Function()? onCreatePipeline;
 
+  /// Embedded in a hosting workflow rather than owning its own route: the host
+  /// supplies the surface, the title and the action footer, and the editor
+  /// never touches [Navigator].
+  final bool embedded;
+
+  /// Replaces `Navigator.pop(result)`. Called with the saved item after a
+  /// successful save, or null after a delete.
+  final void Function(ItemDefinition? result)? onFinished;
+
+  /// Embedded only: the host owns the variant workflow, so "Create Variant"
+  /// asks it to open rather than launching a second dialog. Until it is
+  /// pressed the host shows a plain item form — an item that never needs
+  /// variations is just saved and done.
+  final VoidCallback? onCreateVariant;
+
+  /// Replaces `Navigator.maybePop()` for the close affordance.
+  final VoidCallback? onRequestClose;
+
+  /// Fires whenever the identity fields change, for a host's context rail.
+  final void Function(_ItemEditorSummary summary)? onSummaryChanged;
+
+  /// Disambiguates widget keys when two editors are mounted at once, so
+  /// `find.byKey` in tests and any key-based lookup stay unique.
+  final String keyScope;
+
   @override
   State<_ItemEditorSheet> createState() => _ItemEditorSheetState();
 }
 
 class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   final _formKey = GlobalKey<FormState>();
+
+  /// The item being edited. Seeded from `widget.item` but reassigned after a
+  /// successful create, so a host that keeps the editor open after step 1 does
+  /// not create a second item on the next save — and so spawned variants get a
+  /// real `baseItemId`.
+  ItemDefinition? _item;
+
+  /// Per-editor saving flag. `ItemsProvider.isSaving` is app-global and would
+  /// spin both editors' buttons when two are mounted in one workflow.
+  bool _isSubmitting = false;
+
+  /// Why the last spawn produced nothing, so a host can show it on the step the
+  /// user is actually looking at.
+  String? _lastSpawnError;
+  String? get lastSpawnError => _lastSpawnError;
+
+  /// Set by any edit; cleared on a successful save. Drives the host's
+  /// unsaved-changes guard.
+  bool _isDirty = false;
   late final TextEditingController _nameController;
   late final TextEditingController _aliasController;
   late final TextEditingController _displayNameController;
@@ -1220,6 +1953,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _isLoadingGroupSchema = false;
   String? _defaultPipelineId;
   List<Map<String, String>> _availablePipelines = [];
+
+  /// Stage labels per pipeline id, so a sample baseline recorded stage-by-stage
+  /// uses the selected pipeline's real stages instead of generic placeholders.
+  Map<String, List<String>> _pipelineStageLabels =
+      const <String, List<String>>{};
   PenPaperBaseline _penPaperBaseline = PenPaperBaseline.createDefault();
 
   /// Whether [_penPaperBaseline] holds a real recording rather than the
@@ -1235,7 +1973,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// variation tree of its own and inherits group, unit and naming from its
   /// base, so the editor drops to the handful of things that are still its own
   /// — name, media, pipeline and its sample record.
-  bool get _isBasicItem => widget.item?.isBasicItem ?? false;
+  bool get _isBasicItem => _item?.isBasicItem ?? false;
 
   /// The fixed section layout for a basic item. Deliberately not the user's
   /// configurable default: what a spawned variant can carry is a property of
@@ -1254,37 +1992,44 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   @override
   void initState() {
     super.initState();
+    _item = widget.item;
     _nameController = TextEditingController(
-      text: widget.item?.name ?? widget.initialName,
+      text: _item?.name ?? widget.initialName,
     );
-    _aliasController = TextEditingController(text: widget.item?.alias ?? '');
+    _aliasController = TextEditingController(text: _item?.alias ?? '');
     _displayNameController = TextEditingController(
-      text: widget.item?.displayName ?? '',
+      text: _item?.displayName ?? '',
     );
     _photoUrlController = TextEditingController(
-      text: widget.item?.photoUrl ?? '',
+      text: _item?.photoUrl ?? '',
     );
     _cadFileKeyController = TextEditingController(
-      text: widget.item?.cadFileKey ?? '',
+      text: _item?.cadFileKey ?? '',
     );
     _cadFileNameController = TextEditingController(
-      text: widget.item?.cadFileName ?? '',
+      text: _item?.cadFileName ?? '',
     );
-    _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
-    _selectedUnitId = widget.item?.unitId;
-    _namingFormat = widget.item?.namingFormat.toList() ?? [];
-    _defaultPipelineId = widget.item?.defaultPipelineId;
-    _availableForPurchase = widget.item?.availableForPurchase ?? false;
-    _developedForClientId = widget.item?.developedForClientId;
-    final storedBaseline = widget.item?.penPaperBaseline;
+    _selectedGroupId = _item?.groupId ?? widget.initialGroupId;
+    _selectedUnitId = _item?.unitId;
+    _namingFormat = _item?.namingFormat.toList() ?? [];
+    _defaultPipelineId = _item?.defaultPipelineId;
+    _availableForPurchase = _item?.availableForPurchase ?? false;
+    _developedForClientId = _item?.developedForClientId;
+    final storedBaseline = _item?.penPaperBaseline;
     if (storedBaseline != null) {
       _penPaperBaseline = storedBaseline;
       _hasPenPaperBaseline = true;
     }
-    _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
+    _displayNameTouched = (_item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
     _aliasController.addListener(_handlePrimaryChange);
+    // Uploading a photo or a CAD file writes straight to these controllers.
+    // Without listeners those edits never marked the form dirty, so they were
+    // invisible to both the close guard and any save-on-exit.
+    _photoUrlController.addListener(_handleChange);
+    _cadFileKeyController.addListener(_handleChange);
+    _cadFileNameController.addListener(_handleChange);
     _displayNameController.addListener(() {
       if (_syncingDisplayName) {
         return;
@@ -1294,14 +2039,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
 
     for (final node
-        in widget.item?.variationTree ??
+        in _item?.variationTree ??
             const <ItemVariationNodeDefinition>[]) {
       _rootNodes.add(_draftFromNode(node, null));
     }
     _hydrateExistingGroupBackedNodes();
 
-    final savedTokens = widget.item?.namingFormat ?? [];
-    if (widget.item != null) {
+    final savedTokens = _item?.namingFormat ?? [];
+    if (_item != null) {
       final available = _availableNamingTokens;
       _excludedNamingTokens.addAll(
         available.where((t) => !savedTokens.contains(t)),
@@ -1309,7 +2054,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
     _fetchPipelines();
     for (final attachment
-        in widget.item?.attachments ??
+        in _item?.attachments ??
             const <ItemAttachmentDefinition>[]) {
       _attachments.add(
         _AttachmentDraft(
@@ -1322,10 +2067,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       );
     }
     _selectedMachineIds.addAll(
-      (widget.item?.machines ?? const <ItemMachineLink>[]).map((m) => m.id),
+      (_item?.machines ?? const <ItemMachineLink>[]).map((m) => m.id),
     );
     _selectedDieIds.addAll(
-      (widget.item?.dies ?? const <ItemDieLink>[]).map((d) => d.id),
+      (_item?.dies ?? const <ItemDieLink>[]).map((d) => d.id),
     );
     // Both touch providers that notify, so they run after the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1333,7 +2078,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       context.read<ItemFormSectionsProvider>().ensureLoaded();
       _loadLinkOptions();
     });
-    for (final conversion in widget.item?.unitConversions ?? const []) {
+    for (final conversion in _item?.unitConversions ?? const []) {
       final unit = context.read<UnitsProvider>().findById(conversion.unitId);
       final factorToV = conversion.factorToPrimary <= 0
           ? 1.0
@@ -1347,6 +2092,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _secondaryUnitConversions.add(draft);
     }
 
+    _savedSignature = _item == null ? null : _identitySignature();
     _syncPrimaryDisplayName();
     _syncLeafDisplayNames();
     if (_selectedGroupId != null) {
@@ -1363,7 +2109,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     String inputType = node.inputType;
     if (node.kind == ItemVariationNodeKind.property) {
       final key = _propertyKey(node.name);
-      final schemaEntry = widget.item?.propertySchema
+      final schemaEntry = _item?.propertySchema
           .where((e) => _propertyKey(e.propertyKey) == key)
           .firstOrNull;
       if (schemaEntry != null) {
@@ -1437,10 +2183,143 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   void _handleChange() {
+    _isDirty = true;
     if (mounted) {
       setState(() {});
     }
   }
+
+  /// Hands the host its rail data after the frame, so notifying never lands
+  /// inside our own build.
+  void _scheduleSummaryPublish() {
+    if (widget.onSummaryChanged == null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _publishSummary());
+  }
+
+  /// Last summary handed to the host, so repeat builds don't re-notify.
+  _ItemEditorSummary? _publishedSummary;
+
+  /// Identity-field signature as of the last successful save. Group, unit and
+  /// tree-structure edits mutate with a bare setState and never reach
+  /// [_handleChange], so comparing against this is what makes them count as
+  /// unsaved rather than silently slipping past the close guard.
+  String? _savedSignature;
+
+  /// Publishes from `build` rather than from each mutation site: group, unit
+  /// and tree-structure edits all bypass [_handleChange] with a bare setState,
+  /// and hunting those ten call sites would leave the rail silently stale the
+  /// next time someone adds an eleventh.
+  void _publishSummary() {
+    final onSummaryChanged = widget.onSummaryChanged;
+    if (onSummaryChanged == null || !mounted) {
+      return;
+    }
+    if (_savedSignature != null && _identitySignature() != _savedSignature) {
+      _isDirty = true;
+    }
+    final groupsProvider = context.read<GroupsProvider>();
+    final unitsProvider = context.read<UnitsProvider>();
+    final properties = _rootNodes
+        .where((node) => node.kind == ItemVariationNodeKind.property)
+        .toList(growable: false);
+    final displayName = _displayNameController.text.trim().isNotEmpty
+        ? _displayNameController.text.trim()
+        : _nameController.text.trim();
+    final summary = _ItemEditorSummary(
+        displayName: displayName,
+        groupName: groupsProvider.findById(_selectedGroupId)?.name ?? '',
+        unitLabel:
+            unitsProvider.findById(_selectedUnitId)?.displayLabel ?? '',
+        propertyCount: properties.length,
+        propertyNames: properties
+            .map(
+              (node) => node.nameController.text.trim().isEmpty
+                  ? 'Unnamed Property'
+                  : node.nameController.text.trim(),
+            )
+            .toList(growable: false),
+        isSaved: _item != null,
+        isDirty: _isDirty,
+    );
+    if (summary == _publishedSummary) {
+      return;
+    }
+    _publishedSummary = summary;
+    onSummaryChanged(summary);
+  }
+
+  /// Content-only fingerprint of the identity fields, ignoring the dirty flag
+  /// itself (which would make the comparison circular).
+  String _identitySignature() {
+    final properties = _rootNodes
+        .where((node) => node.kind == ItemVariationNodeKind.property)
+        .map((node) => '${node.nameController.text.trim()}#${node.children.length}')
+        .join('|');
+    return [
+      _nameController.text.trim(),
+      _displayNameController.text.trim(),
+      '${_selectedGroupId ?? ''}',
+      '${_selectedUnitId ?? ''}',
+      _secondaryUnitConversions.map((c) => c.unitId).join(','),
+      properties,
+    ].join('~');
+  }
+
+  /// Route-independent replacement for `Navigator.pop(result)`. When embedded
+  /// the host decides what "finished" means — advance a step, or nothing.
+  void _finish(ItemDefinition? result) {
+    final onFinished = widget.onFinished;
+    if (onFinished != null) {
+      onFinished(result);
+      return;
+    }
+    Navigator.of(context).pop(result);
+  }
+
+  /// Route-independent replacement for `Navigator.maybePop()`.
+  void _requestClose() {
+    final onRequestClose = widget.onRequestClose;
+    if (onRequestClose != null) {
+      onRequestClose();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
+  /// Whether this form has edits that have not been written yet.
+  bool get isDirty => _isDirty;
+
+  /// Adopts a rename applied to this item from outside the form — the host
+  /// renaming the whole spawned set, for instance. The controllers are seeded
+  /// once in initState and there is no didUpdateWidget, so without this the
+  /// Name and Display Name fields keep showing the pre-rename text.
+  void adoptExternalUpdate(ItemDefinition item) {
+    if (!mounted) return;
+    setState(() {
+      _item = item;
+      // Guard the display-name listener so the assignment is not mistaken for
+      // the user typing, which would latch _displayNameTouched.
+      _syncingDisplayName = true;
+      if (_nameController.text != item.name) {
+        _nameController.text = item.name;
+      }
+      if (_displayNameController.text != item.displayName) {
+        _displayNameController.text = item.displayName;
+      }
+      _syncingDisplayName = false;
+      // The new text IS the saved state, so the form is not dirty because of it.
+      _savedSignature = _identitySignature();
+      _isDirty = false;
+    });
+    _publishSummary();
+  }
+
+  /// Saves from a host's footer. Returns the saved item, or null if validation
+  /// failed or the save errored — the host uses this to decide whether to
+  /// advance a step.
+  Future<ItemDefinition?> submitFromHost() => _submit(context, finish: false);
 
   List<int> get _orderedUnitIds => [
     ...?(_selectedUnitId == null ? null : <int>[_selectedUnitId!]),
@@ -1707,12 +2586,31 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (key.isEmpty) {
       return null;
     }
-    return widget.item?.propertySchema
+    return _item?.propertySchema
         .where((entry) => _propertyKey(entry.propertyKey) == key)
         .firstOrNull;
   }
 
   List<_TreeMetaPillSpec> _propertyMetaPillsForNode(_NodeDraft node) {
+    if (node.kind == ItemVariationNodeKind.value) {
+      // Only while naming by code — otherwise a missing code is not a problem
+      // and the pill would be noise on every value in the tree.
+      if (!_useValueCodes) {
+        return const <_TreeMetaPillSpec>[];
+      }
+      final code = node.codeController.text.trim();
+      return <_TreeMetaPillSpec>[
+        code.isEmpty
+            ? const _TreeMetaPillSpec(
+                label: 'No code',
+                tone: _TreeMetaPillTone.missing,
+              )
+            : _TreeMetaPillSpec(
+                label: code,
+                tone: _TreeMetaPillTone.code,
+              ),
+      ];
+    }
     if (node.kind != ItemVariationNodeKind.property) {
       return const <_TreeMetaPillSpec>[];
     }
@@ -1865,9 +2763,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
   }
 
-  void _syncLeafDisplayNames() {
+  /// [force] regenerates even leaves whose display name was edited by hand.
+  /// Toggling the code format is an explicit request to recompose them, and
+  /// most loaded leaves count as "touched" simply for having a stored name —
+  /// without this the tick would look like it did nothing.
+  void _syncLeafDisplayNames({bool force = false}) {
     void visit(_NodeDraft node) {
-      if (node.isLeafValue && !node.displayNameTouched) {
+      if (node.isLeafValue && (force || !node.displayNameTouched)) {
         final generated = _generateLeafDisplayName(node);
         if (node.displayNameController.text != generated) {
           _syncingDisplayName = true;
@@ -1914,6 +2816,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final itemsProvider = context.watch<ItemsProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final unitsProvider = context.watch<UnitsProvider>();
+    _scheduleSummaryPublish();
     // A group can carry its own section layout (component groups author one in
     // the group editor). When it does it wins over the user's own default, so
     // every item filed under that group asks for the same things.
@@ -1931,7 +2834,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       groupId: _selectedGroupId,
       unitId: _selectedUnitId,
       variationTree: _variationTreeInputs,
-      excludeId: widget.item?.id,
+      excludeId: _item?.id,
     );
     final availableGroups = groupsProvider.itemGroups
         .where((g) => !g.isArchived)
@@ -1985,11 +2888,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ],
           ),
+          // Sits with the display name because that is all it changes — the
+          // item's own name keeps the values spelled out.
+          _buildUseCodesToggle(),
           const SizedBox(height: 12),
           _formRow(
             children: [
               SearchableSelectField<int>(
-                tapTargetKey: const ValueKey<String>('items-group-field'),
+                tapTargetKey: ValueKey<String>('items-group-field${widget.keyScope}'),
                 value:
                     availableGroups.any((group) => group.id == _selectedGroupId)
                     ? _selectedGroupId
@@ -2044,7 +2950,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           _formRow(
             children: [
               SearchableSelectField<int>(
-                tapTargetKey: const ValueKey<String>('items-unit-field'),
+                tapTargetKey: ValueKey<String>('items-unit-field${widget.keyScope}'),
                 value: null,
                 decoration: _fieldDecoration(
                   label: selectedUnit == null ? 'Unit' : 'Add another unit',
@@ -2398,10 +3304,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   onPressed: _addTopLevelProperty,
                 ),
                 AppButton(
-                  label: 'Variation Creation',
+                  label: 'Create Variant',
                   icon: Icons.account_tree_outlined,
                   variant: AppButtonVariant.secondary,
-                  onPressed: _openVariationCreationDialog,
+                  onPressed: widget.embedded
+                      ? widget.onCreateVariant
+                      : _handOffToWorkflow,
                 ),
               ],
             ),
@@ -2515,24 +3423,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ),
     );
-    return Material(
-      color: Colors.white,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+    final content = Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+                  // The host supplies the header when embedded in a workflow.
+                  if (!widget.embedded)
                   Row(
                     children: [
                       Expanded(
                         child: AppSectionTitle(
-                          title: widget.item == null
+                          title: _item == null
                               ? 'Create Item'
                               : _isReadOnly
                               ? 'View Item'
@@ -2545,7 +3447,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       // Creation (or on the group, for components) — not from
                       // the form it controls.
                       IconButton(
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        onPressed: () => _requestClose(),
                         icon: const Icon(Icons.close),
                       ),
                     ],
@@ -2584,7 +3486,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                     ?.copyWith(color: Colors.grey[600]),
                               ),
                               const SizedBox(height: 12),
-                              Row(
+                              // Wraps rather than overflows: the label plus the
+                              // widest option exceeds a narrow section column.
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   Text(
                                     'Display Format: ',
@@ -2594,7 +3501,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                       color: Colors.grey[700],
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
                                   DropdownButton<String>(
                                     value:
                                         _namingFormat.contains(
@@ -2684,7 +3590,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 if (_defaultPipelineId != null &&
                                     _defaultPipelineId!.isNotEmpty &&
                                     !pipelineOptions.any((p) => p.value == _defaultPipelineId)) {
-                                  final label = widget.item?.defaultPipelineName ?? _defaultPipelineId!;
+                                  final label = _item?.defaultPipelineName ?? _defaultPipelineId!;
                                   pipelineOptions.insert(
                                     0,
                                     SearchableSelectOption<String>(
@@ -2734,16 +3640,51 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 label: const Text('Create New Pipeline'),
                               ),
                             ],
-                            // Basic items get the sample record as its own
-                            // always-visible card instead, so it can be filled
-                            // in before a pipeline is chosen.
-                            if (!_isBasicItem &&
-                                _defaultPipelineId != null &&
-                                _defaultPipelineId!.isNotEmpty) ...[
-                              const SizedBox(height: 16),
+                          ],
+                        ),
+                      );
+
+                      // Sample Data used to be nested inside the pipeline
+                      // card, which meant the raw-material rule that hides the
+                      // pipeline picker also hid recorded sample weights. A
+                      // measured sample is worth keeping for a raw material, so
+                      // it stands on its own now.
+                      final sampleDataSection = _SectionCard(
+                        title: 'Sample Data',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Spacer(),
+                                if (_hasPenPaperBaseline && !_isReadOnly)
+                                  TextButton.icon(
+                                    onPressed: _clearSampleData,
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                      size: 15,
+                                    ),
+                                    label: const Text('Remove'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: SoftErpTheme.dangerText,
+                                      textStyle: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            if (_hasPenPaperBaseline)
                               PenPaperBaselineWidget(
                                 baseline: _penPaperBaseline,
                                 readOnly: _isReadOnly,
+                                showChrome: false,
+                                pipelineId: _defaultPipelineId,
+                                pipelineName: _selectedPipelineName,
+                                stageNames: _selectedPipelineStages,
                                 onChanged: (updated) {
                                   setState(() {
                                     _penPaperBaseline = updated;
@@ -2751,54 +3692,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                     _handleChange();
                                   });
                                 },
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-
-                      // The sample record a basic item carries in its own
-                      // right: the pen & paper yield of a trial run of THIS
-                      // variant, not of the shared pipeline template.
-                      final sampleDataSection = _SectionCard(
-                        title: 'Sample Data',
-                        child: _hasPenPaperBaseline
-                            ? Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  PenPaperBaselineWidget(
-                                    baseline: _penPaperBaseline,
-                                    readOnly: _isReadOnly,
-                                    onChanged: (updated) {
-                                      setState(() {
-                                        _penPaperBaseline = updated;
-                                        _handleChange();
-                                      });
-                                    },
-                                  ),
-                                  if (!_isReadOnly) ...[
-                                    const SizedBox(height: 10),
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: TextButton.icon(
-                                        onPressed: _clearSampleData,
-                                        icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                          size: 16,
-                                        ),
-                                        label: const Text('Remove sample data'),
-                                        style: TextButton.styleFrom(
-                                          foregroundColor:
-                                              SoftErpTheme.dangerText,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
                               )
-                            : _EmptySampleDataPrompt(
+                            else
+                              _EmptySampleDataPrompt(
                                 onAdd: _isReadOnly ? null : _addSampleData,
                               ),
+                          ],
+                        ),
                       );
 
                       // Section visibility is the user's saved item-form
@@ -2806,6 +3706,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       // editor opens.
                       final showPipeline =
                           sections.defaultPipeline && !isRawMaterialGroup;
+                      // Sample data is not a pipeline setting — a raw material
+                      // has no pipeline but can still have a weighed sample.
+                      final showSampleData = sections.defaultPipeline;
 
                       // Sections are packed by estimated height rather than
                       // assigned to fixed columns: turning sections on and off
@@ -2842,16 +3745,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         if (showPipeline)
                           _SectionEntry(
                             defaultPipelineSection,
-                            (!_isBasicItem &&
-                                    _defaultPipelineId != null &&
-                                    _defaultPipelineId!.isNotEmpty)
-                                ? 8.5
-                                : 2.0,
+                            _hasSelectedPipeline ? 3.2 : 2.0,
                           ),
-                        if (_isBasicItem)
+                        if (showSampleData)
                           _SectionEntry(
                             sampleDataSection,
-                            _hasPenPaperBaseline ? 7.5 : 2.2,
+                            _hasPenPaperBaseline ? 7.0 : 2.0,
                           ),
                       ];
 
@@ -2890,17 +3789,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       );
                     },
                   ),
-                  if (widget.item != null) ...[
+                  if (_item != null) ...[
                     const SizedBox(height: 16),
                     _SectionCard(
                       title: 'Track',
                       child: TrackPanel.entity(
                         entityType: 'items',
-                        entityId: '${widget.item!.id}',
+                        entityId: '${_item!.id}',
                         showHeader: false,
                       ),
                     ),
                   ],
+                  if (!widget.embedded) ...[
                   const SizedBox(height: 20),
                   Wrap(
                     spacing: 12,
@@ -2908,13 +3808,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     children: [
                       if (!_isReadOnly)
                         AppButton(
-                          label: widget.item == null
+                          label: _item == null
                               ? 'Create Item'
                               : 'Save Changes',
-                          isLoading: itemsProvider.isSaving,
+                          isLoading: _isSubmitting,
                           onPressed: () => _submit(context),
                         ),
-                      if (widget.item != null)
+                      if (_item != null)
                         AppButton(
                           label: 'Delete',
                           variant: AppButtonVariant.secondary,
@@ -2924,13 +3824,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               context,
                               title: 'Delete item?',
                               message:
-                                  'Permanently delete "${widget.item!.displayName}"? You can restore it later from the Action Center.',
+                                  'Permanently delete "${_item!.displayName}"? You can restore it later from the Action Center.',
                             );
                             if (!ok) return;
-                            await itemsProvider.deleteItem(widget.item!.id);
+                            await itemsProvider.deleteItem(_item!.id);
                             if (!context.mounted) return;
                             if (itemsProvider.errorMessage == null) {
-                              Navigator.of(context).pop(null);
+                              _finish(null);
                             } else {
                               showGlobalToast(
                                 itemsProvider.errorMessage!,
@@ -2941,10 +3841,24 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ),
+                  ],
+        ],
+      ),
+    );
+
+    // Embedded: the host owns the surface, the padding and the scrolling, so
+    // the form is returned bare. Standalone: keep the bottom-sheet chrome.
+    if (widget.embedded) {
+      return content;
+    }
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(child: content),
         ),
       ),
     );
@@ -3379,6 +4293,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       final leafLabel = node.displayNameController.text.trim();
       final base = leafLabel.isEmpty ? _generateLeafDisplayName(node) : leafLabel;
       final code = node.codeController.text.trim();
+      // While naming by code the row already carries a code pill; repeating it
+      // as "Name [CODE]" reads as two different facts.
+      if (_useValueCodes) {
+        return base;
+      }
       return code.isNotEmpty ? '$base [$code]' : base;
     }
     final name = node.nameController.text.trim();
@@ -3503,7 +4422,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   /// The item this variant was spawned from, when it is still in the catalogue.
   ItemDefinition? _lookupBaseItem(BuildContext context) {
-    final baseItemId = widget.item?.baseItemId;
+    final baseItemId = _item?.baseItemId;
     if (baseItemId == null) {
       return null;
     }
@@ -3540,7 +4459,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     GroupsProvider groupsProvider,
     UnitsProvider unitsProvider,
   ) {
-    final item = widget.item;
+    final item = _item;
     final group = groupsProvider.findById(_selectedGroupId);
     final unit = unitsProvider.findById(_selectedUnitId ?? -1);
     final baseItem = _lookupBaseItem(context);
@@ -3749,65 +4668,91 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
   }
 
-  Future<void> _openVariationCreationDialog() async {
-    if (widget.item == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please save this base item before spawning variants.'),
-        ),
-      );
+  /// Saves, then replaces this editor with the one-window variation workflow.
+  /// Handing off rather than stacking keeps a single editor for the item alive
+  /// at a time — two editors of the same item would diverge and would both
+  /// bind to the app-global `ItemsProvider.isSaving`.
+  Future<void> _handOffToWorkflow() async {
+    if (widget.embedded) {
+      // Already inside the workflow — the stepper owns this move.
       return;
     }
-
-    final properties = _rootNodes
-        .where((n) => n.kind == ItemVariationNodeKind.property)
-        .toList();
-    if (properties.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please add at least one top-level property and some values first.',
-          ),
-        ),
-      );
+    final needsSave =
+        _item == null ||
+        _isDirty ||
+        (_savedSignature != null && _identitySignature() != _savedSignature);
+    final saved = needsSave ? await _submit(context, finish: false) : _item;
+    if (saved == null || !mounted) {
       return;
     }
+    final navigator = Navigator.of(context);
+    final onCreatePipeline = widget.onCreatePipeline;
+    navigator.pop(saved);
+    // Push on the next frame: popping completes this route's future
+    // synchronously, and any pop already queued by a nested picker would
+    // otherwise resolve against the workflow we just pushed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ItemsScreen.openWorkflow(
+        navigator.context,
+        item: saved,
+        onCreatePipeline: onCreatePipeline,
+        startAtVariations: true,
+      );
+    });
+  }
 
-    await showErpFormDialog<void>(
-      context,
-      maxWidth: 960,
-      maxHeight: 660,
-      child: _VariationCreationDialog(
-        itemName: _nameController.text.trim(),
-        topLevelProperties: properties,
-        groupStepEnabled: FeatureFlags.isEnabled(
-          FeatureKeys.catalogInventoryEnhancements,
-        ),
-        onAssignToGroup: _assignVariantsToCombinationGroup,
-        onEditItem: (item) => ItemsScreen.openEditor(
-          context,
-          item: item,
-          onCreatePipeline: widget.onCreatePipeline,
-        ),
-        onSpawnItems: (combinations) async {
-          final messenger = ScaffoldMessenger.of(context);
+  /// The variation-tree properties a host's variation step should offer.
+  List<_NodeDraft> get topLevelProperties => _rootNodes
+      .where((node) => node.kind == ItemVariationNodeKind.property)
+      .toList(growable: false);
+
+  /// The persisted item, once saved. Null until the first successful create.
+  ItemDefinition? get savedItem => _item;
+
+  /// Source combinations of the variants returned by the last [spawnVariants]
+  /// call, index-aligned with that list.
+  List<List<_VariantOption>> lastSpawnCombos = <List<_VariantOption>>[];
+
+  /// The (name, displayName) a variant of [combo] carries. [useCodes] names it
+  /// from each value's Code instead of its name; null follows the item's own
+  /// `__format:codes` setting.
+  (String, String) variantNames(
+    List<_VariantOption> combo, {
+    bool? useCodes,
+  }) {
+    final byCode = useCodes ?? _useValueCodes;
+    // The item name is identity and stays spelled out; only the display name
+    // switches to codes, so the two are free to differ.
+    final namePart = combo.map((option) => option.label).join(' - ');
+    final displayPart = combo
+        .map((option) => byCode ? option.codeOrLabel : option.label)
+        .join(' - ');
+    return (
+      '${_nameController.text.trim()} - $namePart',
+      '${_displayNameController.text.trim()} - $displayPart',
+    );
+  }
+
+  /// Hands the base item's own fields (group, unit, conversions, media, links)
+  /// down to each spawned variant. Public so the workflow window can drive
+  /// spawning without duplicating this field list.
+  Future<List<ItemDefinition>> spawnVariants(
+    List<List<_VariantOption>> combinations,
+  ) async {
+          _lastSpawnError = null;
           if (_selectedGroupId == null || _selectedUnitId == null) {
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Select both a group and a unit for the base item before spawning variants.',
-                ),
-              ),
-            );
+            const message =
+                'Select both a group and a unit for the base item before '
+                'spawning variants.';
+            setState(() => _localError = message);
+            _lastSpawnError = message;
             return const <ItemDefinition>[];
           }
           final itemsProvider = context.read<ItemsProvider>();
           final created = <ItemDefinition>[];
+          lastSpawnCombos = <List<_VariantOption>>[];
           for (final combo in combinations) {
-            final valuesStr = combo.map((option) => option.label).join(' - ');
-            final newName = '${_nameController.text.trim()} - $valuesStr';
-            final newDisplayName =
-                '${_displayNameController.text.trim()} - $valuesStr';
+            final (newName, newDisplayName) = variantNames(combo);
 
             final input = CreateItemInput(
               name: newName,
@@ -3826,7 +4771,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               namingFormat: _activeNamingFormat,
               variationTree: const [], // Spawned items have a flat/empty tree
               defaultPipelineId: _defaultPipelineId,
-              baseItemId: widget.item?.id,
+              baseItemId: _item?.id,
               photoUrl: _photoUrlController.text.trim(),
               cadFileKey: _cadFileKeyController.text.trim(),
               cadFileName: _cadFileNameController.text.trim(),
@@ -3839,20 +4784,21 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             final createdItem = await itemsProvider.createItem(input);
             if (createdItem != null) {
               created.add(createdItem);
+              // Kept in step with `created` — a rejected combination must not
+              // shift the pairing, or a later rename would use another
+              // variant's values.
+              lastSpawnCombos.add(combo);
             }
           }
-          // The dialog stays open and moves to its group-and-summary steps, so
-          // there is no snackbar here — the footer reports the count.
-          return created;
-        },
-      ),
-    );
+    // The window stays open and moves to its group and edit steps, so there is
+    // no snackbar here — the footer reports the count.
+    return created;
   }
 
   /// Enhancement 2.2 — files freshly spawned variants into a combination group,
   /// creating the group first when the sidebar asked for a new one. Returns null
   /// on success, or a message for the dialog's error banner.
-  Future<String?> _assignVariantsToCombinationGroup(
+  Future<String?> assignVariantsToCombinationGroup(
     List<int> itemIds,
     _CombinationGroupChoice choice,
   ) async {
@@ -3976,12 +4922,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
   }
 
-  Future<void> _submit(BuildContext context) async {
-    if (_isReadOnly) {
-      return;
+  Future<ItemDefinition?> _submit(
+    BuildContext context, {
+    bool finish = true,
+  }) async {
+    if (_isReadOnly || _isSubmitting) {
+      return null;
     }
-    if (!_formKey.currentState!.validate()) {
-      return;
+    // Null-safe: when a host builds steps lazily the Form may not be mounted.
+    if (_formKey.currentState?.validate() != true) {
+      return null;
     }
 
     // Group is validated independently by the group field's own Form validator
@@ -3992,7 +4942,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       setState(() {
         _localError = 'Select a unit.';
       });
-      return;
+      return null;
     }
     for (final conversion in _secondaryUnitConversions) {
       if (_getDerivedUnitsPerPrimary(conversion.unitId) <= 0) {
@@ -4000,7 +4950,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           _localError =
               'Every secondary unit conversion must be greater than 0.';
         });
-        return;
+        return null;
       }
     }
     for (final node in _rootNodes) {
@@ -4012,7 +4962,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           _localError =
               'Provide at least one value for required property "$propertyName".';
         });
-        return;
+        return null;
       }
     }
 
@@ -4022,20 +4972,22 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       groupId: _selectedGroupId,
       unitId: _selectedUnitId,
       variationTree: _variationTreeInputs,
-      excludeId: widget.item?.id,
+      excludeId: _item?.id,
     );
     if (duplicate.blockingDuplicate) {
       setState(() {
         _localError = _duplicateMessage(duplicate.warning);
       });
-      return;
+      return null;
     }
 
     setState(() {
       _localError = null;
+      _isSubmitting = true;
     });
 
-    final result = widget.item == null
+    final wasCreate = _item == null;
+    final result = wasCreate
         ? await itemsProvider.createItem(
             CreateItemInput(
               name: _nameController.text.trim(),
@@ -4070,10 +5022,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           )
         : await itemsProvider.updateItem(
             UpdateItemInput(
-              id: widget.item!.id,
+              id: _item!.id,
               // A spawned variant must stay attached to its base item across
               // edits, or it silently graduates into a base item of its own.
-              baseItemId: widget.item!.baseItemId,
+              baseItemId: _item!.baseItemId,
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
@@ -4105,16 +5057,30 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             ),
           );
 
-    if (context.mounted &&
-        result != null &&
-        itemsProvider.errorMessage == null) {
-      showAppToast(
-        context,
-        widget.item == null ? 'Item created' : 'Item saved',
-        kind: AppToastKind.success,
-      );
-      Navigator.of(context).pop(result);
+    if (!mounted) {
+      return result;
     }
+    setState(() => _isSubmitting = false);
+    if (result == null || itemsProvider.errorMessage != null) {
+      return null;
+    }
+    // Adopt the persisted item. Without this a host that keeps the editor open
+    // after a create would create a SECOND item on the next save, and spawned
+    // variants would carry a null baseItemId.
+    setState(() {
+      _item = result;
+      _isDirty = false;
+      _savedSignature = _identitySignature();
+    });
+    showAppToast(
+      context,
+      wasCreate ? 'Item created' : 'Item saved',
+      kind: AppToastKind.success,
+    );
+    if (finish) {
+      _finish(result);
+    }
+    return result;
   }
 
   Widget _buildTextField({
@@ -4399,11 +5365,60 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   Future<void> _fetchPipelines() async {
     final provider = context.read<ItemsProvider>();
     final pipelines = await provider.fetchPipelineTemplates();
+    final stageLabels = await provider.fetchPipelineStageLabels();
     if (mounted) {
       setState(() {
         _availablePipelines = pipelines;
+        _pipelineStageLabels = stageLabels;
       });
     }
+  }
+
+  /// Build variation display names from each value's Code instead of its name.
+  /// Stored as a naming-format sentinel like the existing style flags, so it
+  /// persists through `namingFormat` with no schema change.
+  bool get _useValueCodes => _namingFormat.contains('__format:codes');
+
+  /// Every value node in the tree, for reporting code coverage.
+  List<_NodeDraft> get _allValueNodes {
+    final values = <_NodeDraft>[];
+    void visit(_NodeDraft node) {
+      if (node.kind == ItemVariationNodeKind.value) values.add(node);
+      for (final child in node.children) {
+        visit(child);
+      }
+    }
+
+    for (final root in _rootNodes) {
+      visit(root);
+    }
+    return values;
+  }
+
+  /// Value nodes with no Code set. Naming by code silently falls back to the
+  /// value's name for these, so the user is told which ones.
+  List<_NodeDraft> get _valuesMissingCode => _allValueNodes
+      .where((node) => node.codeController.text.trim().isEmpty)
+      .toList(growable: false);
+
+  bool get _hasSelectedPipeline =>
+      _defaultPipelineId != null && _defaultPipelineId!.trim().isNotEmpty;
+
+  /// Name of the item's currently selected default pipeline, '' when none.
+  String get _selectedPipelineName {
+    final id = _defaultPipelineId;
+    if (id == null || id.isEmpty) return '';
+    for (final pipeline in _availablePipelines) {
+      if (pipeline['id'] == id) return pipeline['name'] ?? '';
+    }
+    return _item?.defaultPipelineName ?? '';
+  }
+
+  /// Stages of the selected pipeline, for the sample baseline's granular mode.
+  List<String> get _selectedPipelineStages {
+    final id = _defaultPipelineId;
+    if (id == null || id.isEmpty) return const <String>[];
+    return _pipelineStageLabels[id] ?? const <String>[];
   }
 
   String _generateLeafDisplayName(_NodeDraft leaf) {
@@ -4416,7 +5431,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           current.parent != null &&
           current.parent!.kind == ItemVariationNodeKind.property) {
         final propNode = current.parent!;
-        final valueName = current.nameController.text.trim();
+        // Codes mode falls back to the value name when a value has no code,
+        // so a half-coded tree still produces a complete name rather than
+        // dropping segments.
+        final code = current.codeController.text.trim();
+        final valueName = _useValueCodes && code.isNotEmpty
+            ? code
+            : current.nameController.text.trim();
         if (valueName.isNotEmpty) {
           pathValueNames.insert(0, valueName);
         }
@@ -4443,6 +5464,131 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       }
     }
     return segments.join(' ');
+  }
+
+  /// Tick beside the display name: compose it from each value's Code rather
+  /// than its name. Display-name only — the item's own name keeps the values
+  /// spelled out, so the two can differ. Carries a live count of values with
+  /// no code, since codes are optional everywhere else.
+  Widget _buildUseCodesToggle() {
+    final missing = _valuesMissingCode;
+    final total = _allValueNodes.length;
+    final enabled = _useValueCodes;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _isReadOnly
+              ? null
+              : () {
+                  setState(() {
+                    if (enabled) {
+                      _namingFormat.remove('__format:codes');
+                    } else {
+                      _namingFormat.add('__format:codes');
+                    }
+                  });
+                  _syncPrimaryDisplayName();
+                  _syncLeafDisplayNames(force: true);
+                  _handleChange();
+                },
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  enabled
+                      ? Icons.check_box_rounded
+                      : Icons.check_box_outline_blank_rounded,
+                  size: 19,
+                  color: enabled
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Display name from value codes',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: enabled
+                        ? SoftErpTheme.accentDeeper
+                        : SoftErpTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message:
+                      'Composes the display name from each value\'s Code — '
+                      'BRS-HH rather than Brass Half Hard. The item name is '
+                      'left spelled out. Values without a code keep their name.',
+                  child: const Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: SoftErpTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (enabled) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+            decoration: BoxDecoration(
+              color: missing.isEmpty
+                  ? SoftErpTheme.successBg
+                  : SoftErpTheme.warningBg,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(
+                color: missing.isEmpty
+                    ? SoftErpTheme.successText.withValues(alpha: 0.25)
+                    : SoftErpTheme.warningText.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  missing.isEmpty
+                      ? Icons.check_circle_rounded
+                      : Icons.error_outline_rounded,
+                  size: 15,
+                  color: missing.isEmpty
+                      ? SoftErpTheme.successText
+                      : SoftErpTheme.warningText,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    missing.isEmpty
+                        ? total == 0
+                              ? 'No values yet — add some and give each a code.'
+                              : 'All $total value${total == 1 ? '' : 's'} have a code.'
+                        : '${missing.length} of $total values have no code and '
+                              'will fall back to their name: '
+                              '${missing.take(4).map((n) => n.nameController.text.trim().isEmpty ? 'Unnamed' : n.nameController.text.trim()).join(', ')}'
+                              '${missing.length > 4 ? '…' : ''}',
+                    style: TextStyle(
+                      color: missing.isEmpty
+                          ? SoftErpTheme.successText
+                          : SoftErpTheme.warningText,
+                      fontSize: 11.5,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   String _duplicateMessage(ItemDuplicateWarning warning) {
@@ -4789,7 +5935,7 @@ class _TreeNodeEditor extends StatelessWidget {
   }
 }
 
-enum _TreeMetaPillTone { manual, seeded, inherited, promoted, required }
+enum _TreeMetaPillTone { manual, seeded, inherited, promoted, required, code, missing }
 
 class _TreeMetaPillSpec {
   const _TreeMetaPillSpec({required this.label, required this.tone});
@@ -4830,6 +5976,16 @@ class _TreeMetaPill extends StatelessWidget {
         const Color(0xFFFEF3C7),
         const Color(0xFFFCD34D),
         const Color(0xFFB45309),
+      ),
+      _TreeMetaPillTone.code => (
+        SoftErpTheme.accentSoft,
+        const Color(0xFFC7C2FF),
+        SoftErpTheme.accentDeeper,
+      ),
+      _TreeMetaPillTone.missing => (
+        SoftErpTheme.dangerBg,
+        const Color(0xFFF5C2C7),
+        SoftErpTheme.dangerText,
       ),
     };
   }
@@ -6075,6 +7231,15 @@ class _VariantOption {
     return name.isEmpty ? 'Unnamed Value' : name;
   }
 
+  /// The value's Code, empty when it has none. Typed numbers are their own
+  /// code — there is no separate short form to fall back to.
+  String get code =>
+      typedNumber != null ? '' : valueNode!.codeController.text.trim();
+
+  /// What a code-named variant uses for this option: the code when set,
+  /// otherwise the plain label so the name stays complete.
+  String get codeOrLabel => code.isEmpty ? label : code;
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -6089,19 +7254,24 @@ class _VariantOption {
       Object.hash(identityHashCode(property), identityHashCode(valueNode), typedNumber);
 }
 
-/// The dialog runs as three steps in one window rather than a chain of popups:
-/// build the combinations, then file the spawned variants into a combination
-/// group from a sidebar, then be told what a basic item lets you edit.
-enum _SpawnPhase { building, chooseGroup, done }
-
-class _VariationCreationDialog extends StatefulWidget {
-  const _VariationCreationDialog({
+/// Steps 2 and 3 of the item workflow, rendered as a pane inside the window
+/// rather than as its own dialog: build the combinations and spawn them, then
+/// file the spawned set into a combination group. The window owns the header,
+/// the stepper and step 4.
+class _VariationPanel extends StatefulWidget {
+  const _VariationPanel({
+    super.key,
     required this.itemName,
     required this.topLevelProperties,
     required this.onSpawnItems,
     required this.onAssignToGroup,
-    required this.onEditItem,
-    required this.groupStepEnabled,
+    required this.onGroupStepDone,
+    required this.showGroupStep,
+    required this.spawnedSoFar,
+    required this.groupTargetIds,
+    required this.groupRound,
+    required this.onDeleteVariant,
+    required this.busy,
   });
 
   /// Base item name, used for the generated-name preview.
@@ -6109,7 +7279,7 @@ class _VariationCreationDialog extends StatefulWidget {
   final List<_NodeDraft> topLevelProperties;
 
   /// Creates the variants and returns them. An empty list means nothing was
-  /// created, which leaves the dialog on the building step.
+  /// created, which keeps the user on the building step.
   final Future<List<ItemDefinition>> Function(List<List<_VariantOption>>)
   onSpawnItems;
 
@@ -6118,20 +7288,34 @@ class _VariationCreationDialog extends StatefulWidget {
   final Future<String?> Function(List<int> itemIds, _CombinationGroupChoice)
   onAssignToGroup;
 
-  /// Opens the basic-item editor for one spawned variant, returning the saved
-  /// item so the list can pick up a rename.
-  final Future<ItemDefinition?> Function(ItemDefinition item) onEditItem;
+  /// Called once the group step is settled (assigned or skipped).
+  final VoidCallback onGroupStepDone;
 
-  /// Whether the combination-group step is offered at all (Enhancement 2.2 is
-  /// behind a feature flag). When off, spawning goes straight to the last step.
-  final bool groupStepEnabled;
+  /// Whether to render the group sidebar (step 3) rather than the builder.
+  final bool showGroupStep;
+
+  /// Everything spawned in this window so far, across repeated rounds — shown
+  /// in the list beside the group sidebar.
+  final List<ItemDefinition> spawnedSoFar;
+
+  /// The ids the group step should file: the most recent round only.
+  final List<int> groupTargetIds;
+
+  /// Increments once per spawn; a change means a genuinely new round.
+  final int groupRound;
+
+  /// Removes a spawned variant from the catalogue. Returns true when it went.
+  final Future<bool> Function(ItemDefinition item) onDeleteVariant;
+
+  /// A window-level batch is running; destructive row actions stand down so
+  /// they cannot collide with ItemsProvider's single-flight guard.
+  final bool busy;
 
   @override
-  State<_VariationCreationDialog> createState() =>
-      _VariationCreationDialogState();
+  State<_VariationPanel> createState() => _VariationPanelState();
 }
 
-class _VariationCreationDialogState extends State<_VariationCreationDialog> {
+class _VariationPanelState extends State<_VariationPanel> {
   /// Selections per property, in the order they were picked, so generated
   /// combinations come out in a predictable order.
   final Map<_NodeDraft, List<_VariantOption>> _selected = {};
@@ -6144,12 +7328,20 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
   String? _error;
   bool _isSpawning = false;
 
-  _SpawnPhase _phase = _SpawnPhase.building;
+  /// Which spawned variants the next "Add to group" will file. Seeded with the
+  /// newest round, but freely editable so separate subsets can go to separate
+  /// groups without leaving the step.
+  final Set<int> _selectedVariantIds = <int>{};
 
-  /// The variants that were actually created, once spawning has run.
-  List<ItemDefinition> _spawnedItems = const <ItemDefinition>[];
+  /// Group each variant has already been filed into, shown as a row chip.
+  final Map<int, String> _filedGroupByItemId = <int, String>{};
 
-  // Combination-group sidebar state.
+  /// Which destination tiles are showing their contents. Keyed 'group:12' /
+  /// 'set:3' so the two id spaces cannot collide.
+  final Set<String> _expandedDestinations = <String>{};
+
+  // Filing sidebar state.
+  _FileTarget _fileTarget = _FileTarget.group;
   bool _createNewGroup = false;
   int? _selectedCombinationGroupId;
   final TextEditingController _groupNameController = TextEditingController();
@@ -6157,18 +7349,52 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
       TextEditingController();
   bool _isAssigning = false;
 
-  /// Name of the group the variants ended up in, for the closing summary.
-  String? _assignedGroupName;
-
   @override
   void initState() {
     super.initState();
+    _selectedVariantIds.addAll(widget.groupTargetIds);
+    // Sets live on the inventory provider, which the items screen never
+    // otherwise touches — without this the Set tab would look empty for a user
+    // who has not opened Inventory this session. initialize() is idempotent.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<InventoryProvider>().initialize();
+    });
     for (final prop in widget.topLevelProperties) {
       _selected[prop] = <_VariantOption>[];
       if (prop.isNumericProperty) {
         _numberControllers[prop] = TextEditingController();
       }
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant _VariationPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupRound != widget.groupRound) {
+      // A genuinely new spawn round: start from that round's items.
+      _selectedVariantIds
+        ..clear()
+        ..addAll(widget.groupTargetIds);
+    }
+    // The user can go back to step 1 and add or remove properties. Reconcile
+    // rather than null-bang on a property the maps have never seen.
+    final incoming = widget.topLevelProperties.toSet();
+    for (final prop in incoming) {
+      _selected.putIfAbsent(prop, () => <_VariantOption>[]);
+      if (prop.isNumericProperty) {
+        _numberControllers.putIfAbsent(prop, () => TextEditingController());
+      }
+    }
+    for (final gone in _selected.keys.toList()) {
+      if (!incoming.contains(gone)) {
+        _selected.remove(gone);
+        _numberControllers.remove(gone)?.dispose();
+      }
+    }
+    // A deleted variant must not linger in the tick set or the filed chips.
+    final liveIds = widget.spawnedSoFar.map((item) => item.id).toSet();
+    _selectedVariantIds.removeWhere((id) => !liveIds.contains(id));
+    _filedGroupByItemId.removeWhere((id, _) => !liveIds.contains(id));
   }
 
   @override
@@ -6192,20 +7418,10 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
       .where((child) => child.kind == ItemVariationNodeKind.value)
       .toList(growable: false);
 
-  /// How many variants the current selection would produce.
-  int get _pendingCombinationCount {
-    var count = 0;
-    for (final options in _selected.values) {
-      if (options.isEmpty) continue;
-      count = count == 0 ? options.length : count * options.length;
-    }
-    return count;
-  }
-
   void _toggleOption(_NodeDraft property, _VariantOption option) {
     setState(() {
       _error = null;
-      final options = _selected[property]!;
+      final options = (_selected[property] ??= <_VariantOption>[]);
       if (_isEditingCard) {
         // Editing one variant: a property holds exactly one value, and the
         // pick is written straight through to the card.
@@ -6231,27 +7447,14 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
         _createdCombinations[_selectedIndex!] = combo;
         return;
       }
+      // A property contributes exactly one value, so picking replaces rather
+      // than accumulates; tapping the chosen one again clears it.
       if (options.contains(option)) {
         options.remove(option);
       } else {
-        options.add(option);
-      }
-    });
-  }
-
-  void _selectAllValues(_NodeDraft property) {
-    setState(() {
-      _error = null;
-      final options = _selected[property]!;
-      final all = _valuesOf(
-        property,
-      ).map((node) => _VariantOption.value(property, node)).toList();
-      if (options.length == all.length) {
-        options.clear();
-      } else {
         options
           ..clear()
-          ..addAll(all);
+          ..add(option);
       }
     });
   }
@@ -6281,7 +7484,7 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
       return;
     }
     final option = _VariantOption.number(property, value);
-    if (_selected[property]!.contains(option)) {
+    if ((_selected[property] ??= <_VariantOption>[]).contains(option)) {
       setState(() {
         _error = null;
         controller.clear();
@@ -6355,8 +7558,7 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
   void _generateCombinations() {
     if (!_hasAnySelection) {
       setState(
-        () => _error =
-            'Select at least one value before generating combinations.',
+        () => _error = 'Pick a value before generating a variant.',
       );
       return;
     }
@@ -6390,7 +7592,7 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
         }
       }
       if (added == 0) {
-        _error = 'Those combinations are already on the list.';
+        _error = 'That variant is already on the list.';
       }
     });
   }
@@ -6425,63 +7627,205 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
         _error = 'No variants were created. Check the messages above and retry.';
         return;
       }
-      _spawnedItems = spawned;
+      // Consume them: stepping back to this pane and pressing Spawn again
+      // would otherwise re-submit the same combinations.
+      _createdCombinations.clear();
       _deselectCard();
+      for (final options in _selected.values) {
+        options.clear();
+      }
       // Nothing to pick from on a fresh install, so open on the create form.
       _createNewGroup = context.read<GroupsProvider>().combinationGroups.isEmpty;
-      // The window stays open and grows a sidebar instead of handing off to a
-      // popup: filing the variants and learning what they can carry is part of
-      // creating them, not a separate errand.
-      _phase = widget.groupStepEnabled
-          ? _SpawnPhase.chooseGroup
-          : _SpawnPhase.done;
     });
+    // The window advances the stepper — this pane does not own the phase.
   }
 
-  /// Opens one variant's editor and folds any rename back into the list, so the
-  /// row keeps matching the item after the editor closes.
-  Future<void> _editSpawnedItem(int index) async {
-    final updated = await widget.onEditItem(_spawnedItems[index]);
-    if (!mounted || updated == null) {
-      return;
-    }
-    setState(() {
-      final next = List<ItemDefinition>.from(_spawnedItems);
-      next[index] = updated;
-      _spawnedItems = next;
-    });
+  /// Read-only list of what has been spawned, shown beside the group sidebar.
+  Widget _buildSpawnedPane() {
+    final items = widget.spawnedSoFar;
+    final selectedCount = _selectedVariantIds.length;
+    final allSelected = items.isNotEmpty && selectedCount == items.length;
+    return _paneShell(
+      title: 'Spawned variants',
+      caption: selectedCount == 0
+          ? 'Tick the ones to file into a ${_fileTarget == _FileTarget.group ? 'group' : 'set'}.'
+          : '$selectedCount of ${items.length} selected.',
+      headerAction: items.isEmpty
+          ? null
+          : TextButton(
+              onPressed: () => setState(() {
+                _error = null;
+                if (allSelected) {
+                  _selectedVariantIds.clear();
+                } else {
+                  _selectedVariantIds
+                    ..clear()
+                    ..addAll(items.map((item) => item.id));
+                }
+              }),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accent,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(allSelected ? 'Clear' : 'Select all'),
+            ),
+      child: ListView.separated(
+        padding: const EdgeInsets.all(12),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          final label = item.displayName.trim().isEmpty
+              ? item.name
+              : item.displayName;
+          final selected = _selectedVariantIds.contains(item.id);
+          final filedGroup = _filedGroupByItemId[item.id];
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() {
+                _error = null;
+                if (!_selectedVariantIds.remove(item.id)) {
+                  _selectedVariantIds.add(item.id);
+                }
+              }),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              child: Ink(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? SoftErpTheme.accentSoft
+                      : SoftErpTheme.cardSurface,
+                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                  border: Border.all(
+                    color: selected
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      selected
+                          ? Icons.check_box_rounded
+                          : Icons.check_box_outline_blank_rounded,
+                      size: 18,
+                      color: selected
+                          ? SoftErpTheme.accent
+                          : SoftErpTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        label,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: selected
+                              ? SoftErpTheme.accentDeeper
+                              : SoftErpTheme.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (filedGroup != null) ...[
+                      const SizedBox(width: 8),
+                      SoftStatusPill(
+                        label: filedGroup,
+                        background: SoftErpTheme.successBg,
+                        textColor: SoftErpTheme.successText,
+                      ),
+                    ],
+                    const SizedBox(width: 6),
+                    IconButton(
+                      tooltip: 'Delete this variant',
+                      onPressed: widget.busy
+                          ? null
+                          : () => widget.onDeleteVariant(item),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      color: SoftErpTheme.dangerText,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 30,
+                        height: 30,
+                      ),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   // --- combination-group sidebar -------------------------------------------
 
   Future<void> _assignToGroup() async {
+    if (_selectedVariantIds.isEmpty) {
+      setState(
+        () => _error = 'Tick at least one variant to file into a group.',
+      );
+      return;
+    }
     final choice = _createNewGroup
         ? _CombinationGroupChoice.create(
             newName: _groupNameController.text.trim(),
             newDescription: _groupDescriptionController.text.trim(),
+            target: _fileTarget,
           )
         : (_selectedCombinationGroupId == null
               ? null
-              : _CombinationGroupChoice.existing(_selectedCombinationGroupId!));
+              : _CombinationGroupChoice.existing(
+                  _selectedCombinationGroupId!,
+                  _fileTarget,
+                ));
     if (choice == null) {
-      setState(() => _error = 'Select a combination group, or skip this step.');
+      setState(
+        () => _error =
+            'Select a ${_fileTarget == _FileTarget.group ? 'combination group' : 'set'}, '
+            'or skip this step.',
+      );
       return;
     }
     if (choice.isCreateNew && choice.newName.isEmpty) {
       setState(
-        () => _error = 'Enter a name for the new combination group.',
+        () => _error = 'Enter a name for the new ${choice.targetNoun}.',
       );
       return;
     }
+
+    // Resolve the label before the call: creating a new group changes what the
+    // provider can tell us afterwards.
+    final groupLabel = choice.isCreateNew
+        ? choice.newName
+        : (choice.target == _FileTarget.group
+              ? (context
+                        .read<GroupsProvider>()
+                        .findById(choice.existingGroupId)
+                        ?.name ??
+                    'combination group')
+              : (context
+                        .read<InventoryProvider>()
+                        .sets
+                        .where((set) => set.id == choice.existingGroupId)
+                        .firstOrNull
+                        ?.name ??
+                    'set'));
+    final filed = _selectedVariantIds.toList(growable: false);
 
     setState(() {
       _error = null;
       _isAssigning = true;
     });
-    final failure = await widget.onAssignToGroup(
-      _spawnedItems.map((item) => item.id).toList(growable: false),
-      choice,
-    );
+    final failure = await widget.onAssignToGroup(filed, choice);
     if (!mounted) return;
     setState(() {
       _isAssigning = false;
@@ -6489,113 +7833,90 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
         _error = failure;
         return;
       }
-      _assignedGroupName = choice.isCreateNew
-          ? choice.newName
-          : context
-                    .read<GroupsProvider>()
-                    .findById(choice.existingGroupId)
-                    ?.name ??
-                'the combination group';
-      _phase = _SpawnPhase.done;
+      for (final id in filed) {
+        _filedGroupByItemId[id] = groupLabel;
+      }
+      // Clear the filed set so the next subset can be picked straight away —
+      // the step stays put rather than advancing, because filing several
+      // subsets into several groups is the whole point of selecting.
+      _selectedVariantIds.removeAll(filed);
+      _createNewGroup = false;
+      _selectedCombinationGroupId = null;
+      _groupNameController.clear();
+      _groupDescriptionController.clear();
     });
   }
 
   void _skipGroupStep() {
-    setState(() {
-      _error = null;
-      _phase = _SpawnPhase.done;
-    });
+    setState(() => _error = null);
+    widget.onGroupStepDone();
   }
 
   // --- build ---------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    final building = _phase == _SpawnPhase.building;
-    return ErpFormScaffold(
-      title: 'Variation Creation',
-      subtitle: switch (_phase) {
-        _SpawnPhase.building =>
-          'Pick the values each property should contribute, generate every '
-              'combination, then spawn them as their own items.',
-        _SpawnPhase.chooseGroup =>
-          'Your variants exist. File them into a combination group so they '
-              'stay together across orders and inventory.',
-        _SpawnPhase.done =>
-          'Your variants are basic items — each one can now carry its own '
-              'photo, files, pipeline and sample data.',
-      },
-      bodyScrollable: false,
-      bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-      eyebrow: widget.itemName.trim().isEmpty
-          ? null
-          : SoftStatusPill(label: widget.itemName.trim()),
-      errorBanner: _error == null
-          ? null
-          : ErpFormMessageBanner(message: _error!),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final stacked = constraints.maxWidth < 720;
-          final panes = building
-              ? <Widget>[_buildPickerPane(), _buildResultsPane()]
-              : <Widget>[_buildSpawnedPane(), _buildSidebar()];
-          if (stacked) {
-            return Column(
-              children: [
-                Expanded(child: panes[0]),
-                const SizedBox(height: 14),
-                Expanded(child: panes[1]),
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(flex: building ? 5 : 6, child: panes[0]),
-              const SizedBox(width: 16),
-              // Post-spawn the second pane is a true sidebar: a fixed, narrower
-              // rail beside the variants rather than an equal half.
-              building
-                  ? Expanded(flex: 4, child: panes[1])
-                  : SizedBox(width: 320, child: panes[1]),
-            ],
-          );
-        },
-      ),
-      footer: switch (_phase) {
-        _SpawnPhase.building => _buildBuildingFooter(),
-        _SpawnPhase.chooseGroup => _buildGroupFooter(),
-        _SpawnPhase.done => _buildDoneFooter(),
-      },
+    final building = !widget.showGroupStep;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_error != null) ...[
+          ErpFormMessageBanner(message: _error!),
+          const SizedBox(height: 12),
+        ],
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 640;
+              final panes = building
+                  ? <Widget>[_buildPickerPane(), _buildResultsPane()]
+                  : <Widget>[_buildSpawnedPane(), _buildSidebar()];
+              if (stacked) {
+                return Column(
+                  children: [
+                    Expanded(child: panes[0]),
+                    const SizedBox(height: 12),
+                    Expanded(child: panes[1]),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(flex: building ? 5 : 6, child: panes[0]),
+                  const SizedBox(width: 14),
+                  building
+                      ? Expanded(flex: 4, child: panes[1])
+                      : SizedBox(width: 300, child: panes[1]),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        building ? _buildBuildingActions() : _buildGroupActions(),
+      ],
     );
   }
 
-  Widget _buildBuildingFooter() {
+  Widget _buildBuildingActions() {
     final variantCount = _createdCombinations.length;
     return Row(
       children: [
         Expanded(
           child: Text(
             variantCount == 0
-                ? 'No variants generated yet.'
-                : '$variantCount variant${variantCount == 1 ? '' : 's'} ready to spawn.',
+                ? 'Generate a variant from the values you picked.'
+                : '$variantCount combination${variantCount == 1 ? '' : 's'} ready to spawn.',
             style: const TextStyle(
               color: SoftErpTheme.textSecondary,
-              fontSize: 13,
+              fontSize: 12.5,
               fontWeight: FontWeight.w600,
             ),
           ),
         ),
         AppButton(
-          label: 'Cancel',
-          variant: AppButtonVariant.secondary,
-          onPressed: _isSpawning ? null : () => Navigator.of(context).pop(),
-        ),
-        const SizedBox(width: 12),
-        AppButton(
-          label: variantCount == 0
-              ? 'Spawn Variants'
-              : 'Spawn $variantCount Variant${variantCount == 1 ? '' : 's'}',
+          label: 'Spawn ${variantCount == 0 ? '' : '$variantCount '}Variant${variantCount == 1 ? '' : 's'}',
           icon: Icons.auto_awesome_rounded,
           isLoading: _isSpawning,
           onPressed: variantCount == 0 || _isSpawning ? null : _spawn,
@@ -6604,160 +7925,227 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
     );
   }
 
-  Widget _buildGroupFooter() {
+  /// The label has to say what pressing it does, because creating a group or a
+  /// set on the fly has no separate Save — the name field plus this button IS
+  /// the create. Naming it "Add N to set" left the typed name looking unsaved.
+  String get _primaryFileLabel {
+    final selected = _selectedVariantIds.length;
+    final noun = _fileTarget == _FileTarget.group ? 'group' : 'set';
+    if (_createNewGroup) {
+      final name = _groupNameController.text.trim();
+      final quoted = name.isEmpty ? 'new $noun' : '"$name"';
+      return selected == 0
+          ? 'Create $quoted'
+          : 'Create $quoted with $selected';
+    }
+    return selected == 0 ? 'Add to $noun' : 'Add $selected to $noun';
+  }
+
+  String get _fileHint {
+    final selected = _selectedVariantIds.length;
+    final filed = _filedGroupByItemId.length;
+    final noun = _fileTarget == _FileTarget.group ? 'group' : 'set';
+    if (_createNewGroup) {
+      if (_groupNameController.text.trim().isEmpty) {
+        return 'Name the new $noun to create it.';
+      }
+      if (selected == 0) {
+        return 'Tick at least one variant — a $noun cannot be created empty.';
+      }
+      return 'Creates the $noun and puts $selected variant'
+          '${selected == 1 ? '' : 's'} in it.';
+    }
+    if (filed > 0) {
+      return '$filed filed · $selected still selected.';
+    }
+    return '$selected of ${widget.spawnedSoFar.length} selected.';
+  }
+
+  Widget _buildGroupActions() {
+    final selected = _selectedVariantIds.length;
+    final filed = _filedGroupByItemId.length;
+    final canFile =
+        selected > 0 &&
+        (!_createNewGroup || _groupNameController.text.trim().isNotEmpty);
     return Row(
       children: [
         Expanded(
           child: Text(
-            '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} spawned.',
-            style: const TextStyle(
-              color: SoftErpTheme.successText,
-              fontSize: 13,
+            _fileHint,
+            style: TextStyle(
+              color: filed > 0 && !_createNewGroup
+                  ? SoftErpTheme.successText
+                  : SoftErpTheme.textSecondary,
+              fontSize: 12.5,
               fontWeight: FontWeight.w700,
             ),
           ),
         ),
         AppButton(
-          label: 'Skip for now',
+          label: filed == 0 ? 'Skip for now' : 'Continue',
           variant: AppButtonVariant.secondary,
           onPressed: _isAssigning ? null : _skipGroupStep,
         ),
         const SizedBox(width: 12),
         AppButton(
-          label: 'Add to group',
-          icon: Icons.playlist_add_rounded,
+          label: _primaryFileLabel,
+          icon: _createNewGroup
+              ? Icons.add_rounded
+              : Icons.playlist_add_rounded,
           isLoading: _isAssigning,
-          onPressed: _isAssigning ? null : _assignToGroup,
+          onPressed: _isAssigning || !canFile ? null : _assignToGroup,
         ),
       ],
     );
   }
 
-  Widget _buildDoneFooter() {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            _assignedGroupName == null
-                ? '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} spawned.'
-                : '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} added to $_assignedGroupName.',
-            style: const TextStyle(
-              color: SoftErpTheme.successText,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
+  Widget _buildSidebar() => _buildGroupSidebar();
+
+  /// Items already in a combination group. No fetch needed — every item
+  /// carries the combination groups it belongs to.
+  List<Widget> _groupMembers(int groupId) {
+    return context
+        .watch<ItemsProvider>()
+        .items
+        .where((item) => item.combinationGroupIds.contains(groupId))
+        .map(
+          (item) => _MemberRow(
+            label: item.displayName.trim().isEmpty
+                ? item.name
+                : item.displayName,
+            isVariant: item.isBasicItem,
           ),
-        ),
-        AppButton(
-          label: 'Done',
-          icon: Icons.check_rounded,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ],
-    );
+        )
+        .toList(growable: false);
   }
 
-  // --- post-spawn: the variants and the sidebar ----------------------------
-
-  Widget _buildSpawnedPane() {
-    final canEdit = _phase == _SpawnPhase.done;
-    return _paneShell(
-      title: 'Spawned variants',
-      caption: canEdit
-          ? 'Open one to add its photo, files, pipeline or sample data.'
-          : 'These items now exist in the catalogue.',
-      child: ListView.separated(
-        padding: const EdgeInsets.all(12),
-        itemCount: _spawnedItems.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, index) {
-          final item = _spawnedItems[index];
-          final label = item.displayName.trim().isEmpty
-              ? item.name
-              : item.displayName;
-          return Container(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            decoration: BoxDecoration(
-              color: SoftErpTheme.cardSurface,
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-              border: Border.all(color: SoftErpTheme.border),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  size: 18,
-                  color: SoftErpTheme.successText,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: SoftErpTheme.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                if (canEdit)
-                  TextButton.icon(
-                    onPressed: () => _editSpawnedItem(index),
-                    icon: const Icon(Icons.edit_outlined, size: 15),
-                    label: const Text('Edit'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: SoftErpTheme.accent,
-                      textStyle: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSidebar() {
-    return _phase == _SpawnPhase.chooseGroup
-        ? _buildGroupSidebar()
-        : _buildBasicItemSidebar();
+  /// Lines already in a set. The line carries its own name, but the item is
+  /// looked up so a variant can be coloured as one.
+  List<Widget> _setMembers(InventorySetDefinition set) {
+    final items = context.watch<ItemsProvider>().items;
+    return set.lines.map((line) {
+      final item = items.where((entry) => entry.id == line.itemId).firstOrNull;
+      final label = line.itemDisplayName.trim().isNotEmpty
+          ? line.itemDisplayName
+          : (line.itemName.trim().isNotEmpty
+                ? line.itemName
+                : 'Item #${line.itemId}');
+      return _MemberRow(
+        label: label,
+        isVariant: item?.isBasicItem ?? false,
+        quantity: line.quantity,
+      );
+    }).toList(growable: false);
   }
 
   Widget _buildGroupSidebar() {
+    final isGroup = _fileTarget == _FileTarget.group;
     final combinationGroups = context.watch<GroupsProvider>().combinationGroups;
+    final sets = context.watch<InventoryProvider>().sets;
+    final options = isGroup
+        ? [
+            for (final group in combinationGroups)
+              (group.id, group.name, group.description.trim()),
+          ]
+        : [
+            for (final set in sets)
+              (
+                set.id,
+                set.name,
+                '${set.lines.length} line${set.lines.length == 1 ? '' : 's'}',
+              ),
+          ];
+
     return _paneShell(
-      title: 'Combination group',
-      caption: 'Keeps this variant set together.',
+      title: 'File into',
+      caption: _createNewGroup
+          ? 'Names it, then creates it with the ticked variants.'
+          : 'Adds the ticked variants.',
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          for (final group in combinationGroups)
+          // A variant can belong to any number of groups AND sets, so this
+          // picks which kind this round is filing into, not an either/or.
+          Row(
+            children: [
+              Expanded(
+                child: _TargetTab(
+                  label: 'Group',
+                  icon: Icons.workspaces_outline,
+                  selected: isGroup,
+                  onTap: () => setState(() {
+                    _error = null;
+                    _fileTarget = _FileTarget.group;
+                    _selectedCombinationGroupId = null;
+                    _createNewGroup = combinationGroups.isEmpty;
+                  }),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _TargetTab(
+                  label: 'Set',
+                  icon: Icons.inventory_2_outlined,
+                  selected: !isGroup,
+                  onTap: () => setState(() {
+                    _error = null;
+                    _fileTarget = _FileTarget.set;
+                    _selectedCombinationGroupId = null;
+                    _createNewGroup = sets.isEmpty;
+                  }),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+            child: Text(
+              isGroup
+                  ? 'A combination group keeps a variant set together across '
+                        'orders and inventory.'
+                  : 'A set bundles variants as quantity lines — a kit. The '
+                        'same variant can sit in several sets.',
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 11,
+                height: 1.35,
+              ),
+            ),
+          ),
+          if (options.isNotEmpty) const _EntityKindLegend(),
+          for (final (id, name, subtitle) in options)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _SidebarChoiceTile(
-                label: group.name,
-                subtitle: group.description.trim().isEmpty
-                    ? null
-                    : group.description,
-                selected:
-                    !_createNewGroup && _selectedCombinationGroupId == group.id,
+                label: name,
+                subtitle: subtitle.isEmpty ? null : subtitle,
+                selected: !_createNewGroup && _selectedCombinationGroupId == id,
+                expanded: _expandedDestinations.contains(
+                  '${isGroup ? 'group' : 'set'}:$id',
+                ),
+                onToggleExpanded: () => setState(() {
+                  final key = '${isGroup ? 'group' : 'set'}:$id';
+                  if (!_expandedDestinations.remove(key)) {
+                    _expandedDestinations.add(key);
+                  }
+                }),
+                members: isGroup
+                    ? _groupMembers(id)
+                    : _setMembers(sets.firstWhere((entry) => entry.id == id)),
                 onTap: () => setState(() {
                   _error = null;
                   _createNewGroup = false;
-                  _selectedCombinationGroupId = group.id;
+                  _selectedCombinationGroupId = id;
                 }),
               ),
             ),
           _SidebarChoiceTile(
-            label: 'Create a new group',
-            subtitle: combinationGroups.isEmpty
-                ? 'No combination groups exist yet.'
+            label: isGroup ? 'Create a new group' : 'Create a new set',
+            subtitle: options.isEmpty
+                ? (isGroup
+                      ? 'No combination groups exist yet.'
+                      : 'No sets exist yet.')
                 : null,
             icon: Icons.add_rounded,
             selected: _createNewGroup,
@@ -6771,116 +8159,44 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
             const SizedBox(height: 12),
             _sidebarField(
               controller: _groupNameController,
-              label: 'Group name',
-              hint: 'e.g. Brass Sheet variants',
+              label: isGroup ? 'Group name' : 'Set name',
+              hint: isGroup ? 'e.g. Brass Sheet variants' : 'e.g. Starter kit',
             ),
-            const SizedBox(height: 10),
-            _sidebarField(
-              controller: _groupDescriptionController,
-              label: 'Description',
-              hint: 'Optional',
-              maxLines: 2,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// The closing step: says plainly what a spawned variant can carry, because
-  /// the trimmed basic-item editor is otherwise easy to never discover.
-  Widget _buildBasicItemSidebar() {
-    const editable = <(IconData, String, String?)>[
-      (Icons.image_outlined, 'Item photo', null),
-      (Icons.view_in_ar_outlined, 'CAD file', null),
-      (Icons.attach_file_rounded, 'Additional files', null),
-      (
-        Icons.account_tree_outlined,
-        'Default pipeline',
-        'Starts as the base item\'s, but a variant can be made on its own route.',
-      ),
-      (
-        Icons.science_outlined,
-        'Sample data',
-        'This variant\'s own trial run, not the pipeline\'s.',
-      ),
-    ];
-    return _paneShell(
-      title: 'What you can edit',
-      caption: 'Per variant, from its Edit button.',
-      child: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: SoftErpTheme.accentSurface,
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-              border: Border.all(
-                color: SoftErpTheme.accent.withValues(alpha: 0.25),
-              ),
-            ),
-            child: const Text(
-              'These are basic items. They inherit their group, unit and name '
-              'format from the base item, so their editor only asks for what '
-              'is genuinely their own:',
-              style: TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 12.5,
-                height: 1.45,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          for (final (icon, label, note) in editable)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: Icon(icon, size: 16, color: SoftErpTheme.accent),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          label,
-                          style: const TextStyle(
-                            color: SoftErpTheme.textPrimary,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (note != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            note,
-                            style: const TextStyle(
-                              color: SoftErpTheme.textSecondary,
-                              fontSize: 11,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ],
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 13,
+                  color: SoftErpTheme.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    isGroup
+                        ? 'The group is created when you press Create below.'
+                        : 'The set is created when you press Create below. It '
+                              'needs at least one ticked variant.',
+                    style: const TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 11,
+                      height: 1.35,
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+            if (isGroup) ...[
+              const SizedBox(height: 10),
+              _sidebarField(
+                controller: _groupDescriptionController,
+                label: 'Description',
+                hint: 'Optional',
+                maxLines: 2,
               ),
-            ),
-          const SizedBox(height: 4),
-          const Text(
-            'You can come back to any of this later from the items list.',
-            style: TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 11.5,
-              height: 1.4,
-            ),
-          ),
+            ],
+          ],
         ],
       ),
     );
@@ -6895,6 +8211,8 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      // Rebuilds so the primary button's label and enabled state track the
+      // name as it is typed.
       onChanged: (_) => setState(() => _error = null),
       decoration: InputDecoration(
         labelText: label,
@@ -6979,12 +8297,11 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
 
   Widget _buildPickerPane() {
     final editing = _isEditingCard;
-    final pending = _pendingCombinationCount;
     return _paneShell(
       title: editing ? 'Editing variant #${_selectedIndex! + 1}' : 'Choose values',
       caption: editing
           ? 'Picks replace that variant\'s value for the property.'
-          : 'Every selected value is crossed with the others.',
+          : 'One value from each property. Together they make one variant.',
       headerAction: editing
           ? TextButton.icon(
               onPressed: _deselectCard,
@@ -7023,16 +8340,14 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   AppButton(
-                    label: pending <= 1
-                        ? 'Generate Combinations'
-                        : 'Generate $pending Combinations',
+                    label: 'Generate Variant',
                     icon: Icons.grid_view_rounded,
                     onPressed: _hasAnySelection ? _generateCombinations : null,
                   ),
                   if (!_hasAnySelection) ...[
                     const SizedBox(height: 8),
                     const Text(
-                      'Select at least one value to continue.',
+                      'Pick a value to continue.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: SoftErpTheme.textSecondary,
@@ -7050,16 +8365,17 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
   }
 
   Widget _buildPropertyCard(_NodeDraft property) {
-    final selectedCount = _selected[property]!.length;
     final values = _valuesOf(property);
     final isNumeric = property.isNumericProperty;
+    // A property is either answered or it isn't — it holds one value now.
+    final hasPick = (_selected[property] ??= <_VariantOption>[]).isNotEmpty;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
         color: SoftErpTheme.cardSurface,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
         border: Border.all(
-          color: selectedCount > 0
+          color: hasPick
               ? SoftErpTheme.accent.withValues(alpha: 0.35)
               : SoftErpTheme.border,
         ),
@@ -7089,26 +8405,6 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                   onTap: null,
                 ),
               ],
-              if (!isNumeric && values.length > 1 && !_isEditingCard) ...[
-                const SizedBox(width: 4),
-                TextButton(
-                  onPressed: () => _selectAllValues(property),
-                  style: TextButton.styleFrom(
-                    foregroundColor: SoftErpTheme.accent,
-                    textStyle: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: Text(
-                    selectedCount == values.length ? 'Clear' : 'All',
-                  ),
-                ),
-              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -7126,7 +8422,7 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                     label: value.nameController.text.trim().isEmpty
                         ? 'Unnamed Value'
                         : value.nameController.text.trim(),
-                    selected: _selected[property]!.contains(
+                    selected: (_selected[property] ??= <_VariantOption>[]).contains(
                       _VariantOption.value(property, value),
                     ),
                     onTap: () => _toggleOption(
@@ -7159,7 +8455,7 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
   /// should become variants. Each accepted number becomes a removable chip.
   Widget _buildNumericPicker(_NodeDraft property) {
     final controller = _numberControllers[property]!;
-    final chosen = _selected[property]!;
+    final chosen = (_selected[property] ??= <_VariantOption>[]);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -7387,6 +8683,170 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
   }
 }
 
+/// One member inside an expanded group or set: its name, colour-coded by
+/// whether it is a base item or a spawned variant.
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({
+    required this.label,
+    required this.isVariant,
+    this.quantity,
+  });
+
+  final String label;
+  final bool isVariant;
+  final int? quantity;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = isVariant ? SoftErpTheme.entityVariant : SoftErpTheme.entityItem;
+    final bg = isVariant
+        ? SoftErpTheme.entityVariantBg
+        : SoftErpTheme.entityItemBg;
+    final border = isVariant
+        ? SoftErpTheme.entityVariantBorder
+        : SoftErpTheme.entityItemBorder;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (quantity != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                '×$quantity',
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Legend for the two entity colours, so the dots are not a private code.
+class _EntityKindLegend extends StatelessWidget {
+  const _EntityKindLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget dot(Color color, String label) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, left: 2),
+      child: Row(
+        children: [
+          dot(SoftErpTheme.entityItem, 'Item'),
+          const SizedBox(width: 12),
+          dot(SoftErpTheme.entityVariant, 'Variant'),
+        ],
+      ),
+    );
+  }
+}
+
+/// Group / Set switch at the top of the filing sidebar.
+class _TargetTab extends StatelessWidget {
+  const _TargetTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected
+                ? SoftErpTheme.accent
+                : SoftErpTheme.cardSurfaceAlt,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? Colors.white : SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : SoftErpTheme.textPrimary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A full-width selectable row in the post-spawn sidebar.
 class _SidebarChoiceTile extends StatelessWidget {
   const _SidebarChoiceTile({
@@ -7395,6 +8855,9 @@ class _SidebarChoiceTile extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.icon,
+    this.members,
+    this.expanded = false,
+    this.onToggleExpanded,
   });
 
   final String label;
@@ -7402,6 +8865,12 @@ class _SidebarChoiceTile extends StatelessWidget {
   final IconData? icon;
   final bool selected;
   final VoidCallback onTap;
+
+  /// What is already inside, revealed by the chevron. Null means the tile has
+  /// nothing to disclose (the "create new" row).
+  final List<Widget>? members;
+  final bool expanded;
+  final VoidCallback? onToggleExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -7421,7 +8890,10 @@ class _SidebarChoiceTile extends StatelessWidget {
               color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
             ),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Row(
             children: [
               Icon(
                 icon ??
@@ -7464,7 +8936,42 @@ class _SidebarChoiceTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (members != null)
+                InkWell(
+                  onTap: onToggleExpanded,
+                  borderRadius: BorderRadius.circular(999),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 160),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
             ],
+          ),
+          if (members != null && expanded) ...[
+            const SizedBox(height: 8),
+            const Divider(height: 1, color: SoftErpTheme.border),
+            const SizedBox(height: 8),
+            if (members!.isEmpty)
+              const Text(
+                'Empty.',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                ),
+              )
+            else
+              ...members!,
+          ],
+          ],
           ),
         ),
       ),
@@ -7543,8 +9050,13 @@ class _SelectableChip extends StatelessWidget {
 /// Result of the "Add variants to a combination group?" follow-up dialog
 /// (Enhancement 2.2). `null` (not an instance of this class) means the user
 /// skipped.
+/// Where the ticked variants get filed. A combination group is a flat set of
+/// items; an inventory set is a bundle of (item, variation, quantity) lines —
+/// and a variant may belong to any number of either.
+enum _FileTarget { group, set }
+
 class _CombinationGroupChoice {
-  const _CombinationGroupChoice.existing(this.existingGroupId)
+  const _CombinationGroupChoice.existing(this.existingGroupId, this.target)
     : isCreateNew = false,
       newName = '',
       newDescription = '';
@@ -7552,6 +9064,7 @@ class _CombinationGroupChoice {
   const _CombinationGroupChoice.create({
     required this.newName,
     required this.newDescription,
+    required this.target,
   }) : isCreateNew = true,
        existingGroupId = null;
 
@@ -7559,6 +9072,9 @@ class _CombinationGroupChoice {
   final int? existingGroupId;
   final String newName;
   final String newDescription;
+  final _FileTarget target;
+
+  String get targetNoun => target == _FileTarget.group ? 'group' : 'set';
 }
 
 /// The inclusive bounds a Numeric variation property accepts. Either side may
@@ -7874,6 +9390,1494 @@ class _NumericRangePill extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+
+/// The steps of the item-creation workflow. [group] collapses out of the list
+/// when the combination-group feature flag is off, so the stepper never shows a
+/// step the user cannot reach.
+enum _WorkflowStep { details, variations, group, editVariants }
+
+extension _WorkflowStepX on _WorkflowStep {
+  String get label => switch (this) {
+    _WorkflowStep.details => 'Item',
+    _WorkflowStep.variations => 'Variations',
+    _WorkflowStep.group => 'Group',
+    _WorkflowStep.editVariants => 'Edit',
+  };
+}
+
+/// One window for the whole item-creation flow: define the item, build and
+/// spawn its variants, file them into a combination group, then fill in each
+/// spawned basic item — with the form collapsing to a context rail on the left
+/// instead of being buried under a stack of popups.
+class _ItemWorkflowWindow extends StatefulWidget {
+  const _ItemWorkflowWindow({
+    this.item,
+    this.initialName = '',
+    this.initialGroupId,
+    this.onCreatePipeline,
+    this.startAtVariations = false,
+  });
+
+  final ItemDefinition? item;
+  final String initialName;
+  final int? initialGroupId;
+  final Future<String?> Function()? onCreatePipeline;
+
+  /// Enter straight on the variations step, for the hand-off from the plain
+  /// editor's "Create Variant" button on an already-saved item.
+  final bool startAtVariations;
+
+  @override
+  State<_ItemWorkflowWindow> createState() => _ItemWorkflowWindowState();
+}
+
+class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
+    with SingleTickerProviderStateMixin {
+  static const double _railWidth = 248;
+  static const double _gutter = 18;
+  static const Duration _slideDuration = Duration(milliseconds: 320);
+
+  final GlobalKey<_ItemEditorSheetState> _baseEditorKey =
+      GlobalKey<_ItemEditorSheetState>();
+  late final AnimationController _slide;
+  late final CurvedAnimation _slideCurve;
+
+  _WorkflowStep _step = _WorkflowStep.details;
+  _ItemEditorSummary? _summary;
+
+  /// The base item once saved. Steps 2+ are unreachable until this exists,
+  /// because a spawned variant needs a real baseItemId.
+  ItemDefinition? _savedItem;
+
+  /// Bumped whenever the variation tree may have changed while the user was
+  /// back on step 1, so the variation panel rebuilds against the current
+  /// properties instead of holding disposed _NodeDraft controllers.
+  int _treeGeneration = 0;
+  int _panelGeneration = 0;
+
+  /// Everything spawned in this session, across repeated rounds.
+  final List<ItemDefinition> _spawnedItems = <ItemDefinition>[];
+
+  /// Bumped once per spawn. The panel reseeds its tick set on a NEW ROUND —
+  /// keying that off the id list instead would make a delete (which rewrites
+  /// the list) look like a round and wipe the user's manual selection.
+  int _spawnRound = 0;
+
+  /// Ids from the most recent spawn only. The group step files THIS round, so
+  /// a second round can go to a different combination group instead of
+  /// silently re-filing everything spawned earlier.
+  List<int> _lastRoundIds = const <int>[];
+
+  /// The values each spawned variant was built from, so its name can be
+  /// rebuilt from their codes after the fact.
+  final Map<int, List<_VariantOption>> _comboByItemId =
+      <int, List<_VariantOption>>{};
+
+  /// Whether the spawned set is currently named from value codes.
+  bool _nameFromCodes = false;
+  bool _isRenaming = false;
+
+  /// Variants deleted in this window, so a stale cached set line for one is not
+  /// replayed back to the server.
+  final Set<int> _deletedItemIds = <int>{};
+
+  /// Variants left alone because their source values are unknown.
+  int _skippedRenames = 0;
+
+  /// Which spawned variant step 4 is editing.
+  int _editingVariantIndex = 0;
+
+  String? _error;
+  bool _isAdvancing = false;
+  bool _isSavingVariant = false;
+
+  /// The variant workflow stays out of the way until it is asked for. Creating
+  /// an item that has no variations is a plain form and a Save button; the
+  /// stepper, the Variations step and everything after it only appear once
+  /// "Create Variant" is pressed (or the dialog was opened straight into them).
+  bool _variantFlowOpened = false;
+
+  bool get _groupStepEnabled =>
+      FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+
+  List<_WorkflowStep> get _steps => <_WorkflowStep>[
+    _WorkflowStep.details,
+    _WorkflowStep.variations,
+    if (_groupStepEnabled) _WorkflowStep.group,
+    _WorkflowStep.editVariants,
+  ];
+
+  bool get _isDetails => _step == _WorkflowStep.details;
+
+  @override
+  void initState() {
+    super.initState();
+    _savedItem = widget.item;
+    _slide = AnimationController(vsync: this, duration: _slideDuration);
+    _slideCurve = CurvedAnimation(
+      parent: _slide,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
+    );
+    if (widget.startAtVariations && widget.item != null) {
+      _step = _WorkflowStep.variations;
+      _variantFlowOpened = true;
+      _slide.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _slideCurve.dispose();
+    _slide.dispose();
+    super.dispose();
+  }
+
+  // --- navigation ----------------------------------------------------------
+
+  Future<void> _goTo(_WorkflowStep next) async {
+    if (next == _step) return;
+    if (_step == _WorkflowStep.editVariants) {
+      if (!await _commitOpenVariant()) return;
+      if (!mounted) return;
+    }
+    setState(() {
+      _error = null;
+      // Leaving step 1 after touching the tree: the variation panel must be
+      // rebuilt rather than keep references into drafts step 1 may have
+      // disposed.
+      if (_step == _WorkflowStep.details && _panelGeneration != _treeGeneration) {
+        _panelGeneration = _treeGeneration;
+      }
+      _step = next;
+    });
+    if (next == _WorkflowStep.details) {
+      _slide.reverse();
+    } else {
+      _slide.forward();
+    }
+  }
+
+  /// Step 1 → step 2 is a real save: variants carry `baseItemId`, so the base
+  /// must exist on the server before any of them can be spawned.
+  Future<void> _saveAndContinue() async {
+    final editor = _baseEditorKey.currentState;
+    if (editor == null) return;
+    setState(() {
+      _error = null;
+      _isAdvancing = true;
+    });
+    final saved = await editor.submitFromHost();
+    if (!mounted) return;
+    setState(() => _isAdvancing = false);
+    if (saved == null) {
+      // The editor painted its own inline error; make sure the user is looking
+      // at the step that owns it.
+      _goTo(_WorkflowStep.details);
+      return;
+    }
+    setState(() => _savedItem = saved);
+    // Saving is the whole flow unless the user asked for variants. That holds
+    // even when the item has top-level properties — a property is a thing the
+    // item HAS, not a promise to spawn variants from it. Only Create Variant
+    // opens the workflow.
+    if (!_variantFlowOpened) {
+      // The editor has already toasted the result and cleared its dirty flag,
+      // so this closes cleanly.
+      await _close();
+      return;
+    }
+    if (editor.topLevelProperties.isEmpty) {
+      setState(
+        () => _error =
+            'Add at least one top-level property with values before building '
+            'variations.',
+      );
+      return;
+    }
+    _goTo(_WorkflowStep.variations);
+  }
+
+  /// "Create Variant" from the embedded editor: save what's on the form, then
+  /// open the variant workflow. Unlike a plain save, a top-level property is
+  /// required — there is nothing to build combinations from without one.
+  Future<void> _enterVariantFlow() async {
+    final editor = _baseEditorKey.currentState;
+    if (editor == null) return;
+    setState(() {
+      _error = null;
+      _isAdvancing = true;
+    });
+    final saved = await editor.submitFromHost();
+    if (!mounted) return;
+    setState(() => _isAdvancing = false);
+    if (saved == null) {
+      _goTo(_WorkflowStep.details);
+      return;
+    }
+    setState(() => _savedItem = saved);
+    if (editor.topLevelProperties.isEmpty) {
+      setState(
+        () => _error =
+            'Add at least one top-level property with values before building '
+            'variations.',
+      );
+      return;
+    }
+    setState(() => _variantFlowOpened = true);
+    _goTo(_WorkflowStep.variations);
+  }
+
+  /// Spawns through the base editor (which owns the field values), records the
+  /// result and advances the stepper.
+  Future<List<ItemDefinition>> _spawnVariants(
+    List<List<_VariantOption>> combinations,
+  ) async {
+    final editor = _baseEditorKey.currentState;
+    if (editor == null) return const <ItemDefinition>[];
+    final spawned = await editor.spawnVariants(combinations);
+    final combos = editor.lastSpawnCombos;
+    for (var i = 0; i < spawned.length && i < combos.length; i++) {
+      _comboByItemId[spawned[i].id] = combos[i];
+    }
+    if (!mounted) return spawned;
+    if (spawned.isEmpty) {
+      // The editor's own error banner lives on step 1, which is collapsed into
+      // the rail right now — repeat it where the user is looking.
+      setState(() {
+        _error =
+            editor.lastSpawnError ??
+            context.read<ItemsProvider>().errorMessage ??
+            'No variants were created.';
+      });
+      return spawned;
+    }
+    if (spawned.length < combinations.length) {
+      setState(() {
+        _error =
+            'Only ${spawned.length} of ${combinations.length} variants were '
+            'created. The rest were rejected — check for duplicate names.';
+      });
+    }
+    setState(() {
+      _spawnedItems.addAll(spawned);
+      _spawnRound++;
+      _lastRoundIds = spawned.map((item) => item.id).toList(growable: false);
+      _editingVariantIndex = _spawnedItems.length - spawned.length;
+      _error = null;
+    });
+    _goTo(_groupStepEnabled ? _WorkflowStep.group : _WorkflowStep.editVariants);
+    return spawned;
+  }
+
+  /// Every spawned value that has no Code, for the coverage readout.
+  List<_VariantOption> get _optionsMissingCode {
+    final seen = <String>{};
+    final missing = <_VariantOption>[];
+    for (final combo in _comboByItemId.values) {
+      for (final option in combo) {
+        if (option.typedNumber != null || option.code.isNotEmpty) continue;
+        if (seen.add(option.label)) missing.add(option);
+      }
+    }
+    return missing;
+  }
+
+  /// Rewrites every spawned variant's name from its source values — by code
+  /// when [useCodes], back to the value names when not. Values without a code
+  /// keep their name, so a partly-coded set still reads completely.
+  Future<void> _applyCodeNaming(bool useCodes) async {
+    final editor = _baseEditorKey.currentState;
+    if (editor == null || _spawnedItems.isEmpty) {
+      setState(() => _nameFromCodes = useCodes);
+      return;
+    }
+    setState(() {
+      _error = null;
+      _nameFromCodes = useCodes;
+      _isRenaming = true;
+    });
+
+    final itemsProvider = context.read<ItemsProvider>();
+    // Snapshot: the list is mutated inside the loop so each rename lands on
+    // screen as it completes rather than all at the end.
+    final targets = List<ItemDefinition>.from(_spawnedItems);
+    var failures = 0;
+    var skipped = 0;
+
+    for (final item in targets) {
+      // The snapshot can outlive a row: skip anything deleted since.
+      if (_deletedItemIds.contains(item.id)) continue;
+      final combo = _comboByItemId[item.id];
+      if (combo == null) {
+        // Spawned in an earlier session, so its values are unknown — leave the
+        // name alone rather than guessing at it.
+        skipped++;
+        continue;
+      }
+      final (_, displayName) = editor.variantNames(combo, useCodes: useCodes);
+      // Every field is round-tripped, not just the name. UpdateItemInput
+      // defaults the rest to empty and UpdateItemRequest.toJson emits them
+      // unconditionally — a sparse update here would strip the variant's
+      // photo, CAD file, attachments, machines and dies.
+      final saved = await itemsProvider.updateItem(
+        UpdateItemInput(
+          id: item.id,
+          baseItemId: item.baseItemId,
+          // Untouched: the codes toggle is a display-name concern.
+          name: item.name,
+          displayName: displayName,
+          alias: item.alias,
+          groupId: item.groupId,
+          unitId: item.unitId,
+          unitConversions: item.unitConversions
+              .map(
+                (conversion) => ItemUnitConversionInput(
+                  unitId: conversion.unitId,
+                  factorToPrimary: conversion.factorToPrimary,
+                ),
+              )
+              .toList(growable: false),
+          namingFormat: item.namingFormat,
+          variationTree: const <ItemVariationNodeInput>[],
+          defaultPipelineId: item.defaultPipelineId,
+          photoUrl: item.photoUrl,
+          cadFileKey: item.cadFileKey,
+          cadFileName: item.cadFileName,
+          attachments: item.attachments
+              .map(
+                (attachment) => ItemAttachmentInput(
+                  label: attachment.label,
+                  objectKey: attachment.objectKey,
+                  fileName: attachment.fileName,
+                ),
+              )
+              .toList(growable: false),
+          machineIds: item.machines
+              .map((machine) => machine.id)
+              .toList(growable: false),
+          dieIds: item.dies.map((die) => die.id).toList(growable: false),
+          developedForClientId: item.developedForClientId,
+          availableForPurchase: item.availableForPurchase,
+          penPaperBaseline: item.penPaperBaseline,
+        ),
+      );
+      if (!mounted) return;
+      if (saved == null) {
+        failures++;
+        continue;
+      }
+      _comboByItemId[saved.id] = combo;
+      // The open editor seeds its controllers once and has no
+      // didUpdateWidget, so it is told about the rename explicitly.
+      GlobalObjectKey<_ItemEditorSheetState>(
+        saved.id,
+      ).currentState?.adoptExternalUpdate(saved);
+      setState(() {
+        final index = _spawnedItems.indexWhere(
+          (candidate) => candidate.id == saved.id,
+        );
+        if (index != -1) _spawnedItems[index] = saved;
+      });
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isRenaming = false;
+      _skippedRenames = skipped;
+      if (failures > 0) {
+        _error =
+            '$failures variant${failures == 1 ? '' : 's'} could not be updated. '
+            'Their display names are unchanged.';
+      }
+    });
+  }
+
+  /// Deletes a spawned variant from the catalogue and drops it from the
+  /// window's state. The backend archives rather than hard-deletes, so this is
+  /// recoverable from the Action Center — the confirmation says so.
+  Future<bool> _deleteSpawnedVariant(ItemDefinition item) async {
+    final label = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Delete this variant?',
+      message:
+          '"$label" will be removed from the catalogue. You can restore it '
+          'later from the Action Center.',
+    );
+    if (!ok || !mounted) return false;
+
+    // Deliberately no autosave here. The open variant's editor is keyed by its
+    // own id, so removing a DIFFERENT row never unmounts it — and gating a
+    // confirmed delete on an unrelated variant's validation would cancel the
+    // delete while showing an error about the wrong item.
+    setState(() => _error = null);
+    final deleted = await context.read<ItemsProvider>().deleteItem(item.id);
+    if (!mounted) return false;
+    if (!deleted) {
+      setState(() {
+        _error =
+            context.read<ItemsProvider>().errorMessage ??
+            'Could not delete "$label". Another save may still be running — '
+            'try again in a moment.';
+      });
+      return false;
+    }
+    setState(() {
+      final removedIndex = _spawnedItems.indexWhere(
+        (candidate) => candidate.id == item.id,
+      );
+      _spawnedItems.removeWhere((candidate) => candidate.id == item.id);
+      _comboByItemId.remove(item.id);
+      _deletedItemIds.add(item.id);
+      _lastRoundIds = _lastRoundIds
+          .where((id) => id != item.id)
+          .toList(growable: false);
+      // Keep editing the same VARIANT, not the same slot: removing a row above
+      // it would otherwise silently swap which one step 4 is editing.
+      if (removedIndex != -1 && removedIndex < _editingVariantIndex) {
+        _editingVariantIndex--;
+      }
+      if (_editingVariantIndex >= _spawnedItems.length) {
+        _editingVariantIndex = _spawnedItems.isEmpty
+            ? 0
+            : _spawnedItems.length - 1;
+      }
+    });
+    // Step 4 has nothing left to show, and its pane would render empty.
+    if (_spawnedItems.isEmpty && _step == _WorkflowStep.editVariants) {
+      await _goTo(_WorkflowStep.variations);
+    }
+    return true;
+  }
+
+  /// Writes the open variant if it has unsaved edits. Called on every exit
+  /// from that variant — switching rows, stepping away, closing — so there is
+  /// no separate Save button to forget. Returns false if the save failed, so
+  /// the caller can stay put instead of navigating away from the error.
+  Future<bool> _commitOpenVariant() async {
+    if (_spawnedItems.isEmpty) return true;
+    final index = _editingVariantIndex.clamp(0, _spawnedItems.length - 1);
+    final item = _spawnedItems[index];
+    final editor =
+        GlobalObjectKey<_ItemEditorSheetState>(item.id).currentState;
+    if (editor == null || !editor.isDirty) {
+      return true;
+    }
+    setState(() {
+      _error = null;
+      _isSavingVariant = true;
+    });
+    final saved = await editor.submitFromHost();
+    if (!mounted) return false;
+    setState(() {
+      _isSavingVariant = false;
+      if (saved != null) {
+        _spawnedItems[index] = saved;
+      } else {
+        _error =
+            'Could not save "${item.displayName.trim().isEmpty ? item.name : item.displayName}". '
+            'Fix the highlighted fields and try again.';
+      }
+    });
+    return saved != null;
+  }
+
+  Future<void> _selectVariant(int index) async {
+    if (index == _editingVariantIndex) return;
+    if (!await _commitOpenVariant()) return;
+    if (!mounted) return;
+    setState(() => _editingVariantIndex = index);
+  }
+
+  Future<String?> _assignToGroup(
+    List<int> itemIds,
+    _CombinationGroupChoice choice,
+  ) async {
+    if (choice.target == _FileTarget.set) {
+      return _fileVariantsIntoSet(itemIds, choice);
+    }
+    final editor = _baseEditorKey.currentState;
+    if (editor == null) return 'The item form is no longer available.';
+    return editor.assignVariantsToCombinationGroup(itemIds, choice);
+  }
+
+  /// Adds the variants to an inventory set as quantity-1 lines. `saveSet`
+  /// replaces the whole line list, so an existing set is read, merged and
+  /// written back rather than overwritten. Spawned variants have no variation
+  /// tree, so they file with leaf 0 — which the border accepts precisely for
+  /// items that have no orderable leaves.
+  Future<String?> _fileVariantsIntoSet(
+    List<int> itemIds,
+    _CombinationGroupChoice choice,
+  ) async {
+    final inventoryProvider = context.read<InventoryProvider>();
+    final byId = {for (final item in _spawnedItems) item.id: item};
+
+    final lines = <SaveInventorySetLineInput>[];
+    final seen = <String>{};
+    void addLine(int itemId, int leafId, int quantity, String name,
+        String displayName) {
+      if (!seen.add('$itemId:$leafId')) return;
+      lines.add(
+        SaveInventorySetLineInput(
+          itemId: itemId,
+          variationLeafNodeId: leafId,
+          quantity: quantity,
+          position: lines.length,
+          itemName: name,
+          itemDisplayName: displayName,
+        ),
+      );
+    }
+
+    InventorySetDefinition? existing;
+    if (!choice.isCreateNew) {
+      existing = inventoryProvider.sets
+          .where((set) => set.id == choice.existingGroupId)
+          .firstOrNull;
+      if (existing == null) {
+        return 'That set is no longer available.';
+      }
+      for (final line in existing.lines) {
+        // The provider's set cache can predate a delete; replaying a line for a
+        // vanished item makes the border reject the whole save.
+        if (_deletedItemIds.contains(line.itemId)) continue;
+        addLine(
+          line.itemId,
+          line.variationLeafNodeId,
+          line.quantity,
+          line.itemName,
+          line.itemDisplayName,
+        );
+      }
+    }
+
+    for (final itemId in itemIds) {
+      final item = byId[itemId];
+      if (item == null) continue;
+      addLine(itemId, 0, 1, item.name, item.displayName);
+    }
+    if (lines.isEmpty) {
+      return 'Nothing to add to the set.';
+    }
+
+    await inventoryProvider.saveSet(
+      SaveInventorySetInput(
+        id: existing?.id,
+        name: choice.isCreateNew ? choice.newName : existing!.name,
+        lines: lines,
+      ),
+    );
+    return inventoryProvider.errorMessage;
+  }
+
+  void _onGroupStepDone() => _goTo(_WorkflowStep.editVariants);
+
+  Future<void> _close() async {
+    final dirty = _summary?.isDirty ?? false;
+    if (dirty) {
+      final leave = await showConfirmDialog(
+        context,
+        title: 'Leave without saving?',
+        message: _spawnedItems.isEmpty
+            ? 'Your unsaved changes to this item will be lost.'
+            : 'Your unsaved changes to this item will be lost. The '
+                  '${_spawnedItems.length} variant(s) you already spawned stay '
+                  'in the catalogue.',
+      );
+      if (!leave || !mounted) return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop(_savedItem);
+  }
+
+  // --- build ---------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _close();
+      },
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              _buildHeader(),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+                  child: _ItemsMessageBanner(message: _error!, isError: true),
+                ),
+              Expanded(child: _buildPanes()),
+              _buildFooter(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final steps = _steps;
+    final activeIndex = steps.indexOf(_step);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 18, 16, 14),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFBFBFB),
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.item == null ? 'Create Item' : 'Edit Item',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+                if (_variantFlowOpened) ...[
+                  const SizedBox(height: 12),
+                  _WorkflowStepper(
+                    steps: steps,
+                    activeIndex: activeIndex < 0 ? 0 : activeIndex,
+                    furthestReachable: _furthestReachableIndex(steps),
+                    onTap: (index) => _goTo(steps[index]),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Close',
+            onPressed: _close,
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFF8FAFC),
+              foregroundColor: const Color(0xFF334155),
+              side: const BorderSide(color: Color(0xFFD9E2F2)),
+            ),
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _furthestReachableIndex(List<_WorkflowStep> steps) {
+    if (_savedItem == null) return 0;
+    if (_spawnedItems.isEmpty) return steps.indexOf(_WorkflowStep.variations);
+    return steps.length - 1;
+  }
+
+  /// The shrink-and-slide. The left column animates between the full width and
+  /// the rail width while the step pane slides in from beyond the right edge.
+  /// Each side is laid out at its OWN target width inside an OverflowBox and
+  /// clipped, so neither the form's column packing nor the pane's ListViews
+  /// ever get an intermediate width — which is what would throw RenderFlex
+  /// overflows mid-animation.
+  Widget _buildPanes() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final total = constraints.maxWidth;
+        // Below this the rail has no room; the form gets the window and the
+        // stepper alone carries the navigation.
+        final stacked = total < 720;
+        final leftTarget = stacked ? total : _railWidth;
+        final paneWidth = stacked
+            ? total
+            : (total - _railWidth - _gutter).clamp(320.0, total);
+
+        return AnimatedBuilder(
+          animation: _slideCurve,
+          builder: (context, _) {
+            final t = _slideCurve.value;
+            final leftWidth = total + (leftTarget - total) * t;
+            final paneLeft = total - (total - (stacked ? 0 : _railWidth + _gutter)) * t;
+            return Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: leftWidth,
+                  child: ClipRect(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // The form, always laid out at full width.
+                        IgnorePointer(
+                          ignoring: !_isDetails,
+                          child: Opacity(
+                            opacity: 1 - t,
+                            child: OverflowBox(
+                              alignment: Alignment.topLeft,
+                              minWidth: total,
+                              maxWidth: total,
+                              child: _buildDetailsPane(),
+                            ),
+                          ),
+                        ),
+                        // The rail, always laid out at rail width.
+                        if (t > 0 && !stacked)
+                          IgnorePointer(
+                            ignoring: _isDetails,
+                            child: Opacity(
+                              opacity: t,
+                              child: OverflowBox(
+                                alignment: Alignment.topLeft,
+                                minWidth: _railWidth,
+                                maxWidth: _railWidth,
+                                child: _buildRail(),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                    left: paneLeft,
+                    top: 0,
+                    bottom: 0,
+                    width: paneWidth,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        alignment: Alignment.topLeft,
+                        minWidth: paneWidth,
+                        maxWidth: paneWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 16, 20, 8),
+                          child: _buildStepPane(),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailsPane() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      child: _ItemEditorSheet(
+        key: _baseEditorKey,
+        item: widget.item,
+        initialName: widget.initialName,
+        initialGroupId: widget.initialGroupId,
+        onCreatePipeline: widget.onCreatePipeline,
+        embedded: true,
+        keyScope: '',
+        onCreateVariant: _isAdvancing ? null : _enterVariantFlow,
+        onRequestClose: _close,
+        onFinished: (result) {
+          if (result != null) setState(() => _savedItem = result);
+        },
+        onSummaryChanged: (summary) {
+          if (!mounted) return;
+          setState(() {
+            if (_summary?.propertyNames.join(' ') !=
+                summary.propertyNames.join(' ')) {
+              _treeGeneration++;
+            }
+            _summary = summary;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildRail() {
+    final summary = _summary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            (summary?.displayName ?? '').trim().isEmpty
+                ? 'Untitled item'
+                : summary!.displayName,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _railFact('Group', summary?.groupName ?? ''),
+          _railFact('Unit', summary?.unitLabel ?? ''),
+          _railFact(
+            'Properties',
+            summary == null || summary.propertyNames.isEmpty
+                ? '—'
+                : summary.propertyNames.join(', '),
+          ),
+          if (_spawnedItems.isNotEmpty)
+            _railFact('Spawned', '${_spawnedItems.length} variant(s)'),
+          const Spacer(),
+          if (summary?.isDirty == true)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Unsaved changes',
+                style: TextStyle(
+                  color: SoftErpTheme.warningText,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _goTo(_WorkflowStep.details),
+              icon: const Icon(Icons.chevron_left_rounded, size: 18),
+              label: const Text('Edit item'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accent,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _railFact(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value.trim().isEmpty ? '—' : value,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepPane() {
+    final onVariants = _step == _WorkflowStep.editVariants;
+    // Both panes stay mounted: swapping widget TYPE at this slot would unmount
+    // _VariationPanelState and silently discard every generated combination
+    // the moment the user stepped back to the form.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Offstage(offstage: onVariants, child: _buildVariationPane()),
+        if (_spawnedItems.isNotEmpty)
+          Offstage(offstage: !onVariants, child: _buildEditVariantsPane()),
+      ],
+    );
+  }
+
+  Widget _buildVariationPane() {
+    return _VariationPanel(
+          key: ValueKey<String>('variation-panel-$_panelGeneration'),
+          itemName: _summary?.displayName ?? '',
+          topLevelProperties:
+              _baseEditorKey.currentState?.topLevelProperties ??
+              const <_NodeDraft>[],
+          showGroupStep: _step == _WorkflowStep.group,
+          spawnedSoFar: _spawnedItems,
+          groupTargetIds: _lastRoundIds,
+          groupRound: _spawnRound,
+          onDeleteVariant: _deleteSpawnedVariant,
+          onSpawnItems: _spawnVariants,
+          onAssignToGroup: _assignToGroup,
+          onGroupStepDone: _onGroupStepDone,
+          busy: _isRenaming || _isSavingVariant,
+        );
+  }
+
+  Widget _buildEditVariantsPane() {
+    if (_spawnedItems.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No variants spawned yet. Go back to the Variations step to build '
+            'some.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: SoftErpTheme.textSecondary),
+          ),
+        ),
+      );
+    }
+    final index = _editingVariantIndex.clamp(0, _spawnedItems.length - 1);
+    final item = _spawnedItems[index];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildCodeNamingBar(),
+        const SizedBox(height: 12),
+        Expanded(child: _buildVariantEditorRow(index, item)),
+      ],
+    );
+  }
+
+  /// Renames the whole spawned set from their values' codes. Sits above the
+  /// list because it acts on all of them, not on the one being edited.
+  Widget _buildCodeNamingBar() {
+    final missing = _optionsMissingCode;
+    final unknown = _skippedRenames;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: _nameFromCodes
+            ? SoftErpTheme.accentSurface
+            : SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(
+          color: _nameFromCodes
+              ? SoftErpTheme.accent.withValues(alpha: 0.35)
+              : SoftErpTheme.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              InkWell(
+                onTap: _isRenaming
+                    ? null
+                    : () => _applyCodeNaming(!_nameFromCodes),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _nameFromCodes
+                            ? Icons.check_box_rounded
+                            : Icons.check_box_outline_blank_rounded,
+                        size: 19,
+                        color: _nameFromCodes
+                            ? SoftErpTheme.accent
+                            : SoftErpTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Display names from value codes',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _nameFromCodes
+                              ? SoftErpTheme.accentDeeper
+                              : SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (_isRenaming)
+                const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _isRenaming
+                ? 'Renaming variants…'
+                : !_nameFromCodes
+                ? 'Relabels every spawned variant from each value\'s Code — '
+                      'patti - 16A - MS instead of patti - 16 amp - mildsteel. '
+                      'Item names are left unchanged.'
+                : missing.isEmpty && unknown == 0
+                ? 'All values had a code. Every display name uses them.'
+                : [
+                    if (missing.isNotEmpty)
+                      '${missing.length} value${missing.length == 1 ? '' : 's'} '
+                          'have no code and kept their name '
+                          '(${missing.take(3).map((o) => o.label).join(', ')}'
+                          '${missing.length > 3 ? '…' : ''})',
+                    if (unknown > 0)
+                      '$unknown variant${unknown == 1 ? '' : 's'} from an '
+                          'earlier session were left alone',
+                  ].join(' · '),
+            style: TextStyle(
+              color: !_nameFromCodes
+                  ? SoftErpTheme.textSecondary
+                  : (missing.isEmpty && unknown == 0
+                        ? SoftErpTheme.successText
+                        : SoftErpTheme.warningText),
+              fontSize: 11.5,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVariantEditorRow(int index, ItemDefinition item) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 220,
+          child: _VariantPicker(
+            items: _spawnedItems,
+            selectedIndex: index,
+            onSelect: _selectVariant,
+            onDelete: _isRenaming || _isSavingVariant
+                ? null
+                : _deleteSpawnedVariant,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: SingleChildScrollView(
+            child: _ItemEditorSheet(
+              // A GlobalObjectKey: unique per variant so switching rows
+              // rebuilds the form, and reachable so the footer can save it.
+              key: GlobalObjectKey<_ItemEditorSheetState>(item.id),
+              item: item,
+              onCreatePipeline: widget.onCreatePipeline,
+              embedded: true,
+              keyScope: '-variant',
+              onRequestClose: () => _goTo(_WorkflowStep.variations),
+              onFinished: (result) {
+                if (result == null || !mounted) return;
+                setState(() => _spawnedItems[index] = result);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFooter() {
+    final steps = _steps;
+    final atFirst = _step == _WorkflowStep.details;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 14, 24, 16),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFBFBFB),
+        border: Border(top: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: Text(_footerHint(), style: _footerHintStyle)),
+          if (!atFirst) ...[
+            AppButton(
+              label: 'Back',
+              variant: AppButtonVariant.secondary,
+              onPressed: () {
+                final index = steps.indexOf(_step);
+                _goTo(steps[index <= 0 ? 0 : index - 1]);
+              },
+            ),
+            const SizedBox(width: 12),
+          ],
+          ..._primaryFooterActions(),
+        ],
+      ),
+    );
+  }
+
+  static const TextStyle _footerHintStyle = TextStyle(
+    color: SoftErpTheme.textSecondary,
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+  );
+
+  String _footerHint() {
+    switch (_step) {
+      case _WorkflowStep.details:
+        if (!_variantFlowOpened) {
+          return _summary?.isDirty == true
+              ? 'Unsaved changes.'
+              : 'Add variations with Create Variant, or just save the item.';
+        }
+        return _savedItem == null
+            ? 'Save the item to start building its variations.'
+            : (_summary?.isDirty == true ? 'Unsaved changes.' : 'Saved.');
+      case _WorkflowStep.variations:
+        return _spawnedItems.isEmpty
+            ? 'Pick one value per property, then spawn the variant.'
+            : '${_spawnedItems.length} variant(s) spawned so far.';
+      case _WorkflowStep.group:
+        return '${_spawnedItems.length} variant(s) spawned.';
+      case _WorkflowStep.editVariants:
+        if (_isSavingVariant) return 'Saving…';
+        final openEditor = _spawnedItems.isEmpty
+            ? null
+            : GlobalObjectKey<_ItemEditorSheetState>(
+                _spawnedItems[_editingVariantIndex.clamp(
+                  0,
+                  _spawnedItems.length - 1,
+                )].id,
+              ).currentState;
+        if (openEditor?.isDirty == true) {
+          return 'Unsaved edits — saved automatically when you move on.';
+        }
+        return '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} created.';
+    }
+  }
+
+  List<Widget> _primaryFooterActions() {
+    switch (_step) {
+      case _WorkflowStep.details:
+        return [
+          AppButton(
+            label: !_variantFlowOpened
+                ? 'Save Item'
+                : (_savedItem == null ? 'Save & Continue' : 'Save'),
+            isLoading: _isAdvancing,
+            onPressed: _isAdvancing ? null : _saveAndContinue,
+          ),
+        ];
+      case _WorkflowStep.variations:
+      case _WorkflowStep.group:
+        // The panel owns its own primary actions (Generate / Spawn / Add to
+        // group), rendered inside the pane so they sit next to what they act
+        // on.
+        return const [];
+      case _WorkflowStep.editVariants:
+        return [
+          AppButton(
+            label: 'Add more variations',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => _goTo(_WorkflowStep.variations),
+          ),
+          const SizedBox(width: 12),
+          AppButton(
+            label: 'Done',
+            icon: Icons.check_rounded,
+            isLoading: _isSavingVariant,
+            onPressed: _isSavingVariant
+                ? null
+                : () async {
+                    if (await _commitOpenVariant()) _close();
+                  },
+          ),
+        ];
+    }
+  }
+}
+
+/// The step chips in the window header. Steps ahead of what the flow has
+/// reached are shown but not tappable — the numbering stays honest instead of
+/// hiding steps that will appear later.
+class _WorkflowStepper extends StatelessWidget {
+  const _WorkflowStepper({
+    required this.steps,
+    required this.activeIndex,
+    required this.furthestReachable,
+    required this.onTap,
+  });
+
+  final List<_WorkflowStep> steps;
+  final int activeIndex;
+  final int furthestReachable;
+  final void Function(int index) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (var i = 0; i < steps.length; i++) ...[
+          if (i > 0)
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+              color: SoftErpTheme.textSecondary,
+            ),
+          _StepChip(
+            index: i,
+            label: steps[i].label,
+            active: i == activeIndex,
+            done: i < activeIndex,
+            enabled: i <= furthestReachable,
+            onTap: i <= furthestReachable ? () => onTap(i) : null,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _StepChip extends StatelessWidget {
+  const _StepChip({
+    required this.index,
+    required this.label,
+    required this.active,
+    required this.done,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final int index;
+  final String label;
+  final bool active;
+  final bool done;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = active
+        ? Colors.white
+        : (enabled ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary);
+    final Color bg = active
+        ? SoftErpTheme.accent
+        : (enabled ? SoftErpTheme.cardSurfaceAlt : const Color(0xFFF3F4F8));
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: active ? SoftErpTheme.accent : SoftErpTheme.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 17,
+                  height: 17,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: active
+                        ? Colors.white.withValues(alpha: 0.25)
+                        : (done
+                              ? SoftErpTheme.successText
+                              : SoftErpTheme.border),
+                  ),
+                  child: done && !active
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 11,
+                          color: Colors.white,
+                        )
+                      : Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: active
+                                ? Colors.white
+                                : SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The list of spawned variants on step 4, for choosing which one to fill in.
+class _VariantPicker extends StatelessWidget {
+  const _VariantPicker({
+    required this.items,
+    required this.selectedIndex,
+    required this.onSelect,
+    required this.onDelete,
+  });
+
+  final List<ItemDefinition> items;
+  final int selectedIndex;
+  final void Function(int index) onSelect;
+  final void Function(ItemDefinition item)? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 12, 14, 4),
+            child: Text(
+              'Spawned variants',
+              style: TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: Text(
+              'Each carries its own photo, files, pipeline and sample data.',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 11,
+                height: 1.35,
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: SoftErpTheme.border),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(10),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final selected = index == selectedIndex;
+                final label = item.displayName.trim().isEmpty
+                    ? item.name
+                    : item.displayName;
+                return Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => onSelect(index),
+                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                    child: Ink(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? SoftErpTheme.accentSoft
+                            : SoftErpTheme.cardSurface,
+                        borderRadius: BorderRadius.circular(
+                          SoftErpTheme.radiusSm,
+                        ),
+                        border: Border.all(
+                          color: selected
+                              ? SoftErpTheme.accent
+                              : SoftErpTheme.border,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: selected
+                                    ? SoftErpTheme.accentDeeper
+                                    : SoftErpTheme.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Delete this variant',
+                            onPressed: onDelete == null
+                                ? null
+                                : () => onDelete!(item),
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                            ),
+                            color: SoftErpTheme.dangerText,
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 26,
+                              height: 26,
+                            ),
+                            padding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -265,6 +265,117 @@ test('items module routes work end-to-end after evacuation', async () => {
     assert.equal(cleared.status, 200);
     assert.equal(cleared.body.item.penPaperBaseline, null);
 
+    // Renaming a variant must not strip the rest of it. The border preserves
+    // fields that are ABSENT, but the Dart client's UpdateItemRequest.toJson
+    // always emits `attachments`, `machineIds`, `dieIds` and `photoUrl` — so a
+    // sparse UpdateItemInput sends empty ones and really does clear them.
+    // Hence the rename round-trips every field off the existing item.
+    const dressed = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+      photoUrl: 'https://example.test/black.png',
+      cadFileKey: 'cad/black.step',
+      cadFileName: 'black.step',
+      attachments: [
+        { label: 'Spec', objectKey: 'docs/black.pdf', fileName: 'black.pdf' },
+      ],
+    });
+    assert.equal(dressed.status, 200);
+    assert.equal(dressed.body.item.attachments.length, 1);
+
+    const renamed = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - BLK',
+      displayName: 'Evacuation Test Item - BLK',
+      groupId,
+      unitId,
+      photoUrl: dressed.body.item.photoUrl,
+      cadFileKey: dressed.body.item.cadFileKey,
+      cadFileName: dressed.body.item.cadFileName,
+      attachments: dressed.body.item.attachments.map((entry) => ({
+        label: entry.label,
+        objectKey: entry.objectKey,
+        fileName: entry.fileName,
+      })),
+    });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.body.item.name, 'Evacuation Test Item - BLK');
+    assert.equal(renamed.body.item.photoUrl, 'https://example.test/black.png');
+    assert.equal(renamed.body.item.cadFileKey, 'cad/black.step');
+    assert.equal(renamed.body.item.attachments.length, 1);
+    assert.equal(renamed.body.item.baseItemId, itemId);
+
+    // Omitting a field preserves it — that is the border's contract.
+    const omitted = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - BLK',
+      groupId,
+      unitId,
+    });
+    assert.equal(omitted.status, 200);
+    assert.equal(omitted.body.item.attachments.length, 1);
+    assert.equal(omitted.body.item.photoUrl, 'https://example.test/black.png');
+
+    // But sending them EMPTY clears them, which is what a sparse
+    // UpdateItemInput serialises to. This is the trap the rename avoids.
+    const emptied = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - BLK',
+      groupId,
+      unitId,
+      photoUrl: '',
+      attachments: [],
+    });
+    assert.equal(emptied.status, 200);
+    assert.deepEqual(emptied.body.item.attachments, []);
+    assert.equal(emptied.body.item.photoUrl, null);
+
+    // Deleting a variant must take its memberships with it. The delete runs
+    // over a connection with foreign_keys = OFF, so the declared ON DELETE
+    // CASCADE does not fire — a leftover set line shows as a nameless ghost
+    // that still counts, and makes the whole set unsaveable.
+    const doomed = await sendJson('POST', '/api/items', {
+      name: 'Evacuation Doomed Variant',
+      groupId,
+      unitId,
+      baseItemId: itemId,
+      variationTree: [],
+    });
+    assert.equal(doomed.status, 201);
+    const doomedId = doomed.body.item.id;
+
+    const assigned = await sendJson('POST', `/api/groups/${comboGroupId}/items`, {
+      itemIds: [doomedId],
+    });
+    assert.equal(assigned.status, 201, JSON.stringify(assigned.body));
+
+    const setCreate = await sendJson('POST', '/api/inventory/sets', {
+      name: 'Evacuation Kit',
+      lines: [{ itemId: doomedId, variationLeafNodeId: 0, quantity: 2 }],
+    });
+    assert.equal(setCreate.status, 201, JSON.stringify(setCreate.body));
+    const setId = setCreate.body.set?.id;
+    assert.ok(setId, 'expected the created set id');
+
+    const removed = await sendJson('DELETE', `/api/items/${doomedId}`);
+    assert.equal(removed.status, 200);
+
+    const setsAfter = await getJson('/api/inventory/sets');
+    assert.equal(setsAfter.status, 200);
+    const kit = (setsAfter.body.sets ?? []).find((entry) => entry.id === setId);
+    assert.ok(kit, 'set should still exist');
+    assert.deepEqual(kit.lines, [], 'deleted item must not leave a ghost line');
+    assert.equal(kit.totalItemCount, 0);
+
+    const itemAfterDelete = await getJson(`/api/items/${doomedId}`);
+    assert.equal(itemAfterDelete.status, 404);
+
+    // The combination group must not keep a phantom member either.
+    const comboMembers = await getJson(`/api/groups/${comboGroupId}/items`);
+    assert.equal(comboMembers.status, 200);
+    assert.ok(
+      !(comboMembers.body.itemIds ?? []).includes(doomedId),
+      'deleted item must not stay in the combination group',
+    );
+
     // A variant may be manufactured on its own route: its default pipeline is
     // seeded from the base item but is not tied to it afterwards.
     const baseWithPipeline = await sendJson('PATCH', `/api/items/${itemId}`, {

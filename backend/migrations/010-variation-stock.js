@@ -34,13 +34,13 @@ exports.up = async (db) => {
     INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id)
     SELECT
       m.linked_item_id,
-      IFNULL(m.linked_variation_leaf_node_id, 0),
+      m.linked_variation_leaf_node_id,
       SUM(isp.on_hand_qty),
       isp.location_id
     FROM inventory_stock_positions isp
     JOIN materials m ON isp.material_barcode = m.barcode
-    WHERE m.linked_item_id IS NOT NULL
-    GROUP BY m.linked_item_id, IFNULL(m.linked_variation_leaf_node_id, 0), isp.location_id
+    WHERE m.linked_item_id IS NOT NULL AND m.linked_variation_leaf_node_id IS NOT NULL AND m.linked_variation_leaf_node_id > 0
+    GROUP BY m.linked_item_id, m.linked_variation_leaf_node_id, isp.location_id
     HAVING SUM(isp.on_hand_qty) > 0
     ON CONFLICT(item_id, variation_leaf_node_id, location_id) DO UPDATE SET
       quantity = quantity + excluded.quantity,

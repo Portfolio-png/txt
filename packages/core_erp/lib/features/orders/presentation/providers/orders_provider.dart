@@ -1,3 +1,4 @@
+import '../../domain/order_fulfilment.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/order_entry.dart';
@@ -69,6 +70,39 @@ class OrdersProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  /// Ordered / delivered / produced per line, keyed by order-item id. Empty
+  /// until [loadFulfilment] runs — the insights view asks for it, the order
+  /// book does not need it.
+  Map<int, OrderFulfilment> _fulfilment = const <int, OrderFulfilment>{};
+  Map<int, OrderFulfilment> get fulfilment => _fulfilment;
+
+  bool _isLoadingFulfilment = false;
+  bool get isLoadingFulfilment => _isLoadingFulfilment;
+
+  /// Whether the rollup has ever come back. Until it has, callers must not read
+  /// an empty [fulfilment] as "nothing is in production" — it means "not asked
+  /// yet", which is a different thing entirely.
+  bool _fulfilmentLoaded = false;
+  bool get fulfilmentLoaded => _fulfilmentLoaded;
+
+  Future<void> loadFulfilment() async {
+    if (_isLoadingFulfilment) return;
+    _isLoadingFulfilment = true;
+    notifyListeners();
+    try {
+      final rows = await _repository.getFulfilment();
+      _fulfilment = {for (final row in rows) row.orderItemId: row};
+      _fulfilmentLoaded = true;
+    } catch (_) {
+      // Keep the last good rollup: a dropped request is not evidence that
+      // production stopped, and blanking the map silently reclassifies every
+      // card as having no pipeline.
+    } finally {
+      _isLoadingFulfilment = false;
+      notifyListeners();
+    }
+  }
+
   List<OrderGroup> get filteredOrderGroups {
     final filtered = filteredOrders;
     final map = <String, OrderGroup>{};
@@ -135,6 +169,12 @@ class OrdersProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+    // Anything that moves the order book can also move production: starting a
+    // run, issuing a challan, completing a stage. Once insights has been opened
+    // its figures must track those, not stay frozen at first load.
+    if (_fulfilmentLoaded) {
+      await loadFulfilment();
     }
   }
 

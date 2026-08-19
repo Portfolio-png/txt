@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
@@ -22,8 +23,48 @@ import '../../domain/vendor_definition.dart';
 import '../../domain/vendor_inputs.dart';
 import '../providers/vendors_provider.dart';
 
-class VendorsScreen extends StatelessWidget {
+class VendorsScreen extends StatefulWidget {
   const VendorsScreen({super.key});
+
+  /// Stays on the widget, not the state: the shell and shortcut handlers open
+  /// the vendor editor without a VendorsScreen mounted.
+  static Future<VendorDefinition?> openEditor(
+    BuildContext context, {
+    VendorDefinition? vendor,
+  }) {
+    return showErpFormDialog<VendorDefinition?>(
+      context,
+      maxWidth: 820,
+      maxHeight: 760,
+      child: _VendorEditorSheet(vendor: vendor),
+    );
+  }
+
+  @override
+  State<VendorsScreen> createState() => _VendorsScreenState();
+}
+
+class _VendorsScreenState extends State<VendorsScreen> {
+  static const _prefsKey = 'vendors_grid_view';
+  bool _isGridView = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreGridView();
+  }
+
+  Future<void> _restoreGridView() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _isGridView = prefs.getBool(_prefsKey) ?? false);
+  }
+
+  Future<void> _setGridView(bool value) async {
+    setState(() => _isGridView = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsKey, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +125,10 @@ class VendorsScreen extends StatelessWidget {
                 ),
               ],
             ),
-            toolbar: const _VendorsToolbar(),
+            toolbar: _VendorsToolbar(
+              isGridView: _isGridView,
+              onToggleView: () => _setGridView(!_isGridView),
+            ),
             messages: [
               if (vendors.errorMessage != null)
                 _MessageBanner(message: vendors.errorMessage!, isError: true),
@@ -96,6 +140,8 @@ class VendorsScreen extends StatelessWidget {
                         'Add your first vendor so reception challans can point to a real inbound source.',
                     icon: Icons.local_shipping_outlined,
                   )
+                : _isGridView
+                ? _VendorsCardGrid(vendors: vendors.filteredVendors)
                 : _VendorsTable(vendors: vendors.filteredVendors),
           ),
         );
@@ -103,22 +149,10 @@ class VendorsScreen extends StatelessWidget {
     );
   }
 
-  static Future<VendorDefinition?> openEditor(
-    BuildContext context, {
-    VendorDefinition? vendor,
-  }) {
-    return showErpFormDialog<VendorDefinition?>(
-      context,
-      maxWidth: 820,
-      maxHeight: 760,
-      child: _VendorEditorSheet(vendor: vendor),
-    );
-  }
-
   static Future<VendorDefinition?> _openEditor(
     BuildContext context, {
     VendorDefinition? vendor,
-  }) => openEditor(context, vendor: vendor);
+  }) => VendorsScreen.openEditor(context, vendor: vendor);
 
   /// Bulk-create vendors from the Excel template. Rows go through the same
   /// provider call as the form, so validation and permissions are identical.
@@ -151,7 +185,10 @@ class VendorsScreen extends StatelessWidget {
 }
 
 class _VendorsToolbar extends StatelessWidget {
-  const _VendorsToolbar();
+  const _VendorsToolbar({required this.isGridView, required this.onToggleView});
+
+  final bool isGridView;
+  final VoidCallback onToggleView;
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +201,60 @@ class _VendorsToolbar extends StatelessWidget {
             hintText: 'Search vendor, contact, GST, or address',
             onChanged: provider.setSearchQuery,
           ),
+        SoftViewToggleButton(isGridView: isGridView, onTap: onToggleView),
       ],
+    );
+  }
+}
+
+class _VendorsCardGrid extends StatelessWidget {
+  const _VendorsCardGrid({required this.vendors});
+
+  final List<VendorDefinition> vendors;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftEntityCardGrid(
+      itemCount: vendors.length,
+      itemBuilder: (context, index) {
+        final vendor = vendors[index];
+        return SoftEntityCard(
+          title: vendor.name,
+          subtitle: vendor.alias.trim().isEmpty
+              ? vendor.contactName
+              : vendor.alias,
+          photoUrl: vendor.photoUrl.isNotEmpty ? vendor.photoUrl : vendor.logoUrl,
+          fallbackIcon: Icons.local_shipping_outlined,
+          onTap: () => VendorsScreen.openEditor(context, vendor: vendor),
+          details: [
+            SoftEntityDetail(
+              icon: Icons.badge_outlined,
+              label: 'GST',
+              value: vendor.gstNumber,
+            ),
+            SoftEntityDetail(
+              icon: Icons.person_outline,
+              label: 'Contact',
+              value: vendor.contactName,
+            ),
+            SoftEntityDetail(
+              icon: Icons.call_outlined,
+              label: 'Phone',
+              value: vendor.phone,
+            ),
+            SoftEntityDetail(
+              icon: Icons.mail_outline,
+              label: 'Email',
+              value: vendor.email,
+            ),
+            SoftEntityDetail(
+              icon: Icons.place_outlined,
+              label: 'Address',
+              value: vendor.address,
+            ),
+          ],
+        );
+      },
     );
   }
 }

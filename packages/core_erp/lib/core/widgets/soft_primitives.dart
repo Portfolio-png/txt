@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/soft_erp_theme.dart';
@@ -423,16 +425,24 @@ class _SoftRowCardState extends State<SoftRowCard>
           ),
         );
 
-    final delayMs = 150 + (myIndex * 50);
-    Future.delayed(Duration(milliseconds: delayMs), () {
+    // A cancellable timer, not a bare Future.delayed: an uncancelled one keeps
+    // firing after the row is disposed, which leaks and makes every widget test
+    // touching a list fail with "A Timer is still pending".
+    // The stagger is also capped — a long list otherwise pushes late rows to
+    // multi-second fade-ins.
+    final delayMs = 150 + (myIndex.clamp(0, 12) * 50);
+    _entranceTimer = Timer(Duration(milliseconds: delayMs), () {
       if (mounted) {
         _entranceController.forward();
       }
     });
   }
 
+  Timer? _entranceTimer;
+
   @override
   void dispose() {
+    _entranceTimer?.cancel();
     _entranceController.dispose();
     super.dispose();
   }

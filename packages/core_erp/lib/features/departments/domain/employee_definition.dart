@@ -50,7 +50,10 @@ class EmployeeDefinition {
   final String createdAt;
   final String updatedAt;
 
-  bool get isInHouse => employmentType == 'in-house';
+  bool get isInHouse =>
+      employmentType != 'freelancer' &&
+      employmentType != 'job_work' &&
+      employmentType != 'contractor';
   bool get hasLogin => login != null;
 
   const EmployeeDefinition({

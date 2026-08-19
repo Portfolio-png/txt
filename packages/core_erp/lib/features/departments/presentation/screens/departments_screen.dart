@@ -34,25 +34,17 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
   Widget build(BuildContext context) {
     return Consumer<DepartmentsProvider>(
       builder: (context, provider, _) {
-        final selectedDept = provider.selectedDepartment;
-
         return SoftMasterDataPage(
           title: 'Employees Master',
           subtitle:
               'Manage departments, in-house staff, and freelancer barcode identities for outsourced work.',
+          // Always Add Department: an employee belongs to a department, so it
+          // is added from inside that department's panel on the right, never
+          // from a page-level button that has to guess which one you meant.
           action: AppButton(
-            label: selectedDept == null ? 'Add Department' : 'Add Employee',
+            label: 'Add Department',
             icon: Icons.add,
-            onPressed: () {
-              if (selectedDept == null) {
-                DepartmentEditorDialog.open(context);
-              } else {
-                EmployeeEditorDialog.open(
-                  context,
-                  departmentId: selectedDept.id,
-                );
-              }
-            },
+            onPressed: () => DepartmentEditorDialog.open(context),
           ),
           toolbar: const _Toolbar(),
           messages: [
@@ -450,8 +442,7 @@ class _EmployeePanel extends StatelessWidget {
               ),
               AppButton(
                 label: 'Add Employee',
-                icon: Icons.add,
-                variant: AppButtonVariant.secondary,
+                icon: Icons.person_add_alt_1,
                 onPressed: () => EmployeeEditorDialog.open(
                   context,
                   departmentId: selectedDept.id,
@@ -489,11 +480,19 @@ class _EmployeePanel extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           if (emps.isEmpty)
-            const Expanded(
+            Expanded(
               child: AppEmptyState(
                 title: 'No employees yet',
-                message: 'Add the first employee to this department.',
+                message: 'Add the first employee to ${selectedDept.name}.',
                 icon: Icons.person_add_alt,
+                action: AppButton(
+                  label: 'Add Employee',
+                  icon: Icons.person_add_alt_1,
+                  onPressed: () => EmployeeEditorDialog.open(
+                    context,
+                    departmentId: selectedDept.id,
+                  ),
+                ),
               ),
             )
           else

@@ -36,6 +36,8 @@ class FreelancerJob {
     required this.status,
     required this.payoutBalance,
     required this.createdAt,
+    this.rejectedQuantity = 0,
+    this.rejectionNote = '',
   });
 
   final int id;
@@ -46,6 +48,15 @@ class FreelancerJob {
   final double payoutBalance;
   final DateTime createdAt;
 
+  /// Pieces the assembler rejected off this job — on an assembly step nothing
+  /// is machined, so what comes off the line is a rejection, not scrap.
+  final double rejectedQuantity;
+  final String rejectionNote;
+
+  /// What the worker is actually credited with completing.
+  int get acceptedQuantity =>
+      (quantity - rejectedQuantity).clamp(0, quantity).round();
+
   factory FreelancerJob.fromJson(Map<String, dynamic> json) {
     return FreelancerJob(
       id: json['id'] as int,
@@ -55,6 +66,8 @@ class FreelancerJob {
       status: json['status'] as String,
       payoutBalance: (json['payout_balance'] as num).toDouble(),
       createdAt: DateTime.parse(json['created_at'] as String),
+      rejectedQuantity: (json['rejected_quantity'] as num?)?.toDouble() ?? 0,
+      rejectionNote: json['rejection_note'] as String? ?? '',
     );
   }
 

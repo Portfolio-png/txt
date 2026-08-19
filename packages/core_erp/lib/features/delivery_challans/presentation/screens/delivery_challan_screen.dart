@@ -232,7 +232,6 @@ class _ChallanScreenState extends State<ChallanScreen> {
             onCreateInternal: enhancementsEnabled
                 ? () => _openEditor(context, initialType: ChallanType.internal)
                 : null,
-            onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
             onGenerateReport: activeReportGroupCode == null
                 ? null
@@ -290,8 +289,14 @@ class _ChallanScreenState extends State<ChallanScreen> {
                       selectedDeliveryChallanNos: _selectedDeliveryChallanNos,
                       selectedReceptionChallanNos: _selectedReceptionChallanNos,
                       focusedChallan: focusedChallan,
-                      onFocus: (challan) =>
-                          setState(() => _focusedChallanId = challan?.id),
+                      // Tapping the focused card again closes the preview
+                      // column; tapping any other card moves focus to it.
+                      onFocus: (challan) => setState(() {
+                        _focusedChallanId =
+                            challan != null && _focusedChallanId == challan.id
+                            ? null
+                            : challan?.id;
+                      }),
                       onToggleDelivery: _toggleDeliverySelection,
                       onToggleReception: _toggleReceptionSelection,
                       onOpen: (challan) =>
@@ -342,15 +347,6 @@ class _ChallanScreenState extends State<ChallanScreen> {
     );
   }
 
-  Future<void> _openCompanyProfile(BuildContext context) {
-    return showDialog<void>(
-      context: context,
-      builder: (_) => const Dialog(
-        insetPadding: EdgeInsets.all(24),
-        child: SizedBox(width: 720, child: _CompanyProfileEditor()),
-      ),
-    );
-  }
 
   Future<void> _openPrintPreview(
     BuildContext context,
@@ -591,7 +587,6 @@ class _Header extends StatelessWidget {
     required this.onCreateDelivery,
     required this.onCreateReception,
     this.onCreateInternal,
-    required this.onEditProfile,
     required this.onOpenTemplates,
     required this.onGenerateReport,
   });
@@ -604,7 +599,6 @@ class _Header extends StatelessWidget {
   /// When non-null, an extra "Create Internal" button is shown (Enhancement —
   /// internal challans, gated by the catalog/inventory flag at the call site).
   final VoidCallback? onCreateInternal;
-  final VoidCallback onEditProfile;
   final VoidCallback onOpenTemplates;
   final VoidCallback? onGenerateReport;
 
@@ -614,13 +608,8 @@ class _Header extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        AppButton(
-          label: 'Company Profile',
-          icon: Icons.apartment_outlined,
-          variant: AppButtonVariant.secondary,
-          onPressed: onEditProfile,
-        ),
-        const SizedBox(width: 10),
+        // Company Profile is edited from the profile menu in the top bar; it
+        // does not need a second entry point here.
         AppButton(
           label: 'Templates',
           icon: Icons.dashboard_customize_outlined,

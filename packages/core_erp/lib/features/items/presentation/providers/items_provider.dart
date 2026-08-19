@@ -226,6 +226,16 @@ class ItemsProvider extends ChangeNotifier {
     }
   }
 
+  /// Stage labels keyed by pipeline template id. Empty on failure — the sample
+  /// baseline falls back to generic stage names rather than blocking.
+  Future<Map<String, List<String>>> fetchPipelineStageLabels() async {
+    try {
+      return await _repository.getPipelineStageLabels();
+    } catch (e) {
+      return const <String, List<String>>{};
+    }
+  }
+
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();

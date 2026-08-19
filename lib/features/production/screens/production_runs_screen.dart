@@ -30,9 +30,18 @@ import 'package:core_erp/features/inventory/presentation/providers/inventory_pro
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProductionRunsScreen extends StatefulWidget {
-  const ProductionRunsScreen({super.key, this.initialTab = 'runs'});
+  const ProductionRunsScreen({
+    super.key,
+    this.initialTab = 'runs',
+    this.showTabs = true,
+  });
 
   final String initialTab;
+
+  /// The sidebar has separate Production and Insights entries, so opening this
+  /// screen as Insights shows insights only — no Runs switch back. Production
+  /// keeps the switch it has always had.
+  final bool showTabs;
 
   @override
   State<ProductionRunsScreen> createState() => _AppProductionRunsScreenState();
@@ -205,18 +214,20 @@ class _AppProductionRunsScreenState extends State<ProductionRunsScreen> {
         icon: Icons.play_arrow_rounded,
         onPressed: _startProduction,
       ),
-      toolbar: SoftMasterToolbar(
-        children: [
-          SoftSegmentedFilter<String>(
-            selected: _activeTab,
-            onChanged: (val) => setState(() => _activeTab = val),
-            options: const [
-              SoftSegmentOption<String>(value: 'runs', label: 'Runs'),
-              SoftSegmentOption<String>(value: 'insights', label: 'Insights'),
-            ],
-          ),
-        ],
-      ),
+      toolbar: widget.showTabs
+          ? SoftMasterToolbar(
+              children: [
+                SoftSegmentedFilter<String>(
+                  selected: _activeTab,
+                  onChanged: (val) => setState(() => _activeTab = val),
+                  options: const [
+                    SoftSegmentOption<String>(value: 'runs', label: 'Runs'),
+                    SoftSegmentOption<String>(value: 'insights', label: 'Insights'),
+                  ],
+                ),
+              ],
+            )
+          : const SizedBox.shrink(),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
         switchInCurve: Curves.easeOutCubic,

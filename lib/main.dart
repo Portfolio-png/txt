@@ -167,12 +167,10 @@ class _RealtimeSocketConnectorState extends State<_RealtimeSocketConnector>
 
   void _handleUnauthorized(dynamic _) {
     if (mounted) {
-      // Use Provider.of instead of context.read if not imported, but context.read should work if provider is imported
-      // Wait, in main.dart context.read requires import 'package:provider/provider.dart'; which is usually there.
-      context.read<AuthProvider>().logoutRemote();
-      
-      // We can't guarantee ScaffoldMessenger is available above this context, but typically we can try:
-      // wait, let's just do logout, the UI will rebuild to login screen.
+      final auth = context.read<AuthProvider>();
+      if (auth.isAuthenticated && !_isDemoMode) {
+        auth.logout();
+      }
     }
   }
 
@@ -463,43 +461,33 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => InventoryCreateCommandProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
           create: (context) =>
-              OrdersProvider(repository: context.read<OrderRepository>())
-                ..initialize(),
+              OrdersProvider(repository: context.read<OrderRepository>()),
           update: (context, repository, previous) =>
-              previous ?? OrdersProvider(repository: repository)
-                ..initialize(),
+              previous ?? OrdersProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
           create: (context) =>
-              InventoryProvider(repository: context.read<InventoryRepository>())
-                ..initialize(),
+              InventoryProvider(repository: context.read<InventoryRepository>()),
           update: (context, repository, previous) =>
-              previous ?? InventoryProvider(repository: repository)
-                ..initialize(),
+              previous ?? InventoryProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<UnitRepository, UnitsProvider>(
           create: (context) =>
-              UnitsProvider(repository: context.read<UnitRepository>())
-                ..initialize(),
+              UnitsProvider(repository: context.read<UnitRepository>()),
           update: (context, repository, previous) =>
-              previous ?? UnitsProvider(repository: repository)
-                ..initialize(),
+              previous ?? UnitsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<GroupRepository, GroupsProvider>(
           create: (context) =>
-              GroupsProvider(repository: context.read<GroupRepository>())
-                ..initialize(),
+              GroupsProvider(repository: context.read<GroupRepository>()),
           update: (context, repository, previous) =>
-              previous ?? GroupsProvider(repository: repository)
-                ..initialize(),
+              previous ?? GroupsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<ClientRepository, ClientsProvider>(
           create: (context) =>
-              ClientsProvider(repository: context.read<ClientRepository>())
-                ..initialize(),
+              ClientsProvider(repository: context.read<ClientRepository>()),
           update: (context, repository, previous) =>
-              previous ?? ClientsProvider(repository: repository)
-                ..initialize(),
+              previous ?? ClientsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<SubContractorRepository, SubContractorsProvider>(
           create: (context) =>
@@ -509,19 +497,15 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<VendorRepository, VendorsProvider>(
           create: (context) =>
-              VendorsProvider(repository: context.read<VendorRepository>())
-                ..initialize(),
+              VendorsProvider(repository: context.read<VendorRepository>()),
           update: (context, repository, previous) =>
-              previous ?? VendorsProvider(repository: repository)
-                ..initialize(),
+              previous ?? VendorsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<ItemRepository, ItemsProvider>(
           create: (context) =>
-              ItemsProvider(repository: context.read<ItemRepository>())
-                ..initialize(),
+              ItemsProvider(repository: context.read<ItemRepository>()),
           update: (context, repository, previous) =>
-              previous ?? ItemsProvider(repository: repository)
-                ..initialize(),
+              previous ?? ItemsProvider(repository: repository),
         ),
         Provider<ItemLinkOptionsService>(
           create: (context) => ItemLinkOptionsService(
@@ -551,27 +535,21 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<ChallanRepository, ChallanProvider>(
           create: (context) =>
-              ChallanProvider(repository: context.read<ChallanRepository>())
-                ..initialize(),
+              ChallanProvider(repository: context.read<ChallanRepository>()),
           update: (context, repository, previous) =>
-              previous ?? ChallanProvider(repository: repository)
-                ..initialize(),
+              previous ?? ChallanProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<MachineRepository, MachinesProvider>(
           create: (context) =>
-              MachinesProvider(repository: context.read<MachineRepository>())
-                ..initialize(),
+              MachinesProvider(repository: context.read<MachineRepository>()),
           update: (context, repository, previous) =>
-              previous ?? MachinesProvider(repository: repository)
-                ..initialize(),
+              previous ?? MachinesProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<DieRepository, DiesProvider>(
           create: (context) =>
-              DiesProvider(repository: context.read<DieRepository>())
-                ..initialize(),
+              DiesProvider(repository: context.read<DieRepository>()),
           update: (context, repository, previous) =>
-              previous ?? DiesProvider(repository: repository)
-                ..initialize(),
+              previous ?? DiesProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<ActionCenterRepository, ActionCenterProvider>(
           create: (context) =>
@@ -582,10 +560,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProxyProvider<DepartmentsRepository, DepartmentsProvider>(
           create: (context) => DepartmentsProvider(
             repository: context.read<DepartmentsRepository>(),
-          )..load(),
+          ),
           update: (context, repository, previous) =>
-              previous ?? DepartmentsProvider(repository: repository)
-                ..load(),
+              previous ?? DepartmentsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<SearchRepository, SearchProvider>(
           create: (context) => SearchProvider(repository: context.read<SearchRepository>()),
@@ -593,11 +570,9 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<JobsRepository, JobsProvider>(
           create: (context) =>
-              JobsProvider(repository: context.read<JobsRepository>())
-                ..fetchJobsData(),
+              JobsProvider(repository: context.read<JobsRepository>()),
           update: (_, repository, previous) =>
-              previous ?? JobsProvider(repository: repository)
-                ..fetchJobsData(),
+              previous ?? JobsProvider(repository: repository),
         ),
         ChangeNotifierProvider(create: (_) => TelemetryProvider()),
         ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
@@ -683,7 +658,14 @@ class MyApp extends StatelessWidget {
   }
 
   AuthenticatedHttpClient _authClient(AuthProvider auth) {
-    return AuthenticatedHttpClient(tokenResolver: () => auth.token);
+    return AuthenticatedHttpClient(
+      tokenResolver: () => auth.token,
+      onUnauthorized: () {
+        if (auth.isAuthenticated && !_effectiveDemoMode) {
+          auth.logout();
+        }
+      },
+    );
   }
 
   InventoryRepository _buildInventoryRepository(AuthProvider auth) {
@@ -846,16 +828,19 @@ class _AuthGateState extends State<_AuthGate> {
         return;
       }
       Future.wait<void>([
-        context.read<OrdersProvider>().refresh(),
-        context.read<InventoryProvider>().refresh(),
-        context.read<UnitsProvider>().refresh(),
-        context.read<GroupsProvider>().refresh(),
-        context.read<ClientsProvider>().refresh(),
-        context.read<VendorsProvider>().refresh(),
-        context.read<ItemsProvider>().refresh(),
-        context.read<DeliveryChallanProvider>().refresh(),
-        context.read<MachinesProvider>().refresh(),
-        context.read<DiesProvider>().refresh(),
+        context.read<OrdersProvider>().initialize(),
+        context.read<InventoryProvider>().initialize(),
+        context.read<UnitsProvider>().initialize(),
+        context.read<GroupsProvider>().initialize(),
+        context.read<ClientsProvider>().initialize(),
+        context.read<VendorsProvider>().initialize(),
+        context.read<ItemsProvider>().initialize(),
+        context.read<ChallanProvider>().initialize(),
+        context.read<MachinesProvider>().initialize(),
+        context.read<DiesProvider>().initialize(),
+        context.read<DepartmentsProvider>().load(),
+        context.read<JobsProvider>().fetchJobsData(),
+        context.read<ActionCenterProvider>().refresh(),
       ]);
     });
   }

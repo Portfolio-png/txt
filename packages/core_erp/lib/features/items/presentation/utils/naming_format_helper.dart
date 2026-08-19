@@ -118,8 +118,8 @@ class NamingFormatHelper {
 
   /// Canonical label for a selected variation path, following the item's
   /// naming format order ('name' / 'prop_N' tokens, '__format:detailed' /
-  /// '__format:dimensions' flags). Values only — property names appear only
-  /// when the item is flagged detailed. With [includeItemName] false the
+  /// '__format:dimensions' / '__format:codes' flags). Values only — property
+  /// names appear only when the item is flagged detailed. With [includeItemName] false the
   /// item name is left out entirely (used for `variationPathLabel`, which is
   /// displayed next to the item name).
   static String buildVariationSelectionLabel(
@@ -165,9 +165,16 @@ class NamingFormatHelper {
         return;
       }
 
-      final valName = selectedValue.name.trim().isEmpty
-          ? selectedValue.displayName.trim()
-          : selectedValue.name.trim();
+      // '__format:codes': name the variation by each value's code, falling
+      // back to its name when a value has none, so a partly-coded tree still
+      // produces a complete label.
+      final useCodes = item.namingFormat.contains('__format:codes');
+      final code = selectedValue.code.trim();
+      final valName = useCodes && code.isNotEmpty
+          ? code
+          : (selectedValue.name.trim().isEmpty
+                ? selectedValue.displayName.trim()
+                : selectedValue.name.trim());
       propIdToValue[prop.id] = valName;
 
       final nextProps = selectedValue.activeChildren.where(

@@ -1,3 +1,8 @@
+import 'package:core_erp/core/utils/quantity_shorthand.dart';
+import '../widgets/order_insights_view.dart';
+import '../widgets/set_order_dialogs.dart';
+import '../../../inventory/domain/inventory_set_definition.dart';
+import '../../../inventory/presentation/providers/inventory_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
@@ -25,14 +30,12 @@ import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../clients/presentation/screens/clients_screen.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
-import '../../../delivery_challans/domain/delivery_challan.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
-import '../../../items/presentation/utils/quantity_formatter.dart';
 
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -41,7 +44,6 @@ import '../../../units/presentation/providers/units_provider.dart';
 import '../../data/po_document_cache.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_trace.dart';
-import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/po_document.dart';
 import '../../data/models/order_api_models.dart';
@@ -187,6 +189,10 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
+  /// Order book slides left, insights comes in from the right.
+  bool _showInsights = false;
+
+
   static const double _contentHorizontalPadding = 0;
   final Set<int> _selectedOrderIds = <int>{};
   int? _partyFilterClientId;
@@ -239,89 +245,176 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ),
       },
       child: PageContainer(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _OrdersHeader(
-                      onPrimaryCreate: () {
-                        _handlePrimaryCreate();
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: _contentHorizontalPadding,
-                      ),
-                      child: _OrdersSummaryRow(
-                        summary: summary,
-                        activeStatus: _statusFilter,
-                        onStatusSelected: (value) {
-                          setState(() {
-                            _statusFilter = value;
-                          });
+        // The order book slides out to the left as insights comes in from the
+        // right, so the two read as one workspace rather than a navigation.
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            return Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeInOutCubic,
+                  left: _showInsights ? -width : 0,
+                  top: 0,
+                  bottom: 0,
+                  width: width,
+                  child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _OrdersHeader(
+                        onPrimaryCreate: () {
+                          _handlePrimaryCreate();
+                        },
+                        onOpenInsights: () {
+                          setState(() => _showInsights = true);
+                          // Insights is the only consumer of the fulfilment
+                          // rollup, so it is fetched on open rather than with
+                          // the order book.
+                          context.read<OrdersProvider>().loadFulfilment();
                         },
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: _OrdersTableCard(
-                        orders: visibleGroups,
-                        hasAnyOrders: orders.isNotEmpty,
-                        hasActiveFilters:
-                            _partyFilterClientId != null ||
-                            _itemFilterId != null ||
-                            _statusFilter != null ||
-                            _orderSearchQuery.trim().isNotEmpty ||
-                            _clientSearchQuery.trim().isNotEmpty ||
-                            _poSearchQuery.trim().isNotEmpty ||
-                            ordersProvider.searchQuery.trim().isNotEmpty,
-                        selectedOrderIds: _selectedOrderIds,
-                        orderSearchQuery: _orderSearchQuery,
-                        clientSearchQuery: _clientSearchQuery,
-                        poSearchQuery: _poSearchQuery,
-                        sortColumn: _sortColumn,
-                        sortAscending: _sortAscending,
-                        onToggleSelection: (orderId, selected) {
-                          setState(() {
-                            if (selected) {
-                              _selectedOrderIds.add(orderId);
-                            } else {
-                              _selectedOrderIds.remove(orderId);
-                            }
-                          });
-                        },
-                        onRowTap: (orderGroup) =>
-                            _openLifecycleEditor(context, orderGroup),
-                        onCreateOrder: _handlePrimaryCreate,
-                        onGoToProduction: widget.onGoToProduction,
-                        onSortChange: (column, ascending) {
-                          setState(() {
-                            _sortColumn = column;
-                            _sortAscending = ascending;
-                          });
-                        },
-                        onOrderSearch: (query) =>
-                            setState(() => _orderSearchQuery = query),
-                        onClientSearch: (query) =>
-                            setState(() => _clientSearchQuery = query),
-                        onPoSearch: (query) =>
-                            setState(() => _poSearchQuery = query),
+                      const SizedBox(height: 18),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: _contentHorizontalPadding,
+                        ),
+                        child: _OrdersSummaryRow(
+                          summary: summary,
+                          activeStatus: _statusFilter,
+                          onStatusSelected: (value) {
+                            setState(() {
+                              _statusFilter = value;
+                            });
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: _OrdersTableCard(
+                          orders: visibleGroups,
+                          hasAnyOrders: orders.isNotEmpty,
+                          hasActiveFilters:
+                              _partyFilterClientId != null ||
+                              _itemFilterId != null ||
+                              _statusFilter != null ||
+                              _orderSearchQuery.trim().isNotEmpty ||
+                              _clientSearchQuery.trim().isNotEmpty ||
+                              _poSearchQuery.trim().isNotEmpty ||
+                              ordersProvider.searchQuery.trim().isNotEmpty,
+                          selectedOrderIds: _selectedOrderIds,
+                          orderSearchQuery: _orderSearchQuery,
+                          clientSearchQuery: _clientSearchQuery,
+                          poSearchQuery: _poSearchQuery,
+                          sortColumn: _sortColumn,
+                          sortAscending: _sortAscending,
+                          onToggleSelection: (orderId, selected) {
+                            setState(() {
+                              if (selected) {
+                                _selectedOrderIds.add(orderId);
+                              } else {
+                                _selectedOrderIds.remove(orderId);
+                              }
+                            });
+                          },
+                          onRowTap: (orderGroup) =>
+                              _openLifecycleEditor(context, orderGroup),
+                          onCreateOrder: _handlePrimaryCreate,
+                          onGoToProduction: widget.onGoToProduction,
+                          onSortChange: (column, ascending) {
+                            setState(() {
+                              _sortColumn = column;
+                              _sortAscending = ascending;
+                            });
+                          },
+                          onOrderSearch: (query) =>
+                              setState(() => _orderSearchQuery = query),
+                          onClientSearch: (query) =>
+                              setState(() => _clientSearchQuery = query),
+                          onPoSearch: (query) =>
+                              setState(() => _poSearchQuery = query),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+                  ),
+                ),
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeInOutCubic,
+                  left: _showInsights ? 0 : width,
+                  top: 0,
+                  bottom: 0,
+                  width: width,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      _contentHorizontalPadding,
+                      12,
+                      _contentHorizontalPadding,
+                      0,
+                    ),
+                    child: OrderInsightsView(
+                      orders: _insightOrders(context),
+                      items: context.watch<ItemsProvider>().items,
+                      fulfilment: context.watch<OrdersProvider>().fulfilment,
+                      fulfilmentLoaded: context
+                          .watch<OrdersProvider>()
+                          .fulfilmentLoaded,
+                      onOpenChallan: _openChallanFromCheckpoint,
+                      onBack: () => setState(() => _showInsights = false),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
+  }
+
+
+  /// Flattens the order book's currently-visible groups into the individual
+  /// order lines the insight cards are drawn from — the same filtered set the
+  /// book is showing, so the two views never disagree.
+  /// Opens a delivery challan from a checkpoint on the insights bar.
+  ///
+  /// Deliberately a modal over the insights screen rather than a jump to the
+  /// challans tab: dismissing it returns you to exactly the order you were
+  /// looking at, with the filter and scroll position intact. That is the same
+  /// choice the inventory screen makes when it opens a challan from a stock
+  /// movement, and it means Esc and the dialog's own close button are the
+  /// whole of the "back" story — there is no navigation history to unwind.
+  Future<void> _openChallanFromCheckpoint(int challanId) async {
+    if (challanId <= 0) return;
+    final provider = context.read<DeliveryChallanProvider>();
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final challan = await provider.loadChallan(challanId);
+    if (!mounted) return;
+    if (challan == null) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('That challan could not be opened.')),
+      );
+      return;
+    }
+    await ChallanScreen.openPrintPreview(context, challan);
+  }
+
+  List<OrderEntry> _insightOrders(BuildContext context) {
+    final provider = context.watch<OrdersProvider>();
+    return <OrderEntry>[
+      for (final group in _applyFilters(provider.filteredOrderGroups)) ...group.items,
+    ];
   }
 
   List<OrderGroup> _applyFilters(List<OrderGroup> groups) {
@@ -543,9 +636,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
 }
 
 class _OrdersHeader extends StatelessWidget {
-  const _OrdersHeader({required this.onPrimaryCreate});
+  const _OrdersHeader({
+    required this.onPrimaryCreate,
+    required this.onOpenInsights,
+  });
 
   final VoidCallback onPrimaryCreate;
+  final VoidCallback onOpenInsights;
 
   @override
   Widget build(BuildContext context) {
@@ -558,13 +655,33 @@ class _OrdersHeader extends StatelessWidget {
         );
         final title = Padding(
           padding: const EdgeInsets.only(left: 0),
-          child: Text(
-            'Order Book',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: SoftErpTheme.textPrimary,
-              letterSpacing: -0.5,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Order Book',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconButton(
+                key: const ValueKey<String>('orders-insights-button'),
+                tooltip: 'Order insights',
+                onPressed: onOpenInsights,
+                icon: const Icon(Icons.insights_rounded, size: 20),
+                style: IconButton.styleFrom(
+                  backgroundColor: SoftErpTheme.accentSoft,
+                  foregroundColor: SoftErpTheme.accent,
+                  side: BorderSide(
+                    color: SoftErpTheme.accent.withValues(alpha: 0.25),
+                  ),
+                  minimumSize: const Size(36, 36),
+                ),
+              ),
+            ],
           ),
         );
         final filtersButton = Container(
@@ -2476,8 +2593,14 @@ class _InlineRowActions extends StatelessWidget {
             PopupMenuButton<String>(
               tooltip: 'More actions',
               offset: const Offset(0, 40),
+              // The items were seven hand-built rows on default 48px tiles, so
+              // icon gaps, label sizes and divider spacing all drifted. One
+              // builder keeps every row on the same grid.
+              constraints: const BoxConstraints(minWidth: 208, maxWidth: 240),
+              padding: EdgeInsets.zero,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: SoftErpTheme.border),
               ),
               onSelected: (value) {
                 if (value == 'view') onView();
@@ -2493,79 +2616,45 @@ class _InlineRowActions extends StatelessWidget {
               },
               itemBuilder: (context) => [
                 if (ConfigService.instance.allowCustomOrderActions) ...[
-                  const PopupMenuItem(
+                  _rowMenuItem(
                     value: 'status_pending',
-                    child: Row(
-                      children: [
-                        Icon(Icons.pending_actions_rounded, size: 20),
-                        SizedBox(width: 12),
-                        Text('Set Pending'),
-                      ],
-                    ),
+                    icon: Icons.pending_actions_rounded,
+                    label: 'Set Pending',
                   ),
-                  const PopupMenuItem(
+                  _rowMenuItem(
                     value: 'status_inprogress',
-                    child: Row(
-                      children: [
-                        Icon(Icons.play_circle_outline_rounded, size: 20),
-                        SizedBox(width: 12),
-                        Text('Set In Progress'),
-                      ],
-                    ),
+                    icon: Icons.play_circle_outline_rounded,
+                    label: 'Set In Progress',
                   ),
-                  const PopupMenuItem(
+                  _rowMenuItem(
                     value: 'status_completed',
-                    child: Row(
-                      children: [
-                        Icon(Icons.check_circle_outline_rounded, size: 20),
-                        SizedBox(width: 12),
-                        Text('Set Completed'),
-                      ],
-                    ),
+                    icon: Icons.check_circle_outline_rounded,
+                    label: 'Set Completed',
                   ),
-                  const PopupMenuDivider(),
+                  _rowMenuSeparator(),
                 ],
                 if (FeatureFlags.isEnabled(FeatureKeys.ordersShowReport))
-                  const PopupMenuItem(
+                  _rowMenuItem(
                     value: 'report',
-                    child: Row(
-                      children: [
-                        Icon(Icons.receipt_long_outlined, size: 20),
-                        SizedBox(width: 12),
-                        Text('Show Report'),
-                      ],
-                    ),
+                    icon: Icons.receipt_long_outlined,
+                    label: 'Show Report',
                   ),
-                const PopupMenuItem(
+                _rowMenuItem(
                   value: 'view',
-                  child: Row(
-                    children: [
-                      Icon(Icons.visibility_outlined, size: 20),
-                      SizedBox(width: 12),
-                      Text('View Details'),
-                    ],
-                  ),
+                  icon: Icons.visibility_outlined,
+                  label: 'View Details',
                 ),
-                const PopupMenuItem(
+                _rowMenuItem(
                   value: 'edit',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined, size: 20),
-                      SizedBox(width: 12),
-                      Text('Edit Order'),
-                    ],
-                  ),
+                  icon: Icons.edit_outlined,
+                  label: 'Edit Order',
                 ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
+                _rowMenuSeparator(),
+                _rowMenuItem(
                   value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                      SizedBox(width: 12),
-                      Text('Delete Order', style: TextStyle(color: Colors.red)),
-                    ],
-                  ),
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Delete Order',
+                  isDestructive: true,
                 ),
               ],
               child: const IgnorePointer(
@@ -2578,6 +2667,48 @@ class _InlineRowActions extends StatelessWidget {
     );
   }
 }
+
+/// One row of the order actions menu. Fixed tile height, a fixed-width icon
+/// column so every label starts on the same vertical line, and one type size —
+/// the seven inline copies this replaced agreed on none of that.
+PopupMenuItem<String> _rowMenuItem({
+  required String value,
+  required IconData icon,
+  required String label,
+  bool isDestructive = false,
+}) {
+  final tone = isDestructive
+      ? SoftErpTheme.dangerText
+      : SoftErpTheme.textPrimary;
+  return PopupMenuItem<String>(
+    value: value,
+    height: 40,
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    child: Row(
+      children: [
+        SizedBox(width: 22, child: Icon(icon, size: 17, color: tone)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: tone,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// A hairline between groups. PopupMenuDivider's default 16px height is what
+/// opened those gaps between the status block and the rest.
+PopupMenuEntry<String> _rowMenuSeparator() =>
+    const PopupMenuDivider(height: 9);
 
 class _DataCell extends StatelessWidget {
   const _DataCell(
@@ -2956,6 +3087,10 @@ class _OrderEditorSheet extends StatefulWidget {
 }
 
 class _OrderEditorSheetState extends State<_OrderEditorSheet> {
+  /// Whether the next thing added to this order is a set rather than an item.
+  /// Both end up as order lines — this only chooses how the next one is built.
+  bool _setMode = false;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _orderNoController;
   late final TextEditingController _poNumberController;
@@ -3620,13 +3755,20 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Order Items',
+                      _setMode ? 'Order Sets' : 'Order Items',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: SoftErpTheme.textPrimary,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
+                  // Sets and items both end up as order lines; this only
+                  // decides which way the next one is added.
+                  _OrderModeToggle(
+                    setMode: _setMode,
+                    onChanged: (value) => setState(() => _setMode = value),
+                  ),
+                  const SizedBox(width: 10),
                   _OrderItemsCountBadge(count: _lines.length),
                 ],
               ),
@@ -3664,7 +3806,15 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               const SizedBox(height: 10),
               FocusTraversalOrder(
                 order: const NumericFocusOrder(8000),
-                child: _AddOrderItemButton(onPressed: _addLine),
+                child: _AddOrderItemButton(
+                  label: _setMode ? 'Add Set' : 'Add More Items',
+                  icon: _setMode
+                      ? Icons.inventory_2_outlined
+                      : Icons.add_rounded,
+                  onPressed: _setMode
+                      ? () => _addLinesFromSet(context)
+                      : _addLine,
+                ),
               ),
             ],
           );
@@ -3748,11 +3898,22 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     List<ItemDefinition> items,
     int index,
   ) {
+    // A row still asking for a set has nothing to put in the per-item columns:
+    // the set decides its members' quantities and units, and the picker asks
+    // for the multiplier. Show them inert rather than inviting input that the
+    // expansion is about to overwrite.
+    final awaitingSet = _setMode && _lines[index].selectedItemId == null;
     return _OrderItemsRow(
       itemField: _buildItemSelectForLine(items, index),
-      clientCodeField: _buildClientCodeFieldForLine(index),
-      quantityField: _buildQuantityFieldForLine(index),
-      unitField: _buildUnitFieldForLine(items, index),
+      clientCodeField: awaitingSet
+          ? const _InertCell()
+          : _buildClientCodeFieldForLine(index),
+      quantityField: awaitingSet
+          ? const _InertCell()
+          : _buildQuantityFieldForLine(index),
+      unitField: awaitingSet
+          ? const _InertCell()
+          : _buildUnitFieldForLine(items, index),
       completionDateField: _itemWiseCompletionDate
           ? _buildCompletionDateFieldForLine(context, index)
           : null,
@@ -3799,6 +3960,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
+    // In Sets mode a row that has not been filled in yet asks for a set, not
+    // for a group and an item. Leaving the item pickers up would offer the one
+    // thing the mode says you are not doing. Once a set is chosen it expands
+    // into ordinary item rows, which keep their own pickers.
+    if (_setMode && line.selectedItemId == null) {
+      return _buildSetSelectForLine(index);
+    }
     final selectedItem = _selectedItemForLine(items, line.selectedItemId);
     final hasVariations =
         selectedItem != null && selectedItem.topLevelProperties.isNotEmpty;
@@ -3854,6 +4022,43 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         const SizedBox(height: 8),
         child,
       ],
+    );
+  }
+
+  /// Stands in for the group + item pickers on an unfilled row in Sets mode.
+  /// Tapping opens the same picker the "Add Set" button uses; the chosen set
+  /// replaces this row rather than being appended after it, so the empty row
+  /// does not linger under the items it produced.
+  Widget _buildSetSelectForLine(int index) {
+    final line = _lines[index];
+    final fieldKey = ValueKey<String>('orders-editor-set-field-${line.id}');
+    return InkWell(
+      key: fieldKey,
+      onTap: () => _addLinesFromSet(context, replaceLineIndex: index),
+      borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+      child: IgnorePointer(
+        child: InputDecorator(
+          decoration: _inputDecoration(hintText: 'Select Set'),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Select Set',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.expand_more_rounded,
+                size: 20,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -4093,21 +4298,51 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final line = _lines[index];
     return FocusTraversalOrder(
       order: _lineFocusOrder(index, 2),
-      child: TextFormField(
-        key: index == 0
-            ? const ValueKey<String>('orders-editor-quantity-field')
-            : ValueKey<String>('orders-editor-quantity-field-${line.id}'),
-        controller: line.quantityController,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        textInputAction: TextInputAction.next,
-        decoration: _inputDecoration(hintText: '1'),
-        validator: (value) {
-          final quantity = int.tryParse((value ?? '').trim());
-          if (quantity == null || quantity <= 0) {
-            return 'Enter whole qty';
-          }
-          return null;
+      // Rebuilds on every keystroke so the tooltip reads back what was typed.
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: line.quantityController,
+        builder: (context, value, _) {
+          final parsed = parseQuantityShorthand(value.text);
+          return Tooltip(
+            message: quantityFieldTooltip(value.text),
+            waitDuration: const Duration(milliseconds: 350),
+            child: TextFormField(
+              key: index == 0
+                  ? const ValueKey<String>('orders-editor-quantity-field')
+                  : ValueKey<String>('orders-editor-quantity-field-${line.id}'),
+              controller: line.quantityController,
+              keyboardType: TextInputType.text,
+              // digitsOnly used to sit here, which blocked the very letters the
+              // shorthand is made of. Restricted to what a quantity can
+              // contain instead: digits, a decimal point, grouping commas and
+              // the k / L / cr suffixes.
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                  RegExp(r'[0-9.,kKlLcCrR ]'),
+                ),
+              ],
+              textInputAction: TextInputAction.next,
+              decoration: _inputDecoration(
+                hintText: '1',
+                // The grouped read-back sits under the field as well as in the
+                // tooltip: on a dense row of lines, hovering each one to check
+                // a zero count is exactly the friction this removes.
+                helperText: parsed == null
+                    ? null
+                    : formatIndianNumber(parsed),
+              ),
+              validator: (value) {
+                final quantity = parseQuantityShorthand(value);
+                if (quantity == null || quantity <= 0) {
+                  return 'Enter whole qty';
+                }
+                if (quantity != quantity.roundToDouble()) {
+                  return 'Whole numbers only';
+                }
+                return null;
+              },
+            ),
+          );
         },
       ),
     );
@@ -4440,6 +4675,169 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     });
   }
 
+  /// Adds a saved set to the order, one line per member, each multiplied by
+  /// how many sets were asked for.
+  ///
+  /// A set is expanded rather than referenced: set composition is freely
+  /// editable and saved delete-then-reinsert, so an order pointing at a set id
+  /// would silently change meaning when someone edited the set. Expanding
+  /// snapshots what was agreed at order time, which is what a commitment
+  /// means.
+  /// Expands a set into order lines.
+  ///
+  /// [replaceLineIndex] swaps the set's members in where that row sits, used
+  /// when the set was picked on an empty row. Omitted, the members are appended
+  /// — the "Add Set" button's behaviour.
+  Future<void> _addLinesFromSet(
+    BuildContext context, {
+    int? replaceLineIndex,
+  }) async {
+    // Everything the async body needs is resolved before the first await, so
+    // no BuildContext crosses a gap.
+    final inventory = context.read<InventoryProvider>();
+    final itemsProvider = context.read<ItemsProvider>();
+    final navigatorContext = context;
+    await inventory.initialize();
+    if (!mounted) return;
+    if (inventory.sets.isEmpty) {
+      showAppSnack(
+        const SnackBar(
+          content: Text('No sets exist yet. Create one from Inventory first.'),
+        ),
+      );
+      return;
+    }
+
+    final choice = await showErpFormDialog<SetOrderChoice>(
+      navigatorContext,
+      maxWidth: 720,
+      maxHeight: 640,
+      child: SetOrderPickerDialog(sets: inventory.sets),
+    );
+    if (choice == null || !mounted) return;
+
+    final items = itemsProvider.items;
+    final requests = <SetLinePropertyRequest>[];
+    final ready = <({InventorySetLineDefinition line, ItemDefinition item, int qty})>[];
+
+    for (final line in choice.set.lines) {
+      final item = items
+          .where((candidate) => candidate.id == line.itemId)
+          .firstOrNull;
+      if (item == null) continue;
+      final qty = line.quantity * choice.multiplier;
+      if (_setLineNeedsProperties(item, line)) {
+        requests.add(
+          SetLinePropertyRequest(line: line, item: item, quantity: qty),
+        );
+      } else {
+        ready.add((line: line, item: item, qty: qty));
+      }
+    }
+
+    if (ready.isEmpty && requests.isEmpty) {
+      showAppSnack(
+        const SnackBar(
+          content: Text('None of that set\'s items are still available.'),
+        ),
+      );
+      return;
+    }
+
+    // Hierarchical members have to be answered before anything is added, so a
+    // half-specified set never lands on the order.
+    if (requests.isNotEmpty) {
+      final confirmed = await showErpFormDialog<bool>(
+        navigatorContext,
+        maxWidth: 760,
+        maxHeight: 620,
+        child: SetLinePropertiesDialog(
+          setName: choice.set.name,
+          requests: requests,
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    final drafts = <_OrderLineDraft>[
+      for (final entry in ready)
+        _draftFromSetLine(entry.item, entry.line, entry.qty, null),
+      for (final request in requests)
+        _draftFromSetLine(
+          request.item,
+          request.line,
+          request.quantity,
+          request.result,
+        ),
+    ];
+
+    setState(() {
+      final replaceAt = replaceLineIndex;
+      if (replaceAt != null && replaceAt >= 0 && replaceAt < _lines.length) {
+        // Its controllers go with it, or they leak.
+        _lines.removeAt(replaceAt).dispose();
+        _lines.insertAll(replaceAt, drafts);
+      } else {
+        _lines.addAll(drafts);
+      }
+      if (_itemWiseCompletionDate) {
+        _recalculateOrderCompletionFromLines();
+      }
+    });
+  }
+
+  /// True when a set member cannot be ordered from its stored leaf alone —
+  /// it carries data-entry properties (Numeric or Gauge) whose values are
+  /// typed per order and were never part of the set.
+  bool _setLineNeedsProperties(
+    ItemDefinition item,
+    InventorySetLineDefinition line,
+  ) {
+    bool hasDataEntry(ItemVariationNodeDefinition node) {
+      if (node.kind == ItemVariationNodeKind.property &&
+          (node.inputType == 'Numeric' || node.inputType == 'Gauge')) {
+        return true;
+      }
+      return node.activeChildren.any(hasDataEntry);
+    }
+
+    if (item.variationTree.any(hasDataEntry)) return true;
+    // A leaf of 0 with an item that DOES have selectable leaves means the set
+    // predates those properties.
+    final hasLeaves = item.variationTree.any(
+      (node) => node.leafValueNodes.isNotEmpty,
+    );
+    return line.variationLeafNodeId <= 0 && hasLeaves;
+  }
+
+  _OrderLineDraft _draftFromSetLine(
+    ItemDefinition item,
+    InventorySetLineDefinition line,
+    int quantity,
+    VariationPathSelectionResult? resolved,
+  ) {
+    final draft = _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch + line.itemId);
+    draft.selectedItemId = item.id;
+    draft.selectedUnitId = item.unitId;
+    draft.quantityController.text = quantity.toString();
+    if (resolved != null) {
+      draft.selectedRootPropertyId = resolved.rootPropertyId;
+      draft.selectedVariationValueNodeIds = resolved.valueNodeIds;
+      draft.selectedVariationLeafId = resolved.leaf?.id;
+      draft.customVariationValues = resolved.customVariationValues;
+    } else {
+      draft.selectedVariationLeafId = line.variationLeafNodeId > 0
+          ? line.variationLeafNodeId
+          : null;
+      draft.selectedVariationValueNodeIds = line.variationPathNodeIds;
+    }
+    if (!_itemWiseCompletionDate && _endDate != null) {
+      draft.completionDate = _endDate;
+      draft.completionDateController.text = _formatDate(_endDate!);
+    }
+    return draft;
+  }
+
   void _duplicateLine(int index) {
     if (index < 0 || index >= _lines.length) return;
 
@@ -4686,7 +5084,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             customVariationValues: line.customVariationValues.map(
               (k, v) => MapEntry(k.toString(), v),
             ),
-            quantity: int.tryParse(line.quantityController.text.trim()) ?? 1,
+            quantity: (parseQuantityShorthand(line.quantityController.text)?.round() ?? 1),
             unitId: selectedUnit.id,
             unitName: selectedUnit.name,
             unitSymbol: selectedUnit.symbol,
@@ -5460,11 +5858,18 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   InputDecoration _inputDecoration({
     String? hintText,
     String? errorText,
+    String? helperText,
     IconData? suffixIcon,
     VoidCallback? onSuffixTap,
   }) {
     return InputDecoration(
       hintText: hintText,
+      helperText: helperText,
+      helperStyle: const TextStyle(
+        color: SoftErpTheme.accentDeeper,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
       hintStyle: const TextStyle(
         color: SoftErpTheme.textSecondary,
         fontSize: 14,
@@ -5840,7 +6245,10 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
   @override
   Widget build(BuildContext context) {
     final group = widget.orderGroup;
-    final tabs = ['Details', 'Timeline', 'Track', 'Insights', 'Trace'];
+    // Timeline, Track, Insights and Trace were four tabs answering one
+    // question — how far has this order got, and who moved it. Track now
+    // carries the whole answer in one scroll.
+    final tabs = ['Details', 'Track'];
 
     final selectedContent = switch (_selectedTab) {
       0 => _OrderDetailsContent(
@@ -5858,15 +6266,11 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
             ? null
             : (item) => widget.onShowPipeline!(context, group, item),
       ),
-      1 => _OrderActivityTimeline(
-        orderId: group.items.first.id,
-      ), // Audit on first item for now
-      2 => _OrderAuditContent(orderId: group.items.first.id),
-      3 => _OrderInsightsContent(
+      1 => _OrderTrackContent(
         orderNo: group.orderNo,
+        orderId: group.items.first.id,
         getProductionRuns: widget.getProductionRuns,
       ),
-      4 => _OrderTraceContent(orderNo: group.orderNo),
       _ => const SizedBox.shrink(),
     };
 
@@ -6321,22 +6725,16 @@ class _OrderDetailsTabs extends StatelessWidget {
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: tabs[i] == 'Insights'
-                        ? Image.asset(
-                            'assets/sparkle.png',
-                            width: 16,
-                            height: 16,
-                          )
-                        : Text(
-                            tabs[i],
-                            style: TextStyle(
-                              color: selectedIndex == i
-                                  ? Colors.white
-                                  : SoftErpTheme.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                    child: Text(
+                      tabs[i],
+                      style: TextStyle(
+                        color: selectedIndex == i
+                            ? Colors.white
+                            : SoftErpTheme.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -6607,309 +7005,268 @@ class _OrderItemsGridRow extends StatelessWidget {
   }
 }
 
-class _OrderActivityTimeline extends StatelessWidget {
-  const _OrderActivityTimeline({required this.orderId});
+/// One thing that happened to this order: a status change, an activity entry,
+/// a challan going out. Categories are gone — a status change and the challan
+/// it triggered are the same kind of fact, so they sit in the same stream.
+class _TrackEntry {
+  const _TrackEntry({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.at,
+    this.actor = '',
+    this.tone,
+  });
 
+  final IconData icon;
+  final String title;
+  final String detail;
+  final DateTime at;
+  final String actor;
+  final Color? tone;
+}
+
+/// Track: everything known about an order, flat, as cards.
+///
+/// Cards flow left to right and the whole thing scrolls sideways — no vertical
+/// scroll, so the rows stay where you left them and nothing hides below a fold.
+class _OrderTrackContent extends StatefulWidget {
+  const _OrderTrackContent({
+    required this.orderNo,
+    required this.orderId,
+    this.getProductionRuns,
+  });
+
+  final String orderNo;
   final int orderId;
-
-  Future<_OrderTimelineData> _loadTimeline(BuildContext context) async {
-    final ordersProvider = context.read<OrdersProvider>();
-    final challanProvider = context.read<DeliveryChallanProvider>();
-    final results = await Future.wait<Object>([
-      ordersProvider.getOrderActivity(orderId),
-      _loadIssuedDeliveryChallans(challanProvider),
-    ]);
-    return _OrderTimelineData(
-      activities: results[0] as List<OrderActivityEntry>,
-      challans: results[1] as List<DeliveryChallan>,
-    );
-  }
-
-  Future<List<DeliveryChallan>> _loadIssuedDeliveryChallans(
-    DeliveryChallanProvider provider,
-  ) async {
-    final summaries = await provider.getOrderChallans(orderId);
-    final fullChallans = await Future.wait(
-      summaries.map((challan) => provider.loadChallan(challan.id)),
-    );
-    return fullChallans
-        .whereType<DeliveryChallan>()
-        .where(
-          (challan) =>
-              challan.type == ChallanType.delivery &&
-              challan.status == DeliveryChallanStatus.issued,
-        )
-        .toList(growable: false);
-  }
+  final Future<List<dynamic>> Function(String orderNo)? getProductionRuns;
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_OrderTimelineData>(
-      future: _loadTimeline(context),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final data = snapshot.data ?? _OrderTimelineData.empty();
-        final entries = <({DateTime timestamp, Widget child})>[
-          for (final challan in data.challans)
-            (
-              timestamp: challan.updatedAt ?? challan.createdAt ?? challan.date,
-              child: _OrderChallanTimelineTile(
-                orderId: orderId,
-                challan: challan,
-              ),
+  State<_OrderTrackContent> createState() => _OrderTrackContentState();
+}
+
+class _OrderTrackContentState extends State<_OrderTrackContent> {
+  late Future<List<_TrackEntry>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  /// Every source the old tabs each loaded separately, merged and sorted once.
+  Future<List<_TrackEntry>> _load() async {
+    final orders = context.read<OrdersProvider>();
+    final challansProvider = context.read<DeliveryChallanProvider>();
+    final entries = <_TrackEntry>[];
+
+    Future<void> guard(Future<void> Function() body) async {
+      try {
+        await body();
+      } catch (_) {
+        // A source that is unavailable must not empty the whole board.
+      }
+    }
+
+    await guard(() async {
+      for (final row in await orders.getOrderStatusHistory(widget.orderId)) {
+        entries.add(
+          _TrackEntry(
+            icon: Icons.flag_rounded,
+            title: 'Status → ${_orderStatusLabelOf(row.newStatus)}',
+            detail: row.previousStatus == null
+                ? 'Set on creation'
+                : 'From ${_orderStatusLabelOf(row.previousStatus!)}',
+            at: row.changedAt,
+            tone: SoftErpTheme.accent,
+          ),
+        );
+      }
+    });
+
+    await guard(() async {
+      for (final row in await orders.getOrderActivity(widget.orderId)) {
+        entries.add(
+          _TrackEntry(
+            icon: Icons.bolt_rounded,
+            title: _humanActivity(row.activityType),
+            detail: row.source?.trim().isNotEmpty == true
+                ? 'via ${row.source}'
+                : 'Recorded on the order',
+            at: row.createdAt,
+            actor: row.actorName?.trim() ?? '',
+          ),
+        );
+      }
+    });
+
+    await guard(() async {
+      final summaries = await challansProvider.getOrderChallans(widget.orderId);
+      for (final summary in summaries) {
+        entries.add(
+          _TrackEntry(
+            icon: Icons.local_shipping_outlined,
+            title: summary.challanNo,
+            detail: 'Challan · ${summary.status.name}',
+            at: summary.date,
+            tone: SoftErpTheme.entityItem,
+          ),
+        );
+      }
+    });
+
+    final runsLoader = widget.getProductionRuns;
+    if (runsLoader != null) {
+      await guard(() async {
+        for (final run in await runsLoader(widget.orderNo)) {
+          final map = run is Map<String, dynamic> ? run : const {};
+          final started = DateTime.tryParse('${map['startedAt'] ?? ''}');
+          entries.add(
+            _TrackEntry(
+              icon: Icons.precision_manufacturing_outlined,
+              title: '${map['name'] ?? 'Production run'}',
+              detail: 'Run · ${map['status'] ?? 'unknown'}',
+              at: started ?? DateTime.now(),
+              tone: SoftErpTheme.entityVariant,
             ),
-          for (final activity in data.activities)
-            (
-              timestamp: activity.createdAt,
-              child: _OrderActivityTile(activity: activity),
-            ),
-        ]..sort((left, right) => right.timestamp.compareTo(left.timestamp));
-        if (entries.isEmpty) {
-          return const _OrderDetailEmptyState(
-            message: 'No timeline events yet',
           );
         }
-        return _OrderDetailPanelCard(
-          child: ListView.separated(
-            itemCount: entries.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              return entries[index].child;
-            },
-          ),
-        );
-      },
-    );
+      });
+    }
+
+    entries.sort((a, b) => b.at.compareTo(a.at));
+    return entries;
   }
-}
 
-class _OrderTimelineData {
-  const _OrderTimelineData({required this.activities, required this.challans});
-
-  final List<OrderActivityEntry> activities;
-  final List<DeliveryChallan> challans;
-
-  factory _OrderTimelineData.empty() {
-    return const _OrderTimelineData(
-      activities: <OrderActivityEntry>[],
-      challans: <DeliveryChallan>[],
-    );
+  /// Stored statuses are OrderStatus names ('notStarted', 'inProgress'), so
+  /// split them for reading rather than printing camelCase at the user.
+  String _orderStatusLabelOf(String raw) {
+    final spaced = raw
+        .replaceAllMapped(RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+        .replaceAll('_', ' ')
+        .trim();
+    if (spaced.isEmpty) return 'Unknown';
+    return spaced[0].toUpperCase() + spaced.substring(1).toLowerCase();
   }
-}
 
-class _OrderAuditContent extends StatelessWidget {
-  const _OrderAuditContent({required this.orderId});
-
-  final int orderId;
+  String _humanActivity(String raw) {
+    final cleaned = raw.replaceAll('_', ' ').trim();
+    if (cleaned.isEmpty) return 'Activity';
+    return cleaned[0].toUpperCase() + cleaned.substring(1);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<OrderStatusHistoryEntry>>(
-      future: context.read<OrdersProvider>().getOrderStatusHistory(orderId),
+    return FutureBuilder<List<_TrackEntry>>(
+      future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final history = snapshot.data ?? const <OrderStatusHistoryEntry>[];
-        if (history.isEmpty) {
-          return const _OrderDetailEmptyState(message: 'No track records yet');
+        final entries = snapshot.data ?? const <_TrackEntry>[];
+        if (entries.isEmpty) {
+          return const _OrderDetailEmptyState(
+            message: 'Nothing recorded on this order yet',
+          );
         }
-        return _OrderDetailPanelCard(
-          child: ListView.separated(
-            itemCount: history.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              return _OrderAuditTile(entry: history[index]);
-            },
+        // Cards flow down each column, then across — so the sideways scroll is
+        // the only scroll, and every card is the same size.
+        return GridView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisExtent: 250,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
           ),
+          itemCount: entries.length,
+          itemBuilder: (context, index) => _TrackEntryCard(entry: entries[index]),
         );
       },
     );
   }
 }
 
-class _OrderActivityTile extends StatelessWidget {
-  const _OrderActivityTile({required this.activity});
+class _TrackEntryCard extends StatelessWidget {
+  const _TrackEntryCard({required this.entry});
 
-  final OrderActivityEntry activity;
-
-  @override
-  Widget build(BuildContext context) {
-    return _OrderHistoryTile(
-      title: _activityTitle(activity.activityType),
-      subtitle: _activitySubtitle(activity),
-      timestamp: _formatTimestamp(activity.createdAt),
-      icon: Icons.timeline_rounded,
-    );
-  }
-
-  static String _activityTitle(String type) {
-    final normalized = type.replaceAll('_', ' ').trim();
-    if (normalized.isEmpty) {
-      return 'Order activity';
-    }
-    return normalized[0].toUpperCase() + normalized.substring(1);
-  }
-
-  static String _activitySubtitle(OrderActivityEntry activity) {
-    final actor = activity.actorName?.trim();
-    final details = activity.details;
-    final status = details?['newStatus'] ?? details?['status'];
-    final parts = <String>[
-      if (actor != null && actor.isNotEmpty) 'By $actor',
-      if (status != null) 'Status: $status',
-    ];
-    return parts.isEmpty ? 'Recorded by system' : parts.join(' · ');
-  }
-}
-
-class _OrderChallanTimelineTile extends StatelessWidget {
-  const _OrderChallanTimelineTile({
-    required this.orderId,
-    required this.challan,
-  });
-
-  final int orderId;
-  final DeliveryChallan challan;
+  final _TrackEntry entry;
 
   @override
   Widget build(BuildContext context) {
-    final orderItems = _itemsForOrder(challan, orderId);
-    final totalPcs = orderItems.fold<double>(
-      0,
-      (sum, item) => sum + (double.tryParse(item.quantityPcs.trim()) ?? 0),
-    );
-    final totalWeight = orderItems.fold<double>(
-      0,
-      (sum, item) => sum + (double.tryParse(item.weight.trim()) ?? 0),
-    );
-    final itemCount = orderItems.length;
-    final itemLabel = itemCount == 1 ? '1 line' : '$itemCount lines';
-    return _OrderHistoryTile(
-      title: 'Delivery challan issued · ${challan.challanNo}',
-      subtitle:
-          'Delivered / issued: ${_formatCompactNumber(totalPcs)} pcs · ${_formatCompactNumber(totalWeight)} weight · $itemLabel',
-      timestamp: _formatTimestamp(
-        challan.updatedAt ?? challan.createdAt ?? challan.date,
-      ),
-      icon: Icons.local_shipping_outlined,
-    );
-  }
-
-  static List<DeliveryChallanItem> _itemsForOrder(
-    DeliveryChallan challan,
-    int orderId,
-  ) {
-    final directMatches = challan.items
-        .where((item) => item.orderItemId == orderId)
-        .toList(growable: false);
-    if (directMatches.isNotEmpty) {
-      return directMatches;
-    }
-    final singleOrderLinked =
-        challan.orderId == orderId ||
-        (challan.orderIds.length == 1 && challan.orderIds.first == orderId);
-    if (singleOrderLinked) {
-      return challan.items;
-    }
-    return const <DeliveryChallanItem>[];
-  }
-}
-
-class _OrderAuditTile extends StatelessWidget {
-  const _OrderAuditTile({required this.entry});
-
-  final OrderStatusHistoryEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final previous =
-        entry.previousStatus == null || entry.previousStatus!.isEmpty
-        ? '—'
-        : orderStatusFromName(entry.previousStatus!).label;
-    final next = orderStatusFromName(entry.newStatus).label;
-    return _OrderHistoryTile(
-      title: 'Status changed',
-      subtitle: '$previous → $next',
-      timestamp: _formatTimestamp(entry.changedAt),
-      icon: Icons.verified_outlined,
-    );
-  }
-}
-
-class _OrderHistoryTile extends StatelessWidget {
-  const _OrderHistoryTile({
-    required this.title,
-    required this.subtitle,
-    required this.timestamp,
-    required this.icon,
-  });
-
-  final String title;
-  final String subtitle;
-  final String timestamp;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
+    final tone = entry.tone ?? SoftErpTheme.textSecondary;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: SoftErpTheme.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              color: Color(0xFFF1EEFF),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 18, color: SoftErpTheme.accent),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
+          Row(
+            children: [
+              Icon(entry.icon, size: 15, color: tone),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  entry.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: SoftErpTheme.textPrimary,
-                    fontSize: 14,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: SoftErpTheme.textSecondary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 6),
           Text(
-            timestamp,
+            entry.detail,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: SoftErpTheme.textSecondary,
-              fontSize: 12,
+              fontSize: 11.5,
               fontWeight: FontWeight.w600,
             ),
           ),
+          const Spacer(),
+          Text(
+            _formatTrackStamp(entry.at),
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (entry.actor.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              entry.actor,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 10.5,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+String _formatTrackStamp(DateTime at) {
+  String two(int value) => value.toString().padLeft(2, '0');
+  final d = at.toLocal();
+  return '${two(d.day)}-${two(d.month)}-${d.year} · ${two(d.hour)}:${two(d.minute)}';
 }
 
 class _OrderDetailEmptyState extends StatelessWidget {
@@ -6957,21 +7314,6 @@ class _SoftWarningBadge extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatTimestamp(DateTime value) {
-  final day = value.day.toString().padLeft(2, '0');
-  final month = value.month.toString().padLeft(2, '0');
-  final hour = value.hour.toString().padLeft(2, '0');
-  final minute = value.minute.toString().padLeft(2, '0');
-  return '$day-$month-${value.year} $hour:$minute';
-}
-
-String _formatCompactNumber(double value) {
-  if (!value.isFinite) {
-    return '0';
-  }
-  return QuantityFormatter.format(value);
 }
 
 class _OrderPoDocumentsSection extends StatelessWidget {
@@ -8459,6 +8801,22 @@ class _OrderItemsHeader extends StatelessWidget {
   }
 }
 
+/// Placeholder for a column that does not apply to this row yet.
+class _InertCell extends StatelessWidget {
+  const _InertCell();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        '—',
+        style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 14),
+      ),
+    );
+  }
+}
+
 class _OrderItemsRow extends StatelessWidget {
   const _OrderItemsRow({
     required this.itemField,
@@ -8657,10 +9015,81 @@ class _ItemWiseCompletionToggleState extends State<_ItemWiseCompletionToggle> {
   }
 }
 
+/// Items / Sets switch beside the order-lines heading.
+class _OrderModeToggle extends StatelessWidget {
+  const _OrderModeToggle({required this.setMode, required this.onChanged});
+
+  final bool setMode;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget half(String label, IconData icon, bool value) {
+      final active = setMode == value;
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onChanged(value),
+          borderRadius: BorderRadius.circular(999),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: active ? SoftErpTheme.accent : Colors.transparent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 14,
+                  color: active ? Colors.white : SoftErpTheme.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: active ? Colors.white : SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      key: const ValueKey<String>('orders-editor-mode-toggle'),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          half('Items', Icons.inventory_outlined, false),
+          half('Sets', Icons.inventory_2_outlined, true),
+        ],
+      ),
+    );
+  }
+}
+
 class _AddOrderItemButton extends StatelessWidget {
-  const _AddOrderItemButton({required this.onPressed});
+  const _AddOrderItemButton({
+    required this.onPressed,
+    this.label = 'Add More Items',
+    this.icon = Icons.add_rounded,
+  });
 
   final VoidCallback onPressed;
+  final String label;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -8668,8 +9097,8 @@ class _AddOrderItemButton extends StatelessWidget {
       width: double.infinity,
       child: OutlinedButton.icon(
         onPressed: onPressed,
-        icon: const Icon(Icons.add_rounded, size: 16),
-        label: const Text('Add More Items'),
+        icon: Icon(icon, size: 16),
+        label: Text(label),
         style: OutlinedButton.styleFrom(
           foregroundColor: SoftErpTheme.accent,
           backgroundColor: const Color(0xFFFDFCFF),
@@ -9285,153 +9714,3 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
   }
 }
 
-class _OrderInsightsContent extends StatelessWidget {
-  const _OrderInsightsContent({
-    required this.orderNo,
-    this.getProductionRuns,
-  });
-
-  final String orderNo;
-  final Future<List<dynamic>> Function(String orderNo)? getProductionRuns;
-
-  @override
-  Widget build(BuildContext context) {
-    if (getProductionRuns == null) {
-      return const Center(child: Text('Insights unavailable', style: TextStyle(color: SoftErpTheme.textSecondary)));
-    }
-
-    return FutureBuilder<List<dynamic>>(
-      future: getProductionRuns!(orderNo),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final runs = snapshot.data ?? [];
-        if (runs.isEmpty) {
-          return const Center(
-            child: Text(
-              'No production runs recorded for this order.',
-              style: TextStyle(color: SoftErpTheme.textSecondary),
-            ),
-          );
-        }
-
-        // Compute metrics
-        int totalProcessed = 0;
-        int totalScrap = 0;
-        int totalRejection = 0;
-        for (final run in runs) {
-          try {
-            // Safe access using reflection-free runtime lookup since runs might be dynamic
-            final map = run as Map<String, dynamic>? ?? {};
-            totalProcessed += (map['rawInputWeight'] as num?)?.toInt() ?? 0;
-            totalScrap += (map['scrapWeight'] as num?)?.toInt() ?? 0;
-            totalRejection += (map['rejectionWeight'] as num?)?.toInt() ?? 0;
-          } catch (_) {
-            // Try properties directly if it's an object instead of a map
-            try {
-              totalProcessed += (run.rawInputWeight as num?)?.toInt() ?? 0;
-              totalScrap += (run.scrapWeight as num?)?.toInt() ?? 0;
-              totalRejection += (run.rejectionWeight as num?)?.toInt() ?? 0;
-            } catch (_) {}
-          }
-        }
-
-        final goodOutput = totalProcessed - totalScrap - totalRejection;
-        final yieldPct = totalProcessed > 0
-            ? (goodOutput / totalProcessed * 100).toStringAsFixed(1)
-            : '0.0';
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 12),
-            Text(
-              'Order Yield & Performance Summary',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: SoftErpTheme.textPrimary,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _MiniMetricCard(
-                    label: 'Recovery Yield',
-                    value: '$yieldPct%',
-                    color: const Color(0xFF10B981),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MiniMetricCard(
-                    label: 'Total Scrap',
-                    value: '${totalScrap}kg',
-                    color: const Color(0xFFF59E0B),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MiniMetricCard(
-                    label: 'Rejections',
-                    value: '${totalRejection}kg',
-                    color: const Color(0xFFEF4444),
-                  ),
-                ),
-              ],
-            ),
-            // Pipeline Runs list intentionally hidden from the Insights tab —
-            // the aggregate yield/scrap/rejection summary above is what's shown.
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _MiniMetricCard extends StatelessWidget {
-  const _MiniMetricCard({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: SoftErpTheme.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

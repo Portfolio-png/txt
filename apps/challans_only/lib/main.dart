@@ -94,6 +94,7 @@ class MyApp extends StatelessWidget {
     this.vendorRepository,
     this.itemRepository,
     this.orderRepository,
+    this.searchRepository,
     this.demoModeOverride,
   });
 
@@ -285,67 +286,51 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
           create: (context) =>
-              OrdersProvider(repository: context.read<OrderRepository>())
-                ..initialize(),
+              OrdersProvider(repository: context.read<OrderRepository>()),
           update: (context, repository, previous) =>
-              previous ?? OrdersProvider(repository: repository)
-                ..initialize(),
+              previous ?? OrdersProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
           create: (context) =>
-              InventoryProvider(repository: context.read<InventoryRepository>())
-                ..initialize(),
+              InventoryProvider(repository: context.read<InventoryRepository>()),
           update: (context, repository, previous) =>
-              previous ?? InventoryProvider(repository: repository)
-                ..initialize(),
+              previous ?? InventoryProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<UnitRepository, UnitsProvider>(
           create: (context) =>
-              UnitsProvider(repository: context.read<UnitRepository>())
-                ..initialize(),
+              UnitsProvider(repository: context.read<UnitRepository>()),
           update: (context, repository, previous) =>
-              previous ?? UnitsProvider(repository: repository)
-                ..initialize(),
+              previous ?? UnitsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<GroupRepository, GroupsProvider>(
           create: (context) =>
-              GroupsProvider(repository: context.read<GroupRepository>())
-                ..initialize(),
+              GroupsProvider(repository: context.read<GroupRepository>()),
           update: (context, repository, previous) =>
-              previous ?? GroupsProvider(repository: repository)
-                ..initialize(),
+              previous ?? GroupsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<ClientRepository, ClientsProvider>(
           create: (context) =>
-              ClientsProvider(repository: context.read<ClientRepository>())
-                ..initialize(),
+              ClientsProvider(repository: context.read<ClientRepository>()),
           update: (context, repository, previous) =>
-              previous ?? ClientsProvider(repository: repository)
-                ..initialize(),
+              previous ?? ClientsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<VendorRepository, VendorsProvider>(
           create: (context) =>
-              VendorsProvider(repository: context.read<VendorRepository>())
-                ..initialize(),
+              VendorsProvider(repository: context.read<VendorRepository>()),
           update: (context, repository, previous) =>
-              previous ?? VendorsProvider(repository: repository)
-                ..initialize(),
+              previous ?? VendorsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<ItemRepository, ItemsProvider>(
           create: (context) =>
-              ItemsProvider(repository: context.read<ItemRepository>())
-                ..initialize(),
+              ItemsProvider(repository: context.read<ItemRepository>()),
           update: (context, repository, previous) =>
-              previous ?? ItemsProvider(repository: repository)
-                ..initialize(),
+              previous ?? ItemsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<ChallanRepository, ChallanProvider>(
           create: (context) =>
-              ChallanProvider(repository: context.read<ChallanRepository>())
-                ..initialize(),
+              ChallanProvider(repository: context.read<ChallanRepository>()),
           update: (context, repository, previous) =>
-              previous ?? ChallanProvider(repository: repository)
-                ..initialize(),
+              previous ?? ChallanProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<SearchRepository, SearchProvider>(
           create: (context) =>
@@ -370,7 +355,14 @@ class MyApp extends StatelessWidget {
   }
 
   AuthenticatedHttpClient _authClient(AuthProvider auth) {
-    return AuthenticatedHttpClient(tokenResolver: () => auth.token);
+    return AuthenticatedHttpClient(
+      tokenResolver: () => auth.token,
+      onUnauthorized: () {
+        if (auth.isAuthenticated && !_effectiveDemoMode) {
+          auth.logout();
+        }
+      },
+    );
   }
 
   InventoryRepository _buildInventoryRepository(AuthProvider auth) {
@@ -465,14 +457,14 @@ class _AuthGateState extends State<_AuthGate> {
         return;
       }
       Future.wait<void>([
-        context.read<OrdersProvider>().refresh(),
-        context.read<InventoryProvider>().refresh(),
-        context.read<UnitsProvider>().refresh(),
-        context.read<GroupsProvider>().refresh(),
-        context.read<ClientsProvider>().refresh(),
-        context.read<VendorsProvider>().refresh(),
-        context.read<ItemsProvider>().refresh(),
-        context.read<DeliveryChallanProvider>().refresh(),
+        context.read<OrdersProvider>().initialize(),
+        context.read<InventoryProvider>().initialize(),
+        context.read<UnitsProvider>().initialize(),
+        context.read<GroupsProvider>().initialize(),
+        context.read<ClientsProvider>().initialize(),
+        context.read<VendorsProvider>().initialize(),
+        context.read<ItemsProvider>().initialize(),
+        context.read<ChallanProvider>().initialize(),
       ]);
     });
   }

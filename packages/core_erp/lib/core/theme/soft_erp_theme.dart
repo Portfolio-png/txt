@@ -18,12 +18,25 @@ class SoftErpTheme {
   static const Color accentSurface = Color(0xFFF1EEFF);
   static const Color successBg = Color(0xFFEAF8EE);
   static const Color successText = Color(0xFF0F8B45);
+
   static const Color warningBg = Color(0xFFFFF6E9);
   static const Color warningText = Color(0xFF946200);
   static const Color infoBg = Color(0xFFEBF2FF);
   static const Color infoText = Color(0xFF2E57C7);
   static const Color dangerBg = Color(0xFFFDEDEE);
   static const Color dangerText = Color(0xFFC62828);
+  // --- Entity kind ---------------------------------------------------------
+  // Distinguishes a base item from a spawned variant ("basic item") wherever
+  // the two appear in one list — combination groups, inventory sets, pickers.
+  // Deliberately blue vs teal rather than reusing success green or warning
+  // amber, which already carry status meaning in those same lists.
+  static const Color entityItem = Color(0xFF2E57C7);
+  static const Color entityItemBg = Color(0xFFEBF2FF);
+  static const Color entityItemBorder = Color(0xFFC7D6F5);
+  static const Color entityVariant = Color(0xFF0D7C86);
+  static const Color entityVariantBg = Color(0xFFE4F5F7);
+  static const Color entityVariantBorder = Color(0xFFB6E2E7);
+
   static const Color draftRowEdgeTint = Color(0x146366F1);
   static const Color notStartedRowEdgeTint = Color(0x14D08A2A);
   static const Color inProgressRowEdgeTint = Color(0x143F74E0);

@@ -5,6 +5,7 @@ import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
 import '../../domain/global_audit_log.dart';
 import '../../domain/track_event.dart';
+import '../../../../core/services/socket_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   AuthProvider({
@@ -172,6 +173,7 @@ class AuthProvider extends ChangeNotifier {
     _usersHasMore = false;
     _deleteRequestsHasMore = false;
     _authEventsHasMore = false;
+    SocketService.instance.disconnect();
     notifyListeners();
   }
 

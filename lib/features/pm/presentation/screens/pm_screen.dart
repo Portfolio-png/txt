@@ -7,6 +7,7 @@ import '../widgets/pm_ux_exploration.dart';
 import '../widgets/pm_database_section.dart';
 import '../widgets/pm_button_library.dart';
 import '../widgets/pm_barcode_section.dart';
+import '../widgets/pm_entity_color_section.dart';
 import '../widgets/pm_pipeline_ux_exploration.dart';
 
 class PMScreen extends StatefulWidget {
@@ -174,6 +175,8 @@ class _PMScreenState extends State<PMScreen> {
             const PMButtonLibrary(),
             const SizedBox(height: 24),
             const PMBarcodeSection(),
+            const SizedBox(height: 24),
+            const PMEntityColorSection(),
           ],
         ),
       ),

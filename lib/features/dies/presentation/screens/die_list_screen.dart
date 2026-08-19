@@ -117,7 +117,7 @@ class _DiesToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SoftMasterToolbar(
       children: [
-        _ViewToggleButton(isGridView: isGridView, onTap: onToggleView),
+        SoftViewToggleButton(isGridView: isGridView, onTap: onToggleView),
         if (isGridView)
           _CardScaleControl(scale: cardScale, onChanged: onCardScaleChanged),
       ],
@@ -125,49 +125,6 @@ class _DiesToolbar extends StatelessWidget {
   }
 }
 
-class _ViewToggleButton extends StatelessWidget {
-  const _ViewToggleButton({required this.isGridView, required this.onTap});
-  final bool isGridView;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: SoftErpTheme.cardSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: SoftErpTheme.border),
-            boxShadow: SoftErpTheme.insetShadow,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isGridView ? Icons.view_headline_rounded : Icons.grid_view_rounded,
-                size: 18,
-                color: SoftErpTheme.textPrimary,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                isGridView ? 'List View' : 'Card View',
-                style: const TextStyle(
-                    color: SoftErpTheme.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _CardScaleControl extends StatelessWidget {
   const _CardScaleControl({required this.scale, required this.onChanged});

@@ -9,6 +9,8 @@ import 'package:showcaseview/showcaseview.dart';
 
 import 'package:core_erp/app/preferences/preferences_provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/confirm_dialog.dart';
+import 'package:core_erp/features/auth/data/auth_api.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
@@ -704,6 +706,27 @@ class _SettingsPreferencesDialogState
             ],
           ),
         ],
+        <_SettingsNavItem>[
+          _SettingsNavItem(
+            pane: _SettingsPane.workspaceData,
+            label: 'Workspace Data',
+            icon: Icons.dataset_outlined,
+            tint: Color(0xFF7C3AED),
+            keywords: <String>[
+              'demo',
+              'scenario',
+              'sample',
+              'seed',
+              'reseed',
+              'reset',
+              'clear',
+              'wipe',
+              'factory reset',
+              'nuke',
+              'fulfilment',
+            ],
+          ),
+        ],
       ];
 
   @override
@@ -712,7 +735,22 @@ class _SettingsPreferencesDialogState
     super.dispose();
   }
 
+  /// A pane with no nav entry is invisible — it renders correctly and can
+  /// never be opened. Workspace Data shipped that way once; this makes the next
+  /// one fail loudly in debug instead of quietly going missing.
+  static bool _everyPaneIsReachable() {
+    final reachable = <_SettingsPane>{
+      for (final group in _navGroups)
+        for (final item in group) item.pane,
+    };
+    return reachable.length == _SettingsPane.values.length;
+  }
+
   List<List<_SettingsNavItem>> get _visibleNavGroups {
+    assert(
+      _everyPaneIsReachable(),
+      'Every _SettingsPane needs a _SettingsNavItem, or it cannot be opened.',
+    );
     final query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) {
       return _navGroups;
@@ -726,6 +764,37 @@ class _SettingsPreferencesDialogState
         .toList(growable: false);
   }
 
+
+  /// Both Danger Zone actions used to fire on a single click. Clearing asks a
+  /// plain yes/no; the factory reset makes you type the phrase, because it also
+  /// destroys the accounts and there is no undo.
+  Future<void> _confirmThenClear() async {
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Clear all business data?',
+      message:
+          'Every item, order, challan, inventory movement and log will be '
+          'deleted. User accounts, roles and permissions are kept. This '
+          'cannot be undone.',
+      confirmLabel: 'Clear data',
+    );
+    if (!ok || !mounted) {
+      return;
+    }
+    await _handleClear();
+  }
+
+  Future<void> _confirmThenFactoryReset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const _FactoryResetConfirmDialog(),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    await _handleFactoryReset();
+  }
 
   Future<void> _handleClear() async {
     setState(() {
@@ -810,8 +879,10 @@ class _SettingsPreferencesDialogState
       'default': 'Electrical',
       'manufacturing': 'Manufacturing',
       'mobiles': 'Mobiles',
+      'established': 'Established Business · One Year',
       'scenario_a': 'Scenario A · Decoupled Stock',
       'scenario_b': 'Scenario B · On-Demand Procurement',
+      'scenario_c': 'Scenario C · Order Fulfilment',
     };
     final label = labels[scenarioId] ?? scenarioId;
     // Loading a scenario wipes all business data first — always confirm.
@@ -1178,6 +1249,9 @@ class _SettingsPreferencesDialogState
   }
 
   List<Widget> _buildWorkspaceDataPane() {
+    final isSuperAdmin =
+        context.watch<AuthProvider>().user?.isSuperAdmin ?? false;
+
     Widget seedButton(String scenarioId) {
       return OutlinedButton(
         onPressed: _isResetting
@@ -1222,6 +1296,17 @@ class _SettingsPreferencesDialogState
             trailing: seedButton('mobiles'),
           ),
           _SettingsRow(
+            icon: Icons.history_edu_outlined,
+            iconTint: const Color(0xFF0F766E),
+            title: 'Established Business · One Year',
+            subtitle:
+                'A factory eleven months in: 14 staff across 5 departments, 8 '
+                'machines and 6 dies on the floor, an order book that ramps '
+                'from 3 to 16 lines a month, plus the production runs, '
+                'challans, procurement and assembly jobs that trail behind it.',
+            trailing: seedButton('established'),
+          ),
+          _SettingsRow(
             icon: Icons.inventory_2_outlined,
             iconTint: const Color(0xFF0D9488),
             title: 'Scenario A · Decoupled Stock',
@@ -1239,6 +1324,17 @@ class _SettingsPreferencesDialogState
                 '(reception→order link). Demonstrates custom sourcing.',
             trailing: seedButton('scenario_b'),
           ),
+          _SettingsRow(
+            icon: Icons.insights_outlined,
+            iconTint: const Color(0xFF7C3AED),
+            title: 'Scenario C · Order Fulfilment',
+            subtitle:
+                'Seven order lines covering every state Order Insights can '
+                'show: no pipeline, not started, running, stalled, old and '
+                'fully delivered — with floor-reconciled output in both '
+                'matching and mismatched units.',
+            trailing: seedButton('scenario_c'),
+          ),
         ],
       ),
       const SizedBox(height: 18),
@@ -1249,9 +1345,11 @@ class _SettingsPreferencesDialogState
             icon: Icons.cleaning_services_outlined,
             iconTint: const Color(0xFFEF4444),
             title: 'Clear Data',
-            subtitle: 'Leaves only the minimum app baseline in place.',
+            subtitle:
+                'Wipes business records but keeps user accounts and '
+                'permissions. Leaves only the minimum app baseline in place.',
             trailing: FilledButton(
-              onPressed: _isResetting ? null : _handleClear,
+              onPressed: _isResetting ? null : _confirmThenClear,
               style: FilledButton.styleFrom(
                 backgroundColor: SoftErpTheme.accent,
                 foregroundColor: Colors.white,
@@ -1264,27 +1362,33 @@ class _SettingsPreferencesDialogState
               child: Text(_isResetting ? 'Working…' : 'Clear'),
             ),
           ),
-          _SettingsRow(
-            icon: Icons.restart_alt_rounded,
-            iconTint: const Color(0xFFB91C1C),
-            title: 'Factory Reset',
-            subtitle:
-                'Wipes everything including user accounts. You will be '
-                'logged out.',
-            trailing: FilledButton(
-              onPressed: _isResetting ? null : _handleFactoryReset,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red.shade700,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(88, 34),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9),
+          // Factory reset deletes every row in every table, user accounts
+          // included. The backend already refuses anyone below super_admin;
+          // this keeps the control itself out of an admin's Settings rather
+          // than offering a button that can only 403.
+          if (isSuperAdmin)
+            _SettingsRow(
+              icon: Icons.restart_alt_rounded,
+              iconTint: const Color(0xFFB91C1C),
+              title: 'Factory Reset',
+              subtitle:
+                  'Deletes every record in the database, user accounts '
+                  'included, and signs you out. Super admin only. This cannot '
+                  'be undone.',
+              trailing: FilledButton(
+                onPressed: _isResetting ? null : _confirmThenFactoryReset,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(88, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
+                  ),
                 ),
+                child: Text(_isResetting ? 'Working…' : 'Reset'),
               ),
-              child: Text(_isResetting ? 'Working…' : 'Reset'),
             ),
-          ),
         ],
       ),
     ];
@@ -1631,4 +1735,104 @@ class _SidebarItemData {
   final String key;
   final String label;
   final IconData icon;
+}
+
+
+/// Factory reset is the one irreversible control in the app: it deletes every
+/// row in every table, accounts included. A yes/no is too easy to click
+/// through, so the phrase has to be typed exactly.
+class _FactoryResetConfirmDialog extends StatefulWidget {
+  const _FactoryResetConfirmDialog();
+
+  @override
+  State<_FactoryResetConfirmDialog> createState() =>
+      _FactoryResetConfirmDialogState();
+}
+
+class _FactoryResetConfirmDialogState
+    extends State<_FactoryResetConfirmDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool get _matches =>
+      _controller.text.trim() == AuthApi.factoryResetConfirmation;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
+      title: const Text('Factory reset this workspace?'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This deletes every record in the database — items, orders, '
+              'challans, inventory, logs and every user account except the '
+              'bootstrapped super admin. You will be signed out.',
+              style: TextStyle(height: 1.45),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'There is no undo and no backup is taken.',
+              style: TextStyle(fontWeight: FontWeight.w700, height: 1.45),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Type ${AuthApi.factoryResetConfirmation} to confirm:',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: AuthApi.factoryResetConfirmation,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onSubmitted: (_) {
+                if (_matches) Navigator.of(context).pop(true);
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.red.shade700,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _matches ? () => Navigator.of(context).pop(true) : null,
+          child: const Text('Erase everything'),
+        ),
+      ],
+    );
+  }
 }

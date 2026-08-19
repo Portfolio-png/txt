@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
@@ -759,7 +761,10 @@ class _ShellContentSwitcher extends StatelessWidget {
                 embeddedInShell: true,
                 mode: ProductionPipelinesScreenMode.production,
               ),
-              'insights' => const ProductionRunsScreen(initialTab: 'insights'),
+              'insights' => const ProductionRunsScreen(
+                initialTab: 'insights',
+                showTabs: false,
+              ),
               'production_pipelines' => const ProductionPipelinesScreen(
                 embeddedInShell: true,
                 mode: ProductionPipelinesScreenMode.manage,
@@ -772,6 +777,12 @@ class _ShellContentSwitcher extends StatelessWidget {
                   final stableContext = outerContext;
                   final created = await showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
                   if (created == true && screenContext.mounted) {
+                    // Attaching a run changes the order's derived status and
+                    // moves it into the "In production" row of insights. The
+                    // server emits nothing the client listens to, so refresh
+                    // here or the order book stays stale until something else
+                    // happens to reload it.
+                    unawaited(screenContext.read<OrdersProvider>().refresh());
                     screenContext.read<AppNavigation>().select('production');
                   }
                 },

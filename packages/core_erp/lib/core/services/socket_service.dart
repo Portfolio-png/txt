@@ -19,14 +19,31 @@ class SocketService {
   final Map<String, List<Function(dynamic)>> _listeners = {};
 
   void init(String baseUrl, {String? token}) {
-    bool tokenChanged = _currentToken != token;
-    _currentToken = token;
+    final cleanToken = token?.trim();
+    if (cleanToken == null || cleanToken.isEmpty) {
+      disconnect();
+      return;
+    }
+
+    bool tokenChanged = _currentToken != cleanToken;
+    _currentToken = cleanToken;
 
     if (_isConnected && !tokenChanged) return;
 
     _isConnected = true;
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _connectInternal(baseUrl);
+  }
+
+  /// Disconnects SSE stream and cancels any active reconnect attempts.
+  void disconnect() {
+    _isConnected = false;
+    _currentToken = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _client?.close();
+    _client = null;
   }
 
   /// Ask all subscribers to resync their data. Used when the app returns to the
@@ -38,6 +55,11 @@ class SocketService {
   }
 
   Future<void> _connectInternal(String baseUrl) async {
+    if (_currentToken == null || _currentToken!.isEmpty) {
+      _isConnected = false;
+      return;
+    }
+
     _client?.close();
     _client = http.Client();
 
@@ -45,14 +67,10 @@ class SocketService {
       final url = baseUrl.isEmpty ? 'http://localhost:3000' : baseUrl;
       final uri = Uri.parse('$url/api/events?since=$_lastEventId');
       final request = http.Request('GET', uri);
-      if (_currentToken != null && _currentToken!.isNotEmpty) {
-        request.headers['Authorization'] = 'Bearer $_currentToken';
-        print(
-          'SocketService: Connecting with token... ${_currentToken!.substring(0, math.min(10, _currentToken!.length))}...',
-        );
-      } else {
-        print('SocketService: Connecting WITHOUT token!');
-      }
+      request.headers['Authorization'] = 'Bearer $_currentToken';
+      print(
+        'SocketService: Connecting with token... ${_currentToken!.substring(0, math.min(10, _currentToken!.length))}...',
+      );
       final response = await _client!.send(request);
 
       if (response.statusCode == 200) {
@@ -91,9 +109,9 @@ class SocketService {
             );
       } else if (response.statusCode == 401 || response.statusCode == 403) {
         print(
-          'SocketService: Unauthorized (status ${response.statusCode}), emitting event and stopping reconnect loop.',
+          'SocketService: Unauthorized (status ${response.statusCode}), disconnecting and emitting event.',
         );
-        _isConnected = false;
+        disconnect();
         _emit('unauthorized', null);
       } else {
         print(
@@ -201,11 +219,13 @@ class SocketService {
 
   void _scheduleReconnect(String baseUrl) {
     _client?.close();
-    if (!_isConnected) return;
+    if (!_isConnected || _currentToken == null || _currentToken!.isEmpty) return;
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
-      _connectInternal(baseUrl);
+      if (_isConnected && _currentToken != null && _currentToken!.isNotEmpty) {
+        _connectInternal(baseUrl);
+      }
     });
   }
 

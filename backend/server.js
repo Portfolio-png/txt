@@ -1691,22 +1691,27 @@ async function requireAuth(req, res, next) {
     res.status(401).json({ success: false, error: 'Invalid or expired token.' });
     return;
   }
-  const session = await getActiveSession(String(payload.sid), hashToken(token));
-  if (!session) {
-    res.status(401).json({ success: false, error: 'Session is expired or revoked.' });
-    return;
+  try {
+    const session = await getActiveSession(String(payload.sid), hashToken(token));
+    if (!session) {
+      res.status(401).json({ success: false, error: 'Session is expired or revoked.' });
+      return;
+    }
+    const user = await findActiveUserById(Number(payload.sub));
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User is inactive or no longer exists.' });
+      return;
+    }
+    const permissionMap = await getEffectivePermissionMap(user.id, user.role);
+    await touchSession(session.id);
+    req.user = safeUserDto(user, permissionMap);
+    req.userPermissions = permissionMap;
+    req.authSession = rowToAuthSessionDto(session);
+    next();
+  } catch (err) {
+    console.error('[Auth] Verification failed:', err);
+    res.status(401).json({ success: false, error: 'Authentication verification failed.' });
   }
-  const user = await findActiveUserById(Number(payload.sub));
-  if (!user) {
-    res.status(401).json({ success: false, error: 'User is inactive or no longer exists.' });
-    return;
-  }
-  const permissionMap = await getEffectivePermissionMap(user.id, user.role);
-  await touchSession(session.id);
-  req.user = safeUserDto(user, permissionMap);
-  req.userPermissions = permissionMap;
-  req.authSession = rowToAuthSessionDto(session);
-  next();
 }
 
 function requireRoles(...roles) {
@@ -2254,6 +2259,22 @@ async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_unit_conversions WHERE item_id = ?', [id]);
   await run('DELETE FROM variation_stock WHERE item_id = ?', [id]);
   await run('DELETE FROM uploaded_assets WHERE entity_type = ? AND entity_id = ?', ['item', id]);
+  // Membership rows have to go by hand. trashAndDelete removes the item over
+  // the dedicated delete connection, which runs with foreign_keys = OFF for its
+  // whole lifetime, so the ON DELETE CASCADE declared on
+  // group_item_memberships never fires and inventory_set_lines never had one.
+  // Left behind, a set keeps a nameless ghost line that still counts toward its
+  // total AND makes the set unsaveable, because saveInventorySet re-validates
+  // every line and rejects one whose item no longer exists.
+  await run('DELETE FROM group_item_memberships WHERE item_id = ?', [id]);
+  await run('DELETE FROM inventory_set_lines WHERE item_id = ?', [id]);
+  // Same reason: every one of these declares ON DELETE CASCADE on items(id),
+  // and every one of them is orphaned instead.
+  await run('DELETE FROM item_attachments WHERE item_id = ?', [id]);
+  await run('DELETE FROM item_machines WHERE item_id = ?', [id]);
+  await run('DELETE FROM item_dies WHERE item_id = ?', [id]);
+  await run('DELETE FROM item_property_schema WHERE item_id = ?', [id]);
+  await run('DELETE FROM item_bom_lines WHERE item_id = ?', [id]);
   await trashAndDelete('items', id, req);
 }
 
@@ -2349,6 +2370,21 @@ function rowToInventorySetDto(row, lines = []) {
     totalItemCount: Number(row.total_item_count || 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Set only for a set produced by an assembly step, so the Sets tab can say
+    // where it came from instead of showing it as just another definition.
+    isTemporary: Number(row.is_temporary || 0) === 1,
+    originRunId: row.origin_run_id || null,
+    originNodeId: row.origin_node_id || null,
+    sourceSetId: row.source_set_id || null,
+    producedAt: row.produced_at || null,
+    // Stock the set actually holds, and the barcode its ledger lives under.
+    onHandQty: row.on_hand_qty === null || row.on_hand_qty === undefined
+      ? null
+      : Number(row.on_hand_qty),
+    materialBarcode: row.material_barcode || null,
+    // A set carries its own photo, shown on its card in the Items master.
+    // Uploaded against entity_type 'inventory_set', which assets already allow.
+    photoUrl: row.photo_url || row.asset_photo_url || null,
     lines,
   };
 }
@@ -2698,6 +2734,235 @@ async function upsertStageReconciliation(runId, nodeId, metrics) {
        updated_at = excluded.updated_at`,
     [runId, nodeId, ...vals],
   );
+  await propagateAssemblyRejection(runId, nodeId, metrics);
+  // Reconciling an assembly stage is the moment its output is real, so that is
+  // when the temporary set lands in inventory.
+  if (metrics.output !== undefined && metrics.output !== null) {
+    try {
+      await ensureTemporarySetFromAssembly(runId, nodeId, Number(metrics.output) || 0);
+    } catch (error) {
+      // A set that cannot be minted must not fail the supervisor's booking.
+      console.warn(`[assembly-set] run ${runId} node ${nodeId}: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * An assembly step clips parts together, and the result is a set. Mint it into
+ * inventory the way a run mints a temporary item: composition taken from what
+ * actually fed the step on this run, then matched against the defined sets so a
+ * recognised composition carries that set's name.
+ *
+ * Keyed on (run, node) — reconciling the same stage again updates the set it
+ * already produced rather than minting a second one.
+ */
+async function ensureTemporarySetFromAssembly(runId, nodeId, producedQty) {
+  const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
+  if (!runRow) return null;
+  const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+  if (!templateRow) return null;
+  const tpl = rowToTemplate(templateRow);
+  const node = (tpl.nodes || []).find((n) => n.id === nodeId);
+  if (!node || node.processType !== 'Assembly') return null;
+
+  // What fed the step is what got assembled.
+  const feederIds = new Set(
+    (tpl.flows || []).filter((f) => f.toNodeId === nodeId).map((f) => f.fromNodeId),
+  );
+  const overrides = parseJson(runRow.overrides_json, { batchQuantityByNode: {} });
+  const lines = [];
+  for (const feeder of (tpl.nodes || [])) {
+    if (!feederIds.has(feeder.id)) continue;
+    const itemId = feeder.outputItem && feeder.outputItem.itemId;
+    if (!itemId) continue;
+    lines.push({
+      itemId,
+      leafId: feeder.outputItem.variationLeafNodeId || 0,
+      quantity: Number(overrides.batchQuantityByNode?.[feeder.id]) || producedQty || 1,
+    });
+  }
+  if (!lines.length) return null;
+
+  // Match the composition against the defined sets: same (item, variation) on
+  // both sides, ignoring quantity — a Starter Pack is a Starter Pack whether
+  // one or a thousand came off the line.
+  const signature = (rows) => rows
+    .map((l) => `${l.itemId}:${l.leafId}`)
+    .sort()
+    .join('|');
+  const ours = signature(lines);
+  let matched = null;
+  const defined = await all(
+    'SELECT id, name FROM inventory_sets WHERE COALESCE(is_temporary, 0) = 0',
+  );
+  for (const candidate of defined) {
+    const candidateLines = await all(
+      'SELECT item_id AS itemId, variation_leaf_node_id AS leafId FROM inventory_set_lines WHERE set_id = ?',
+      [candidate.id],
+    );
+    if (candidateLines.length && signature(candidateLines) === ours) {
+      matched = candidate;
+      break;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const label = matched ? matched.name : (node.name || 'Assembly');
+  const name = `Temporary · ${label} · ${runId}`;
+
+  const existing = await get(
+    'SELECT id FROM inventory_sets WHERE origin_run_id = ? AND origin_node_id = ?',
+    [runId, nodeId],
+  );
+  let setId;
+  if (existing) {
+    setId = existing.id;
+    await run(
+      `UPDATE inventory_sets
+          SET name = ?, source_set_id = ?, produced_at = ?, updated_at = ?
+        WHERE id = ?`,
+      [name, matched?.id ?? null, now, now, setId],
+    );
+    await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
+  } else {
+    const inserted = await run(
+      `INSERT INTO inventory_sets
+         (name, created_at, updated_at, origin_run_id, origin_node_id,
+          source_set_id, produced_at, is_temporary)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [name, now, now, runId, nodeId, matched?.id ?? null, now],
+    );
+    setId = inserted.lastID;
+  }
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    await run(
+      `INSERT INTO inventory_set_lines
+         (set_id, item_id, variation_leaf_node_id, quantity, position)
+       VALUES (?, ?, ?, ?, ?)`,
+      // variation_leaf_node_id is a foreign key into item_variation_nodes, so a
+      // base item with no variation stores NULL — 0 is not a node.
+      [setId, line.itemId, line.leafId || null, line.quantity, i],
+    );
+  }
+
+  await stockTemporarySet(setId, name, runId, nodeId, producedQty);
+  return setId;
+}
+
+/**
+ * The set holds stock like anything else in inventory, so it gets a materials
+ * row and a ledger. The first entry is the one that just happened: it came IN
+ * off the production run. It leaves later, when the job is handed to a worker.
+ */
+async function stockTemporarySet(setId, name, runId, nodeId, producedQty) {
+  const barcode = `SET-${runId}-${nodeId}`;
+  const now = new Date().toISOString();
+  const existing = await getMaterialRowByBarcode(barcode);
+  if (!existing) {
+    await run(
+      `INSERT INTO materials
+         (barcode, name, type, kind, unit, created_at, updated_at, linked_set_id,
+          material_class, workflow_status, location, on_hand_qty)
+       VALUES (?, ?, 'set', 'standalone', 'Set', ?, ?, ?, 'assembled_set', 'active', 'MAIN', 0)`,
+      [barcode, name, now, now, setId],
+    );
+  } else {
+    await run(
+      'UPDATE materials SET name = ?, updated_at = ?, linked_set_id = ? WHERE barcode = ?',
+      [name, now, setId, barcode],
+    );
+  }
+
+  // Book the production receipt as the difference from what the ledger already
+  // holds, so a corrected reconciliation adjusts rather than double-counts.
+  const received = await get(
+    `SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_movements
+      WHERE material_barcode = ? AND movement_type = 'receive' AND reason_code = 'production'`,
+    [barcode],
+  );
+  const delta = Number(producedQty || 0) - Number(received?.qty || 0);
+  if (delta > 0) {
+    await applyInventoryMovementCore({
+      barcode,
+      // Movement types are receive/issue/transfer/adjust/… — 'in' and 'out'
+      // silently normalise to 'adjust' and the ledger loses its direction.
+      movementType: 'receive',
+      qty: delta,
+      reasonCode: 'production',
+      referenceType: 'pipeline_run',
+      referenceId: runId,
+      actor: 'assembly',
+    }, { useTransaction: false });
+  }
+  return barcode;
+}
+
+/**
+ * Handing the job to a worker means the set physically leaves the facility, so
+ * that is the OUT side of its ledger.
+ */
+async function issueAssemblySetsForJobs(jobIds, freelancerId) {
+  for (const jobId of jobIds) {
+    const job = await get(
+      'SELECT id, run_id, node_id, quantity FROM freelancer_jobs WHERE id = ?',
+      [jobId],
+    );
+    if (!job?.run_id || !job?.node_id) continue;
+    const barcode = `SET-${job.run_id}-${job.node_id}`;
+    const material = await getMaterialRowByBarcode(barcode);
+    if (!material) continue;
+    const alreadyIssued = await get(
+      `SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_movements
+        WHERE material_barcode = ? AND movement_type = 'issue'
+          AND reason_code = 'issued_to_worker' AND reference_id = ?`,
+      [barcode, String(jobId)],
+    );
+    if (Number(alreadyIssued?.qty || 0) > 0) continue;
+    const qty = Math.min(
+      Number(job.quantity || 0),
+      Number(material.on_hand_qty || 0),
+    );
+    if (qty <= 0) continue;
+    try {
+      await applyInventoryMovementCore({
+        barcode,
+        movementType: 'issue',
+        qty,
+        reasonCode: 'issued_to_worker',
+        referenceType: 'freelancer_job',
+        referenceId: String(jobId),
+        actor: freelancerId ? `freelancer:${freelancerId}` : 'job-assignment',
+      }, { useTransaction: false });
+    } catch (error) {
+      console.warn(`[assembly-set] issue job ${jobId}: ${error.message}`);
+    }
+  }
+}
+
+// On an assembly step nothing is machined, so what the supervisor books as
+// scrap at reconciliation is a rejection — pieces the assembler did not get
+// right. It belongs on the worker's job, which is where the card reads it from.
+// Reconciliation is the single place rejections are recorded; the job is a
+// mirror of it, never the other way round.
+async function propagateAssemblyRejection(runId, nodeId, metrics) {
+  if (metrics.scrap === undefined || metrics.scrap === null) return;
+  const job = await get(
+    'SELECT id, quantity FROM freelancer_jobs WHERE run_id = ? AND node_id = ?',
+    [runId, nodeId],
+  );
+  if (!job) return;
+  const rejected = Math.max(0, Number(metrics.scrap) || 0);
+  const note = metrics.scrapItem
+    ? `Rejected at reconciliation → ${metrics.scrapItem}`
+    : 'Rejected at reconciliation';
+  await run(
+    `UPDATE freelancer_jobs
+        SET rejected_quantity = ?, rejection_note = ?, updated_at = ?
+      WHERE id = ?`,
+    [rejected, rejected > 0 ? note : '', new Date().toISOString(), job.id],
+  );
 }
 
 // One-time copy of legacy pipeline_runs.node_metrics_json into the table so
@@ -2813,7 +3078,7 @@ function buildSeedTemplates() {
       description:
         'Input Stage: Sheet metal goes in at this stage, then flows through blank cutting, piercing, bending, drilling, and packaging.',
       version: 1,
-      status: 'published',
+      status: 'active',
       stageLabels: [
         'Input Stage',
         'Blank Cutting',
@@ -2919,11 +3184,13 @@ function buildSeedTemplates() {
     },
     {
       id: 'dolly',
+      factoryId: '1',
+      shopFloorId: '1',
       name: 'Dolly Production',
       description:
         'Copper and steel lanes converge into a welding stage before final assembly handoff.',
       version: 1,
-      status: 'published',
+      status: 'active',
       stageLabels: [
         'Stage 1: Raw Input',
         'Stage 2: Prep',
@@ -3027,11 +3294,13 @@ function buildSeedTemplates() {
     },
     {
       id: 'assembly',
+      factoryId: '1',
+      shopFloorId: '1',
       name: 'Assembly Mainline',
       description:
         'Three parallel sub-assemblies merge into a final assembly and packing handoff.',
       version: 1,
-      status: 'published',
+      status: 'active',
       stageLabels: ['Stage 1: Feed', 'Stage 2: Prep', 'Stage 3: Merge', 'Stage 4: Outbound'],
       laneLabels: ['Lane 1', 'Lane 2', 'Lane 3'],
       nodes: [
@@ -3775,6 +4044,25 @@ async function initDb() {
   try { await run("ALTER TABLE freelancer_jobs ADD COLUMN batch_id INTEGER REFERENCES freelancer_job_batches(id) ON DELETE SET NULL"); } catch(e){}
   try { await run("ALTER TABLE freelancer_jobs ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1"); } catch(e){}
 
+  // Origin of an auto-created Assembly job. Both NULL for jobs raised by hand,
+  // so the partial index below only constrains the generated ones.
+  // run_id is TEXT to match pipeline_runs.id, which is a TEXT primary key.
+  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN run_id TEXT REFERENCES pipeline_runs(id) ON DELETE CASCADE"); } catch(e){}
+  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN node_id TEXT"); } catch(e){}
+  // What the assembler rejected off this job. On an assembly step the pieces
+  // that come off the line are not scrap — nothing was machined — they are
+  // rejections, and the count belongs on the worker's job card.
+  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN rejected_quantity REAL NOT NULL DEFAULT 0"); } catch(e){}
+  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN rejection_note TEXT NOT NULL DEFAULT ''"); } catch(e){}
+
+  // One job per (run, assembly node) — the status of a node can be re-set any
+  // number of times and must not fan out into duplicate jobs.
+  try {
+    await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_freelancer_jobs_run_node
+               ON freelancer_jobs (run_id, node_id)
+               WHERE run_id IS NOT NULL AND node_id IS NOT NULL`);
+  } catch(e){}
+
 
   await run(`
     CREATE TABLE IF NOT EXISTS freelancer_job_tasks (
@@ -4176,6 +4464,9 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+  // order_item_id is joined on by the fulfilment rollup and the delivered
+  // totals, and was previously unindexed.
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_order_item_id ON delivery_challan_items(order_item_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_order_items(order_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
@@ -4731,6 +5022,25 @@ async function initDb() {
 
   // Inventory Sets indexes
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_sets_name ON inventory_sets(name)');
+
+  // A set can now also be *produced* rather than defined: an assembly step
+  // clips parts together and mints a temporary set into inventory, the same way
+  // a run mints a temporary item. These columns carry where it came from so the
+  // Sets tab can show its origin, and so re-reconciling a stage updates the set
+  // it already made instead of minting another.
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN origin_run_id TEXT"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN origin_node_id TEXT"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN source_set_id INTEGER REFERENCES inventory_sets(id)"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN produced_at TEXT"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN is_temporary INTEGER NOT NULL DEFAULT 0"); } catch(e){}
+  // A produced set carries a materials row so it holds stock and keeps a ledger
+  // like any other inventory line: in from production, out when it is issued.
+  try { await run("ALTER TABLE materials ADD COLUMN linked_set_id INTEGER REFERENCES inventory_sets(id)"); } catch(e){}
+  try {
+    await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sets_origin
+               ON inventory_sets (origin_run_id, origin_node_id)
+               WHERE origin_run_id IS NOT NULL AND origin_node_id IS NOT NULL`);
+  } catch(e){}
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
 
@@ -5563,6 +5873,12 @@ async function initDb() {
   
   
   
+  // Numbered migrations in backend/migrations/ run last, after the inline
+  // schema above has created the tables they alter. Nothing ran them before
+  // this, which is why payroll and the client portal existed only on
+  // databases where someone had applied them by hand.
+  await runPendingMigrations({ db, run, all });
+
   dbReady = true;
 }
 async function ensurePrimaryGroupAndUnit() {
@@ -5599,6 +5915,7 @@ async function ensureDemoDataset(scenarioId = 'default') {
   });
   await backfillMaterialUnitIds();
   await ensureDemoPipelineRunsPresent();
+  await ensureDemoOrderRunLinks();
   await cleanupStaleUnlinkedPoDocuments();
   await ensureFullDemoSeedDataset();
 }
@@ -15322,7 +15639,15 @@ async function saveItem({
           baseItemId !== undefined && baseItemId !== null
             ? normalizedBaseItemId
             : (existing.base_item_id || null),
-          photoUrl || null,
+          // photoUrl was the odd one out: written unconditionally, so ANY patch
+          // that did not mention it silently wiped the item's photo. Now
+          // undefined-preserving like cad_file_key/cad_file_name beside it.
+          // `photoUrl = null` in the signature means it is never `undefined`,
+          // so absence is detected as null. Clearing still works: the client
+          // sends '' for "no photo", which falls through to null.
+          photoUrl !== undefined && photoUrl !== null
+            ? (photoUrl || null)
+            : (existing.photo_url || null),
           // Same preservation rule as available_for_purchase: an internal
           // re-save that omits the CAD fields must not clear them.
           cadFileKey !== undefined
@@ -17152,6 +17477,22 @@ async function getInventorySetLineDtos(setId) {
   return lines;
 }
 
+/// The set's primary uploaded photo, presigned for display. Null when it has
+/// none, or when presigning is unavailable — a missing picture must never fail
+/// the set fetch.
+async function inventorySetPhotoUrl(setId) {
+  const asset = await get(
+    `SELECT * FROM uploaded_assets
+      WHERE entity_type = 'inventory_set' AND entity_id = ? AND status = 'uploaded'
+      ORDER BY is_primary DESC, created_at ASC
+      LIMIT 1`,
+    [setId],
+  );
+  if (!asset) return null;
+  const dto = await rowToUploadedAssetDto(asset, true);
+  return dto?.readUrl || null;
+}
+
 async function getInventorySetById(setId) {
   const row = await get(
     `
@@ -17161,7 +17502,13 @@ async function getInventorySetById(setId) {
         SELECT SUM(quantity)
         FROM inventory_set_lines
         WHERE inventory_set_lines.set_id = inventory_sets.id
-      ), 0) AS total_item_count
+      ), 0) AS total_item_count,
+      -- A produced set is backed by a materials row, so it has real stock and
+      -- a barcode. Both are null for a set someone defined by hand.
+      (SELECT m.on_hand_qty FROM materials m
+        WHERE m.linked_set_id = inventory_sets.id LIMIT 1) AS on_hand_qty,
+      (SELECT m.barcode FROM materials m
+        WHERE m.linked_set_id = inventory_sets.id LIMIT 1) AS material_barcode
     FROM inventory_sets
     WHERE inventory_sets.id = ?
     `,
@@ -17170,7 +17517,10 @@ async function getInventorySetById(setId) {
   if (!row) {
     return null;
   }
-  return rowToInventorySetDto(row, await getInventorySetLineDtos(row.id));
+  return rowToInventorySetDto(
+    { ...row, asset_photo_url: await inventorySetPhotoUrl(row.id) },
+    await getInventorySetLineDtos(row.id),
+  );
 }
 
 async function getInventorySets() {
@@ -17279,6 +17629,7 @@ async function saveInventorySet(payload = {}) {
     error.statusCode = 400;
     throw error;
   }
+  const photoUrl = String(payload.photoUrl || '').trim();
   const mergedLines = mergeInventorySetLines(payload.lines || []);
   if (mergedLines.length === 0) {
     const error = new Error('Add at least one item to the set.');
@@ -17300,8 +17651,9 @@ async function saveInventorySet(payload = {}) {
     let setId = id;
     if (setId == null) {
       const result = await run(
-        'INSERT INTO inventory_sets (name, created_at, updated_at) VALUES (?, ?, ?)',
-        [name, now, now],
+        `INSERT INTO inventory_sets (name, photo_url, created_at, updated_at)
+         VALUES (?, ?, ?, ?)`,
+        [name, photoUrl, now, now],
       );
       setId = result.lastID;
     } else {
@@ -17315,8 +17667,10 @@ async function saveInventorySet(payload = {}) {
         throw error;
       }
       await run(
-        'UPDATE inventory_sets SET name = ?, updated_at = ? WHERE id = ?',
-        [name, now, setId],
+        `UPDATE inventory_sets
+            SET name = ?, photo_url = ?, updated_at = ?
+          WHERE id = ?`,
+        [name, photoUrl, now, setId],
       );
       await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
     }
@@ -19571,16 +19925,24 @@ app.get('/api/events', requireAuth, async (req, res) => {
   }
 
   const listener = (event) => {
-    res.write(`id: ${event.id}\n`);
-    res.write(`event: table-change\n`);
-    res.write(`data: ${JSON.stringify({ table_name: event.table, record_id: event.recordId, event_type: event.eventType })}\n\n`);
-    flush();
+    try {
+      res.write(`id: ${event.id}\n`);
+      res.write(`event: table-change\n`);
+      res.write(`data: ${JSON.stringify({ table_name: event.table, record_id: event.recordId, event_type: event.eventType })}\n\n`);
+      flush();
+    } catch (_) {
+      // client connection closed
+    }
   };
 
   const customEventListener = (payload) => {
-    res.write(`event: custom-event\n`);
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    flush();
+    try {
+      res.write(`event: custom-event\n`);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      flush();
+    } catch (_) {
+      // client connection closed
+    }
   };
 
   changeEmitter.on('table-change', listener);
@@ -19588,8 +19950,12 @@ app.get('/api/events', requireAuth, async (req, res) => {
 
   // Heartbeat to keep the connection (and any idle proxy) alive.
   const heartbeat = setInterval(() => {
-    res.write(': heartbeat\n\n');
-    flush();
+    try {
+      res.write(': heartbeat\n\n');
+      flush();
+    } catch (_) {
+      // client connection closed
+    }
   }, 15000);
 
   req.on('close', () => {
@@ -22132,13 +22498,38 @@ app.post(
   },
 );
 
+// The nuke: deletes every row in every table, then re-bootstraps the super
+// admin and the primary group/unit so the app can still be signed into.
+// super_admin only, and the caller must echo the confirmation phrase — this is
+// the one endpoint where an accidental or scripted POST is unrecoverable.
+const FACTORY_RESET_CONFIRMATION = 'FACTORY RESET';
 console.log('Registering /api/admin/factory-reset route...');
 app.post(
   '/api/admin/factory-reset',
   requireRoles('super_admin'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      if (String(req.body?.confirm || '').trim() !== FACTORY_RESET_CONFIRMATION) {
+        const error = new Error(
+          `Factory reset requires confirm: "${FACTORY_RESET_CONFIRMATION}".`,
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+      // Written to stdout, not the DB: entity_activity_log is one of the tables
+      // this is about to delete, so the only durable record is the server log.
+      console.warn(
+        '[factory-reset] wiping all data — actor:',
+        JSON.stringify({
+          userId: req.user?.id ?? null,
+          email: req.user?.email ?? null,
+          role: req.user?.role ?? null,
+          at: new Date().toISOString(),
+          ip: req.ip,
+        }),
+      );
       await factoryResetData();
+      console.warn('[factory-reset] complete');
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
@@ -24131,6 +24522,190 @@ app.get('/api/orders/:id/status-history', requirePermission('config.read'), asyn
   }
 });
 
+// Fulfilment rollup for the whole order book, in one request. Everything else
+// production-side is keyed :orderNo one at a time, which makes a per-row
+// fulfilment bar N HTTP calls.
+//
+// "Produced" is the good output of a run's TERMINAL stage — the node with the
+// highest stageIndex in its template. Nothing marks a stage as terminal, so
+// ordering is the only signal available; summing stages instead would count
+// the same material once per stage.
+//
+// producedUnit is reported separately and NOT converted into the order's unit.
+// Floor reconciliation settles in kg while order lines are usually pieces, and
+// no conversion exists between them — inventing one would misreport fulfilment,
+// which is worse than showing two units.
+app.get('/api/orders/fulfilment', requirePermission('orders.read'), async (req, res) => {
+  try {
+    const rows = await all(
+      'SELECT o.id, o.order_no, o.quantity, o.unit_symbol FROM order_items o',
+    );
+
+    // One row per (order line, challan). A challan can carry several lines for
+    // the same order item — different notes, leaves or sheet splits — with no
+    // unique constraint stopping it, so this groups rather than trusting that
+    // it never happens.
+    //
+    // type = 'delivery' AND status = 'issued' is deliberately narrower than the
+    // cumulative this replaces: that one counted reception and internal
+    // challans whose lines carry an order_item_id as though they were
+    // deliveries, and counted unissued drafts as goods that had left the
+    // building. Issuing is the event that moves stock.
+    const deliveryRows = await all(`
+      SELECT
+        dci.order_item_id AS order_item_id,
+        dc.id             AS challan_id,
+        dc.challan_no     AS challan_no,
+        dc.date           AS challan_date,
+        dc.status         AS challan_status,
+        dc.customer_name  AS client_name,
+        SUM(dci.quantity_pcs) AS quantity_pcs,
+        SUM(dci.weight)       AS weight
+      FROM delivery_challan_items dci
+      JOIN delivery_challans dc ON dc.id = dci.challan_id
+      WHERE dci.order_item_id IS NOT NULL
+        AND dci.order_item_id > 0
+        AND dc.type = 'delivery'
+        AND dc.status = 'issued'
+      GROUP BY dci.order_item_id, dc.id
+      ORDER BY dci.order_item_id ASC, dc.date ASC, dc.id ASC
+    `);
+    const deliveriesByOrderItem = new Map();
+    for (const row of deliveryRows) {
+      const list = deliveriesByOrderItem.get(row.order_item_id) || [];
+      list.push(row);
+      deliveriesByOrderItem.set(row.order_item_id, list);
+    }
+
+    // One template read per template, not per run.
+    const templateCache = new Map();
+    const terminalNodeFor = async (templateId) => {
+      if (templateCache.has(templateId)) return templateCache.get(templateId);
+      const template = await get(
+        'SELECT id, name, nodes_json FROM pipeline_templates WHERE id = ?',
+        [templateId],
+      );
+      const nodes = template ? parseJson(template.nodes_json, []) : [];
+      const terminal = nodes
+        .slice()
+        .sort((a, b) => Number(b.stageIndex || 0) - Number(a.stageIndex || 0))[0];
+      const entry = { name: template?.name || '', terminal: terminal || null };
+      templateCache.set(templateId, entry);
+      return entry;
+    };
+
+    const assignments = await all(`
+      SELECT opa.order_item_id, pr.*
+      FROM order_pipeline_assignments opa
+      JOIN pipeline_runs pr ON pr.id = opa.pipeline_run_id
+    `);
+    const runsByOrderItem = new Map();
+    for (const run of assignments) {
+      const list = runsByOrderItem.get(run.order_item_id) || [];
+      list.push(run);
+      runsByOrderItem.set(run.order_item_id, list);
+    }
+
+    const fulfilment = [];
+    for (const row of rows) {
+      const runs = runsByOrderItem.get(row.id) || [];
+      let producedQty = 0;
+      let scrapQty = 0;
+      let producedUnit = '';
+      let templateName = '';
+      let startedAt = null;
+      let completedAt = null;
+      let runStatus = runs.length === 0 ? 'none' : 'notStarted';
+
+      for (const run of runs) {
+        const { name, terminal } = await terminalNodeFor(run.template_id);
+        if (name && !templateName) templateName = name;
+        if (run.started_at && (!startedAt || run.started_at < startedAt)) {
+          startedAt = run.started_at;
+        }
+        if (run.completed_at && (!completedAt || run.completed_at > completedAt)) {
+          completedAt = run.completed_at;
+        }
+        if (run.status === 'completed') {
+          if (runStatus !== 'inProgress') runStatus = 'completed';
+        } else if (run.started_at) {
+          runStatus = 'inProgress';
+        }
+        if (!terminal) continue;
+        const metrics = await getMergedNodeMetrics(run);
+        const terminalMetrics = metrics[terminal.id] || {};
+        // goodYield is what the floor signed off as usable; output is the raw
+        // reading. Prefer the former, fall back to the latter. getMergedNodeMetrics
+        // maps columns to camelCase, so goodYield is the live key; good_yield can
+        // only arrive from a legacy node_metrics_json blob.
+        const good = Number(
+          terminalMetrics.goodYield ?? terminalMetrics.good_yield ?? 0,
+        );
+        const output = Number(terminalMetrics.output ?? 0);
+        producedQty += good > 0 ? good : output;
+        scrapQty += Number(terminalMetrics.scrap ?? 0);
+        if (!producedUnit) {
+          // outputItem.unitSymbol is the only one of these the app actually
+          // writes. Left empty when the stage never declared a unit — the
+          // client then refuses to draw produced against ordered, which is the
+          // honest outcome. Never guess a unit here.
+          producedUnit = String(
+            terminal.outputUnit
+              || terminal.unit
+              || terminal.outputItem?.unitSymbol
+              || '',
+          ).trim();
+        }
+      }
+
+      // Derived from the same rows the list is built from, so the headline
+      // total and the individual checkpoints can never disagree.
+      const deliveries = deliveriesByOrderItem.get(row.id) || [];
+      let runningQty = 0;
+      const deliveryPayload = deliveries.map((delivery) => {
+        runningQty += Number(delivery.quantity_pcs || 0);
+        return {
+          challanId: delivery.challan_id,
+          challanNo: delivery.challan_no || '',
+          date: delivery.challan_date || '',
+          status: delivery.challan_status || '',
+          clientName: delivery.client_name || '',
+          quantity: Number(delivery.quantity_pcs || 0),
+          weight: Number(delivery.weight || 0),
+          // Where the order stood once this challan went out — the position
+          // its checkpoint is drawn at.
+          cumulativeQty: runningQty,
+        };
+      });
+
+      fulfilment.push({
+        orderItemId: row.id,
+        orderNo: row.order_no || '',
+        orderedQty: Number(row.quantity || 0),
+        orderedUnit: row.unit_symbol || '',
+        deliveredQty: runningQty,
+        deliveries: deliveryPayload,
+        producedQty,
+        producedUnit,
+        scrapQty,
+        runCount: runs.length,
+        runStatus,
+        templateName,
+        startedAt,
+        completedAt,
+      });
+    }
+
+    res.json({ success: true, fulfilment, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      fulfilment: [],
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/orders/:orderNo/pipeline-runs', requirePermission('config.read'), async (req, res) => {
   try {
     const orderNo = req.params.orderNo;
@@ -25643,37 +26218,106 @@ app.put('/runs/:id/node-status', async (req, res) => {
       if (targetNode && targetNode.processType === 'Assembly') {
         const qty = overrides.batchQuantityByNode[nodeId] || 1;
         
-        // Find output item
+        // An assembly step is a merge point with no bound item of its own —
+        // parts arrive on the flows from the steps feeding it, and the work is
+        // manual. So the job is raised against what the run is actually
+        // building: the order line it was started for. Only if the run is not
+        // order-linked do we fall back to the upstream feeders' output items,
+        // and finally to the node's own binding for older templates that still
+        // carry one.
         let itemId = 0;
-        const outName = targetNode.outputs && targetNode.outputs[0];
-        if (outName) {
-           const matched = await itemsPorts.lookupByName(outName);
-           if (matched) itemId = matched.id;
-        }
-        
-        // Check if job already exists for this run/node
-        // To be safe, we'll just insert a new pending job. We will need a way to track the run_id, but the schema doesn't have it. We'll just insert.
-        const result = await run(
-          `INSERT INTO freelancer_jobs (batch_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
-           VALUES (NULL, ?, 0, ?, 'pending', 0, ?, ?)`,
-          [itemId, qty, new Date().toISOString(), new Date().toISOString()]
+        const orderLink = await get(
+          `SELECT i.item_id
+             FROM order_pipeline_assignments opa
+             JOIN order_items i ON opa.order_item_id = i.id
+            WHERE opa.pipeline_run_id = ?
+            LIMIT 1`,
+          [runRow.id],
         );
-        const newJobId = result.lastID;
+        if (orderLink?.item_id) itemId = orderLink.item_id;
 
-        // Populate tasks from BOM
-        const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
-        for (const line of bomLines) {
-           // We map the material barcode back to an item if needed, but tasks schema requires item_id.
-           // Since item_bom_lines has material_barcode, let's find the linked item.
-           const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
-           if (mat && mat.linked_item_id) {
-             const reqQty = (line.quantity_per_unit * qty) * (1 + (line.wastage_percent / 100));
-             await run(
-               `INSERT INTO freelancer_job_tasks (job_id, item_id, variation_leaf_node_id, required_quantity, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-               [newJobId, mat.linked_item_id, mat.linked_variation_leaf_node_id || 0, reqQty, new Date().toISOString(), new Date().toISOString()]
-             );
-           }
+        if (!itemId) {
+          const feederIds = new Set(
+            (tpl.flows || [])
+              .filter((f) => f.toNodeId === nodeId)
+              .map((f) => f.fromNodeId),
+          );
+          for (const feeder of (tpl.nodes || [])) {
+            if (!feederIds.has(feeder.id)) continue;
+            if (feeder.outputItem && feeder.outputItem.itemId) {
+              itemId = feeder.outputItem.itemId;
+              break;
+            }
+          }
+        }
+
+        if (!itemId) {
+          itemId = (targetNode.outputItem && targetNode.outputItem.itemId) || 0;
+        }
+        if (!itemId) {
+          const outName = targetNode.outputs && targetNode.outputs[0];
+          if (outName) {
+             const matched = await itemsPorts.lookupByName(outName);
+             if (matched) itemId = matched.id;
+          }
+        }
+        // A job has to point at a real item — freelancer_jobs.item_id is a
+        // foreign key and the clients read it as non-null. Without one there
+        // is nothing to hand a worker, so skip rather than fail the status
+        // update the shop floor is waiting on.
+        if (!itemId) {
+          console.warn(
+            `[assembly] run ${runRow.id} node ${nodeId}: not order-linked and no`
+            + ' feeder step carries an output item; no job raised.',
+          );
+        } else {
+          // A node's status can be re-set any number of times (re-queued,
+          // reopened, a second pass over the same stage), so this is keyed on
+          // (run, node) rather than inserting blind.
+          const existingJob = await get(
+            'SELECT * FROM freelancer_jobs WHERE run_id = ? AND node_id = ?',
+            [runRow.id, nodeId]
+          );
+
+          let jobId = null;
+          const stamp = new Date().toISOString();
+          if (!existingJob) {
+            const result = await run(
+              `INSERT INTO freelancer_jobs (batch_id, run_id, node_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
+               VALUES (NULL, ?, ?, ?, 0, ?, 'pending', 0, ?, ?)`,
+              [runRow.id, nodeId, itemId, qty, stamp, stamp]
+            );
+            jobId = result.lastID;
+          } else if (existingJob.status === 'pending' && existingJob.batch_id === null) {
+            // Still sitting unassigned in the pool — safe to re-sync it with
+            // the current batch quantity and rebuild its task list.
+            await run(
+              'UPDATE freelancer_jobs SET item_id = ?, quantity = ?, updated_at = ? WHERE id = ?',
+              [itemId, qty, stamp, existingJob.id]
+            );
+            await run('DELETE FROM freelancer_job_tasks WHERE job_id = ?', [existingJob.id]);
+            jobId = existingJob.id;
+          }
+          // Otherwise the job is already batched to a freelancer or under way
+          // — leave it, and their progress, alone.
+
+          if (jobId !== null) {
+            // Populate tasks from BOM
+            const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
+            for (const line of bomLines) {
+              // We map the material barcode back to an item if needed, but tasks schema requires item_id.
+              // Since item_bom_lines has material_barcode, let's find the linked item.
+              const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
+              if (mat && mat.linked_item_id) {
+                const reqQty = (line.quantity_per_unit * qty) * (1 + (line.wastage_percent / 100));
+                await run(
+                  `INSERT INTO freelancer_job_tasks (job_id, item_id, variation_leaf_node_id, required_quantity, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+                  [jobId, mat.linked_item_id, mat.linked_variation_leaf_node_id || 0, reqQty, stamp, stamp]
+                );
+              }
+            }
+          }
         }
       }
     }
@@ -26806,6 +27450,9 @@ async function clearAllData() {
   try {
     const allTables = await all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
     const preserveTables = [
+      // The migration ledger is schema state, not workspace data. Wiping it
+      // made every reset re-run all 29 migrations on the next boot.
+      'schema_migrations',
       'users',
       'auth_sessions',
       'auth_events',
@@ -27035,7 +27682,7 @@ async function ensureDemoInventoryPresent(scenarioId = 'default') {
     description:
       'Raw billet is milled, then anodized, then quality-checked before dispatch.',
     version: 1,
-    status: 'published',
+    status: 'active',
     stageLabels: ['Raw Input', 'Milling', 'Anodizing', 'Quality Check'],
     laneLabels: ['Main'],
     nodes: [
@@ -27271,6 +27918,510 @@ async function ensureSimulationScenario(scenarioId) {
   }
 }
 
+// scenario_c — Fulfilment: an order book where every state the Order Insights
+// screen can show is actually present, so the two rows, the delivery
+// checkpoint, the floor "made" figure and all four age filters have real data
+// behind them rather than being taken on trust.
+//
+// Seven order lines for one client, all on the same stock-managed item:
+//   C1  no run                                          → "Waiting on a pipeline"
+//   C2  no run, raised 45 days ago                      → "Waiting" + Old
+//   C3  run attached but never started                  → In production, empty bar
+//   C4  running, terminal stage reports PIECES          → made bar drawn to scale
+//   C5  running, terminal stage reports KILOGRAMS       → made figure, no bar
+//   C6  running 20 days, nothing delivered              → Stalled
+//   C7  completed and fully delivered                   → 100%
+//
+// C4 and C5 are the pair worth looking at: identical shape, different terminal
+// unit. Pieces-on-pieces gets a proportional bar; kilograms-on-pieces states the
+// quantity and deliberately draws no bar, because no conversion between them
+// exists in the system.
+async function ensureFulfilmentScenario(scenarioId) {
+  if (scenarioId !== 'scenario_c') return;
+
+  const markerNo = 'SIM-C-STOCK';
+  const already = await get(
+    'SELECT id FROM delivery_challans WHERE challan_no = ? LIMIT 1',
+    [markerNo],
+  );
+  if (already) return;
+
+  // Reuse a stock-managed (item, leaf) from the base dataset so the delivery
+  // challans can actually issue — stock is not allowed to go negative.
+  // Prefer an existing order line: it already names a valid (item, leaf, unit)
+  // triple, and adopting its unit keeps the scenario in the dataset's own
+  // vocabulary instead of inventing a parallel one. variation_stock is the
+  // fallback for datasets seeded stock-first.
+  let stockRow = await get(`
+    SELECT oi.item_id, oi.variation_leaf_node_id, oi.unit_id, oi.unit_symbol,
+           i.name AS item_name
+    FROM order_items oi JOIN items i ON i.id = oi.item_id
+    WHERE oi.variation_leaf_node_id > 0 AND oi.item_id IS NOT NULL
+    ORDER BY oi.id ASC LIMIT 1
+  `);
+  if (!stockRow) {
+    stockRow = await get(`
+      SELECT vs.item_id, vs.variation_leaf_node_id, NULL AS unit_id,
+             '' AS unit_symbol, i.name AS item_name
+      FROM variation_stock vs JOIN items i ON i.id = vs.item_id
+      WHERE vs.variation_leaf_node_id > 0 AND vs.item_id IS NOT NULL
+      ORDER BY vs.id ASC LIMIT 1
+    `);
+  }
+  if (!stockRow) return;
+  const itemId = stockRow.item_id;
+  const leafId = stockRow.variation_leaf_node_id;
+  const itemName = stockRow.item_name || 'Sheet';
+
+  const clientRow = await get('SELECT id, name FROM clients ORDER BY id ASC LIMIT 1');
+  if (!clientRow) return;
+
+  // The unit the order book already counts this item in.
+  let orderUnitId = stockRow.unit_id || null;
+  let orderUnitSymbol = String(stockRow.unit_symbol || '').trim();
+  let orderUnitName = '';
+  if (orderUnitId) {
+    const unitRow = await get('SELECT id, name, symbol FROM units WHERE id = ?', [orderUnitId]);
+    orderUnitName = unitRow?.name || '';
+    orderUnitSymbol = unitRow?.symbol || orderUnitSymbol;
+  }
+  if (!orderUnitId || !orderUnitSymbol) {
+    const fallbackUnit = await ensureUnitRecord({ name: 'Pieces', symbol: 'pcs' });
+    if (!fallbackUnit) return;
+    orderUnitId = fallbackUnit.id;
+    orderUnitName = fallbackUnit.name || 'Pieces';
+    orderUnitSymbol = fallbackUnit.symbol || 'pcs';
+  }
+
+  // A genuinely different unit for the mismatch case. If the order book already
+  // counts in kilograms there is no mismatch to demonstrate, so the scenario
+  // reaches for a second unit that is definitely not the ordered one.
+  const weightUnit = orderUnitSymbol.toLowerCase() === 'kg'
+    ? await ensureUnitRecord({ name: 'Metre', symbol: 'm' })
+    : await ensureUnitRecord({ name: 'Kilogram', symbol: 'kg' });
+  if (!weightUnit) return;
+
+  const actor = { id: null, name: 'Scenario Seed', role: 'super_admin' };
+  const now = new Date();
+  const iso = (daysAgo) =>
+    new Date(now.getTime() - daysAgo * 86400000).toISOString();
+  const day = (daysAgo) => iso(daysAgo).slice(0, 10);
+
+  // Two templates that differ only in what the terminal stage reports in. The
+  // fulfilment endpoint reads the unit off outputItem.unitSymbol, which is the
+  // only unit key the app itself ever writes onto a node.
+  const buildTemplate = async (id, name, terminalUnitSymbol, terminalUnitId, terminalUnitName) => {
+    const nodes = [
+      {
+        id: `${id}-in`,
+        name: 'Material Input',
+        processType: 'Input',
+        stageIndex: 0,
+        laneIndex: 0,
+        inputs: [itemName],
+        outputs: [itemName],
+        machine: 'Input Stage',
+        durationHours: 0.25,
+        status: 'Ready',
+        isIntermediate: false,
+        scannedInputs: [],
+      },
+      {
+        id: `${id}-cut`,
+        name: 'Cutting',
+        processType: 'Cutting',
+        stageIndex: 1,
+        laneIndex: 0,
+        inputs: [itemName],
+        outputs: [itemName],
+        machine: 'Shear 01',
+        durationHours: 1.5,
+        status: 'Ready',
+        isIntermediate: true,
+        scannedInputs: [],
+      },
+      {
+        id: `${id}-out`,
+        name: 'Finishing & Output',
+        processType: 'Output',
+        stageIndex: 2,
+        laneIndex: 0,
+        inputs: [itemName],
+        outputs: [itemName],
+        machine: 'Finishing Bay',
+        durationHours: 0.75,
+        status: 'Ready',
+        isIntermediate: false,
+        scannedInputs: [],
+        // The terminal stage declares its unit — this is what "made" is
+        // labelled with, and what decides whether a proportional bar is safe.
+        outputItem: {
+          itemId,
+          itemName,
+          unitId: terminalUnitId,
+          unitName: terminalUnitName,
+          unitSymbol: terminalUnitSymbol,
+        },
+      },
+    ];
+    const flows = [
+      {
+        id: `${id}-f1`,
+        fromNodeId: `${id}-in`,
+        toNodeId: `${id}-cut`,
+        materialName: itemName,
+        barcode: null,
+        isSplit: false,
+        isMerge: false,
+      },
+      {
+        id: `${id}-f2`,
+        fromNodeId: `${id}-cut`,
+        toNodeId: `${id}-out`,
+        materialName: itemName,
+        barcode: null,
+        isSplit: false,
+        isMerge: false,
+      },
+    ];
+    await run(
+      `INSERT INTO pipeline_templates (
+         id, factory_id, shop_floor_id, name, description, version, status,
+         stage_labels_json, lane_labels_json, nodes_json, flows_json,
+         intermediate_naming_convention, created_at, updated_at
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET
+         nodes_json = excluded.nodes_json,
+         flows_json = excluded.flows_json,
+         updated_at = excluded.updated_at`,
+      [
+        id, '', '', name, 'Fulfilment simulation line', 1, 'published',
+        JSON.stringify(['Input', 'Cutting', 'Output']),
+        JSON.stringify(['Line A']),
+        JSON.stringify(nodes),
+        JSON.stringify(flows),
+        '', iso(60), iso(60),
+      ],
+    );
+    return { id, nodes };
+  };
+
+  // matchTemplate's terminal stage reports in the ordered unit; mismatchTemplate's
+  // reports in a different one. That difference is the whole point of the pair.
+  const matchTemplate = await buildTemplate(
+    'sim-c-line-match', `Simulation Line · ${orderUnitSymbol} Output`,
+    orderUnitSymbol, orderUnitId, orderUnitName,
+  );
+  const mismatchTemplate = await buildTemplate(
+    'sim-c-line-mismatch', `Simulation Line · ${weightUnit.symbol} Output`,
+    weightUnit.symbol, weightUnit.id, weightUnit.name,
+  );
+
+  // Stock in enough to cover every delivery challan below.
+  let vendorRow = await get(
+    "SELECT id FROM vendors WHERE name = ? LIMIT 1", ['Gamma Steels Pvt Ltd'],
+  );
+  if (!vendorRow) {
+    await saveVendor({ name: 'Gamma Steels Pvt Ltd', address: 'Simulation vendor' });
+    vendorRow = await get(
+      "SELECT id FROM vendors WHERE name = ? LIMIT 1", ['Gamma Steels Pvt Ltd'],
+    );
+  }
+  if (!vendorRow) return;
+
+  const stockIn = await saveDeliveryChallan({
+    type: 'reception',
+    vendorId: vendorRow.id,
+    challanNo: markerNo,
+    date: day(50),
+    location: 'MAIN',
+    maintainStocks: true,
+    items: [{
+      itemId,
+      variationLeafNodeId: leafId,
+      particulars: itemName,
+      quantityPcs: '4000',
+      weight: '0',
+      hsnCode: '',
+      note: '',
+    }],
+  }, actor, null);
+  await issueDeliveryChallan(stockIn.id, actor);
+
+  const makeOrder = async ({ orderNo, quantity, daysAgo }) => {
+    const saved = await saveOrder({
+      orderNo,
+      clientId: clientRow.id,
+      clientName: clientRow.name || '',
+      itemId,
+      itemName,
+      variationLeafNodeId: leafId,
+      quantity,
+      unitId: orderUnitId,
+      unitName: orderUnitName,
+      unitSymbol: orderUnitSymbol,
+      unitPrice: 42,
+      actor,
+    });
+    if (!saved) return null;
+    // saveOrder stamps "now"; the age filters (Stalled after 14 days, Old after
+    // 30) only mean something if the book actually spans time.
+    await run('UPDATE order_items SET created_at = ? WHERE id = ?', [iso(daysAgo), saved.id]);
+    await run('UPDATE order_headers SET created_at = ? WHERE order_no = ?', [iso(daysAgo), orderNo]);
+    return saved;
+  };
+
+  const attachRun = async ({
+    orderItemId, template, runId, status, startedDaysAgo, completedDaysAgo, quantity,
+  }) => {
+    const nodeStatuses = {};
+    for (const node of template.nodes) {
+      nodeStatuses[node.id] = status === 'completed'
+        ? 'completed'
+        : status === 'inProgress'
+          ? (node.stageIndex === 2 ? 'inProgress' : 'completed')
+          : 'pending';
+    }
+    await ensurePipelineRunRecord({
+      id: runId,
+      templateId: template.id,
+      name: `Run ${runId}`,
+      status,
+      createdAt: iso(startedDaysAgo ?? 0),
+      startedAt: startedDaysAgo == null ? null : iso(startedDaysAgo),
+      completedAt: completedDaysAgo == null ? null : iso(completedDaysAgo),
+      nodeStatuses,
+      overrides: {
+        actualDurationHoursByNode: {},
+        batchQuantityByNode: {},
+        machineOverrideByNode: {},
+      },
+      barcodeAssignments: [],
+    });
+    await run('DELETE FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]);
+    await run(
+      `INSERT INTO order_pipeline_assignments
+         (order_item_id, pipeline_run_id, allocated_quantity, created_at)
+       VALUES (?, ?, ?, ?)`,
+      [orderItemId, runId, Number(quantity || 0), iso(startedDaysAgo ?? 0)],
+    );
+  };
+
+  const reconcile = async (runId, template, { allotted, output, goodYield, scrap, daysAgo }) => {
+    // Only the terminal stage is read for "made", but a floor that reported one
+    // stage and not the others would not be a faithful demo.
+    const terminal = template.nodes[template.nodes.length - 1];
+    for (const node of template.nodes) {
+      const isTerminal = node.id === terminal.id;
+      await upsertStageReconciliation(runId, node.id, {
+        allotted,
+        output,
+        remaining: 0,
+        scrap: isTerminal ? scrap : 0,
+        goodYield: isTerminal ? goodYield : output,
+        actualHours: node.durationHours,
+        inputTime: iso(daysAgo),
+        outputTime: iso(daysAgo - 0.2),
+      });
+    }
+  };
+
+  const deliver = async ({ challanNo, orderItemId, quantity, daysAgo }) => {
+    const dc = await saveDeliveryChallan({
+      type: 'delivery',
+      orderIds: [orderItemId],
+      challanNo,
+      date: day(daysAgo),
+      location: 'MAIN',
+      maintainStocks: true,
+      items: [{
+        orderItemId,
+        itemId,
+        variationLeafNodeId: leafId,
+        particulars: itemName,
+        quantityPcs: String(quantity),
+        weight: '0',
+        hsnCode: '',
+        note: '',
+        lineNo: 1,
+      }],
+    }, actor, null);
+    await issueDeliveryChallan(dc.id, actor);
+  };
+
+  // C1 — no pipeline, fresh.
+  await makeOrder({ orderNo: 'SIM-C-1001', quantity: 500, daysAgo: 2 });
+
+  // C2 — no pipeline, 45 days old → Old.
+  await makeOrder({ orderNo: 'SIM-C-1002', quantity: 300, daysAgo: 45 });
+
+  // C3 — run attached, never started.
+  const c3 = await makeOrder({ orderNo: 'SIM-C-1003', quantity: 400, daysAgo: 3 });
+  if (c3) {
+    await attachRun({
+      orderItemId: c3.id, template: matchTemplate, runId: 'sim-c-run-1003',
+      status: 'planned', startedDaysAgo: null, completedDaysAgo: null, quantity: 400,
+    });
+  }
+
+  // C4 — running; terminal stage reports PIECES, so made can be drawn to scale.
+  const c4 = await makeOrder({ orderNo: 'SIM-C-1004', quantity: 1000, daysAgo: 10 });
+  if (c4) {
+    await attachRun({
+      orderItemId: c4.id, template: matchTemplate, runId: 'sim-c-run-1004',
+      status: 'inProgress', startedDaysAgo: 9, completedDaysAgo: null, quantity: 1000,
+    });
+    await reconcile('sim-c-run-1004', matchTemplate, {
+      allotted: 1000, output: 655, goodYield: 620, scrap: 35, daysAgo: 4,
+    });
+    await deliver({
+      challanNo: 'SIM-C-DEL-1004', orderItemId: c4.id, quantity: 250, daysAgo: 3,
+    });
+  }
+
+  // C5 — running; terminal stage reports KILOGRAMS against a pieces order, so
+  // the made figure is stated with its own unit and no bar is drawn.
+  const c5 = await makeOrder({ orderNo: 'SIM-C-1005', quantity: 800, daysAgo: 12 });
+  if (c5) {
+    await attachRun({
+      orderItemId: c5.id, template: mismatchTemplate, runId: 'sim-c-run-1005',
+      status: 'inProgress', startedDaysAgo: 11, completedDaysAgo: null, quantity: 800,
+    });
+    await reconcile('sim-c-run-1005', mismatchTemplate, {
+      allotted: 1500, output: 1300, goodYield: 1240, scrap: 60, daysAgo: 5,
+    });
+    await deliver({
+      challanNo: 'SIM-C-DEL-1005', orderItemId: c5.id, quantity: 150, daysAgo: 2,
+    });
+  }
+
+  // C6 — started 20 days ago, nothing delivered → Stalled.
+  const c6 = await makeOrder({ orderNo: 'SIM-C-1006', quantity: 600, daysAgo: 20 });
+  if (c6) {
+    await attachRun({
+      orderItemId: c6.id, template: matchTemplate, runId: 'sim-c-run-1006',
+      status: 'inProgress', startedDaysAgo: 19, completedDaysAgo: null, quantity: 600,
+    });
+  }
+
+  // C7 — completed and fully delivered.
+  const c7 = await makeOrder({ orderNo: 'SIM-C-1007', quantity: 200, daysAgo: 25 });
+  if (c7) {
+    await attachRun({
+      orderItemId: c7.id, template: matchTemplate, runId: 'sim-c-run-1007',
+      status: 'completed', startedDaysAgo: 24, completedDaysAgo: 18, quantity: 200,
+    });
+    await reconcile('sim-c-run-1007', matchTemplate, {
+      allotted: 210, output: 205, goodYield: 200, scrap: 5, daysAgo: 18,
+    });
+    await deliver({
+      challanNo: 'SIM-C-DEL-1007', orderItemId: c7.id, quantity: 200, daysAgo: 17,
+    });
+  }
+}
+
+// The demo dataset seeds order lines with literal status strings ('inProgress',
+// 'completed', 'delayed') and, separately, three pipeline runs that link to no
+// order at all. That leaves the two screens disagreeing: the Order Book shows a
+// completed order because getOrders() COALESCEs down to the raw status column,
+// while anything that asks "is a run attached?" — Order Insights, the Start
+// Production dialog — correctly answers no.
+//
+// Link them so the derived status matches what the seed claims:
+//   123456 notStarted → the queued run     (never started)
+//   123457 inProgress → the active run     (started, not finished)
+//   123458 completed  → the packed run     (finished)
+//   123459 delayed    → deliberately left unlinked. 'delayed' is not a state the
+//                       run-derived CASE can produce, so attaching a run would
+//                       overwrite the chip. It stays the honest example of an
+//                       order with no route yet.
+async function ensureDemoOrderRunLinks() {
+  const plan = [
+    { orderNo: '123456', runId: 'demo-dolly-run-queued', metrics: null },
+    {
+      orderNo: '123457',
+      runId: 'demo-dolly-run-active',
+      metrics: { allotted: 1000, output: 700, goodYield: 680, scrap: 20 },
+    },
+    {
+      orderNo: '123458',
+      runId: 'demo-assembly-run-packed',
+      metrics: { allotted: 1010, output: 1010, goodYield: 1000, scrap: 10 },
+    },
+  ];
+
+  for (const entry of plan) {
+    const orderLine = await get(
+      `SELECT id, quantity, unit_id, unit_symbol, item_id, item_name
+       FROM order_items WHERE order_no = ? ORDER BY id ASC LIMIT 1`,
+      [entry.orderNo],
+    );
+    if (!orderLine) continue;
+    // Per line, not per table: someone pressing Start on one order must not
+    // stop the rest of the demo dataset from being linked on the next boot.
+    const linked = await get(
+      'SELECT id FROM order_pipeline_assignments WHERE order_item_id = ? LIMIT 1',
+      [orderLine.id],
+    );
+    if (linked) continue;
+    const runRow = await get(
+      'SELECT id, template_id FROM pipeline_runs WHERE id = ?', [entry.runId],
+    );
+    if (!runRow) continue;
+
+    await run(
+      `INSERT INTO order_pipeline_assignments
+         (order_item_id, pipeline_run_id, allocated_quantity, created_at)
+       VALUES (?, ?, ?, ?)`,
+      [orderLine.id, runRow.id, Number(orderLine.quantity || 0), new Date().toISOString()],
+    );
+
+    if (!entry.metrics) continue;
+
+    // The terminal stage has to say what it makes and in which unit, or the
+    // rollup has nothing to label "made" with and refuses to draw it.
+    const templateRow = await get(
+      'SELECT id, nodes_json FROM pipeline_templates WHERE id = ?', [runRow.template_id],
+    );
+    if (!templateRow) continue;
+    const nodes = parseJson(templateRow.nodes_json, []);
+    if (!Array.isArray(nodes) || nodes.length === 0) continue;
+    const terminal = nodes
+      .slice()
+      .sort((a, b) => Number(b.stageIndex || 0) - Number(a.stageIndex || 0))[0];
+    if (!terminal) continue;
+
+    if (!terminal.outputItem) {
+      const unitRow = orderLine.unit_id
+        ? await get('SELECT id, name, symbol FROM units WHERE id = ?', [orderLine.unit_id])
+        : null;
+      terminal.outputItem = {
+        itemId: orderLine.item_id,
+        itemName: orderLine.item_name || '',
+        unitId: orderLine.unit_id || null,
+        unitName: unitRow?.name || '',
+        unitSymbol: unitRow?.symbol || orderLine.unit_symbol || '',
+      };
+      await run(
+        'UPDATE pipeline_templates SET nodes_json = ?, updated_at = ? WHERE id = ?',
+        [JSON.stringify(nodes), new Date().toISOString(), templateRow.id],
+      );
+    }
+
+    await upsertStageReconciliation(runRow.id, terminal.id, {
+      allotted: entry.metrics.allotted,
+      output: entry.metrics.output,
+      remaining: 0,
+      scrap: entry.metrics.scrap,
+      goodYield: entry.metrics.goodYield,
+      actualHours: Number(terminal.durationHours || 1),
+    });
+  }
+}
+
+const seedEstablishedYear = require('./modules/scenarios/established-year');
+const runPendingMigrations = require('./modules/kernel/migration-runner');
+
 async function reseedDemoData(scenarioId = 'default') {
   await seedMaterialsIfEmpty();
   await seedUnitsIfEmpty();
@@ -27289,11 +28440,23 @@ async function reseedDemoData(scenarioId = 'default') {
   if (scenarioId === 'mobiles') {
     await ensureDemoMobilesPresent(scenarioId);
   }
-  if (scenarioId === 'scenario_a' || scenarioId === 'scenario_b') {
+  if (scenarioId === 'established') {
+    // A factory eleven months into using the software: staffed floor, ramping
+    // order book, production history, closed payroll cycles. Seeded in FK
+    // order — see modules/scenarios/established-year.js.
+    await ensureDemoInventoryPresent('manufacturing');
+    await seedEstablishedYear({ get, all, run });
+  }
+  if (
+    scenarioId === 'scenario_a'
+    || scenarioId === 'scenario_b'
+    || scenarioId === 'scenario_c'
+  ) {
     // Base items + stock come from the manufacturing dataset; then layer the
     // scenario-specific vendor/challan flow on top.
     await ensureDemoInventoryPresent('manufacturing');
     await ensureSimulationScenario(scenarioId);
+    await ensureFulfilmentScenario(scenarioId);
   }
 }
 
@@ -27398,7 +28561,11 @@ app.post('/api/freelancer-jobs/batches', requirePermission('config.write'), asyn
     for (const jid of job_ids) {
       await run('UPDATE freelancer_jobs SET batch_id = ?, updated_at = ? WHERE id = ?', [batch_id, new Date().toISOString(), jid]);
     }
-    
+
+    // Assigning the job hands the assembled set to the worker, which means it
+    // has left the facility — the OUT side of the set's ledger.
+    await issueAssemblySetsForJobs(job_ids || [], freelancer_id);
+
     const batch = await get('SELECT * FROM freelancer_job_batches WHERE id = ?', [batch_id]);
     res.json({ success: true, batch });
   } catch (error) {

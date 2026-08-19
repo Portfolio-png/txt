@@ -1,3 +1,4 @@
+import '../../domain/order_fulfilment.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
@@ -34,4 +35,7 @@ abstract class OrderRepository {
 
   /// Backward QC lineage for an order: returns → runs → die/machine → sheets.
   Future<OrderTrace> getOrderTrace(String orderNo);
+
+  /// Ordered / delivered / produced for every order line, in one request.
+  Future<List<OrderFulfilment>> getFulfilment();
 }

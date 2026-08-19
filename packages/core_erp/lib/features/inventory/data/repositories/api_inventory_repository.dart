@@ -1617,6 +1617,7 @@ class ApiInventoryRepository implements InventoryRepository {
   Map<String, Object?> _saveSetBody(SaveInventorySetInput input) {
     return {
       'name': input.name.trim(),
+      'photoUrl': input.photoUrl.trim(),
       'lines': _mergeSetLines(input.lines)
           .map(
             (line) => {

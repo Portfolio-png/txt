@@ -91,6 +91,37 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
   String _employmentType = 'in-house';
   String _dateOfBirth = '';
 
+  static const _supportedEmploymentTypes = <String, String>{
+    'in-house': 'In-house (Full-time)',
+    'contract': 'Contract',
+    'part_time': 'Part-time',
+    'freelancer': 'Freelancer / Job Worker',
+  };
+
+  static String _normalizeEmploymentType(String? type) {
+    final t = (type ?? '').trim().toLowerCase().replaceAll('-', '_');
+    if (t == 'full_time' ||
+        t == 'in_house' ||
+        t == 'inhouse' ||
+        t == 'permanent' ||
+        t == 'regular') {
+      return 'in-house';
+    }
+    if (t == 'freelancer' ||
+        t == 'job_work' ||
+        t == 'contractor' ||
+        t == 'freelance') {
+      return 'freelancer';
+    }
+    if (t == 'contract') {
+      return 'contract';
+    }
+    if (t == 'part_time' || t == 'parttime') {
+      return 'part_time';
+    }
+    return 'in-house';
+  }
+
   // Two-pane editor: 0 = basic details, 1 = account & access. The profile
   // avatar in the header slide-swaps between them (saving details on the way).
   int _pane = 0;
@@ -105,7 +136,7 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
     final emp = widget.employee;
     if (emp != null) {
       _savedEmployeeId = emp.id;
-      if (widget.openAccount && emp.employmentType == 'in-house') {
+      if (widget.openAccount && emp.isInHouse) {
         _pane = 1;
       }
       _nameController.text = emp.name;
@@ -120,7 +151,7 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
       _barcodeIdController.text = emp.barcodeId;
       _emailController.text = emp.email;
       _dateOfBirth = emp.dateOfBirth;
-      _employmentType = emp.employmentType;
+      _employmentType = _normalizeEmploymentType(emp.employmentType);
     }
   }
 
@@ -472,7 +503,10 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                           child: Column(
                             children: [
                               DropdownButtonFormField<String>(
-                                initialValue: _employmentType,
+                                value: _supportedEmploymentTypes
+                                        .containsKey(_employmentType)
+                                    ? _employmentType
+                                    : 'in-house',
                                 isExpanded: true,
                                 icon: const Icon(
                                   Icons.keyboard_arrow_down_rounded,
@@ -485,16 +519,14 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                                   color: SoftErpTheme.textPrimary,
                                 ),
                                 decoration: _decoration('Employment Type'),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'in-house',
-                                    child: Text('In-house'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'freelancer',
-                                    child: Text('Freelancer'),
-                                  ),
-                                ],
+                                items: _supportedEmploymentTypes.entries
+                                    .map(
+                                      (e) => DropdownMenuItem<String>(
+                                        value: e.key,
+                                        child: Text(e.value),
+                                      ),
+                                    )
+                                    .toList(growable: false),
                                 onChanged: (val) {
                                   if (val == null) return;
                                   setState(() {

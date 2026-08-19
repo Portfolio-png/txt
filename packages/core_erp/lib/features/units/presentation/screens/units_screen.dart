@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -14,8 +15,56 @@ import '../../domain/unit_inputs.dart';
 import '../providers/units_provider.dart';
 import '../widgets/global_units_dialog.dart';
 
-class UnitsScreen extends StatelessWidget {
+class UnitsScreen extends StatefulWidget {
   const UnitsScreen({super.key});
+
+  /// Stays on the widget, not the state: the shell and shortcut handlers open
+  /// the unit editor without a UnitsScreen mounted.
+  static Future<UnitDefinition?> openEditor(
+    BuildContext context, {
+    UnitDefinition? unit,
+    String initialName = '',
+    String initialGroupName = '',
+    int? initialConversionBaseUnitId,
+  }) {
+    return showErpFormDialog<UnitDefinition?>(
+      context,
+      maxWidth: 980,
+      maxHeight: 860,
+      child: _UnitEditorSheet(
+        unit: unit,
+        initialName: initialName,
+        initialGroupName: initialGroupName,
+        initialConversionBaseUnitId: initialConversionBaseUnitId,
+      ),
+    );
+  }
+
+  @override
+  State<UnitsScreen> createState() => _UnitsScreenState();
+}
+
+class _UnitsScreenState extends State<UnitsScreen> {
+  static const _prefsKey = 'units_grid_view';
+  bool _isGridView = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreGridView();
+  }
+
+  Future<void> _restoreGridView() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _isGridView = prefs.getBool(_prefsKey) ?? false);
+  }
+
+  Future<void> _setGridView(bool value) async {
+    setState(() => _isGridView = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsKey, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +102,10 @@ class UnitsScreen extends StatelessWidget {
             isLoading: units.isSaving,
             onPressed: () => _openUnitEditor(context),
           ),
-          toolbar: const _UnitsToolbar(),
+          toolbar: _UnitsToolbar(
+            isGridView: _isGridView,
+            onToggleView: () => _setGridView(!_isGridView),
+          ),
           messages: [
             if (units.errorMessage != null)
               _UnitsMessageBanner(message: units.errorMessage!, isError: true),
@@ -65,29 +117,11 @@ class UnitsScreen extends StatelessWidget {
                       'Create a unit like Kilogram or Bundle to reuse it across inventory forms.',
                   icon: Icons.straighten_outlined,
                 )
+              : _isGridView
+              ? _UnitsCardGrid(units: units.filteredUnits)
               : _UnitsTable(units: units.filteredUnits),
         );
       },
-    );
-  }
-
-  static Future<UnitDefinition?> openEditor(
-    BuildContext context, {
-    UnitDefinition? unit,
-    String initialName = '',
-    String initialGroupName = '',
-    int? initialConversionBaseUnitId,
-  }) {
-    return showErpFormDialog<UnitDefinition?>(
-      context,
-      maxWidth: 980,
-      maxHeight: 860,
-      child: _UnitEditorSheet(
-        unit: unit,
-        initialName: initialName,
-        initialGroupName: initialGroupName,
-        initialConversionBaseUnitId: initialConversionBaseUnitId,
-      ),
     );
   }
 
@@ -98,7 +132,7 @@ class UnitsScreen extends StatelessWidget {
     String initialGroupName = '',
     int? initialConversionBaseUnitId,
   }) {
-    return openEditor(
+    return UnitsScreen.openEditor(
       context,
       unit: unit,
       initialName: initialName,
@@ -109,7 +143,10 @@ class UnitsScreen extends StatelessWidget {
 }
 
 class _UnitsToolbar extends StatelessWidget {
-  const _UnitsToolbar();
+  const _UnitsToolbar({required this.isGridView, required this.onToggleView});
+
+  final bool isGridView;
+  final VoidCallback onToggleView;
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +160,53 @@ class _UnitsToolbar extends StatelessWidget {
             hintText: 'Search units or symbols',
             onChanged: provider.setSearchQuery,
           ),
+        SoftViewToggleButton(isGridView: isGridView, onTap: onToggleView),
       ],
+    );
+  }
+}
+
+class _UnitsCardGrid extends StatelessWidget {
+  const _UnitsCardGrid({required this.units});
+
+  final List<UnitDefinition> units;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftEntityCardGrid(
+      itemCount: units.length,
+      itemBuilder: (context, index) {
+        final unit = units[index];
+        final conversion = unit.conversionBaseUnitName == null
+            ? ''
+            : '1 ${unit.symbol} = ${unit.conversionFactor} '
+                  '${unit.conversionBaseUnitName}';
+        return SoftEntityCard(
+          // Units have no photo, so the initials tile carries the symbol —
+          // which is the thing you actually scan a unit list for.
+          title: unit.name,
+          subtitle: unit.symbol,
+          fallbackIcon: Icons.straighten_outlined,
+          onTap: () => UnitsScreen.openEditor(context, unit: unit),
+          details: [
+            SoftEntityDetail(
+              icon: Icons.category_outlined,
+              label: 'Family',
+              value: unit.unitGroupName ?? '',
+            ),
+            SoftEntityDetail(
+              icon: Icons.swap_horiz_rounded,
+              label: 'Conversion',
+              value: conversion,
+            ),
+            SoftEntityDetail(
+              icon: Icons.notes_outlined,
+              label: 'Notes',
+              value: unit.notes,
+            ),
+          ],
+        );
+      },
     );
   }
 }
