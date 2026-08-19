@@ -71,7 +71,8 @@ class ItemVariationNodeDefinition {
   List<ItemVariationNodeDefinition> get leafValueNodes {
     final leaves = <ItemVariationNodeDefinition>[];
     void visit(ItemVariationNodeDefinition node) {
-      if (node.kind == ItemVariationNodeKind.value && node.activeChildren.isEmpty) {
+      if (node.kind == ItemVariationNodeKind.value &&
+          node.activeChildren.isEmpty) {
         leaves.add(node);
         return;
       }
@@ -221,11 +222,50 @@ class ItemDefinition {
           .where((node) => node.kind == ItemVariationNodeKind.property)
           .toList(growable: false);
 
+  /// The same item under a new name pair. A variant's name is derived from its
+  /// values, so changing a value has to show up before the save round-trips —
+  /// this is what the screen puts on the list while the update is in flight.
+  ItemDefinition renamed({String? name, String? displayName}) {
+    return ItemDefinition(
+      id: id,
+      name: name ?? this.name,
+      alias: alias,
+      shortCode: shortCode,
+      displayName: displayName ?? this.displayName,
+      quantity: quantity,
+      groupId: groupId,
+      unitId: unitId,
+      unitConversions: unitConversions,
+      propertySchema: propertySchema,
+      namingFormat: namingFormat,
+      isArchived: isArchived,
+      usageCount: usageCount,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      variationTree: variationTree,
+      defaultPipelineId: defaultPipelineId,
+      defaultPipelineName: defaultPipelineName,
+      baseItemId: baseItemId,
+      photoUrl: photoUrl,
+      cadFileKey: cadFileKey,
+      cadFileName: cadFileName,
+      attachments: attachments,
+      developedForClientId: developedForClientId,
+      developedForClientName: developedForClientName,
+      machines: machines,
+      dies: dies,
+      combinationGroupIds: combinationGroupIds,
+      availableForPurchase: availableForPurchase,
+      penPaperBaseline: penPaperBaseline,
+    );
+  }
+
   List<ItemVariationNodeDefinition> get leafVariationNodes {
     final leaves = <ItemVariationNodeDefinition>[];
 
     void visit(ItemVariationNodeDefinition node) {
-      if (node.kind == ItemVariationNodeKind.value && node.activeChildren.isEmpty) {
+      if (node.kind == ItemVariationNodeKind.value &&
+          node.activeChildren.isEmpty) {
         leaves.add(node);
         return;
       }

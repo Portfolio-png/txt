@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 
 import '../../domain/item_asset.dart';
 import '../../domain/item_usage_record.dart';
+import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
 import '../models/item_api_models.dart';
 import 'item_repository.dart';
@@ -2196,6 +2198,142 @@ class ApiItemRepository implements ItemRepository {
     }
     return result;
   }
+
+
+  // --- Master Data, keyed by (variant, pipeline) ---------------------------
+
+  @override
+  Future<MasterDataResolution> resolveMasterData({
+    required int itemId,
+    String? pipelineId,
+    bool adopt = false,
+  }) async {
+    if (useMockResponses) {
+      return MasterDataResolution(
+        itemId: itemId,
+        pipelineId: pipelineId ?? '',
+        matched: false,
+        source: MasterDataSource.fresh,
+        origin: MasterDataOrigin.fresh,
+        baseline: PenPaperBaseline.createDefault(),
+      );
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/items/$itemId/master-data/resolve',
+    ).replace(
+      queryParameters: <String, String>{
+        if ((pipelineId ?? '').trim().isNotEmpty) 'pipelineId': pipelineId!.trim(),
+        if (adopt) 'adopt': '1',
+      },
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to resolve Master Data',
+      );
+    }
+    return MasterDataResolution.fromJson(payload);
+  }
+
+  @override
+  Future<List<ItemMasterDataRecord>> getItemMasterData(int itemId) async {
+    if (useMockResponses) return const <ItemMasterDataRecord>[];
+    final uri = Uri.parse('$baseUrl/api/items/$itemId/master-data');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to fetch Master Data',
+      );
+    }
+    return (payload['records'] as List<dynamic>? ?? const <dynamic>[])
+        .whereType<Map>()
+        .map(
+          (record) =>
+              ItemMasterDataRecord.fromJson(record.cast<String, dynamic>()),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<ItemMasterDataRecord> saveMasterData({
+    required int itemId,
+    required String pipelineId,
+    required PenPaperBaseline baseline,
+  }) async {
+    if (useMockResponses) {
+      return ItemMasterDataRecord(
+        id: 0,
+        itemId: itemId,
+        pipelineId: pipelineId,
+        baseline: baseline,
+      );
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/items/$itemId/master-data/${Uri.encodeComponent(pipelineId)}',
+    );
+    final response = await _client.put(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(<String, dynamic>{'baseline': baseline.toJson()}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to save Master Data',
+      );
+    }
+    return ItemMasterDataRecord.fromJson(
+      (payload['record'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    );
+  }
+
+  @override
+  Future<void> deleteMasterData({
+    required int itemId,
+    required String pipelineId,
+  }) async {
+    if (useMockResponses) return;
+    final uri = Uri.parse(
+      '$baseUrl/api/items/$itemId/master-data/${Uri.encodeComponent(pipelineId)}',
+    );
+    final response = await _client.delete(uri);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final payload = _decodeJsonObject(response.body);
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to remove Master Data',
+      );
+    }
+  }
+
+  @override
+  Future<PipelineMasterDataRoster> getPipelineMasterData(
+    String pipelineId,
+  ) async {
+    if (useMockResponses) {
+      return PipelineMasterDataRoster(
+        pipelineId: pipelineId,
+        entries: const <ItemMasterDataRecord>[],
+      );
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/pipelines/${Uri.encodeComponent(pipelineId)}/master-data',
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to fetch pipeline Master Data',
+      );
+    }
+    return PipelineMasterDataRoster.fromJson(payload);
+  }
+}
+
+extension<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }
 
 class ItemApiException implements Exception {
@@ -2205,8 +2343,4 @@ class ItemApiException implements Exception {
 
   @override
   String toString() => message;
-}
-
-extension<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }

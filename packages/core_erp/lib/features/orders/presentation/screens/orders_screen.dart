@@ -37,6 +37,7 @@ import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 
+import '../../../items/domain/item_master_data.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
@@ -139,9 +140,9 @@ class OrdersScreen extends StatefulWidget {
     if (!context.mounted) return;
     final group = provider.findGroupByOrderNo(orderNo);
     if (group == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Order $orderNo not found.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Order $orderNo not found.')));
       return;
     }
     await showGeneralDialog<void>(
@@ -191,7 +192,6 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   /// Order book slides left, insights comes in from the right.
   bool _showInsights = false;
-
 
   static const double _contentHorizontalPadding = 0;
   final Set<int> _selectedOrderIds = <int>{};
@@ -261,92 +261,97 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   bottom: 0,
                   width: width,
                   child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
-                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _OrdersHeader(
-                        onPrimaryCreate: () {
-                          _handlePrimaryCreate();
-                        },
-                        onOpenInsights: () {
-                          setState(() => _showInsights = true);
-                          // Insights is the only consumer of the fulfilment
-                          // rollup, so it is fetched on open rather than with
-                          // the order book.
-                          context.read<OrdersProvider>().loadFulfilment();
-                        },
-                      ),
-                      const SizedBox(height: 18),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: _contentHorizontalPadding,
-                        ),
-                        child: _OrdersSummaryRow(
-                          summary: summary,
-                          activeStatus: _statusFilter,
-                          onStatusSelected: (value) {
-                            setState(() {
-                              _statusFilter = value;
-                            });
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                       Expanded(
-                        child: _OrdersTableCard(
-                          orders: visibleGroups,
-                          hasAnyOrders: orders.isNotEmpty,
-                          hasActiveFilters:
-                              _partyFilterClientId != null ||
-                              _itemFilterId != null ||
-                              _statusFilter != null ||
-                              _orderSearchQuery.trim().isNotEmpty ||
-                              _clientSearchQuery.trim().isNotEmpty ||
-                              _poSearchQuery.trim().isNotEmpty ||
-                              ordersProvider.searchQuery.trim().isNotEmpty,
-                          selectedOrderIds: _selectedOrderIds,
-                          orderSearchQuery: _orderSearchQuery,
-                          clientSearchQuery: _clientSearchQuery,
-                          poSearchQuery: _poSearchQuery,
-                          sortColumn: _sortColumn,
-                          sortAscending: _sortAscending,
-                          onToggleSelection: (orderId, selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedOrderIds.add(orderId);
-                              } else {
-                                _selectedOrderIds.remove(orderId);
-                              }
-                            });
-                          },
-                          onRowTap: (orderGroup) =>
-                              _openLifecycleEditor(context, orderGroup),
-                          onCreateOrder: _handlePrimaryCreate,
-                          onGoToProduction: widget.onGoToProduction,
-                          onSortChange: (column, ascending) {
-                            setState(() {
-                              _sortColumn = column;
-                              _sortAscending = ascending;
-                            });
-                          },
-                          onOrderSearch: (query) =>
-                              setState(() => _orderSearchQuery = query),
-                          onClientSearch: (query) =>
-                              setState(() => _clientSearchQuery = query),
-                          onPoSearch: (query) =>
-                              setState(() => _poSearchQuery = query),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _OrdersHeader(
+                                onPrimaryCreate: () {
+                                  _handlePrimaryCreate();
+                                },
+                                onOpenInsights: () {
+                                  setState(() => _showInsights = true);
+                                  // Insights is the only consumer of the fulfilment
+                                  // rollup, so it is fetched on open rather than with
+                                  // the order book.
+                                  context
+                                      .read<OrdersProvider>()
+                                      .loadFulfilment();
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: _contentHorizontalPadding,
+                                ),
+                                child: _OrdersSummaryRow(
+                                  summary: summary,
+                                  activeStatus: _statusFilter,
+                                  onStatusSelected: (value) {
+                                    setState(() {
+                                      _statusFilter = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Expanded(
+                                child: _OrdersTableCard(
+                                  orders: visibleGroups,
+                                  hasAnyOrders: orders.isNotEmpty,
+                                  hasActiveFilters:
+                                      _partyFilterClientId != null ||
+                                      _itemFilterId != null ||
+                                      _statusFilter != null ||
+                                      _orderSearchQuery.trim().isNotEmpty ||
+                                      _clientSearchQuery.trim().isNotEmpty ||
+                                      _poSearchQuery.trim().isNotEmpty ||
+                                      ordersProvider.searchQuery
+                                          .trim()
+                                          .isNotEmpty,
+                                  selectedOrderIds: _selectedOrderIds,
+                                  orderSearchQuery: _orderSearchQuery,
+                                  clientSearchQuery: _clientSearchQuery,
+                                  poSearchQuery: _poSearchQuery,
+                                  sortColumn: _sortColumn,
+                                  sortAscending: _sortAscending,
+                                  onToggleSelection: (orderId, selected) {
+                                    setState(() {
+                                      if (selected) {
+                                        _selectedOrderIds.add(orderId);
+                                      } else {
+                                        _selectedOrderIds.remove(orderId);
+                                      }
+                                    });
+                                  },
+                                  onRowTap: (orderGroup) =>
+                                      _openLifecycleEditor(context, orderGroup),
+                                  onCreateOrder: _handlePrimaryCreate,
+                                  onGoToProduction: widget.onGoToProduction,
+                                  onSortChange: (column, ascending) {
+                                    setState(() {
+                                      _sortColumn = column;
+                                      _sortAscending = ascending;
+                                    });
+                                  },
+                                  onOrderSearch: (query) =>
+                                      setState(() => _orderSearchQuery = query),
+                                  onClientSearch: (query) => setState(
+                                    () => _clientSearchQuery = query,
+                                  ),
+                                  onPoSearch: (query) =>
+                                      setState(() => _poSearchQuery = query),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
-            ],
                   ),
                 ),
                 AnimatedPositioned(
@@ -383,7 +388,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-
   /// Flattens the order book's currently-visible groups into the individual
   /// order lines the insight cards are drawn from — the same filtered set the
   /// book is showing, so the two views never disagree.
@@ -413,7 +417,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<OrderEntry> _insightOrders(BuildContext context) {
     final provider = context.watch<OrdersProvider>();
     return <OrderEntry>[
-      for (final group in _applyFilters(provider.filteredOrderGroups)) ...group.items,
+      for (final group in _applyFilters(provider.filteredOrderGroups))
+        ...group.items,
     ];
   }
 
@@ -2707,8 +2712,7 @@ PopupMenuItem<String> _rowMenuItem({
 
 /// A hairline between groups. PopupMenuDivider's default 16px height is what
 /// opened those gaps between the status block and the rest.
-PopupMenuEntry<String> _rowMenuSeparator() =>
-    const PopupMenuDivider(height: 9);
+PopupMenuEntry<String> _rowMenuSeparator() => const PopupMenuDivider(height: 9);
 
 class _DataCell extends StatelessWidget {
   const _DataCell(
@@ -4190,15 +4194,12 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final primaryUnit = unitsProvider.findById(selectedItem?.unitId);
     final familyBaseId = primaryUnit?.conversionBaseUnitId ?? primaryUnit?.id;
     final includedUnits = unitsProvider.includedUnitsFor(familyBaseId, 'sales');
-    
+
     final options = _unitOptionsForItem(
       selectedItem,
       unitsProvider.activeUnits,
     );
-    final addableUnits = _addableUnitsForItem(
-      selectedItem,
-      includedUnits,
-    );
+    final addableUnits = _addableUnitsForItem(selectedItem, includedUnits);
     final value = _effectiveUnitIdForLine(line, selectedItem, options);
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-unit-field')
@@ -4317,9 +4318,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               // contain instead: digits, a decimal point, grouping commas and
               // the k / L / cr suffixes.
               inputFormatters: [
-                FilteringTextInputFormatter.allow(
-                  RegExp(r'[0-9.,kKlLcCrR ]'),
-                ),
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,kKlLcCrR ]')),
               ],
               textInputAction: TextInputAction.next,
               decoration: _inputDecoration(
@@ -4327,9 +4326,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                 // The grouped read-back sits under the field as well as in the
                 // tooltip: on a dense row of lines, hovering each one to check
                 // a zero count is exactly the friction this removes.
-                helperText: parsed == null
-                    ? null
-                    : formatIndianNumber(parsed),
+                helperText: parsed == null ? null : formatIndianNumber(parsed),
               ),
               validator: (value) {
                 final quantity = parseQuantityShorthand(value);
@@ -4718,7 +4715,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     final items = itemsProvider.items;
     final requests = <SetLinePropertyRequest>[];
-    final ready = <({InventorySetLineDefinition line, ItemDefinition item, int qty})>[];
+    final ready =
+        <({InventorySetLineDefinition line, ItemDefinition item, int qty})>[];
 
     for (final line in choice.set.lines) {
       final item = items
@@ -4816,7 +4814,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     int quantity,
     VariationPathSelectionResult? resolved,
   ) {
-    final draft = _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch + line.itemId);
+    final draft = _OrderLineDraft(
+      id: DateTime.now().microsecondsSinceEpoch + line.itemId,
+    );
     draft.selectedItemId = item.id;
     draft.selectedUnitId = item.unitId;
     draft.quantityController.text = quantity.toString();
@@ -5084,7 +5084,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             customVariationValues: line.customVariationValues.map(
               (k, v) => MapEntry(k.toString(), v),
             ),
-            quantity: (parseQuantityShorthand(line.quantityController.text)?.round() ?? 1),
+            quantity:
+                (parseQuantityShorthand(
+                  line.quantityController.text,
+                )?.round() ??
+                1),
             unitId: selectedUnit.id,
             unitName: selectedUnit.name,
             unitSymbol: selectedUnit.symbol,
@@ -6269,6 +6273,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
       1 => _OrderTrackContent(
         orderNo: group.orderNo,
         orderId: group.items.first.id,
+        orderItems: group.items,
         getProductionRuns: widget.getProductionRuns,
       ),
       _ => const SizedBox.shrink(),
@@ -7034,11 +7039,16 @@ class _OrderTrackContent extends StatefulWidget {
   const _OrderTrackContent({
     required this.orderNo,
     required this.orderId,
+    required this.orderItems,
     this.getProductionRuns,
   });
 
   final String orderNo;
   final int orderId;
+
+  /// The order's lines. Each names the variant that was ordered, which is what
+  /// the Master Data lookup keys on together with that variant's pipeline.
+  final List<OrderEntry> orderItems;
   final Future<List<dynamic>> Function(String orderNo)? getProductionRuns;
 
   @override
@@ -7046,7 +7056,7 @@ class _OrderTrackContent extends StatefulWidget {
 }
 
 class _OrderTrackContentState extends State<_OrderTrackContent> {
-  late Future<List<_TrackEntry>> _future;
+  late Future<_TrackBoard> _future;
 
   @override
   void initState() {
@@ -7055,7 +7065,7 @@ class _OrderTrackContentState extends State<_OrderTrackContent> {
   }
 
   /// Every source the old tabs each loaded separately, merged and sorted once.
-  Future<List<_TrackEntry>> _load() async {
+  Future<_TrackBoard> _load() async {
     final orders = context.read<OrdersProvider>();
     final challansProvider = context.read<DeliveryChallanProvider>();
     final entries = <_TrackEntry>[];
@@ -7135,7 +7145,76 @@ class _OrderTrackContentState extends State<_OrderTrackContent> {
     }
 
     entries.sort((a, b) => b.at.compareTo(a.at));
-    return entries;
+    return _TrackBoard(masterData: await _loadMasterData(), entries: entries);
+  }
+
+  /// The Master Data behind the order: for each line, the baseline for that
+  /// variant on its pipeline, and the pipeline's own roster to read it against.
+  ///
+  /// A pipeline holds one record per variant running through it, so "the
+  /// pipeline's numbers" is a roster, not a figure — the value of showing it
+  /// here is that the ordered variant can be read against its peers on the same
+  /// pipeline, and that a line whose baseline was never measured says so before
+  /// anyone plans against it.
+  Future<List<_MasterDataInsight>> _loadMasterData() async {
+    final items = context.read<ItemsProvider>();
+    final cards = <_MasterDataInsight>[];
+    final rosters = <String, PipelineMasterDataRoster>{};
+    final seenLines = <int>{};
+
+    for (final line in widget.orderItems) {
+      if (!seenLines.add(line.itemId)) continue;
+      final item = items.findById(line.itemId);
+      final pipelineId = (item?.defaultPipelineId ?? '').trim();
+      if (pipelineId.isEmpty) continue;
+      final pipelineName = (item?.defaultPipelineName ?? '').trim().isEmpty
+          ? pipelineId
+          : item!.defaultPipelineName!;
+
+      PipelineMasterDataRoster? roster = rosters[pipelineId];
+      if (roster == null) {
+        roster = await items.pipelineMasterData(pipelineId);
+        if (roster == null) continue;
+        rosters[pipelineId] = roster;
+        cards.add(
+          _MasterDataInsight.pipeline(
+            title: pipelineName,
+            variantCount: roster.count,
+            measuredCount: roster.measuredCount,
+            inheritedCount: roster.inheritedCount,
+            blankCount: roster.blankCount,
+            averageYield: roster.measuredYieldPercent,
+          ),
+        );
+      }
+
+      final resolution = await items.resolveMasterData(
+        itemId: line.itemId,
+        pipelineId: pipelineId,
+      );
+      if (resolution == null) continue;
+      final record = roster.entries
+          .where((entry) => entry.itemId == line.itemId)
+          .firstOrNull;
+      final label = line.variationPathLabel.trim().isEmpty
+          ? line.itemName
+          : '${line.itemName} · ${line.variationPathLabel}';
+      cards.add(
+        _MasterDataInsight.variant(
+          title: label,
+          pipelineName: pipelineName,
+          resolution: resolution,
+          inputKg: record?.inputKg ?? 0,
+          outputKg: record?.outputKg ?? 0,
+          inputQty: record?.inputQty ?? 0,
+          outputQty: record?.outputQty ?? 0,
+          yieldPercent: record?.yieldPercent ?? 0,
+          peerYield: roster.measuredYieldPercent,
+          peerCount: roster.measuredCount,
+        ),
+      );
+    }
+    return cards;
   }
 
   /// Stored statuses are OrderStatus names ('notStarted', 'inProgress'), so
@@ -7157,20 +7236,22 @@ class _OrderTrackContentState extends State<_OrderTrackContent> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<_TrackEntry>>(
+    return FutureBuilder<_TrackBoard>(
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final entries = snapshot.data ?? const <_TrackEntry>[];
-        if (entries.isEmpty) {
+        final board = snapshot.data ?? const _TrackBoard.empty();
+        if (board.isEmpty) {
           return const _OrderDetailEmptyState(
             message: 'Nothing recorded on this order yet',
           );
         }
-        // Cards flow down each column, then across — so the sideways scroll is
-        // the only scroll, and every card is the same size.
+        // Master Data first: it is what the rest of the board is measured
+        // against. Then the history. Cards flow down each column and then
+        // across, so the sideways scroll is the only scroll and every card is
+        // the same size.
         return GridView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -7180,10 +7261,411 @@ class _OrderTrackContentState extends State<_OrderTrackContent> {
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
           ),
-          itemCount: entries.length,
-          itemBuilder: (context, index) => _TrackEntryCard(entry: entries[index]),
+          itemCount: board.masterData.length + board.entries.length,
+          itemBuilder: (context, index) {
+            if (index < board.masterData.length) {
+              return _MasterDataInsightCard(insight: board.masterData[index]);
+            }
+            return _TrackEntryCard(
+              entry: board.entries[index - board.masterData.length],
+            );
+          },
         );
       },
+    );
+  }
+}
+
+/// What the Track board shows: the Master Data behind the order, then its
+/// history. Kept as one result so a single FutureBuilder covers both.
+class _TrackBoard {
+  const _TrackBoard({required this.masterData, required this.entries});
+
+  const _TrackBoard.empty()
+    : masterData = const <_MasterDataInsight>[],
+      entries = const <_TrackEntry>[];
+
+  final List<_MasterDataInsight> masterData;
+  final List<_TrackEntry> entries;
+
+  bool get isEmpty => masterData.isEmpty && entries.isEmpty;
+}
+
+/// One Master Data card: either a pipeline's roster in summary, or the variant
+/// this order line selected, read against that roster.
+class _MasterDataInsight {
+  const _MasterDataInsight._({
+    required this.isPipeline,
+    required this.title,
+    required this.subtitle,
+    this.claim = '',
+    this.matched = true,
+    this.source = MasterDataSource.pair,
+    this.inputKg = 0,
+    this.outputKg = 0,
+    this.inputQty = 0,
+    this.outputQty = 0,
+    this.yieldPercent = 0,
+    this.peerYield = 0,
+    this.peerCount = 0,
+    this.variantCount = 0,
+    this.measuredCount = 0,
+    this.inheritedCount = 0,
+    this.blankCount = 0,
+  });
+
+  factory _MasterDataInsight.pipeline({
+    required String title,
+    required int variantCount,
+    required int measuredCount,
+    required int inheritedCount,
+    required int blankCount,
+    required double averageYield,
+  }) {
+    return _MasterDataInsight._(
+      isPipeline: true,
+      title: title,
+      subtitle: variantCount == 1
+          ? '1 variant has Master Data on this pipeline'
+          : '$variantCount variants have Master Data on this pipeline',
+      variantCount: variantCount,
+      measuredCount: measuredCount,
+      inheritedCount: inheritedCount,
+      blankCount: blankCount,
+      yieldPercent: averageYield,
+      peerCount: measuredCount,
+    );
+  }
+
+  factory _MasterDataInsight.variant({
+    required String title,
+    required String pipelineName,
+    required MasterDataResolution resolution,
+    required double inputKg,
+    required double outputKg,
+    required double inputQty,
+    required double outputQty,
+    required double yieldPercent,
+    required double peerYield,
+    required int peerCount,
+  }) {
+    return _MasterDataInsight._(
+      isPipeline: false,
+      title: title,
+      subtitle: 'On $pipelineName',
+      claim: resolution.describe(pipelineName: pipelineName),
+      matched: resolution.matched,
+      source: resolution.source,
+      inputKg: inputKg,
+      outputKg: outputKg,
+      inputQty: inputQty,
+      outputQty: outputQty,
+      yieldPercent: yieldPercent,
+      peerYield: peerYield,
+      peerCount: peerCount,
+    );
+  }
+
+  final bool isPipeline;
+  final String title;
+  final String subtitle;
+
+  /// Which resolution step answered, in words.
+  final String claim;
+  final bool matched;
+  final MasterDataSource source;
+  final double inputKg;
+  final double outputKg;
+  final double inputQty;
+  final double outputQty;
+  final double yieldPercent;
+
+  /// The pipeline's average measured yield and how many records it averages —
+  /// the peers this variant is read against.
+  final double peerYield;
+  final int peerCount;
+  final int variantCount;
+  final int measuredCount;
+  final int inheritedCount;
+  final int blankCount;
+
+  /// Percentage points this variant sits above or below its measured peers.
+  /// Null when there is nothing honest to compare against: no yield of its own,
+  /// or no measured peer besides itself.
+  double? get yieldDelta {
+    if (isPipeline || yieldPercent <= 0 || peerYield <= 0) return null;
+    if (peerCount <= 1) return null;
+    return yieldPercent - peerYield;
+  }
+}
+
+/// A Master Data card on the Track board. The pipeline card carries the roster
+/// in summary; a variant card carries the ordered variant's own figures, the
+/// step that produced them, and how it sits against its measured peers.
+class _MasterDataInsightCard extends StatelessWidget {
+  const _MasterDataInsightCard({required this.insight});
+
+  final _MasterDataInsight insight;
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color tone, Color wash, IconData icon) = insight.isPipeline
+        ? (
+            SoftErpTheme.entityVariant,
+            SoftErpTheme.entityVariantBg,
+            Icons.account_tree_rounded,
+          )
+        : switch (insight.source) {
+            MasterDataSource.pair => (
+              SoftErpTheme.successText,
+              const Color(0xFFECFDF5),
+              Icons.verified_rounded,
+            ),
+            MasterDataSource.item || MasterDataSource.pipeline => (
+              SoftErpTheme.accentDeeper,
+              SoftErpTheme.accentSurface,
+              Icons.call_merge_rounded,
+            ),
+            MasterDataSource.fresh => (
+              SoftErpTheme.warningText,
+              const Color(0xFFFFFBEB),
+              Icons.fiber_new_rounded,
+            ),
+          };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+      decoration: BoxDecoration(
+        color: wash,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tone.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: tone),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  insight.isPipeline
+                      ? 'PIPELINE MASTER DATA'
+                      : 'ORDERED VARIANT',
+                  style: TextStyle(
+                    color: tone,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            insight.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            insight.isPipeline ? insight.subtitle : insight.claim,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: insight.isPipeline ? SoftErpTheme.textSecondary : tone,
+              fontSize: 11,
+              height: 1.3,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Spacer(),
+          if (insight.isPipeline)
+            _pipelineFigures(tone)
+          else
+            _variantFigures(tone),
+        ],
+      ),
+    );
+  }
+
+  Widget _pipelineFigures(Color tone) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            if (insight.measuredCount > 0)
+              _chip(
+                '${insight.measuredCount} measured',
+                SoftErpTheme.successText,
+              ),
+            if (insight.inheritedCount > 0)
+              _chip(
+                '${insight.inheritedCount} inherited',
+                SoftErpTheme.accentDeeper,
+              ),
+            if (insight.blankCount > 0)
+              _chip('${insight.blankCount} blank', SoftErpTheme.warningText),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _figure(
+          'Average yield',
+          insight.measuredCount == 0
+              ? 'Not measured yet'
+              : '${insight.yieldPercent.toStringAsFixed(1)}%',
+          tone,
+        ),
+        if (insight.measuredCount == 1)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'One measured record — not yet an average.',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _variantFigures(Color tone) {
+    final delta = insight.yieldDelta;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _figure(
+                'In',
+                insight.inputKg <= 0
+                    ? '—'
+                    : '${_kg(insight.inputKg)} kg'
+                          '${insight.inputQty > 0 ? ' · ${_pcs(insight.inputQty)}' : ''}',
+                SoftErpTheme.textPrimary,
+              ),
+            ),
+            Expanded(
+              child: _figure(
+                'Out',
+                insight.outputKg <= 0
+                    ? '—'
+                    : '${_kg(insight.outputKg)} kg'
+                          '${insight.outputQty > 0 ? ' · ${_pcs(insight.outputQty)}' : ''}',
+                SoftErpTheme.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _figure(
+                'Yield',
+                insight.yieldPercent <= 0
+                    ? '—'
+                    : '${insight.yieldPercent.toStringAsFixed(1)}%',
+                tone,
+              ),
+            ),
+            if (delta != null)
+              Expanded(
+                child: _figure(
+                  'vs ${insight.peerCount} peers',
+                  '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)} pts',
+                  delta >= 0
+                      ? SoftErpTheme.successText
+                      : SoftErpTheme.dangerText,
+                ),
+              ),
+          ],
+        ),
+        if (!insight.matched)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Nothing measured for this pair yet — record it before planning '
+              'against it.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: SoftErpTheme.warningText,
+                fontSize: 10,
+                height: 1.25,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  static String _kg(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(2);
+
+  static String _pcs(double value) =>
+      '${value == value.roundToDouble() ? value.toStringAsFixed(0) : value.toStringAsFixed(1)} pcs';
+
+  Widget _figure(String label, String value, Color tone) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: tone,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _chip(String label, Color tone) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: tone.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: tone,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
@@ -7497,15 +7979,19 @@ class _OrderTraceContentState extends State<_OrderTraceContent> {
         }
         if (snap.hasError) {
           return Center(
-            child: Text('Failed to load trace: ${snap.error}',
-                style: const TextStyle(color: SoftErpTheme.textSecondary)),
+            child: Text(
+              'Failed to load trace: ${snap.error}',
+              style: const TextStyle(color: SoftErpTheme.textSecondary),
+            ),
           );
         }
         final trace = snap.data!;
         if (trace.runs.isEmpty && trace.returns.isEmpty) {
           return const Center(
-            child: Text('No production lineage recorded for this order yet.',
-                style: TextStyle(color: SoftErpTheme.textSecondary)),
+            child: Text(
+              'No production lineage recorded for this order yet.',
+              style: TextStyle(color: SoftErpTheme.textSecondary),
+            ),
           );
         }
         return SingleChildScrollView(
@@ -7537,16 +8023,29 @@ class _OrderTraceContentState extends State<_OrderTraceContent> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.assignment_late_outlined, size: 18, color: Color(0xFFC0392B)),
+          const Icon(
+            Icons.assignment_late_outlined,
+            size: 18,
+            color: Color(0xFFC0392B),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '${r.returnNo} · ${_kReturnReasons[r.reasonCode] ?? r.reasonCode}'
               '${r.defectDescription.isNotEmpty ? ' — ${r.defectDescription}' : ''}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
             ),
           ),
-          Text(r.status, style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 11)),
+          Text(
+            r.status,
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 11,
+            ),
+          ),
         ],
       ),
     );
@@ -7566,11 +8065,20 @@ class _OrderTraceContentState extends State<_OrderTraceContent> {
         children: [
           Row(
             children: [
-              const Icon(Icons.account_tree_outlined, size: 18, color: SoftErpTheme.accent),
+              const Icon(
+                Icons.account_tree_outlined,
+                size: 18,
+                color: SoftErpTheme.accent,
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(run.runName,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                child: Text(
+                  run.runName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ],
           ),
@@ -7588,14 +8096,22 @@ class _OrderTraceContentState extends State<_OrderTraceContent> {
           ],
           if (run.sheets.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text('Consumed vendor sheets',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SoftErpTheme.textSecondary)),
+            const Text(
+              'Consumed vendor sheets',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
             const SizedBox(height: 6),
             for (final sheet in run.sheets) _sheetRow(sheet),
           ] else ...[
             const SizedBox(height: 8),
-            const Text('No per-sheet consumption captured for this run (SKU-level only).',
-                style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary)),
+            const Text(
+              'No per-sheet consumption captured for this run (SKU-level only).',
+              style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+            ),
           ],
         ],
       ),
@@ -7615,7 +8131,11 @@ class _OrderTraceContentState extends State<_OrderTraceContent> {
           if (s.machineAssetId.isNotEmpty) 'M:${s.machineAssetId}',
           if (s.dieToolCode.isNotEmpty) 'D:${s.dieToolCode}',
         ].join('  ·  '),
-        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF3B3599)),
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF3B3599),
+        ),
       ),
     );
   }
@@ -7642,18 +8162,28 @@ class _OrderTraceContentState extends State<_OrderTraceContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(sheet.parentCode,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(
+                  sheet.parentCode,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 Text(
                   [
-                    if (sheet.vendorName.isNotEmpty) 'Vendor: ${sheet.vendorName}',
+                    if (sheet.vendorName.isNotEmpty)
+                      'Vendor: ${sheet.vendorName}',
                     if (sheet.weight > 0) '${sheet.weight} kg',
-                    if (sheet.receptionChallanNo.isNotEmpty) 'RC ${sheet.receptionChallanNo}',
+                    if (sheet.receptionChallanNo.isNotEmpty)
+                      'RC ${sheet.receptionChallanNo}',
                     if (sheet.retro) 'SKU-level (legacy)',
                   ].join('  ·  '),
-                  style: const TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: SoftErpTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -7671,9 +8201,15 @@ class _TraceSectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, top: 4),
-      child: Text(label.toUpperCase(),
-          style: const TextStyle(
-              fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: SoftErpTheme.textSecondary)),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w800,
+          color: SoftErpTheme.textSecondary,
+        ),
+      ),
     );
   }
 }
@@ -7711,21 +8247,28 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
   }
 
   Future<void> _submit() async {
-    setState(() { _busy = true; _error = null; });
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       final saved = await context.read<OrdersProvider>().logOrderReturn(
-            CreateOrderReturnInput(
-              orderNo: widget.group.orderNo,
-              orderItemId: _item?.id,
-              quantity: double.tryParse(_qtyController.text.trim()) ?? 0,
-              reasonCode: _reason,
-              defectDescription: _descController.text.trim(),
-              returnedBarcode: _barcodeController.text.trim(),
-            ),
-          );
+        CreateOrderReturnInput(
+          orderNo: widget.group.orderNo,
+          orderItemId: _item?.id,
+          quantity: double.tryParse(_qtyController.text.trim()) ?? 0,
+          reasonCode: _reason,
+          defectDescription: _descController.text.trim(),
+          returnedBarcode: _barcodeController.text.trim(),
+        ),
+      );
       if (mounted) Navigator.of(context).pop(saved);
     } catch (e) {
-      if (mounted) setState(() { _error = '$e'; _busy = false; });
+      if (mounted)
+        setState(() {
+          _error = '$e';
+          _busy = false;
+        });
     }
   }
 
@@ -7741,19 +8284,29 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Log return · ${widget.group.orderNo}',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              Text(
+                'Log return · ${widget.group.orderNo}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
               const SizedBox(height: 16),
               DropdownButtonFormField<OrderEntry>(
                 initialValue: _item,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Order line', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Order line',
+                  border: OutlineInputBorder(),
+                ),
                 items: [
                   for (final it in widget.group.items)
                     DropdownMenuItem(
                       value: it,
                       child: Text(
-                        it.variationPathLabel.isNotEmpty ? '${it.itemName} · ${it.variationPathLabel}' : it.itemName,
+                        it.variationPathLabel.isNotEmpty
+                            ? '${it.itemName} · ${it.variationPathLabel}'
+                            : it.itemName,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -7766,8 +8319,13 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
                   Expanded(
                     child: TextField(
                       controller: _qtyController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Quantity', border: OutlineInputBorder()),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Quantity',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -7775,7 +8333,10 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
                     child: DropdownButtonFormField<String>(
                       initialValue: _reason,
                       isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Reason', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(
+                        labelText: 'Reason',
+                        border: OutlineInputBorder(),
+                      ),
                       items: [
                         for (final e in _kReturnReasons.entries)
                           DropdownMenuItem(value: e.key, child: Text(e.value)),
@@ -7790,7 +8351,10 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
                 controller: _descController,
                 minLines: 2,
                 maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Defect description', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Defect description',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -7802,7 +8366,13 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
-                Text(_error!, style: const TextStyle(color: Color(0xFFC0392B), fontSize: 12)),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFC0392B),
+                    fontSize: 12,
+                  ),
+                ),
               ],
               const SizedBox(height: 18),
               Row(
@@ -7816,7 +8386,11 @@ class _LogReturnDialogState extends State<_LogReturnDialog> {
                   FilledButton(
                     onPressed: _busy ? null : _submit,
                     child: _busy
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Text('Log return'),
                   ),
                 ],
@@ -9713,4 +10287,3 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
     );
   }
 }
-

@@ -29445,6 +29445,18 @@ registerItemsModuleRoutes({
   getIo: () => io,
 });
 
+// Master Data lives on the (variant, pipeline) pair — see modules/items/
+// master-data.js for the resolution rule.
+const { registerMasterDataRoutes } = require('./modules/items/master-data');
+const itemMasterData = registerMasterDataRoutes({
+  app,
+  requirePermission,
+  get,
+  all,
+  run,
+  logChange,
+});
+
 const { computeTerritory } = require("./kernel/territory");
 app.get("/api/kernel/territory", async (req, res) => {
   try {

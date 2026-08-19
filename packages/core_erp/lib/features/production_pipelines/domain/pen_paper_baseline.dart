@@ -15,6 +15,10 @@ class PenPaperStageReconciliation {
     this.scrapKg = 5.0,
     this.rejectionKg = 3.0,
     this.weightLossKg = 2.0,
+    this.inputQty = 0,
+    this.outputQty = 0,
+    this.materialType = '',
+    this.rejectionPercent = 0.0,
     this.notes = '',
   });
 
@@ -28,7 +32,29 @@ class PenPaperStageReconciliation {
   final double scrapKg;
   final double rejectionKg;
   final double weightLossKg;
+
+  /// Pieces in and out. Weight is the sum across the lot, so a piece count is
+  /// what makes a per-piece average possible — the same pairing the mobile app
+  /// records against a reception challan.
+  final double inputQty;
+  final double outputQty;
+
+  /// What the material is, read off the variant's own name (a variant of a
+  /// sheet is a sheet). Stamped so the record still says what was weighed.
+  final String materialType;
+
+  /// Rejection is booked as a percentage of input weight rather than an
+  /// absolute, because that is how the floor quotes it.
+  final double rejectionPercent;
   final String notes;
+
+  /// Average weight of one piece, which is what the pieces/weight pair is for.
+  double get inputKgPerPiece => inputQty > 0 ? inputKg / inputQty : 0.0;
+  double get outputKgPerPiece => outputQty > 0 ? outputKg / outputQty : 0.0;
+
+  /// Rejection resolved to kg from its percentage of input.
+  double get rejectionFromPercentKg =>
+      recordRejection ? inputKg * (rejectionPercent / 100.0) : 0.0;
 
   double get effectiveScrapKg => recordScrap ? scrapKg : 0.0;
   double get effectiveRejectionKg => recordRejection ? rejectionKg : 0.0;
@@ -56,6 +82,10 @@ class PenPaperStageReconciliation {
     double? scrapKg,
     double? rejectionKg,
     double? weightLossKg,
+    double? inputQty,
+    double? outputQty,
+    String? materialType,
+    double? rejectionPercent,
     String? notes,
   }) {
     return PenPaperStageReconciliation(
@@ -69,6 +99,10 @@ class PenPaperStageReconciliation {
       scrapKg: scrapKg ?? this.scrapKg,
       rejectionKg: rejectionKg ?? this.rejectionKg,
       weightLossKg: weightLossKg ?? this.weightLossKg,
+      inputQty: inputQty ?? this.inputQty,
+      outputQty: outputQty ?? this.outputQty,
+      materialType: materialType ?? this.materialType,
+      rejectionPercent: rejectionPercent ?? this.rejectionPercent,
       notes: notes ?? this.notes,
     );
   }
@@ -85,6 +119,10 @@ class PenPaperStageReconciliation {
       'scrapKg': scrapKg,
       'rejectionKg': rejectionKg,
       'weightLossKg': weightLossKg,
+      'inputQty': inputQty,
+      'outputQty': outputQty,
+      'materialType': materialType,
+      'rejectionPercent': rejectionPercent,
       'notes': notes,
     };
   }
@@ -101,6 +139,10 @@ class PenPaperStageReconciliation {
       scrapKg: (json['scrapKg'] as num?)?.toDouble() ?? 5.0,
       rejectionKg: (json['rejectionKg'] as num?)?.toDouble() ?? 3.0,
       weightLossKg: (json['weightLossKg'] as num?)?.toDouble() ?? 2.0,
+      inputQty: (json['inputQty'] as num?)?.toDouble() ?? 0,
+      outputQty: (json['outputQty'] as num?)?.toDouble() ?? 0,
+      materialType: json['materialType'] as String? ?? '',
+      rejectionPercent: (json['rejectionPercent'] as num?)?.toDouble() ?? 0.0,
       notes: json['notes'] as String? ?? '',
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,6 +31,7 @@ import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
 import '../../data/services/item_link_options_service.dart';
 import '../../domain/item_form_sections.dart';
@@ -87,12 +90,12 @@ class ItemsScreen extends StatefulWidget {
           ),
           child: SubmitFormShortcuts(
             child: _ItemWorkflowWindow(
-            item: item,
-            initialName: initialName,
-            initialGroupId: initialGroupId,
-            onCreatePipeline: onCreatePipeline,
-            startAtVariations: startAtVariations,
-          ),
+              item: item,
+              initialName: initialName,
+              initialGroupId: initialGroupId,
+              onCreatePipeline: onCreatePipeline,
+              startAtVariations: startAtVariations,
+            ),
           ),
         ),
       ),
@@ -239,7 +242,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   context.read<InventoryProvider>().initialize();
                 }
               },
-              boardingPass: FeatureFlags.isEnabled(FeatureKeys.boardingPassCards),
+              boardingPass: FeatureFlags.isEnabled(
+                FeatureKeys.boardingPassCards,
+              ),
               cardWidth: _cardWidth,
               cardHeight: _cardHeight,
               columnCount: _columnCount,
@@ -609,8 +614,7 @@ class _ItemsSetsViewState extends State<_ItemsSetsView> {
                           isVariant:
                               items
                                   .where(
-                                    (candidate) =>
-                                        candidate.id == line.itemId,
+                                    (candidate) => candidate.id == line.itemId,
                                   )
                                   .firstOrNull
                                   ?.isBasicItem ??
@@ -752,7 +756,11 @@ class _ItemsColumnSlider extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.grid_view_rounded, size: 18, color: SoftErpTheme.textSecondary),
+          const Icon(
+            Icons.grid_view_rounded,
+            size: 18,
+            color: SoftErpTheme.textSecondary,
+          ),
           const SizedBox(width: 8),
           SizedBox(
             width: 200,
@@ -988,17 +996,25 @@ class _ItemsTableState extends State<_ItemsTable> {
     // Bucket by group, preserving the provider's ordering of groups and the
     // filtered order of items within each.
     final byGroup = <int, List<ItemDefinition>>{};
+    final variantsByBase = <int, List<ItemDefinition>>{};
+    final presentIds = widget.items.map((item) => item.id).toSet();
     for (final item in widget.items) {
-      if (item.baseItemId != null) continue;
+      final base = item.baseItemId;
+      if (base != null) {
+        variantsByBase.putIfAbsent(base, () => <ItemDefinition>[]).add(item);
+        // A variant nests under its base — but only if the base is here to
+        // nest under. When a search or an archived base leaves it orphaned it
+        // is listed in its own group instead, so it never becomes unreachable.
+        if (presentIds.contains(base)) continue;
+      }
       byGroup.putIfAbsent(item.groupId, () => <ItemDefinition>[]).add(item);
     }
 
     void addItemAndVariants(ItemDefinition item) {
       rows.add(_ItemsTableRow.item(item));
       if (_expandedBaseItemIds.contains(item.id)) {
-        for (final variant in widget.items.where(
-          (candidate) => candidate.baseItemId == item.id,
-        )) {
+        for (final variant
+            in variantsByBase[item.id] ?? const <ItemDefinition>[]) {
           rows.add(_ItemsTableRow.item(variant));
         }
       }
@@ -1017,17 +1033,24 @@ class _ItemsTableState extends State<_ItemsTable> {
     for (final groupId in orderedGroupIds) {
       final groupItems = byGroup[groupId] ?? const <ItemDefinition>[];
       final group = groupsProvider.findById(groupId);
-      final variantCount = widget.items
-          .where(
-            (candidate) =>
-                candidate.baseItemId != null &&
-                groupItems.any((base) => base.id == candidate.baseItemId),
-          )
+      // An orphaned variant listed at this level counts as a variant, not as
+      // an item, so the chips keep saying what they mean.
+      final baseCount = groupItems
+          .where((item) => item.baseItemId == null)
           .length;
+      final variantCount =
+          groupItems.length -
+          baseCount +
+          groupItems
+              .where((item) => item.baseItemId == null)
+              .fold<int>(
+                0,
+                (total, base) => total + (variantsByBase[base.id]?.length ?? 0),
+              );
       rows.add(
         _ItemsTableRow.group(
           group ?? _ungroupedPlaceholder(groupId),
-          groupItems.length,
+          baseCount,
           variantCount,
         ),
       );
@@ -1068,23 +1091,93 @@ class _ItemsTableState extends State<_ItemsTable> {
         }
         final item = row.item!;
         final isVariant = item.baseItemId != null;
+        final variantCount = variantsByBase[item.id]?.length ?? 0;
+        void toggleVariants() {
+          setState(() {
+            if (!_expandedBaseItemIds.remove(item.id)) {
+              _expandedBaseItemIds.add(item.id);
+            }
+          });
+        }
+
         return _ItemRow(
           item: item,
           isVariant: isVariant,
           onCreatePipeline: widget.onCreatePipeline,
-          onDoubleTap: isVariant
+          variantCount: isVariant ? 0 : variantCount,
+          variantsExpanded: _expandedBaseItemIds.contains(item.id),
+          onToggleVariants: isVariant || variantCount == 0
               ? null
-              : () {
-                  setState(() {
-                    if (_expandedBaseItemIds.contains(item.id)) {
-                      _expandedBaseItemIds.remove(item.id);
-                    } else {
-                      _expandedBaseItemIds.add(item.id);
-                    }
-                  });
-                },
+              : toggleVariants,
+          onDoubleTap: isVariant || variantCount == 0 ? null : toggleVariants,
         );
       },
+    );
+  }
+}
+
+/// The variant count on a base item's row, and the control for opening them.
+/// Reads as a count first — the point is that you can see the variants exist
+/// without having discovered that the row expands.
+class _VariantCountChip extends StatelessWidget {
+  const _VariantCountChip({
+    required this.count,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool expanded;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: expanded
+          ? 'Hide the $count spawned variants'
+          : 'Show the $count spawned variants',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+            decoration: BoxDecoration(
+              color: expanded
+                  ? SoftErpTheme.entityVariant.withValues(alpha: 0.16)
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: expanded
+                    ? SoftErpTheme.entityVariant
+                    : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  expanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                  size: 13,
+                  color: SoftErpTheme.entityVariant,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  '$count variant${count == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: SoftErpTheme.entityVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1129,45 +1222,45 @@ class _GroupHeaderRow extends StatelessWidget {
         Expanded(
           child: Row(
             children: [
-            Icon(
-              expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-              size: 18,
-              color: expanded
-                  ? SoftErpTheme.accent
-                  : SoftErpTheme.textSecondary,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                group.name,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: expanded
-                      ? SoftErpTheme.accentDeeper
-                      : SoftErpTheme.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
+              Icon(
+                expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                size: 18,
+                color: expanded
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  group.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: expanded
+                        ? SoftErpTheme.accentDeeper
+                        : SoftErpTheme.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-            ),
-            _CountPill(
-              count: itemCount,
-              label: itemCount == 1 ? 'item' : 'items',
-              color: SoftErpTheme.entityItem,
-              background: SoftErpTheme.entityItemBg,
-              border: SoftErpTheme.entityItemBorder,
-            ),
-            if (variantCount > 0) ...[
-              const SizedBox(width: 8),
               _CountPill(
-                count: variantCount,
-                label: variantCount == 1 ? 'variant' : 'variants',
-                color: SoftErpTheme.entityVariant,
-                background: SoftErpTheme.entityVariantBg,
-                border: SoftErpTheme.entityVariantBorder,
+                count: itemCount,
+                label: itemCount == 1 ? 'item' : 'items',
+                color: SoftErpTheme.entityItem,
+                background: SoftErpTheme.entityItemBg,
+                border: SoftErpTheme.entityItemBorder,
               ),
-            ],
-            const SizedBox(width: 12),
+              if (variantCount > 0) ...[
+                const SizedBox(width: 8),
+                _CountPill(
+                  count: variantCount,
+                  label: variantCount == 1 ? 'variant' : 'variants',
+                  color: SoftErpTheme.entityVariant,
+                  background: SoftErpTheme.entityVariantBg,
+                  border: SoftErpTheme.entityVariantBorder,
+                ),
+              ],
+              const SizedBox(width: 12),
               Text(
                 expanded ? 'Click to collapse' : 'Click to open',
                 style: const TextStyle(
@@ -1385,7 +1478,8 @@ class _BoardingItemCardState extends State<_BoardingItemCard> {
     final imageUrl = asset?.readUrl?.toString() ?? item.photoUrl;
     final groupName =
         context.read<GroupsProvider>().findById(item.groupId)?.name ?? '—';
-    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+    final isScrap =
+        groupName.toLowerCase().trim() == 'scrap' ||
         item.name.toLowerCase().contains('scrap') ||
         item.displayName.toLowerCase().contains('scrap');
     final unitLabel =
@@ -1397,21 +1491,30 @@ class _BoardingItemCardState extends State<_BoardingItemCard> {
             ?.displayLabel ??
         '—';
     final leafCount = item.leafVariationNodes.length;
-    final title = item.displayName.trim().isEmpty ? item.name : item.displayName;
+    final title = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
 
     return BoardingPassCard(
       title: title,
       subtitle: isScrap
           ? 'Scrap material'
-          : (leafCount == 0 ? 'Base item' : '$leafCount variant${leafCount == 1 ? '' : 's'}'),
+          : (leafCount == 0
+                ? 'Base item'
+                : '$leafCount variant${leafCount == 1 ? '' : 's'}'),
       imageUrl: imageUrl,
       token: _boardingInitials(item.name.trim().isEmpty ? title : item.name),
-      caption: item.alias.trim().isEmpty ? (isScrap ? 'Scrap material' : 'No image') : item.alias,
+      caption: item.alias.trim().isEmpty
+          ? (isScrap ? 'Scrap material' : 'No image')
+          : item.alias,
       isScrap: isScrap,
       details: [
         BoardingPassDetail('Group', groupName),
         BoardingPassDetail('Unit', unitLabel),
-        BoardingPassDetail('Variants', isScrap ? 'Scrap' : (leafCount == 0 ? 'Base' : '$leafCount')),
+        BoardingPassDetail(
+          'Variants',
+          isScrap ? 'Scrap' : (leafCount == 0 ? 'Base' : '$leafCount'),
+        ),
       ],
       // Item master items have no barcode — the design stays consistent, the
       // barcode block is simply omitted.
@@ -1445,6 +1548,9 @@ class _ItemRow extends StatelessWidget {
     this.onCreatePipeline,
     this.isVariant = false,
     this.onDoubleTap,
+    this.variantCount = 0,
+    this.variantsExpanded = false,
+    this.onToggleVariants,
   });
 
   final ItemDefinition item;
@@ -1452,13 +1558,21 @@ class _ItemRow extends StatelessWidget {
   final bool isVariant;
   final VoidCallback? onDoubleTap;
 
+  /// How many variants were spawned off this item, and the control for showing
+  /// them. The count is on the row because the variants are otherwise invisible
+  /// — nothing tells you they exist, so they read as never created.
+  final int variantCount;
+  final bool variantsExpanded;
+  final VoidCallback? onToggleVariants;
+
   @override
   Widget build(BuildContext context) {
     final groupsProvider = context.watch<GroupsProvider>();
     final unitsProvider = context.watch<UnitsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
     final groupName = groupsProvider.findById(item.groupId)?.name ?? 'Unknown';
-    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+    final isScrap =
+        groupName.toLowerCase().trim() == 'scrap' ||
         item.name.toLowerCase().contains('scrap') ||
         item.displayName.toLowerCase().contains('scrap');
     final unitLabel =
@@ -1520,7 +1634,10 @@ class _ItemRow extends StatelessWidget {
                       if (isScrap) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEF3C7),
                             borderRadius: BorderRadius.circular(4),
@@ -1552,7 +1669,7 @@ class _ItemRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(
+                      Flexible(
                         child: Text(
                           item.displayName,
                           overflow: TextOverflow.ellipsis,
@@ -1563,10 +1680,21 @@ class _ItemRow extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (variantCount > 0) ...[
+                        const SizedBox(width: 8),
+                        _VariantCountChip(
+                          count: variantCount,
+                          expanded: variantsExpanded,
+                          onTap: onToggleVariants,
+                        ),
+                      ],
                       if (isScrap) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEF3C7),
                             borderRadius: BorderRadius.circular(4),
@@ -1607,7 +1735,10 @@ class _ItemRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2.5,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFEF3C7),
                         borderRadius: BorderRadius.circular(6),
@@ -1616,7 +1747,11 @@ class _ItemRow extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.recycling_rounded, size: 12, color: Color(0xFFD97706)),
+                          const Icon(
+                            Icons.recycling_rounded,
+                            size: 12,
+                            color: Color(0xFFD97706),
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             groupName.isEmpty ? 'Scrap' : groupName,
@@ -1964,6 +2099,22 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// untouched default. Only a recorded baseline is sent on save, so opening
   /// and closing the editor never fabricates sample numbers.
   bool _hasPenPaperBaseline = false;
+
+  /// Which of the four Master Data resolution steps answered for the pair the
+  /// card is showing. Null until asked, or when there is no saved item to ask
+  /// about. See [_resolveMasterData].
+  MasterDataResolution? _masterDataResolution;
+  bool _resolvingMasterData = false;
+
+  /// The pair the resolution above describes, so a pipeline change re-asks
+  /// rather than leaving another pipeline's answer on screen.
+  String? _resolvedForPipelineId;
+  int? _resolvedForItemId;
+
+  /// How many pipelines this variant already has Master Data on. A variant that
+  /// runs on three pipelines has three records, none of which describes the
+  /// others.
+  int _masterDataRecordCount = 0;
   bool _availableForPurchase = false;
   int? _developedForClientId;
 
@@ -2000,9 +2151,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _displayNameController = TextEditingController(
       text: _item?.displayName ?? '',
     );
-    _photoUrlController = TextEditingController(
-      text: _item?.photoUrl ?? '',
-    );
+    _photoUrlController = TextEditingController(text: _item?.photoUrl ?? '');
     _cadFileKeyController = TextEditingController(
       text: _item?.cadFileKey ?? '',
     );
@@ -2013,6 +2162,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _selectedUnitId = _item?.unitId;
     _namingFormat = _item?.namingFormat.toList() ?? [];
     _defaultPipelineId = _item?.defaultPipelineId;
+    if (_item != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _resolveMasterData());
+    }
     _availableForPurchase = _item?.availableForPurchase ?? false;
     _developedForClientId = _item?.developedForClientId;
     final storedBaseline = _item?.penPaperBaseline;
@@ -2039,8 +2191,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
 
     for (final node
-        in _item?.variationTree ??
-            const <ItemVariationNodeDefinition>[]) {
+        in _item?.variationTree ?? const <ItemVariationNodeDefinition>[]) {
       _rootNodes.add(_draftFromNode(node, null));
     }
     _hydrateExistingGroupBackedNodes();
@@ -2054,8 +2205,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
     _fetchPipelines();
     for (final attachment
-        in _item?.attachments ??
-            const <ItemAttachmentDefinition>[]) {
+        in _item?.attachments ?? const <ItemAttachmentDefinition>[]) {
       _attachments.add(
         _AttachmentDraft(
           id: attachment.id,
@@ -2228,20 +2378,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ? _displayNameController.text.trim()
         : _nameController.text.trim();
     final summary = _ItemEditorSummary(
-        displayName: displayName,
-        groupName: groupsProvider.findById(_selectedGroupId)?.name ?? '',
-        unitLabel:
-            unitsProvider.findById(_selectedUnitId)?.displayLabel ?? '',
-        propertyCount: properties.length,
-        propertyNames: properties
-            .map(
-              (node) => node.nameController.text.trim().isEmpty
-                  ? 'Unnamed Property'
-                  : node.nameController.text.trim(),
-            )
-            .toList(growable: false),
-        isSaved: _item != null,
-        isDirty: _isDirty,
+      displayName: displayName,
+      groupName: groupsProvider.findById(_selectedGroupId)?.name ?? '',
+      unitLabel: unitsProvider.findById(_selectedUnitId)?.displayLabel ?? '',
+      propertyCount: properties.length,
+      propertyNames: properties
+          .map(
+            (node) => node.nameController.text.trim().isEmpty
+                ? 'Unnamed Property'
+                : node.nameController.text.trim(),
+          )
+          .toList(growable: false),
+      isSaved: _item != null,
+      isDirty: _isDirty,
     );
     if (summary == _publishedSummary) {
       return;
@@ -2255,7 +2404,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String _identitySignature() {
     final properties = _rootNodes
         .where((node) => node.kind == ItemVariationNodeKind.property)
-        .map((node) => '${node.nameController.text.trim()}#${node.children.length}')
+        .map(
+          (node) =>
+              '${node.nameController.text.trim()}#${node.children.length}',
+        )
         .join('|');
     return [
       _nameController.text.trim(),
@@ -2313,6 +2465,26 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _savedSignature = _identitySignature();
       _isDirty = false;
     });
+    _publishSummary();
+  }
+
+  /// The variant's values changed on the panel, so the names derived from them
+  /// change too. Unlike [adoptExternalUpdate] nothing has been saved yet, so
+  /// the form is left dirty on purpose: the host's next save carries this
+  /// rename together with whatever else was typed in here, in one request.
+  void applyRenameFromValues({
+    required String name,
+    required String displayName,
+  }) {
+    if (!mounted) return;
+    // Guarded so writing the display name is not mistaken for the user typing.
+    _syncingDisplayName = true;
+    if (_nameController.text != name) _nameController.text = name;
+    if (_displayNameController.text != displayName) {
+      _displayNameController.text = displayName;
+    }
+    _syncingDisplayName = false;
+    setState(() => _isDirty = true);
     _publishSummary();
   }
 
@@ -2605,10 +2777,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 label: 'No code',
                 tone: _TreeMetaPillTone.missing,
               )
-            : _TreeMetaPillSpec(
-                label: code,
-                tone: _TreeMetaPillTone.code,
-              ),
+            : _TreeMetaPillSpec(label: code, tone: _TreeMetaPillTone.code),
       ];
     }
     if (node.kind != ItemVariationNodeKind.property) {
@@ -2895,7 +3064,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           _formRow(
             children: [
               SearchableSelectField<int>(
-                tapTargetKey: ValueKey<String>('items-group-field${widget.keyScope}'),
+                tapTargetKey: ValueKey<String>(
+                  'items-group-field${widget.keyScope}',
+                ),
                 value:
                     availableGroups.any((group) => group.id == _selectedGroupId)
                     ? _selectedGroupId
@@ -2950,7 +3121,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           _formRow(
             children: [
               SearchableSelectField<int>(
-                tapTargetKey: ValueKey<String>('items-unit-field${widget.keyScope}'),
+                tapTargetKey: ValueKey<String>(
+                  'items-unit-field${widget.keyScope}',
+                ),
                 value: null,
                 decoration: _fieldDecoration(
                   label: selectedUnit == null ? 'Unit' : 'Add another unit',
@@ -3399,18 +3572,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               ? null
                               : () => _moveNode(_rootNodes, index, index + 1),
                           onToggleInputType:
-                              _rootNodes[index].kind == ItemVariationNodeKind.property &&
-                                      !_isReadOnly &&
-                                      !_rootNodes[index].isLockedInheritedProperty
-                                  ? () => _cycleNodeInputType(_rootNodes[index])
-                                  : null,
+                              _rootNodes[index].kind ==
+                                      ItemVariationNodeKind.property &&
+                                  !_isReadOnly &&
+                                  !_rootNodes[index].isLockedInheritedProperty
+                              ? () => _cycleNodeInputType(_rootNodes[index])
+                              : null,
                           onEditNumericRange:
                               _rootNodes[index].isNumericProperty &&
-                                      !_isReadOnly &&
-                                      !_rootNodes[index].isLockedInheritedProperty
-                                  ? () =>
-                                      _editNodeNumericRange(_rootNodes[index])
-                                  : null,
+                                  !_isReadOnly &&
+                                  !_rootNodes[index].isLockedInheritedProperty
+                              ? () => _editNodeNumericRange(_rootNodes[index])
+                              : null,
                           onRemove: () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
                         ),
@@ -3428,420 +3601,420 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-                  // The host supplies the header when embedded in a workflow.
-                  if (!widget.embedded)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppSectionTitle(
-                          title: _item == null
-                              ? 'Create Item'
-                              : _isReadOnly
-                              ? 'View Item'
-                              : _isBasicItem
-                              ? 'Edit Basic Item'
-                              : 'Edit Item',
-                        ),
-                      ),
-                      // The section layout is configured in Settings → Item
-                      // Creation (or on the group, for components) — not from
-                      // the form it controls.
-                      IconButton(
-                        onPressed: () => _requestClose(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
+          // The host supplies the header when embedded in a workflow.
+          if (!widget.embedded)
+            Row(
+              children: [
+                Expanded(
+                  child: AppSectionTitle(
+                    title: _item == null
+                        ? 'Create Item'
+                        : _isReadOnly
+                        ? 'View Item'
+                        : _isBasicItem
+                        ? 'Edit Basic Item'
+                        : 'Edit Item',
                   ),
-                  if (_localError != null) ...[
-                    const SizedBox(height: 12),
-                    _ItemsMessageBanner(message: _localError!, isError: true),
-                  ],
-                  if (itemsProvider.errorMessage != null &&
-                      !itemsProvider.isSaving) ...[
-                    const SizedBox(height: 12),
-                    _ItemsMessageBanner(
-                      message: itemsProvider.errorMessage!,
-                      isError: true,
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final wideComposer = constraints.maxWidth >= 1140;
+                ),
+                // The section layout is configured in Settings → Item
+                // Creation (or on the group, for components) — not from
+                // the form it controls.
+                IconButton(
+                  onPressed: () => _requestClose(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+          if (_localError != null) ...[
+            const SizedBox(height: 12),
+            _ItemsMessageBanner(message: _localError!, isError: true),
+          ],
+          if (itemsProvider.errorMessage != null &&
+              !itemsProvider.isSaving) ...[
+            const SizedBox(height: 12),
+            _ItemsMessageBanner(
+              message: itemsProvider.errorMessage!,
+              isError: true,
+            ),
+          ],
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wideComposer = constraints.maxWidth >= 1140;
 
-                      final namingFormatSection = _SectionCard(
-                        title: 'Naming Format',
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: const Color(0xFFDCE2F0)),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Drag and drop properties to set the variation display name sequence. Drag blocks to the trash zone or click "x" to exclude them.',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: Colors.grey[600]),
-                              ),
-                              const SizedBox(height: 12),
-                              // Wraps rather than overflows: the label plus the
-                              // widest option exceeds a narrow section column.
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Text(
-                                    'Display Format: ',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                  DropdownButton<String>(
-                                    value:
-                                        _namingFormat.contains(
-                                          '__format:detailed',
-                                        )
-                                        ? 'detailed'
-                                        : _namingFormat.contains(
-                                            '__format:dimensions',
-                                          )
-                                        ? 'dimensions'
-                                        : 'default',
-                                    isDense: true,
-                                    underline: const SizedBox.shrink(),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'default',
-                                        child: Text('Default (Val1 Val2)'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'detailed',
-                                        child: Text('Detailed (Prop: Val)'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'dimensions',
-                                        child: Text('Dimensions (Val1 x Val2)'),
-                                      ),
-                                    ],
-                                    onChanged: _isReadOnly
-                                        ? null
-                                        : (val) {
-                                            setState(() {
-                                              _namingFormat.removeWhere(
-                                                (t) =>
-                                                    t.startsWith('__format:'),
-                                              );
-                                              if (val != 'default' &&
-                                                  val != null) {
-                                                _namingFormat.add(
-                                                  '__format:$val',
-                                                );
-                                              }
-                                              _handleChange();
-                                            });
-                                          },
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              _buildActiveNamingFormatArea(context),
-                              _buildInactiveNamingFormatArea(context),
-                            ],
-                          ),
+              final namingFormatSection = _SectionCard(
+                title: 'Naming Format',
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFDCE2F0)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Drag and drop properties to set the variation display name sequence. Drag blocks to the trash zone or click "x" to exclude them.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
                         ),
-                      );
-
-                      final isRawMaterialGroup =
-                          selectedGroup?.name.toLowerCase().contains(
-                            'raw material',
-                          ) ==
-                          true;
-
-                      final defaultPipelineSection = _SectionCard(
-                        title: 'Default Pipeline',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // A variant is only seeded with its base item's
-                            // route. How it is actually made can differ, so the
-                            // pipeline is the variant's own field — this strip
-                            // says what the base uses and whether this one has
-                            // departed from it.
-                            if (_isBasicItem) ...[
-                              _buildBasePipelineStrip(context),
-                              const SizedBox(height: 12),
+                      ),
+                      const SizedBox(height: 12),
+                      // Wraps rather than overflows: the label plus the
+                      // widest option exceeds a narrow section column.
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Display Format: ',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          DropdownButton<String>(
+                            value: _namingFormat.contains('__format:detailed')
+                                ? 'detailed'
+                                : _namingFormat.contains('__format:dimensions')
+                                ? 'dimensions'
+                                : 'default',
+                            isDense: true,
+                            underline: const SizedBox.shrink(),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'default',
+                                child: Text('Default (Val1 Val2)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'detailed',
+                                child: Text('Detailed (Prop: Val)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'dimensions',
+                                child: Text('Dimensions (Val1 x Val2)'),
+                              ),
                             ],
-                            Builder(
-                              builder: (context) {
-                                final pipelineOptions = _availablePipelines
-                                    .map(
-                                      (p) => SearchableSelectOption<String>(
-                                        value: p['id']!,
-                                        label: p['name']!,
-                                        searchText: p['name']!,
-                                      ),
-                                    )
-                                    .toList();
-                                if (_defaultPipelineId != null &&
-                                    _defaultPipelineId!.isNotEmpty &&
-                                    !pipelineOptions.any((p) => p.value == _defaultPipelineId)) {
-                                  final label = _item?.defaultPipelineName ?? _defaultPipelineId!;
-                                  pipelineOptions.insert(
-                                    0,
-                                    SearchableSelectOption<String>(
-                                      value: _defaultPipelineId!,
-                                      label: label,
-                                      searchText: label,
-                                    ),
-                                  );
-                                }
-                                return SearchableSelectField<String>(
-                                  options: pipelineOptions,
-                                  value: _defaultPipelineId,
-                                  fieldEnabled: !_isReadOnly,
-                                  onChanged: (val) {
+                            onChanged: _isReadOnly
+                                ? null
+                                : (val) {
                                     setState(() {
-                                      _defaultPipelineId = val;
+                                      _namingFormat.removeWhere(
+                                        (t) => t.startsWith('__format:'),
+                                      );
+                                      if (val != 'default' && val != null) {
+                                        _namingFormat.add('__format:$val');
+                                      }
                                       _handleChange();
                                     });
                                   },
-                                  decoration: const InputDecoration(
-                                    hintText: 'Select a pipeline',
-                                  ),
-                                  searchHintText: 'Search pipelines',
-                                );
-                              },
-                            ),
-                            if (!_isReadOnly &&
-                                widget.onCreatePipeline != null) ...[
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  if (widget.onCreatePipeline != null) {
-                                    final newPipelineId =
-                                        await widget.onCreatePipeline!();
-                                    if (mounted) {
-                                      await _fetchPipelines();
-                                      if (newPipelineId != null) {
-                                        setState(() {
-                                          _defaultPipelineId = newPipelineId;
-                                          _handleChange();
-                                        });
-                                      }
-                                    }
-                                  }
-                                },
-                                icon: const Icon(Icons.add, size: 16),
-                                label: const Text('Create New Pipeline'),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-
-                      // Sample Data used to be nested inside the pipeline
-                      // card, which meant the raw-material rule that hides the
-                      // pipeline picker also hid recorded sample weights. A
-                      // measured sample is worth keeping for a raw material, so
-                      // it stands on its own now.
-                      final sampleDataSection = _SectionCard(
-                        title: 'Sample Data',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Spacer(),
-                                if (_hasPenPaperBaseline && !_isReadOnly)
-                                  TextButton.icon(
-                                    onPressed: _clearSampleData,
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                      size: 15,
-                                    ),
-                                    label: const Text('Remove'),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: SoftErpTheme.dangerText,
-                                      textStyle: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            if (_hasPenPaperBaseline)
-                              PenPaperBaselineWidget(
-                                baseline: _penPaperBaseline,
-                                readOnly: _isReadOnly,
-                                showChrome: false,
-                                pipelineId: _defaultPipelineId,
-                                pipelineName: _selectedPipelineName,
-                                stageNames: _selectedPipelineStages,
-                                onChanged: (updated) {
-                                  setState(() {
-                                    _penPaperBaseline = updated;
-                                    _hasPenPaperBaseline = true;
-                                    _handleChange();
-                                  });
-                                },
-                              )
-                            else
-                              _EmptySampleDataPrompt(
-                                onAdd: _isReadOnly ? null : _addSampleData,
-                              ),
-                          ],
-                        ),
-                      );
-
-                      // Section visibility is the user's saved item-form
-                      // layout, so the same choice applies everywhere the
-                      // editor opens.
-                      final showPipeline =
-                          sections.defaultPipeline && !isRawMaterialGroup;
-                      // Sample data is not a pipeline setting — a raw material
-                      // has no pipeline but can still have a weighed sample.
-                      final showSampleData = sections.defaultPipeline;
-
-                      // Sections are packed by estimated height rather than
-                      // assigned to fixed columns: turning sections on and off
-                      // otherwise leaves one column long and the other empty,
-                      // which is what forces scrolling on a wide screen.
-                      final entries = <_SectionEntry>[
-                        _SectionEntry(
-                          detailsSection,
-                          _isBasicItem
-                              ? 4.5
-                              : 5.5 + _secondaryUnitConversions.length * 0.6,
-                        ),
-                        if (sections.variationTree)
-                          _SectionEntry(
-                            variationTreeSection,
-                            3.0 + _rootNodes.length * 1.6,
                           ),
-                        // A basic item's name comes from its base item and its
-                        // variation values, so there is no format to arrange.
-                        if (!_isBasicItem)
-                          _SectionEntry(namingFormatSection, 3.6),
-                        if (sections.itemImage)
-                          _SectionEntry(photoSection, 2.2),
-                        if (sections.cadFile)
-                          _SectionEntry(cadFileSection, 2.2),
-                        if (sections.additionalFiles)
-                          _SectionEntry(
-                            additionalFilesSection,
-                            1.8 + _attachments.length * 0.7,
-                          ),
-                        if (sections.machines)
-                          _SectionEntry(machinesSection, 2.0),
-                        if (sections.dies) _SectionEntry(diesSection, 2.0),
-                        if (showPipeline)
-                          _SectionEntry(
-                            defaultPipelineSection,
-                            _hasSelectedPipeline ? 3.2 : 2.0,
-                          ),
-                        if (showSampleData)
-                          _SectionEntry(
-                            sampleDataSection,
-                            _hasPenPaperBaseline ? 7.0 : 2.0,
-                          ),
-                      ];
-
-                      // A third column is only worth it when each one still
-                      // clears ~600px. The variation tree packs a name field
-                      // and eight controls into a row; below that width the
-                      // name becomes unreadable.
-                      final columnCount = constraints.maxWidth >= 1860
-                          ? 3
-                          : (wideComposer ? 2 : 1);
-                      if (columnCount == 1) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: _withSectionGaps(
-                            entries
-                                .map((entry) => entry.child)
-                                .toList(growable: false),
-                          ),
-                        );
-                      }
-
-                      final columns = _packSections(entries, columnCount);
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (var index = 0; index < columns.length; index++)
-                            ...[
-                              if (index > 0) const SizedBox(width: 18),
-                              Expanded(
-                                child: Column(
-                                  children: _withSectionGaps(columns[index]),
-                                ),
-                              ),
-                            ],
                         ],
-                      );
-                    },
-                  ),
-                  if (_item != null) ...[
-                    const SizedBox(height: 16),
-                    _SectionCard(
-                      title: 'Track',
-                      child: TrackPanel.entity(
-                        entityType: 'items',
-                        entityId: '${_item!.id}',
-                        showHeader: false,
                       ),
-                    ),
-                  ],
-                  if (!widget.embedded) ...[
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      if (!_isReadOnly)
-                        AppButton(
-                          label: _item == null
-                              ? 'Create Item'
-                              : 'Save Changes',
-                          isLoading: _isSubmitting,
-                          onPressed: () => _submit(context),
-                        ),
-                      if (_item != null)
-                        AppButton(
-                          label: 'Delete',
-                          variant: AppButtonVariant.secondary,
-                          isLoading: itemsProvider.isSaving,
-                          onPressed: () async {
-                            final ok = await showConfirmDialog(
-                              context,
-                              title: 'Delete item?',
-                              message:
-                                  'Permanently delete "${_item!.displayName}"? You can restore it later from the Action Center.',
-                            );
-                            if (!ok) return;
-                            await itemsProvider.deleteItem(_item!.id);
-                            if (!context.mounted) return;
-                            if (itemsProvider.errorMessage == null) {
-                              _finish(null);
-                            } else {
-                              showGlobalToast(
-                                itemsProvider.errorMessage!,
-                                kind: AppToastKind.error,
-                              );
-                            }
-                          },
-                        ),
+                      const SizedBox(height: 12),
+                      _buildActiveNamingFormatArea(context),
+                      _buildInactiveNamingFormatArea(context),
                     ],
                   ),
+                ),
+              );
+
+              final isRawMaterialGroup =
+                  selectedGroup?.name.toLowerCase().contains('raw material') ==
+                  true;
+
+              final defaultPipelineSection = _SectionCard(
+                title: 'Default Pipeline',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // A variant is only seeded with its base item's
+                    // route. How it is actually made can differ, so the
+                    // pipeline is the variant's own field — this strip
+                    // says what the base uses and whether this one has
+                    // departed from it.
+                    if (_isBasicItem) ...[
+                      _buildBasePipelineStrip(context),
+                      const SizedBox(height: 12),
+                    ],
+                    Builder(
+                      builder: (context) {
+                        final pipelineOptions = _availablePipelines
+                            .map(
+                              (p) => SearchableSelectOption<String>(
+                                value: p['id']!,
+                                label: p['name']!,
+                                searchText: p['name']!,
+                              ),
+                            )
+                            .toList();
+                        if (_defaultPipelineId != null &&
+                            _defaultPipelineId!.isNotEmpty &&
+                            !pipelineOptions.any(
+                              (p) => p.value == _defaultPipelineId,
+                            )) {
+                          final label =
+                              _item?.defaultPipelineName ?? _defaultPipelineId!;
+                          pipelineOptions.insert(
+                            0,
+                            SearchableSelectOption<String>(
+                              value: _defaultPipelineId!,
+                              label: label,
+                              searchText: label,
+                            ),
+                          );
+                        }
+                        return SearchableSelectField<String>(
+                          options: pipelineOptions,
+                          value: _defaultPipelineId,
+                          fieldEnabled: !_isReadOnly,
+                          onChanged: (val) {
+                            setState(() {
+                              _defaultPipelineId = val;
+                              _handleChange();
+                            });
+                            // A different pipeline is a different pair, so the
+                            // card's claim about where its numbers came from
+                            // has to be asked again.
+                            _resolveMasterData();
+                          },
+                          decoration: const InputDecoration(
+                            hintText: 'Select a pipeline',
+                          ),
+                          searchHintText: 'Search pipelines',
+                        );
+                      },
+                    ),
+                    if (!_isReadOnly && widget.onCreatePipeline != null) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          if (widget.onCreatePipeline != null) {
+                            final newPipelineId =
+                                await widget.onCreatePipeline!();
+                            if (mounted) {
+                              await _fetchPipelines();
+                              if (newPipelineId != null) {
+                                setState(() {
+                                  _defaultPipelineId = newPipelineId;
+                                  _handleChange();
+                                });
+                              }
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Create New Pipeline'),
+                      ),
+                    ],
                   ],
+                ),
+              );
+
+              // Master Data used to be nested inside the pipeline
+              // card, which meant the raw-material rule that hides the
+              // pipeline picker also hid recorded sample weights. A
+              // measured sample is worth keeping for a raw material, so
+              // it stands on its own now.
+              final sampleDataSection = _SectionCard(
+                title: 'Master Data',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Spacer(),
+                        if (_hasPenPaperBaseline && !_isReadOnly)
+                          TextButton.icon(
+                            onPressed: _clearSampleData,
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 15,
+                            ),
+                            label: const Text('Remove'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: SoftErpTheme.dangerText,
+                              textStyle: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (_masterDataResolution != null ||
+                        _resolvingMasterData) ...[
+                      _MasterDataSourceBanner(
+                        resolution: _masterDataResolution,
+                        loading: _resolvingMasterData,
+                        pipelineName: _selectedPipelineName,
+                        recordCount: _masterDataRecordCount,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    const SizedBox(height: 10),
+                    if (_hasPenPaperBaseline)
+                      PenPaperBaselineWidget(
+                        baseline: _penPaperBaseline,
+                        readOnly: _isReadOnly,
+                        showChrome: false,
+                        pipelineId: _defaultPipelineId,
+                        pipelineName: _selectedPipelineName,
+                        stageNames: _selectedPipelineStages,
+                        // The material type is read off the name, so
+                        // the table can say what was weighed.
+                        itemName: _nameController.text.trim().isEmpty
+                            ? (_item?.displayName ?? '')
+                            : _nameController.text.trim(),
+                        onChanged: (updated) {
+                          setState(() {
+                            _penPaperBaseline = updated;
+                            _hasPenPaperBaseline = true;
+                            _handleChange();
+                          });
+                        },
+                      )
+                    else
+                      _EmptySampleDataPrompt(
+                        onAdd: _isReadOnly ? null : _addSampleData,
+                      ),
+                  ],
+                ),
+              );
+
+              // Section visibility is the user's saved item-form
+              // layout, so the same choice applies everywhere the
+              // editor opens.
+              final showPipeline =
+                  sections.defaultPipeline && !isRawMaterialGroup;
+              // Sample data is not a pipeline setting — a raw material
+              // has no pipeline but can still have a weighed sample.
+              final showSampleData = sections.defaultPipeline;
+
+              // Sections are packed by estimated height rather than
+              // assigned to fixed columns: turning sections on and off
+              // otherwise leaves one column long and the other empty,
+              // which is what forces scrolling on a wide screen.
+              final entries = <_SectionEntry>[
+                _SectionEntry(
+                  detailsSection,
+                  _isBasicItem
+                      ? 4.5
+                      : 5.5 + _secondaryUnitConversions.length * 0.6,
+                ),
+                if (sections.variationTree)
+                  _SectionEntry(
+                    variationTreeSection,
+                    3.0 + _rootNodes.length * 1.6,
+                  ),
+                // A basic item's name comes from its base item and its
+                // variation values, so there is no format to arrange.
+                if (!_isBasicItem) _SectionEntry(namingFormatSection, 3.6),
+                if (sections.itemImage) _SectionEntry(photoSection, 2.2),
+                if (sections.cadFile) _SectionEntry(cadFileSection, 2.2),
+                if (sections.additionalFiles)
+                  _SectionEntry(
+                    additionalFilesSection,
+                    1.8 + _attachments.length * 0.7,
+                  ),
+                if (sections.machines) _SectionEntry(machinesSection, 2.0),
+                if (sections.dies) _SectionEntry(diesSection, 2.0),
+                if (showPipeline)
+                  _SectionEntry(
+                    defaultPipelineSection,
+                    _hasSelectedPipeline ? 3.2 : 2.0,
+                  ),
+                if (showSampleData)
+                  _SectionEntry(
+                    sampleDataSection,
+                    _hasPenPaperBaseline ? 7.0 : 2.0,
+                  ),
+              ];
+
+              // A third column is only worth it when each one still
+              // clears ~600px. The variation tree packs a name field
+              // and eight controls into a row; below that width the
+              // name becomes unreadable.
+              final columnCount = constraints.maxWidth >= 1860
+                  ? 3
+                  : (wideComposer ? 2 : 1);
+              if (columnCount == 1) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _withSectionGaps(
+                    entries.map((entry) => entry.child).toList(growable: false),
+                  ),
+                );
+              }
+
+              final columns = _packSections(entries, columnCount);
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var index = 0; index < columns.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 18),
+                    Expanded(
+                      child: Column(children: _withSectionGaps(columns[index])),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+          if (_item != null) ...[
+            const SizedBox(height: 16),
+            _SectionCard(
+              title: 'Track',
+              child: TrackPanel.entity(
+                entityType: 'items',
+                entityId: '${_item!.id}',
+                showHeader: false,
+              ),
+            ),
+          ],
+          if (!widget.embedded) ...[
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                if (!_isReadOnly)
+                  AppButton(
+                    label: _item == null ? 'Create Item' : 'Save Changes',
+                    isLoading: _isSubmitting,
+                    onPressed: () => _submit(context),
+                  ),
+                if (_item != null)
+                  AppButton(
+                    label: 'Delete',
+                    variant: AppButtonVariant.secondary,
+                    isLoading: itemsProvider.isSaving,
+                    onPressed: () async {
+                      final ok = await showConfirmDialog(
+                        context,
+                        title: 'Delete item?',
+                        message:
+                            'Permanently delete "${_item!.displayName}"? You can restore it later from the Action Center.',
+                      );
+                      if (!ok) return;
+                      await itemsProvider.deleteItem(_item!.id);
+                      if (!context.mounted) return;
+                      if (itemsProvider.errorMessage == null) {
+                        _finish(null);
+                      } else {
+                        showGlobalToast(
+                          itemsProvider.errorMessage!,
+                          kind: AppToastKind.error,
+                        );
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -4291,7 +4464,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String _summaryLabelForNode(_NodeDraft node) {
     if (node.isLeafValue) {
       final leafLabel = node.displayNameController.text.trim();
-      final base = leafLabel.isEmpty ? _generateLeafDisplayName(node) : leafLabel;
+      final base = leafLabel.isEmpty
+          ? _generateLeafDisplayName(node)
+          : leafLabel;
       final code = node.codeController.text.trim();
       // While naming by code the row already carries a code pill; repeating it
       // as "Name [CODE]" reads as two different facts.
@@ -4358,10 +4533,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
                   color: toneBg,
                   borderRadius: BorderRadius.circular(999),
@@ -4435,6 +4607,71 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   /// Starts a sample record on this item, seeded with the default three-stage
   /// skeleton for the user to overwrite with the trial's real numbers.
+  /// Asks which of the four steps answers for the pair the card is showing:
+  /// the exact (variant, pipeline) record, the variant's own, the pipeline's, or
+  /// none — in which case this data is new. Only a saved item has a pair to ask
+  /// about; an unsaved one has no id yet.
+  Future<void> _resolveMasterData() async {
+    final item = _item;
+    if (item == null) return;
+    final pipelineId = _defaultPipelineId ?? '';
+    if (_resolvingMasterData &&
+        _resolvedForItemId == item.id &&
+        _resolvedForPipelineId == pipelineId) {
+      return;
+    }
+    setState(() {
+      _resolvingMasterData = true;
+      _resolvedForItemId = item.id;
+      _resolvedForPipelineId = pipelineId;
+    });
+    final provider = context.read<ItemsProvider>();
+    final resolution = await provider.resolveMasterData(
+      itemId: item.id,
+      pipelineId: pipelineId.isEmpty ? null : pipelineId,
+    );
+    final records = await provider.itemMasterData(item.id);
+    if (!mounted) return;
+    setState(() {
+      _resolvingMasterData = false;
+      _masterDataRecordCount = records.length;
+      // A pipeline swapped while the request was in flight: that answer is
+      // about a pair the user has already left.
+      if (_resolvedForItemId == item.id &&
+          _resolvedForPipelineId == pipelineId) {
+        _masterDataResolution = resolution;
+      }
+    });
+  }
+
+  /// Records what is on screen against this exact pair, which is what makes the
+  /// next lookup a measured match rather than an inheritance. Called on save
+  /// alongside the item write, so the variant-level record stays as the
+  /// fallback for pipelines this variant has no record on yet.
+  Future<void> _persistMasterDataPair(int itemId) async {
+    final pipelineId = (_defaultPipelineId ?? '').trim();
+    if (pipelineId.isEmpty || !_hasPenPaperBaseline) return;
+    final saved = await context.read<ItemsProvider>().saveMasterData(
+      itemId: itemId,
+      pipelineId: pipelineId,
+      baseline: _penPaperBaseline,
+    );
+    if (!mounted || saved == null) return;
+    setState(() {
+      _masterDataResolution = MasterDataResolution(
+        itemId: itemId,
+        pipelineId: pipelineId,
+        matched: true,
+        source: MasterDataSource.pair,
+        origin: MasterDataOrigin.manual,
+        baseline: saved.baseline,
+        persisted: true,
+      );
+      _resolvedForItemId = itemId;
+      _resolvedForPipelineId = pipelineId;
+    });
+  }
+
   void _addSampleData() {
     setState(() {
       _penPaperBaseline = PenPaperBaseline.createDefault();
@@ -4530,11 +4767,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       : (baseItem?.name ?? 'Item #${item?.baseItemId}'),
                 ),
                 _basicInheritedRow(context, 'Group', group?.name ?? '—'),
-                _basicInheritedRow(
-                  context,
-                  'Unit',
-                  unit?.displayLabel ?? '—',
-                ),
+                _basicInheritedRow(context, 'Unit', unit?.displayLabel ?? '—'),
                 _basicInheritedRow(
                   context,
                   'Combination group',
@@ -4716,10 +4949,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// The (name, displayName) a variant of [combo] carries. [useCodes] names it
   /// from each value's Code instead of its name; null follows the item's own
   /// `__format:codes` setting.
-  (String, String) variantNames(
-    List<_VariantOption> combo, {
-    bool? useCodes,
-  }) {
+  (String, String) variantNames(List<_VariantOption> combo, {bool? useCodes}) {
     final byCode = useCodes ?? _useValueCodes;
     // The item name is identity and stays spelled out; only the display name
     // switches to codes, so the two are free to differ.
@@ -4739,57 +4969,56 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   Future<List<ItemDefinition>> spawnVariants(
     List<List<_VariantOption>> combinations,
   ) async {
-          _lastSpawnError = null;
-          if (_selectedGroupId == null || _selectedUnitId == null) {
-            const message =
-                'Select both a group and a unit for the base item before '
-                'spawning variants.';
-            setState(() => _localError = message);
-            _lastSpawnError = message;
-            return const <ItemDefinition>[];
-          }
-          final itemsProvider = context.read<ItemsProvider>();
-          final created = <ItemDefinition>[];
-          lastSpawnCombos = <List<_VariantOption>>[];
-          for (final combo in combinations) {
-            final (newName, newDisplayName) = variantNames(combo);
+    _lastSpawnError = null;
+    if (_selectedGroupId == null || _selectedUnitId == null) {
+      const message =
+          'Select both a group and a unit for the base item before '
+          'spawning variants.';
+      setState(() => _localError = message);
+      _lastSpawnError = message;
+      return const <ItemDefinition>[];
+    }
+    final itemsProvider = context.read<ItemsProvider>();
+    final created = <ItemDefinition>[];
+    lastSpawnCombos = <List<_VariantOption>>[];
+    for (final combo in combinations) {
+      final (newName, newDisplayName) = variantNames(combo);
 
-            final input = CreateItemInput(
-              name: newName,
-              displayName: newDisplayName,
-              groupId: _selectedGroupId!,
-              unitId: _selectedUnitId!,
-              unitConversions: _secondaryUnitConversions
-                  .map(
-                    (draft) => ItemUnitConversionInput(
-                      unitId: draft.unitId,
-                      factorToPrimary:
-                          1 / _getDerivedUnitsPerPrimary(draft.unitId),
-                    ),
-                  )
-                  .toList(),
-              namingFormat: _activeNamingFormat,
-              variationTree: const [], // Spawned items have a flat/empty tree
-              defaultPipelineId: _defaultPipelineId,
-              baseItemId: _item?.id,
-              photoUrl: _photoUrlController.text.trim(),
-              cadFileKey: _cadFileKeyController.text.trim(),
-              cadFileName: _cadFileNameController.text.trim(),
-              attachments: _attachmentInputs,
-              machineIds: _selectedMachineIds.toList(growable: false),
-              dieIds: _selectedDieIds.toList(growable: false),
-              developedForClientId: _developedForClientId,
-              availableForPurchase: _availableForPurchase,
-            );
-            final createdItem = await itemsProvider.createItem(input);
-            if (createdItem != null) {
-              created.add(createdItem);
-              // Kept in step with `created` — a rejected combination must not
-              // shift the pairing, or a later rename would use another
-              // variant's values.
-              lastSpawnCombos.add(combo);
-            }
-          }
+      final input = CreateItemInput(
+        name: newName,
+        displayName: newDisplayName,
+        groupId: _selectedGroupId!,
+        unitId: _selectedUnitId!,
+        unitConversions: _secondaryUnitConversions
+            .map(
+              (draft) => ItemUnitConversionInput(
+                unitId: draft.unitId,
+                factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId),
+              ),
+            )
+            .toList(),
+        namingFormat: _activeNamingFormat,
+        variationTree: const [], // Spawned items have a flat/empty tree
+        defaultPipelineId: _defaultPipelineId,
+        baseItemId: _item?.id,
+        photoUrl: _photoUrlController.text.trim(),
+        cadFileKey: _cadFileKeyController.text.trim(),
+        cadFileName: _cadFileNameController.text.trim(),
+        attachments: _attachmentInputs,
+        machineIds: _selectedMachineIds.toList(growable: false),
+        dieIds: _selectedDieIds.toList(growable: false),
+        developedForClientId: _developedForClientId,
+        availableForPurchase: _availableForPurchase,
+      );
+      final createdItem = await itemsProvider.createItem(input);
+      if (createdItem != null) {
+        created.add(createdItem);
+        // Kept in step with `created` — a rejected combination must not
+        // shift the pairing, or a later rename would use another
+        // variant's values.
+        lastSpawnCombos.add(combo);
+      }
+    }
     // The window stays open and moves to its group and edit steps, so there is
     // no snackbar here — the footer reports the count.
     return created;
@@ -5015,9 +5244,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               dieIds: _selectedDieIds.toList(growable: false),
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
-              penPaperBaseline: _hasPenPaperBaseline
-                  ? _penPaperBaseline
-                  : null,
+              penPaperBaseline: _hasPenPaperBaseline ? _penPaperBaseline : null,
             ),
           )
         : await itemsProvider.updateItem(
@@ -5051,9 +5278,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               dieIds: _selectedDieIds.toList(growable: false),
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
-              penPaperBaseline: _hasPenPaperBaseline
-                  ? _penPaperBaseline
-                  : null,
+              penPaperBaseline: _hasPenPaperBaseline ? _penPaperBaseline : null,
             ),
           );
 
@@ -5072,6 +5297,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _isDirty = false;
       _savedSignature = _identitySignature();
     });
+    // Master Data belongs to the (variant, pipeline) pair. The item write keeps
+    // the variant-level copy as the fallback for pipelines this variant has no
+    // record on yet; this pins it to the pipeline it was actually typed against.
+    await _persistMasterDataPair(result.id);
+    if (!mounted) return result;
     showAppToast(
       context,
       wasCreate ? 'Item created' : 'Item saved',
@@ -5282,9 +5512,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final sizeBytes = await file.length();
     if (sizeBytes > _kMaxAttachmentBytes) {
       showAppSnack(
-        const SnackBar(
-          content: Text('Files are limited to 50 MB.'),
-        ),
+        const SnackBar(content: Text('Files are limited to 50 MB.')),
       );
       return;
     }
@@ -5734,58 +5962,64 @@ class _TreeNodeEditor extends StatelessWidget {
                           // instead of both shrinking to a few characters.
                           child: LayoutBuilder(
                             builder: (context, nameConstraints) {
-                            final showCodeField =
-                                nameConstraints.maxWidth >= 260;
-                            return Row(
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: TextField(
-                                  controller: draft.nameController,
-                                  autofocus: true,
-                                  onEditingComplete: onFinishNameEditing,
-                                  onSubmitted: (_) =>
-                                      onFinishNameEditing?.call(),
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    hintText: isProperty
-                                        ? 'Property name'
-                                        : 'Value name',
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 8,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (showCodeField) ...[
-                              const SizedBox(width: 8),
-                              Expanded(
-                                flex: 2,
-                                child: TextField(
-                                  controller: draft.codeController,
-                                  onEditingComplete: onFinishNameEditing,
-                                  onSubmitted: (_) =>
-                                      onFinishNameEditing?.call(),
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    hintText: 'Code (Optional)',
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 8,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
+                              final showCodeField =
+                                  nameConstraints.maxWidth >= 260;
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: TextField(
+                                      controller: draft.nameController,
+                                      autofocus: true,
+                                      onEditingComplete: onFinishNameEditing,
+                                      onSubmitted: (_) =>
+                                          onFinishNameEditing?.call(),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        hintText: isProperty
+                                            ? 'Property name'
+                                            : 'Value name',
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 8,
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ),
-                              ],
-                            ],
-                          );
+                                  if (showCodeField) ...[
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      flex: 2,
+                                      child: TextField(
+                                        controller: draft.codeController,
+                                        onEditingComplete: onFinishNameEditing,
+                                        onSubmitted: (_) =>
+                                            onFinishNameEditing?.call(),
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          hintText: 'Code (Optional)',
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 8,
+                                              ),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              );
                             },
                           ),
                         )
@@ -5935,7 +6169,15 @@ class _TreeNodeEditor extends StatelessWidget {
   }
 }
 
-enum _TreeMetaPillTone { manual, seeded, inherited, promoted, required, code, missing }
+enum _TreeMetaPillTone {
+  manual,
+  seeded,
+  inherited,
+  promoted,
+  required,
+  code,
+  missing,
+}
 
 class _TreeMetaPillSpec {
   const _TreeMetaPillSpec({required this.label, required this.tone});
@@ -6369,7 +6611,163 @@ class _UnitConversionRow extends StatelessWidget {
 ///
 /// The weight only needs to be right relative to the other sections — it drives
 /// which column a card lands in, never how it is laid out.
-/// Shown in a basic item's Sample Data card before any trial run is recorded.
+/// Says which of the four resolution steps produced the numbers in the Master
+/// Data card. A pipeline is shared across many variants, so "these numbers were
+/// measured here" and "these were copied from the pipeline" are different
+/// claims, and the card is worth little if it does not distinguish them.
+class _MasterDataSourceBanner extends StatelessWidget {
+  const _MasterDataSourceBanner({
+    required this.resolution,
+    required this.loading,
+    required this.pipelineName,
+    required this.recordCount,
+  });
+
+  final MasterDataResolution? resolution;
+  final bool loading;
+  final String pipelineName;
+  final int recordCount;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading && resolution == null) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 13,
+            height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 9),
+          Text(
+            'Checking this variant\'s Master Data…',
+            style: TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
+    }
+    final answer = resolution;
+    if (answer == null) return const SizedBox.shrink();
+
+    final (
+      Color fg,
+      Color bg,
+      Color border,
+      IconData icon,
+    ) = switch (answer.source) {
+      MasterDataSource.pair => (
+        SoftErpTheme.successText,
+        const Color(0xFFECFDF5),
+        const Color(0xFFBFEAD8),
+        Icons.verified_rounded,
+      ),
+      MasterDataSource.item || MasterDataSource.pipeline => (
+        SoftErpTheme.accentDeeper,
+        SoftErpTheme.accentSurface,
+        SoftErpTheme.accent,
+        Icons.call_merge_rounded,
+      ),
+      MasterDataSource.fresh => (
+        SoftErpTheme.warningText,
+        const Color(0xFFFFFBEB),
+        const Color(0xFFFDE68A),
+        Icons.fiber_new_rounded,
+      ),
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: fg),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  answer.describe(pipelineName: pipelineName),
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _explain(answer),
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 11.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (recordCount > 1) ...[
+            const SizedBox(width: 10),
+            Tooltip(
+              message:
+                  'This variant has Master Data on $recordCount pipelines. '
+                  'Each is its own record.',
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: border),
+                ),
+                child: Text(
+                  'on $recordCount pipelines',
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _explain(MasterDataResolution answer) {
+    switch (answer.source) {
+      case MasterDataSource.pair:
+        return 'Recorded against this variant on this pipeline. Saving '
+            'overwrites it.';
+      case MasterDataSource.item:
+        return 'This variant\'s own figures, applied here. Saving pins them to '
+            'this pipeline as their own record.';
+      case MasterDataSource.pipeline:
+        return 'The pipeline\'s own figures, standing in until this variant is '
+            'measured. Saving makes them this variant\'s.';
+      case MasterDataSource.fresh:
+        return 'Nothing matched this variant on this pipeline, so these figures '
+            'start a new record for the pair.';
+    }
+  }
+}
+
+/// Shown in a basic item's Master Data card before any trial run is recorded.
 class _EmptySampleDataPrompt extends StatelessWidget {
   const _EmptySampleDataPrompt({required this.onAdd});
 
@@ -6393,7 +6791,7 @@ class _EmptySampleDataPrompt extends StatelessWidget {
         Align(
           alignment: Alignment.centerLeft,
           child: AppButton(
-            label: 'Add sample data',
+            label: 'Add master data',
             icon: Icons.science_outlined,
             variant: AppButtonVariant.secondary,
             onPressed: onAdd,
@@ -6683,7 +7081,10 @@ class _DevelopedForField extends StatelessWidget {
   final bool readOnly;
   final ValueChanged<int?> onChanged;
 
-  Future<void> _pick(BuildContext context, List<ClientDefinition> clients) async {
+  Future<void> _pick(
+    BuildContext context,
+    List<ClientDefinition> clients,
+  ) async {
     final selected = await showSearchableSelectDialog<int>(
       context: context,
       title: 'Developed for',
@@ -7168,10 +7569,7 @@ class _CadFilePickerFieldState extends State<_CadFilePickerField> {
                     ? 'Stays attached to this item until you remove it. '
                           'Download it from the item view.'
                     : 'Optional — DWG, DXF, STEP, IGES, STL, SLDPRT and similar',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF64748B),
-                ),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
               if (!widget.readOnly) ...[
                 const SizedBox(height: 12),
@@ -7250,8 +7648,11 @@ class _VariantOption {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(identityHashCode(property), identityHashCode(valueNode), typedNumber);
+  int get hashCode => Object.hash(
+    identityHashCode(property),
+    identityHashCode(valueNode),
+    typedNumber,
+  );
 }
 
 /// Steps 2 and 3 of the item workflow, rendered as a pane inside the window
@@ -7265,6 +7666,11 @@ class _VariationPanel extends StatefulWidget {
     required this.topLevelProperties,
     required this.onSpawnItems,
     required this.onAssignToGroup,
+    this.variantEditor,
+    this.selectedSpawnedIndex = 0,
+    this.onSelectSpawned,
+    this.selectedSpawnedCombo,
+    this.onChangeSpawnedValues,
     required this.onGroupStepDone,
     required this.showGroupStep,
     required this.spawnedSoFar,
@@ -7287,6 +7693,21 @@ class _VariationPanel extends StatefulWidget {
   /// success, or a message to show in the error banner.
   final Future<String?> Function(List<int> itemIds, _CombinationGroupChoice)
   onAssignToGroup;
+
+  /// Details pane for the selected spawned variant. Null until something has
+  /// been spawned, at which point it becomes the panel's last column.
+  final Widget? variantEditor;
+
+  /// Which spawned variant the editor column is showing, and how to change it —
+  /// the spawned list lives in this panel now, so selecting is its job.
+  final int selectedSpawnedIndex;
+  final ValueChanged<int>? onSelectSpawned;
+
+  /// The values the open spawned variant was built from, and how to change
+  /// them. Null when nothing is open. Handing these down is what lets the
+  /// values column keep editing a variant after it has become a real item.
+  final List<_VariantOption>? selectedSpawnedCombo;
+  final ValueChanged<List<_VariantOption>>? onChangeSpawnedValues;
 
   /// Called once the group step is settled (assigned or skipped).
   final VoidCallback onGroupStepDone;
@@ -7325,6 +7746,14 @@ class _VariationPanelState extends State<_VariationPanel> {
 
   final List<List<_VariantOption>> _createdCombinations = [];
   int? _selectedIndex;
+
+  /// Which pending card is mid-spawn, for the spinner on it.
+  int? _spawningIndex;
+
+  /// The values column is being used to build a NEW variant rather than to
+  /// edit the open one. Set by "New variant"; cleared as soon as something
+  /// spawns, so the freshly opened variant is what the picks act on.
+  bool _pickingFresh = false;
   String? _error;
   bool _isSpawning = false;
 
@@ -7370,6 +7799,13 @@ class _VariationPanelState extends State<_VariationPanel> {
   @override
   void didUpdateWidget(covariant _VariationPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Switching to another spawned variant re-points the value picks at it.
+    final openCombo = widget.selectedSpawnedCombo;
+    if (_isEditingSpawned &&
+        openCombo != null &&
+        !listEquals(oldWidget.selectedSpawnedCombo, openCombo)) {
+      _seedSelection(openCombo);
+    }
     if (oldWidget.groupRound != widget.groupRound) {
       // A genuinely new spawn round: start from that round's items.
       _selectedVariantIds
@@ -7411,6 +7847,23 @@ class _VariationPanelState extends State<_VariationPanel> {
 
   bool get _isEditingCard => _selectedIndex != null;
 
+  /// The values column is editing the open spawned variant: one is open,
+  /// no pending card is selected, and no fresh pick was asked for.
+  bool get _isEditingSpawned =>
+      _selectedIndex == null &&
+      !_pickingFresh &&
+      widget.selectedSpawnedCombo != null;
+
+  /// Points the value picks at exactly [combo], one value per property.
+  void _seedSelection(List<_VariantOption> combo) {
+    for (final options in _selected.values) {
+      options.clear();
+    }
+    for (final option in combo) {
+      _selected[option.property]?.add(option);
+    }
+  }
+
   bool get _hasAnySelection =>
       _selected.values.any((options) => options.isNotEmpty);
 
@@ -7422,6 +7875,32 @@ class _VariationPanelState extends State<_VariationPanel> {
     setState(() {
       _error = null;
       final options = (_selected[property] ??= <_VariantOption>[]);
+      if (_isEditingSpawned) {
+        // The open variant is a real item: the pick rewrites its values, and
+        // the host renames it from them.
+        final combo = List<_VariantOption>.from(widget.selectedSpawnedCombo!);
+        combo.removeWhere((existing) => identical(existing.property, property));
+        if (!options.contains(option)) {
+          combo.add(option);
+          options
+            ..clear()
+            ..add(option);
+        } else if (combo.isEmpty) {
+          // Clearing the last value would leave the variant named after the
+          // base item alone.
+          _error = 'A variant needs at least one value.';
+          return;
+        } else {
+          options.clear();
+        }
+        combo.sort(
+          (a, b) => widget.topLevelProperties
+              .indexOf(a.property)
+              .compareTo(widget.topLevelProperties.indexOf(b.property)),
+        );
+        widget.onChangeSpawnedValues?.call(combo);
+        return;
+      }
       if (_isEditingCard) {
         // Editing one variant: a property holds exactly one value, and the
         // pick is written straight through to the card.
@@ -7471,14 +7950,16 @@ class _VariationPanelState extends State<_VariationPanel> {
     final value = double.tryParse(raw);
     if (value == null) {
       setState(
-        () => _error = '"$raw" is not a valid number for '
+        () => _error =
+            '"$raw" is not a valid number for '
             '${_propertyName(property)}.',
       );
       return;
     }
     if (!property.acceptsNumber(value)) {
       setState(
-        () => _error = '${_propertyName(property)} accepts '
+        () => _error =
+            '${_propertyName(property)} accepts '
             '${property.numericRangeLabel}.',
       );
       return;
@@ -7506,12 +7987,7 @@ class _VariationPanelState extends State<_VariationPanel> {
     setState(() {
       _error = null;
       _selectedIndex = index;
-      for (final options in _selected.values) {
-        options.clear();
-      }
-      for (final option in _createdCombinations[index]) {
-        _selected[option.property]?.add(option);
-      }
+      _seedSelection(_createdCombinations[index]);
     });
   }
 
@@ -7519,9 +7995,7 @@ class _VariationPanelState extends State<_VariationPanel> {
     setState(() {
       _error = null;
       _selectedIndex = null;
-      for (final options in _selected.values) {
-        options.clear();
-      }
+      _seedSelection(const <_VariantOption>[]);
     });
   }
 
@@ -7557,9 +8031,7 @@ class _VariationPanelState extends State<_VariationPanel> {
   /// already on the list.
   void _generateCombinations() {
     if (!_hasAnySelection) {
-      setState(
-        () => _error = 'Pick a value before generating a variant.',
-      );
+      setState(() => _error = 'Pick a value before generating a variant.');
       return;
     }
     var newCombos = <List<_VariantOption>>[<_VariantOption>[]];
@@ -7600,44 +8072,89 @@ class _VariationPanelState extends State<_VariationPanel> {
   String _comboLabel(List<_VariantOption> combo) =>
       combo.map((option) => option.label).join(' - ');
 
-  Future<void> _spawn() async {
-    if (_createdCombinations.isEmpty) {
-      setState(() => _error = 'Generate at least one variant before spawning.');
-      return;
-    }
-    // Editing a variant down to no values would spawn an item named after the
-    // base item alone — make the user give it at least one value back.
-    final emptyIndex = _createdCombinations.indexWhere((c) => c.isEmpty);
-    if (emptyIndex != -1) {
-      setState(() {
-        _error = 'Variant #${emptyIndex + 1} has no values. Give it at least '
-            'one value or remove it.';
-      });
+  /// Clicking a generated variant IS the spawn. There is no Spawn button any
+  /// more: the click creates that one item and opens its details column, and
+  /// the values column stays on it so its values can still be changed.
+  Future<void> _spawnOne(int index) async {
+    if (_isSpawning || index >= _createdCombinations.length) return;
+    final combo = _createdCombinations[index];
+    if (combo.isEmpty) {
+      // A variant with no values would be named after the base item alone.
+      setState(() => _error = 'Give this variant a value before creating it.');
       return;
     }
     setState(() {
       _error = null;
       _isSpawning = true;
+      _spawningIndex = index;
     });
-    final spawned = await widget.onSpawnItems(_createdCombinations);
+    final spawned = await widget.onSpawnItems(<List<_VariantOption>>[combo]);
     if (!mounted) return;
     setState(() {
       _isSpawning = false;
+      _spawningIndex = null;
       if (spawned.isEmpty) {
-        _error = 'No variants were created. Check the messages above and retry.';
+        _error =
+            'That variant was not created. Check the message above and retry.';
         return;
       }
-      // Consume them: stepping back to this pane and pressing Spawn again
-      // would otherwise re-submit the same combinations.
-      _createdCombinations.clear();
-      _deselectCard();
-      for (final options in _selected.values) {
-        options.clear();
-      }
+      // Consumed: it is a real item now, so it leaves Pending. The picks are
+      // left standing — they are that variant's values, and the values column
+      // switches to editing them in place.
+      _createdCombinations.removeAt(index);
+      _selectedIndex = null;
+      _pickingFresh = false;
+      _seedSelection(combo);
       // Nothing to pick from on a fresh install, so open on the create form.
-      _createNewGroup = context.read<GroupsProvider>().combinationGroups.isEmpty;
+      _createNewGroup = context
+          .read<GroupsProvider>()
+          .combinationGroups
+          .isEmpty;
     });
-    // The window advances the stepper — this pane does not own the phase.
+  }
+
+  /// Opens a spawned variant: its details take the editor column and the values
+  /// column goes back to editing its values, whatever mode it was in.
+  void _openSpawned(int index) {
+    final sameOne = index == widget.selectedSpawnedIndex;
+    setState(() {
+      _error = null;
+      _pickingFresh = false;
+      _selectedIndex = null;
+    });
+    widget.onSelectSpawned?.call(index);
+    // Re-tapping the one already open changes no prop, so didUpdateWidget will
+    // not fire — seed from here instead.
+    final combo = widget.selectedSpawnedCombo;
+    if (sameOne && combo != null) {
+      setState(() => _seedSelection(combo));
+    }
+  }
+
+  /// Hands the values column back to building a new variant instead of editing
+  /// the open one.
+  void _startFreshPick() {
+    setState(() {
+      _error = null;
+      _pickingFresh = true;
+      _selectedIndex = null;
+      _seedSelection(const <_VariantOption>[]);
+    });
+  }
+
+  ItemDefinition? get _openVariant {
+    if (widget.spawnedSoFar.isEmpty) return null;
+    final index = widget.selectedSpawnedIndex.clamp(
+      0,
+      widget.spawnedSoFar.length - 1,
+    );
+    return widget.spawnedSoFar[index];
+  }
+
+  String get _openVariantLabel {
+    final item = _openVariant;
+    if (item == null) return '';
+    return item.displayName.trim().isEmpty ? item.name : item.displayName;
   }
 
   /// Read-only list of what has been spawned, shown beside the group sidebar.
@@ -7703,9 +8220,7 @@ class _VariationPanelState extends State<_VariationPanel> {
                       : SoftErpTheme.cardSurface,
                   borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
                   border: Border.all(
-                    color: selected
-                        ? SoftErpTheme.accent
-                        : SoftErpTheme.border,
+                    color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
                   ),
                 ),
                 child: Row(
@@ -7796,9 +8311,7 @@ class _VariationPanelState extends State<_VariationPanel> {
       return;
     }
     if (choice.isCreateNew && choice.newName.isEmpty) {
-      setState(
-        () => _error = 'Enter a name for the new ${choice.targetNoun}.',
-      );
+      setState(() => _error = 'Enter a name for the new ${choice.targetNoun}.');
       return;
     }
 
@@ -7868,26 +8381,52 @@ class _VariationPanelState extends State<_VariationPanel> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final stacked = constraints.maxWidth < 640;
+              final editor = widget.variantEditor;
+              // While building, the editor rides alongside the value picker
+              // and the variants list — three panes here plus the form rail
+              // outside makes the four columns. It only appears once there is a
+              // variant to describe, and only when there is room to read it.
+              final showEditor =
+                  building && editor != null && constraints.maxWidth >= 1180;
               final panes = building
-                  ? <Widget>[_buildPickerPane(), _buildResultsPane()]
+                  ? <Widget>[
+                      _buildPickerPane(),
+                      _buildResultsPane(),
+                      if (showEditor) editor,
+                    ]
                   : <Widget>[_buildSpawnedPane(), _buildSidebar()];
               if (stacked) {
                 return Column(
                   children: [
-                    Expanded(child: panes[0]),
-                    const SizedBox(height: 12),
-                    Expanded(child: panes[1]),
+                    for (var i = 0; i < panes.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 12),
+                      Expanded(child: panes[i]),
+                    ],
+                  ],
+                );
+              }
+              if (!building) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: 6, child: panes[0]),
+                    const SizedBox(width: 14),
+                    SizedBox(width: 300, child: panes[1]),
                   ],
                 );
               }
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(flex: building ? 5 : 6, child: panes[0]),
+                  Expanded(flex: 4, child: panes[0]),
                   const SizedBox(width: 14),
-                  building
-                      ? Expanded(flex: 4, child: panes[1])
-                      : SizedBox(width: 300, child: panes[1]),
+                  // The list carries both pending and spawned now, so it takes
+                  // the width the editor's old inline picker used to hold.
+                  Expanded(flex: 4, child: panes[1]),
+                  if (showEditor) ...[
+                    const SizedBox(width: 14),
+                    Expanded(flex: 5, child: panes[2]),
+                  ],
                 ],
               );
             },
@@ -7899,27 +8438,44 @@ class _VariationPanelState extends State<_VariationPanel> {
     );
   }
 
+  /// Spawning is a click on a generated variant now, so this strip is a hint
+  /// rather than a button bar — the only action left, Generate, sits under the
+  /// values it acts on.
   Widget _buildBuildingActions() {
-    final variantCount = _createdCombinations.length;
+    final pending = _createdCombinations.length;
+    final String hint;
+    if (_isEditingCard) {
+      hint = 'Editing variant #${_selectedIndex! + 1} before it is created.';
+    } else if (_isEditingSpawned) {
+      hint =
+          'Editing "$_openVariantLabel" — change a value on the left and '
+          'its name follows.';
+    } else if (pending > 0) {
+      hint =
+          'Click a pending variant to create it — its details open on '
+          'the right.';
+    } else {
+      hint = 'Pick one value per property, then Generate.';
+    }
     return Row(
       children: [
+        if (_isSpawning) ...[
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+        ],
         Expanded(
           child: Text(
-            variantCount == 0
-                ? 'Generate a variant from the values you picked.'
-                : '$variantCount combination${variantCount == 1 ? '' : 's'} ready to spawn.',
+            _isSpawning ? 'Creating the variant…' : hint,
             style: const TextStyle(
               color: SoftErpTheme.textSecondary,
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
             ),
           ),
-        ),
-        AppButton(
-          label: 'Spawn ${variantCount == 0 ? '' : '$variantCount '}Variant${variantCount == 1 ? '' : 's'}',
-          icon: Icons.auto_awesome_rounded,
-          isLoading: _isSpawning,
-          onPressed: variantCount == 0 || _isSpawning ? null : _spawn,
         ),
       ],
     );
@@ -7934,9 +8490,7 @@ class _VariationPanelState extends State<_VariationPanel> {
     if (_createNewGroup) {
       final name = _groupNameController.text.trim();
       final quoted = name.isEmpty ? 'new $noun' : '"$name"';
-      return selected == 0
-          ? 'Create $quoted'
-          : 'Create $quoted with $selected';
+      return selected == 0 ? 'Create $quoted' : 'Create $quoted with $selected';
     }
     return selected == 0 ? 'Add to $noun' : 'Add $selected to $noun';
   }
@@ -8023,19 +8577,23 @@ class _VariationPanelState extends State<_VariationPanel> {
   /// looked up so a variant can be coloured as one.
   List<Widget> _setMembers(InventorySetDefinition set) {
     final items = context.watch<ItemsProvider>().items;
-    return set.lines.map((line) {
-      final item = items.where((entry) => entry.id == line.itemId).firstOrNull;
-      final label = line.itemDisplayName.trim().isNotEmpty
-          ? line.itemDisplayName
-          : (line.itemName.trim().isNotEmpty
-                ? line.itemName
-                : 'Item #${line.itemId}');
-      return _MemberRow(
-        label: label,
-        isVariant: item?.isBasicItem ?? false,
-        quantity: line.quantity,
-      );
-    }).toList(growable: false);
+    return set.lines
+        .map((line) {
+          final item = items
+              .where((entry) => entry.id == line.itemId)
+              .firstOrNull;
+          final label = line.itemDisplayName.trim().isNotEmpty
+              ? line.itemDisplayName
+              : (line.itemName.trim().isNotEmpty
+                    ? line.itemName
+                    : 'Item #${line.itemId}');
+          return _MemberRow(
+            label: label,
+            isVariant: item?.isBasicItem ?? false,
+            quantity: line.quantity,
+          );
+        })
+        .toList(growable: false);
   }
 
   Widget _buildGroupSidebar() {
@@ -8296,17 +8854,64 @@ class _VariationPanelState extends State<_VariationPanel> {
   // --- left pane: pick values ---------------------------------------------
 
   Widget _buildPickerPane() {
-    final editing = _isEditingCard;
+    final editingCard = _isEditingCard;
+    final editingSpawned = _isEditingSpawned;
+    // Coming back to the open variant is the way out of a fresh pick, so the
+    // header offers it whenever there is a variant to come back to.
+    final canReturnToOpen = _pickingFresh && _openVariant != null;
+    final String title;
+    final String caption;
+    if (editingCard) {
+      title = 'Editing variant #${_selectedIndex! + 1}';
+      caption = 'Picks replace that variant\'s value for the property.';
+    } else if (editingSpawned) {
+      title = 'Values of $_openVariantLabel';
+      caption = 'Change a value and the variant is renamed from it.';
+    } else {
+      title = 'Choose values';
+      caption = 'One value from each property. Together they make one variant.';
+    }
     return _paneShell(
-      title: editing ? 'Editing variant #${_selectedIndex! + 1}' : 'Choose values',
-      caption: editing
-          ? 'Picks replace that variant\'s value for the property.'
-          : 'One value from each property. Together they make one variant.',
-      headerAction: editing
+      title: title,
+      caption: caption,
+      headerAction: editingCard
           ? TextButton.icon(
               onPressed: _deselectCard,
               icon: const Icon(Icons.arrow_back_rounded, size: 16),
               label: const Text('Bulk mode'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accent,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                visualDensity: VisualDensity.compact,
+              ),
+            )
+          : editingSpawned
+          ? TextButton.icon(
+              onPressed: _startFreshPick,
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('New variant'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accent,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                visualDensity: VisualDensity.compact,
+              ),
+            )
+          : canReturnToOpen
+          ? TextButton.icon(
+              onPressed: () => setState(() {
+                _pickingFresh = false;
+                _seedSelection(widget.selectedSpawnedCombo ?? const []);
+              }),
+              icon: const Icon(Icons.arrow_back_rounded, size: 16),
+              label: const Text('Back to variant'),
               style: TextButton.styleFrom(
                 foregroundColor: SoftErpTheme.accent,
                 textStyle: const TextStyle(
@@ -8329,7 +8934,7 @@ class _VariationPanelState extends State<_VariationPanel> {
                   _buildPropertyCard(widget.topLevelProperties[index]),
             ),
           ),
-          if (!editing)
+          if (!editingCard && !editingSpawned)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -8422,9 +9027,8 @@ class _VariationPanelState extends State<_VariationPanel> {
                     label: value.nameController.text.trim().isEmpty
                         ? 'Unnamed Value'
                         : value.nameController.text.trim(),
-                    selected: (_selected[property] ??= <_VariantOption>[]).contains(
-                      _VariantOption.value(property, value),
-                    ),
+                    selected: (_selected[property] ??= <_VariantOption>[])
+                        .contains(_VariantOption.value(property, value)),
                     onTap: () => _toggleOption(
                       property,
                       _VariantOption.value(property, value),
@@ -8528,16 +9132,28 @@ class _VariationPanelState extends State<_VariationPanel> {
 
   // --- right pane: generated variants --------------------------------------
 
+  /// One list of variants, pending and spawned together. They were two panes,
+  /// which read as two unrelated lists when they are really one set at two
+  /// stages of the same act: generated from picked values, then spawned into
+  /// real items. Pending ones edit their values; spawned ones open in the
+  /// details column.
   Widget _buildResultsPane() {
+    final pending = _createdCombinations.length;
+    final spawned = widget.spawnedSoFar.length;
     return _paneShell(
-      title: 'Generated variants',
-      caption: 'Tap one to edit its values, or remove it.',
+      title: 'Variants',
+      caption: pending == 0 && spawned == 0
+          ? 'Generate from the values on the left.'
+          : [
+              if (pending > 0) '$pending pending',
+              if (spawned > 0) '$spawned spawned',
+            ].join(' · '),
       headerAction: _createdCombinations.isEmpty
           ? null
           : TextButton.icon(
               onPressed: _clearAllCards,
               icon: const Icon(Icons.delete_sweep_outlined, size: 16),
-              label: const Text('Clear'),
+              label: const Text('Clear pending'),
               style: TextButton.styleFrom(
                 foregroundColor: SoftErpTheme.dangerText,
                 textStyle: const TextStyle(
@@ -8548,7 +9164,7 @@ class _VariationPanelState extends State<_VariationPanel> {
                 visualDensity: VisualDensity.compact,
               ),
             ),
-      child: _createdCombinations.isEmpty
+      child: pending == 0 && spawned == 0
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -8582,11 +9198,43 @@ class _VariationPanelState extends State<_VariationPanel> {
                 ),
               ),
             )
-          : ListView.separated(
+          : ListView(
               padding: const EdgeInsets.all(12),
-              itemCount: _createdCombinations.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) => _buildVariantCard(index),
+              children: [
+                if (pending > 0) ...[
+                  const _VariantGroupLabel(
+                    label: 'PENDING',
+                    hint: 'not spawned yet',
+                  ),
+                  const SizedBox(height: 8),
+                  for (var i = 0; i < pending; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    _buildVariantCard(i),
+                  ],
+                ],
+                if (spawned > 0) ...[
+                  if (pending > 0) const SizedBox(height: 14),
+                  const _VariantGroupLabel(
+                    label: 'SPAWNED',
+                    hint: 'tap to edit details',
+                  ),
+                  const SizedBox(height: 8),
+                  for (var i = 0; i < spawned; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    _SpawnedVariantTile(
+                      item: widget.spawnedSoFar[i],
+                      selected: i == widget.selectedSpawnedIndex,
+                      onTap: widget.onSelectSpawned == null
+                          ? null
+                          : () => _openSpawned(i),
+                      onDelete: widget.busy
+                          ? null
+                          : () =>
+                                widget.onDeleteVariant(widget.spawnedSoFar[i]),
+                    ),
+                  ],
+                ],
+              ],
             ),
     );
   }
@@ -8595,11 +9243,13 @@ class _VariationPanelState extends State<_VariationPanel> {
     final combo = _createdCombinations[index];
     final label = _comboLabel(combo);
     final selected = _selectedIndex == index;
+    final spawning = _spawningIndex == index;
     final base = widget.itemName.trim();
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => selected ? _deselectCard() : _selectCard(index),
+        onTap: _isSpawning ? null : () => _spawnOne(index),
+        mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
         child: Ink(
           padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
@@ -8624,14 +9274,22 @@ class _VariationPanelState extends State<_VariationPanel> {
                       : SoftErpTheme.cardSurfaceAlt,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    color: selected ? Colors.white : SoftErpTheme.textSecondary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                child: spawning
+                    ? const SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          color: selected
+                              ? Colors.white
+                              : SoftErpTheme.textSecondary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -8661,6 +9319,18 @@ class _VariationPanelState extends State<_VariationPanel> {
                   ],
                 ),
               ),
+              SoftIconButton(
+                icon: selected ? Icons.edit_off_rounded : Icons.tune_rounded,
+                size: 30,
+                iconColor: selected
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.textSecondary,
+                tooltip: selected
+                    ? 'Stop editing these values'
+                    : 'Change these values before creating it',
+                onTap: () => selected ? _deselectCard() : _selectCard(index),
+              ),
+              const SizedBox(width: 6),
               SoftIconButton(
                 icon: Icons.copy_rounded,
                 size: 30,
@@ -8814,9 +9484,7 @@ class _TargetTab extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(
-            color: selected
-                ? SoftErpTheme.accent
-                : SoftErpTheme.cardSurfaceAlt,
+            color: selected ? SoftErpTheme.accent : SoftErpTheme.cardSurfaceAlt,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
@@ -8893,85 +9561,85 @@ class _SidebarChoiceTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            Row(
-            children: [
-              Icon(
-                icon ??
-                    (selected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded),
-                size: 16,
-                color: selected
-                    ? SoftErpTheme.accent
-                    : SoftErpTheme.textSecondary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: selected
-                            ? SoftErpTheme.accentDeeper
-                            : SoftErpTheme.textPrimary,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: SoftErpTheme.textSecondary,
-                          fontSize: 11.5,
+              Row(
+                children: [
+                  Icon(
+                    icon ??
+                        (selected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded),
+                    size: 16,
+                    color: selected
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: selected
+                                ? SoftErpTheme.accentDeeper
+                                : SoftErpTheme.textPrimary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (members != null)
-                InkWell(
-                  onTap: onToggleExpanded,
-                  borderRadius: BorderRadius.circular(999),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: AnimatedRotation(
-                      turns: expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 160),
-                      child: const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 18,
-                        color: SoftErpTheme.textSecondary,
-                      ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ),
+                  if (members != null)
+                    InkWell(
+                      onTap: onToggleExpanded,
+                      borderRadius: BorderRadius.circular(999),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: AnimatedRotation(
+                          turns: expanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 160),
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                            color: SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (members != null && expanded) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1, color: SoftErpTheme.border),
+                const SizedBox(height: 8),
+                if (members!.isEmpty)
+                  const Text(
+                    'Empty.',
+                    style: TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  )
+                else
+                  ...members!,
+              ],
             ],
-          ),
-          if (members != null && expanded) ...[
-            const SizedBox(height: 8),
-            const Divider(height: 1, color: SoftErpTheme.border),
-            const SizedBox(height: 8),
-            if (members!.isEmpty)
-              const Text(
-                'Empty.',
-                style: TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontSize: 11,
-                  fontStyle: FontStyle.italic,
-                ),
-              )
-            else
-              ...members!,
-          ],
-          ],
           ),
         ),
       ),
@@ -9395,18 +10063,20 @@ class _NumericRangePill extends StatelessWidget {
   }
 }
 
-
 /// The steps of the item-creation workflow. [group] collapses out of the list
 /// when the combination-group feature flag is off, so the stepper never shows a
 /// step the user cannot reach.
-enum _WorkflowStep { details, variations, group, editVariants }
+/// Three steps: define the item, build its variants (choosing values and
+/// filling in each spawned variant's details side by side), then file them into
+/// a group. Editing used to be a fourth step, which meant picking values and
+/// describing what you picked were separated by a page turn.
+enum _WorkflowStep { details, variations, group }
 
 extension _WorkflowStepX on _WorkflowStep {
   String get label => switch (this) {
     _WorkflowStep.details => 'Item',
     _WorkflowStep.variations => 'Variations',
     _WorkflowStep.group => 'Group',
-    _WorkflowStep.editVariants => 'Edit',
   };
 }
 
@@ -9439,6 +10109,9 @@ class _ItemWorkflowWindow extends StatefulWidget {
 class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     with SingleTickerProviderStateMixin {
   static const double _railWidth = 248;
+
+  /// The rail as a strip: wide enough for the button that brings it back.
+  static const double _railCollapsedWidth = 56;
   static const double _gutter = 18;
   static const Duration _slideDuration = Duration(milliseconds: 320);
 
@@ -9492,6 +10165,14 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
   /// Which spawned variant step 4 is editing.
   int _editingVariantIndex = 0;
 
+  /// Coalesces a run of value picks into one save. See [_changeSpawnedValues].
+  Timer? _valueChangeDebounce;
+
+  /// The base item's rail is a strip. Set when a variant's own column opens —
+  /// the group, unit and properties behind it are settled context by then, and
+  /// the variant needs the width more.
+  bool _railCollapsed = false;
+
   String? _error;
   bool _isAdvancing = false;
   bool _isSavingVariant = false;
@@ -9509,7 +10190,6 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     _WorkflowStep.details,
     _WorkflowStep.variations,
     if (_groupStepEnabled) _WorkflowStep.group,
-    _WorkflowStep.editVariants,
   ];
 
   bool get _isDetails => _step == _WorkflowStep.details;
@@ -9533,6 +10213,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
   @override
   void dispose() {
+    _valueChangeDebounce?.cancel();
     _slideCurve.dispose();
     _slide.dispose();
     super.dispose();
@@ -9542,7 +10223,8 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
   Future<void> _goTo(_WorkflowStep next) async {
     if (next == _step) return;
-    if (_step == _WorkflowStep.editVariants) {
+    // Leaving Variations writes whatever is open in the editor column.
+    if (_step == _WorkflowStep.variations) {
       if (!await _commitOpenVariant()) return;
       if (!mounted) return;
     }
@@ -9551,7 +10233,8 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       // Leaving step 1 after touching the tree: the variation panel must be
       // rebuilt rather than keep references into drafts step 1 may have
       // disposed.
-      if (_step == _WorkflowStep.details && _panelGeneration != _treeGeneration) {
+      if (_step == _WorkflowStep.details &&
+          _panelGeneration != _treeGeneration) {
         _panelGeneration = _treeGeneration;
       }
       _step = next;
@@ -9669,9 +10352,13 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       _spawnRound++;
       _lastRoundIds = spawned.map((item) => item.id).toList(growable: false);
       _editingVariantIndex = _spawnedItems.length - spawned.length;
+      // The variant's own column just opened; the base item's rail is context
+      // from here on, so it steps aside for it.
+      _railCollapsed = true;
       _error = null;
     });
-    _goTo(_groupStepEnabled ? _WorkflowStep.group : _WorkflowStep.editVariants);
+    // Stay on Variations: the fourth column now holds the editor, so a freshly
+    // spawned variant can be described without leaving the step.
     return spawned;
   }
 
@@ -9686,6 +10373,56 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       }
     }
     return missing;
+  }
+
+  /// Every field of [item] as an update, with only the names overridden.
+  /// UpdateItemInput defaults the rest to empty and UpdateItemRequest.toJson
+  /// emits them unconditionally, so a sparse update would strip the variant's
+  /// photo, CAD file, attachments, machines and dies.
+  UpdateItemInput _fullUpdateInput(
+    ItemDefinition item, {
+    String? name,
+    String? displayName,
+  }) {
+    return UpdateItemInput(
+      id: item.id,
+      baseItemId: item.baseItemId,
+      name: name ?? item.name,
+      displayName: displayName ?? item.displayName,
+      alias: item.alias,
+      groupId: item.groupId,
+      unitId: item.unitId,
+      unitConversions: item.unitConversions
+          .map(
+            (conversion) => ItemUnitConversionInput(
+              unitId: conversion.unitId,
+              factorToPrimary: conversion.factorToPrimary,
+            ),
+          )
+          .toList(growable: false),
+      namingFormat: item.namingFormat,
+      variationTree: const <ItemVariationNodeInput>[],
+      defaultPipelineId: item.defaultPipelineId,
+      photoUrl: item.photoUrl,
+      cadFileKey: item.cadFileKey,
+      cadFileName: item.cadFileName,
+      attachments: item.attachments
+          .map(
+            (attachment) => ItemAttachmentInput(
+              label: attachment.label,
+              objectKey: attachment.objectKey,
+              fileName: attachment.fileName,
+            ),
+          )
+          .toList(growable: false),
+      machineIds: item.machines
+          .map((machine) => machine.id)
+          .toList(growable: false),
+      dieIds: item.dies.map((die) => die.id).toList(growable: false),
+      developedForClientId: item.developedForClientId,
+      availableForPurchase: item.availableForPurchase,
+      penPaperBaseline: item.penPaperBaseline,
+    );
   }
 
   /// Rewrites every spawned variant's name from its source values — by code
@@ -9721,51 +10458,10 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
         continue;
       }
       final (_, displayName) = editor.variantNames(combo, useCodes: useCodes);
-      // Every field is round-tripped, not just the name. UpdateItemInput
-      // defaults the rest to empty and UpdateItemRequest.toJson emits them
-      // unconditionally — a sparse update here would strip the variant's
-      // photo, CAD file, attachments, machines and dies.
+      // The codes toggle is a display-name concern, so the item name is passed
+      // through untouched.
       final saved = await itemsProvider.updateItem(
-        UpdateItemInput(
-          id: item.id,
-          baseItemId: item.baseItemId,
-          // Untouched: the codes toggle is a display-name concern.
-          name: item.name,
-          displayName: displayName,
-          alias: item.alias,
-          groupId: item.groupId,
-          unitId: item.unitId,
-          unitConversions: item.unitConversions
-              .map(
-                (conversion) => ItemUnitConversionInput(
-                  unitId: conversion.unitId,
-                  factorToPrimary: conversion.factorToPrimary,
-                ),
-              )
-              .toList(growable: false),
-          namingFormat: item.namingFormat,
-          variationTree: const <ItemVariationNodeInput>[],
-          defaultPipelineId: item.defaultPipelineId,
-          photoUrl: item.photoUrl,
-          cadFileKey: item.cadFileKey,
-          cadFileName: item.cadFileName,
-          attachments: item.attachments
-              .map(
-                (attachment) => ItemAttachmentInput(
-                  label: attachment.label,
-                  objectKey: attachment.objectKey,
-                  fileName: attachment.fileName,
-                ),
-              )
-              .toList(growable: false),
-          machineIds: item.machines
-              .map((machine) => machine.id)
-              .toList(growable: false),
-          dieIds: item.dies.map((die) => die.id).toList(growable: false),
-          developedForClientId: item.developedForClientId,
-          availableForPurchase: item.availableForPurchase,
-          penPaperBaseline: item.penPaperBaseline,
-        ),
+        _fullUpdateInput(item, displayName: displayName),
       );
       if (!mounted) return;
       if (saved == null) {
@@ -9826,7 +10522,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
         _error =
             context.read<ItemsProvider>().errorMessage ??
             'Could not delete "$label". Another save may still be running — '
-            'try again in a moment.';
+                'try again in a moment.';
       });
       return false;
     }
@@ -9851,10 +10547,6 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
             : _spawnedItems.length - 1;
       }
     });
-    // Step 4 has nothing left to show, and its pane would render empty.
-    if (_spawnedItems.isEmpty && _step == _WorkflowStep.editVariants) {
-      await _goTo(_WorkflowStep.variations);
-    }
     return true;
   }
 
@@ -9866,8 +10558,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     if (_spawnedItems.isEmpty) return true;
     final index = _editingVariantIndex.clamp(0, _spawnedItems.length - 1);
     final item = _spawnedItems[index];
-    final editor =
-        GlobalObjectKey<_ItemEditorSheetState>(item.id).currentState;
+    final editor = GlobalObjectKey<_ItemEditorSheetState>(item.id).currentState;
     if (editor == null || !editor.isDirty) {
       return true;
     }
@@ -9897,6 +10588,75 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     setState(() => _editingVariantIndex = index);
   }
 
+  /// A value swapped on the open variant. Its name is derived from its values,
+  /// so this is a rename: the new name lands on the list, the pane header and
+  /// the editor's own fields at once, then persists when the picking settles.
+  void _changeSpawnedValues(List<_VariantOption> combo) {
+    if (combo.isEmpty || _spawnedItems.isEmpty) return;
+    final editor = _baseEditorKey.currentState;
+    if (editor == null) return;
+    final index = _editingVariantIndex.clamp(0, _spawnedItems.length - 1);
+    final item = _spawnedItems[index];
+    final (name, displayName) = editor.variantNames(
+      combo,
+      useCodes: _nameFromCodes,
+    );
+    setState(() {
+      _error = null;
+      _comboByItemId[item.id] = combo;
+      _spawnedItems[index] = item.renamed(name: name, displayName: displayName);
+    });
+    // Writing into the open editor rather than saving from here: the form is
+    // left dirty, so one save covers the rename and any details typed beside
+    // it instead of the two racing each other.
+    GlobalObjectKey<_ItemEditorSheetState>(
+      item.id,
+    ).currentState?.applyRenameFromValues(name: name, displayName: displayName);
+    // Every pick would otherwise be its own round trip, and only the last one
+    // matters — the name is rebuilt from the whole combination each time.
+    _valueChangeDebounce?.cancel();
+    _valueChangeDebounce = Timer(
+      const Duration(milliseconds: 700),
+      () => _persistValueChange(item.id),
+    );
+  }
+
+  /// Writes the renamed variant back. Goes through the open editor when it is
+  /// mounted so the user's other edits ride along; falls back to a direct
+  /// update for a variant that has since been scrolled out of the editor.
+  Future<void> _persistValueChange(int itemId) async {
+    if (!mounted || _deletedItemIds.contains(itemId)) return;
+    final index = _spawnedItems.indexWhere(
+      (candidate) => candidate.id == itemId,
+    );
+    if (index == -1) return;
+    final item = _spawnedItems[index];
+    final sheet = GlobalObjectKey<_ItemEditorSheetState>(itemId).currentState;
+    if (sheet != null) {
+      await _commitOpenVariant();
+      return;
+    }
+    setState(() => _isSavingVariant = true);
+    final itemsProvider = context.read<ItemsProvider>();
+    final saved = await itemsProvider.updateItem(
+      _fullUpdateInput(item, name: item.name, displayName: item.displayName),
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSavingVariant = false;
+      if (saved == null) {
+        _error =
+            itemsProvider.errorMessage ??
+            'Could not rename the variant from its new values.';
+        return;
+      }
+      final slot = _spawnedItems.indexWhere(
+        (candidate) => candidate.id == saved.id,
+      );
+      if (slot != -1) _spawnedItems[slot] = saved;
+    });
+  }
+
   Future<String?> _assignToGroup(
     List<int> itemIds,
     _CombinationGroupChoice choice,
@@ -9923,8 +10683,13 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
     final lines = <SaveInventorySetLineInput>[];
     final seen = <String>{};
-    void addLine(int itemId, int leafId, int quantity, String name,
-        String displayName) {
+    void addLine(
+      int itemId,
+      int leafId,
+      int quantity,
+      String name,
+      String displayName,
+    ) {
       if (!seen.add('$itemId:$leafId')) return;
       lines.add(
         SaveInventorySetLineInput(
@@ -9979,7 +10744,10 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     return inventoryProvider.errorMessage;
   }
 
-  void _onGroupStepDone() => _goTo(_WorkflowStep.editVariants);
+  /// The group step is the last one, so finishing it finishes the flow.
+  Future<void> _onGroupStepDone() async {
+    if (await _commitOpenVariant()) await _close();
+  }
 
   Future<void> _close() async {
     final dirty = _summary?.isDirty ?? false;
@@ -10085,6 +10853,8 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
   int _furthestReachableIndex(List<_WorkflowStep> steps) {
     if (_savedItem == null) return 0;
+    // Variations is reachable once the item is saved; the group step needs
+    // something spawned to file.
     if (_spawnedItems.isEmpty) return steps.indexOf(_WorkflowStep.variations);
     return steps.length - 1;
   }
@@ -10102,77 +10872,110 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
         // Below this the rail has no room; the form gets the window and the
         // stepper alone carries the navigation.
         final stacked = total < 720;
-        final leftTarget = stacked ? total : _railWidth;
-        final paneWidth = stacked
-            ? total
-            : (total - _railWidth - _gutter).clamp(320.0, total);
 
-        return AnimatedBuilder(
-          animation: _slideCurve,
-          builder: (context, _) {
-            final t = _slideCurve.value;
-            final leftWidth = total + (leftTarget - total) * t;
-            final paneLeft = total - (total - (stacked ? 0 : _railWidth + _gutter)) * t;
-            return Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: leftWidth,
-                  child: ClipRect(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // The form, always laid out at full width.
-                        IgnorePointer(
-                          ignoring: !_isDetails,
-                          child: Opacity(
-                            opacity: 1 - t,
-                            child: OverflowBox(
-                              alignment: Alignment.topLeft,
-                              minWidth: total,
-                              maxWidth: total,
-                              child: _buildDetailsPane(),
-                            ),
-                          ),
-                        ),
-                        // The rail, always laid out at rail width.
-                        if (t > 0 && !stacked)
-                          IgnorePointer(
-                            ignoring: _isDetails,
-                            child: Opacity(
-                              opacity: t,
-                              child: OverflowBox(
-                                alignment: Alignment.topLeft,
-                                minWidth: _railWidth,
-                                maxWidth: _railWidth,
-                                child: _buildRail(),
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(
+            end: _railCollapsed ? _railCollapsedWidth : _railWidth,
+          ),
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          builder: (context, railWidth, _) {
+            final leftTarget = stacked ? total : railWidth;
+            final paneWidth = stacked
+                ? total
+                : (total - railWidth - _gutter).clamp(320.0, total);
+            // 1 while the rail is fully open, 0 once it is a strip — the two
+            // presentations cross-fade over it.
+            final expand =
+                ((railWidth - _railCollapsedWidth) /
+                        (_railWidth - _railCollapsedWidth))
+                    .clamp(0.0, 1.0);
+
+            return AnimatedBuilder(
+              animation: _slideCurve,
+              builder: (context, _) {
+                final t = _slideCurve.value;
+                final leftWidth = total + (leftTarget - total) * t;
+                final paneLeft =
+                    total - (total - (stacked ? 0 : railWidth + _gutter)) * t;
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: leftWidth,
+                      child: ClipRect(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // The form, always laid out at full width.
+                            IgnorePointer(
+                              ignoring: !_isDetails,
+                              child: Opacity(
+                                opacity: 1 - t,
+                                child: OverflowBox(
+                                  alignment: Alignment.topLeft,
+                                  minWidth: total,
+                                  maxWidth: total,
+                                  child: _buildDetailsPane(),
+                                ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                Positioned(
-                    left: paneLeft,
-                    top: 0,
-                    bottom: 0,
-                    width: paneWidth,
-                    child: ClipRect(
-                      child: OverflowBox(
-                        alignment: Alignment.topLeft,
-                        minWidth: paneWidth,
-                        maxWidth: paneWidth,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(0, 16, 20, 8),
-                          child: _buildStepPane(),
+                            // The rail, always laid out at its own full width,
+                            // cross-faded with the strip it collapses to. Each is
+                            // laid out at the width it was designed for so neither
+                            // packs at an intermediate width mid-animation.
+                            if (t > 0 && !stacked && expand > 0)
+                              IgnorePointer(
+                                ignoring: _isDetails || expand < 0.5,
+                                child: Opacity(
+                                  opacity: t * expand,
+                                  child: OverflowBox(
+                                    alignment: Alignment.topLeft,
+                                    minWidth: _railWidth,
+                                    maxWidth: _railWidth,
+                                    child: _buildRail(),
+                                  ),
+                                ),
+                              ),
+                            if (t > 0 && !stacked && expand < 1)
+                              IgnorePointer(
+                                ignoring: _isDetails || expand >= 0.5,
+                                child: Opacity(
+                                  opacity: t * (1 - expand),
+                                  child: OverflowBox(
+                                    alignment: Alignment.topLeft,
+                                    minWidth: _railCollapsedWidth,
+                                    maxWidth: _railCollapsedWidth,
+                                    child: _buildCollapsedRail(),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-              ],
+                    Positioned(
+                      left: paneLeft,
+                      top: 0,
+                      bottom: 0,
+                      width: paneWidth,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: paneWidth,
+                          maxWidth: paneWidth,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 16, 20, 8),
+                            child: _buildStepPane(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
@@ -10210,6 +11013,48 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     );
   }
 
+  /// The rail as a strip. The base item's group, unit and properties are
+  /// settled context once a variant has its own column, so it steps aside and
+  /// leaves the width to the variant. The button brings it back.
+  Widget _buildCollapsedRail() {
+    final name = (_summary?.displayName ?? '').trim();
+    final label = name.isEmpty ? 'Untitled item' : name;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 16, 4, 16),
+      child: Column(
+        children: [
+          SoftIconButton(
+            icon: Icons.chevron_right_rounded,
+            size: 34,
+            tooltip: 'Show $label',
+            onTap: () => setState(() => _railCollapsed = false),
+          ),
+          const SizedBox(height: 6),
+          Container(width: 1, height: 18, color: SoftErpTheme.border),
+          const SizedBox(height: 6),
+          Expanded(
+            child: Center(
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRail() {
     final summary = _summary;
     return Padding(
@@ -10217,18 +11062,32 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            (summary?.displayName ?? '').trim().isEmpty
-                ? 'Untitled item'
-                : summary!.displayName,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: SoftErpTheme.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              height: 1.25,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  (summary?.displayName ?? '').trim().isEmpty
+                      ? 'Untitled item'
+                      : summary!.displayName,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SoftIconButton(
+                icon: Icons.chevron_left_rounded,
+                size: 30,
+                tooltip: 'Collapse — give the width to the variant',
+                onTap: () => setState(() => _railCollapsed = true),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           _railFact('Group', summary?.groupName ?? ''),
@@ -10309,37 +11168,43 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
   }
 
   Widget _buildStepPane() {
-    final onVariants = _step == _WorkflowStep.editVariants;
-    // Both panes stay mounted: swapping widget TYPE at this slot would unmount
-    // _VariationPanelState and silently discard every generated combination
-    // the moment the user stepped back to the form.
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Offstage(offstage: onVariants, child: _buildVariationPane()),
-        if (_spawnedItems.isNotEmpty)
-          Offstage(offstage: !onVariants, child: _buildEditVariantsPane()),
-      ],
-    );
+    // The variant editor is now a column inside the panel rather than a step of
+    // its own, so this slot only ever holds the panel.
+    return Stack(fit: StackFit.expand, children: [_buildVariationPane()]);
   }
 
   Widget _buildVariationPane() {
     return _VariationPanel(
-          key: ValueKey<String>('variation-panel-$_panelGeneration'),
-          itemName: _summary?.displayName ?? '',
-          topLevelProperties:
-              _baseEditorKey.currentState?.topLevelProperties ??
-              const <_NodeDraft>[],
-          showGroupStep: _step == _WorkflowStep.group,
-          spawnedSoFar: _spawnedItems,
-          groupTargetIds: _lastRoundIds,
-          groupRound: _spawnRound,
-          onDeleteVariant: _deleteSpawnedVariant,
-          onSpawnItems: _spawnVariants,
-          onAssignToGroup: _assignToGroup,
-          onGroupStepDone: _onGroupStepDone,
-          busy: _isRenaming || _isSavingVariant,
-        );
+      key: ValueKey<String>('variation-panel-$_panelGeneration'),
+      itemName: _summary?.displayName ?? '',
+      topLevelProperties:
+          _baseEditorKey.currentState?.topLevelProperties ??
+          const <_NodeDraft>[],
+      showGroupStep: _step == _WorkflowStep.group,
+      spawnedSoFar: _spawnedItems,
+      groupTargetIds: _lastRoundIds,
+      groupRound: _spawnRound,
+      onDeleteVariant: _deleteSpawnedVariant,
+      onSpawnItems: _spawnVariants,
+      onAssignToGroup: _assignToGroup,
+      onGroupStepDone: _onGroupStepDone,
+      // The fourth column: details for whichever spawned variant is
+      // selected, so values and details are filled in together.
+      variantEditor: _spawnedItems.isEmpty ? null : _buildEditVariantsPane(),
+      selectedSpawnedIndex: _spawnedItems.isEmpty
+          ? 0
+          : _editingVariantIndex.clamp(0, _spawnedItems.length - 1),
+      onSelectSpawned: _selectVariant,
+      selectedSpawnedCombo: _spawnedItems.isEmpty
+          ? null
+          : _comboByItemId[_spawnedItems[_editingVariantIndex.clamp(
+                  0,
+                  _spawnedItems.length - 1,
+                )]
+                .id],
+      onChangeSpawnedValues: _changeSpawnedValues,
+      busy: _isRenaming || _isSavingVariant,
+    );
   }
 
   Widget _buildEditVariantsPane() {
@@ -10471,40 +11336,21 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
   }
 
   Widget _buildVariantEditorRow(int index, ItemDefinition item) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          width: 220,
-          child: _VariantPicker(
-            items: _spawnedItems,
-            selectedIndex: index,
-            onSelect: _selectVariant,
-            onDelete: _isRenaming || _isSavingVariant
-                ? null
-                : _deleteSpawnedVariant,
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: SingleChildScrollView(
-            child: _ItemEditorSheet(
-              // A GlobalObjectKey: unique per variant so switching rows
-              // rebuilds the form, and reachable so the footer can save it.
-              key: GlobalObjectKey<_ItemEditorSheetState>(item.id),
-              item: item,
-              onCreatePipeline: widget.onCreatePipeline,
-              embedded: true,
-              keyScope: '-variant',
-              onRequestClose: () => _goTo(_WorkflowStep.variations),
-              onFinished: (result) {
-                if (result == null || !mounted) return;
-                setState(() => _spawnedItems[index] = result);
-              },
-            ),
-          ),
-        ),
-      ],
+    return SingleChildScrollView(
+      child: _ItemEditorSheet(
+        // A GlobalObjectKey: unique per variant so switching rows
+        // rebuilds the form, and reachable so the footer can save it.
+        key: GlobalObjectKey<_ItemEditorSheetState>(item.id),
+        item: item,
+        onCreatePipeline: widget.onCreatePipeline,
+        embedded: true,
+        keyScope: '-variant',
+        onRequestClose: () => _goTo(_WorkflowStep.variations),
+        onFinished: (result) {
+          if (result == null || !mounted) return;
+          setState(() => _spawnedItems[index] = result);
+        },
+      ),
     );
   }
 
@@ -10556,25 +11402,22 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
             ? 'Save the item to start building its variations.'
             : (_summary?.isDirty == true ? 'Unsaved changes.' : 'Saved.');
       case _WorkflowStep.variations:
-        return _spawnedItems.isEmpty
-            ? 'Pick one value per property, then spawn the variant.'
-            : '${_spawnedItems.length} variant(s) spawned so far.';
-      case _WorkflowStep.group:
-        return '${_spawnedItems.length} variant(s) spawned.';
-      case _WorkflowStep.editVariants:
         if (_isSavingVariant) return 'Saving…';
-        final openEditor = _spawnedItems.isEmpty
-            ? null
-            : GlobalObjectKey<_ItemEditorSheetState>(
-                _spawnedItems[_editingVariantIndex.clamp(
-                  0,
-                  _spawnedItems.length - 1,
-                )].id,
-              ).currentState;
+        if (_spawnedItems.isEmpty) {
+          return 'Pick values, generate, then click the variant to create it.';
+        }
+        final openEditor = GlobalObjectKey<_ItemEditorSheetState>(
+          _spawnedItems[_editingVariantIndex.clamp(0, _spawnedItems.length - 1)]
+              .id,
+        ).currentState;
         if (openEditor?.isDirty == true) {
           return 'Unsaved edits — saved automatically when you move on.';
         }
-        return '${_spawnedItems.length} variant${_spawnedItems.length == 1 ? '' : 's'} created.';
+        return '${_spawnedItems.length} variant'
+            '${_spawnedItems.length == 1 ? '' : 's'} created — '
+            'change its values on the left, its details on the right.';
+      case _WorkflowStep.group:
+        return '${_spawnedItems.length} variant(s) spawned.';
     }
   }
 
@@ -10591,19 +11434,10 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
           ),
         ];
       case _WorkflowStep.variations:
-      case _WorkflowStep.group:
-        // The panel owns its own primary actions (Generate / Spawn / Add to
-        // group), rendered inside the pane so they sit next to what they act
-        // on.
-        return const [];
-      case _WorkflowStep.editVariants:
+        // The panel owns Generate and Spawn. Done sits here because finishing
+        // without filing into a group is a legitimate way out.
+        if (_spawnedItems.isEmpty) return const [];
         return [
-          AppButton(
-            label: 'Add more variations',
-            variant: AppButtonVariant.secondary,
-            onPressed: () => _goTo(_WorkflowStep.variations),
-          ),
-          const SizedBox(width: 12),
           AppButton(
             label: 'Done',
             icon: Icons.check_rounded,
@@ -10615,6 +11449,9 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
                   },
           ),
         ];
+      case _WorkflowStep.group:
+        // The panel owns its own primary actions (Add to group / Skip).
+        return const [];
     }
   }
 }
@@ -10755,129 +11592,117 @@ class _StepChip extends StatelessWidget {
 }
 
 /// The list of spawned variants on step 4, for choosing which one to fill in.
-class _VariantPicker extends StatelessWidget {
-  const _VariantPicker({
-    required this.items,
-    required this.selectedIndex,
-    required this.onSelect,
-    required this.onDelete,
-  });
+/// Section heading inside the merged Variants list — the one thing that keeps
+/// pending and spawned readable as one list rather than a jumble.
+class _VariantGroupLabel extends StatelessWidget {
+  const _VariantGroupLabel({required this.label, required this.hint});
 
-  final List<ItemDefinition> items;
-  final int selectedIndex;
-  final void Function(int index) onSelect;
-  final void Function(ItemDefinition item)? onDelete;
+  final String label;
+  final String hint;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: SoftErpTheme.sectionSurface,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(14, 12, 14, 4),
-            child: Text(
-              'Spawned variants',
-              style: TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
+    return Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            hint,
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(14, 0, 14, 10),
-            child: Text(
-              'Each carries its own photo, files, pipeline and sample data.',
-              style: TextStyle(
-                color: SoftErpTheme.textSecondary,
-                fontSize: 11,
-                height: 1.35,
-              ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A spawned variant in the merged list. Reads as a sibling of the pending
+/// cards above it, with the filled dot marking that it is a real item now.
+class _SpawnedVariantTile extends StatelessWidget {
+  const _SpawnedVariantTile({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  final ItemDefinition item;
+  final bool selected;
+  final VoidCallback? onTap;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? SoftErpTheme.accentSoft
+                : SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
             ),
           ),
-          const Divider(height: 1, color: SoftErpTheme.border),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(10),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 6),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final selected = index == selectedIndex;
-                final label = item.displayName.trim().isEmpty
-                    ? item.name
-                    : item.displayName;
-                return Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => onSelect(index),
-                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-                    child: Ink(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? SoftErpTheme.accentSoft
-                            : SoftErpTheme.cardSurface,
-                        borderRadius: BorderRadius.circular(
-                          SoftErpTheme.radiusSm,
-                        ),
-                        border: Border.all(
-                          color: selected
-                              ? SoftErpTheme.accent
-                              : SoftErpTheme.border,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              label,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: selected
-                                    ? SoftErpTheme.accentDeeper
-                                    : SoftErpTheme.textPrimary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Delete this variant',
-                            onPressed: onDelete == null
-                                ? null
-                                : () => onDelete!(item),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: 16,
-                            ),
-                            color: SoftErpTheme.dangerText,
-                            visualDensity: VisualDensity.compact,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 26,
-                              height: 26,
-                            ),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ],
-                      ),
-                    ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.check_circle_rounded,
+                size: 15,
+                color: selected
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.successText,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: selected
+                        ? SoftErpTheme.accentDeeper
+                        : SoftErpTheme.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Delete this variant',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                color: SoftErpTheme.dangerText,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 26,
+                  height: 26,
+                ),
+                padding: EdgeInsets.zero,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

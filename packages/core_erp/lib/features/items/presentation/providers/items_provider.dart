@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../data/repositories/api_item_repository.dart' show ItemApiException;
 import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../domain/item_master_data.dart';
+import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../../core/services/socket_service.dart';
 
@@ -360,6 +363,94 @@ class ItemsProvider extends ChangeNotifier {
   Future<ItemDefinition?> updateItem(UpdateItemInput input) async {
     return _save(() => _repository.updateItem(input));
   }
+
+  // --- Master Data, keyed by (variant, pipeline) ---------------------------
+  //
+  // A pipeline makes many variants, so it holds one record per variant rather
+  // than a single baseline. These are read straight through rather than cached
+  // on the provider: which record applies depends on the pipeline in front of
+  // the user, and a stale answer would quote the wrong variant's numbers.
+
+  /// Which of the four resolution steps answers for this pair. With [adopt] the
+  /// answer is written onto the pair, so the next lookup is an exact match.
+  Future<MasterDataResolution?> resolveMasterData({
+    required int itemId,
+    String? pipelineId,
+    bool adopt = false,
+  }) async {
+    try {
+      return await _repository.resolveMasterData(
+        itemId: itemId,
+        pipelineId: pipelineId,
+        adopt: adopt,
+      );
+    } catch (error) {
+      _errorMessage = _messageFor(error);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<List<ItemMasterDataRecord>> itemMasterData(int itemId) async {
+    try {
+      return await _repository.getItemMasterData(itemId);
+    } catch (error) {
+      _errorMessage = _messageFor(error);
+      notifyListeners();
+      return const <ItemMasterDataRecord>[];
+    }
+  }
+
+  Future<ItemMasterDataRecord?> saveMasterData({
+    required int itemId,
+    required String pipelineId,
+    required PenPaperBaseline baseline,
+  }) async {
+    try {
+      final record = await _repository.saveMasterData(
+        itemId: itemId,
+        pipelineId: pipelineId,
+        baseline: baseline,
+      );
+      _errorMessage = null;
+      notifyListeners();
+      return record;
+    } catch (error) {
+      _errorMessage = _messageFor(error);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> deleteMasterData({
+    required int itemId,
+    required String pipelineId,
+  }) async {
+    try {
+      await _repository.deleteMasterData(itemId: itemId, pipelineId: pipelineId);
+      _errorMessage = null;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _errorMessage = _messageFor(error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Every variant's Master Data on one pipeline — the insight view.
+  Future<PipelineMasterDataRoster?> pipelineMasterData(String pipelineId) async {
+    try {
+      return await _repository.getPipelineMasterData(pipelineId);
+    } catch (error) {
+      _errorMessage = _messageFor(error);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  String _messageFor(Object error) =>
+      error is ItemApiException ? error.message : error.toString();
 
   Future<ItemDefinition?> updateShortCode(int id, String shortCode) async {
     return _save(() => _repository.updateShortCode(id, shortCode));

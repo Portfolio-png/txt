@@ -74,7 +74,7 @@ function splitSqlStatements(sql) {
  * @param {Function} deps.run   promisified db.run(sql, params)
  * @param {Function} deps.all   promisified db.all(sql, params)
  */
-module.exports = async function runPendingMigrations({ db, run, all }) {
+async function runPendingMigrations({ db, run, all }) {
   await run(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       name TEXT PRIMARY KEY,
@@ -206,3 +206,9 @@ module.exports = async function runPendingMigrations({ db, run, all }) {
   }
   return { applied, tolerated, alreadyRecorded: recorded.size };
 };
+
+// The runner is the export; the splitter rides along so tests can apply a
+// migration file the same way the runner does instead of re-implementing it and
+// diverging.
+module.exports = runPendingMigrations;
+module.exports.splitSqlStatements = splitSqlStatements;

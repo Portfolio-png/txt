@@ -1,4 +1,6 @@
+import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_usage_record.dart';
@@ -32,4 +34,37 @@ abstract class ItemRepository {
   /// Stage labels per pipeline template id, so a sample baseline recorded
   /// against a pipeline can use that pipeline's real stages.
   Future<Map<String, List<String>>> getPipelineStageLabels();
+
+  // --- Master Data, keyed by (variant, pipeline) ---------------------------
+  //
+  // A pipeline is shared across many variants, so it holds one Master Data
+  // record per variant that runs through it rather than a single baseline. The
+  // resolve call is the distinction: an exact pair, else the variant's own
+  // record, else the pipeline's, else new data.
+
+  /// The baseline for one pair, and which step answered.
+  Future<MasterDataResolution> resolveMasterData({
+    required int itemId,
+    String? pipelineId,
+    bool adopt = false,
+  });
+
+  /// Every record for one item, one per pipeline it runs on.
+  Future<List<ItemMasterDataRecord>> getItemMasterData(int itemId);
+
+  /// Records the baseline against this pair. Origin becomes 'manual' — it was
+  /// typed here, whatever it was inherited from before.
+  Future<ItemMasterDataRecord> saveMasterData({
+    required int itemId,
+    required String pipelineId,
+    required PenPaperBaseline baseline,
+  });
+
+  Future<void> deleteMasterData({
+    required int itemId,
+    required String pipelineId,
+  });
+
+  /// Every variant's Master Data on one pipeline — the insight view.
+  Future<PipelineMasterDataRoster> getPipelineMasterData(String pipelineId);
 }
