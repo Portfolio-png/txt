@@ -175,25 +175,29 @@ class ChallanPrintableDocument extends StatelessWidget {
                   'QTY. Pcs.',
                   'Weight',
                 ], header: true),
-                ...challan.items.map(
-                  (item) {
-                    String weightStr = item.weight;
-                    if (item.itemId != null && item.weight.isNotEmpty && item.weight != '0' && item.weight != '0.0') {
-                      final itemDef = context.read<ItemsProvider>().findById(item.itemId);
-                      if (itemDef != null && itemDef.unitConversions.isNotEmpty) {
-                        weightStr = '${item.weight} ${itemDef.unitConversions.first.unitSymbol}';
-                      } else {
-                        weightStr = '${item.weight} kg';
-                      }
+                ...challan.items.map((item) {
+                  String weightStr = item.weight;
+                  if (item.itemId != null &&
+                      item.weight.isNotEmpty &&
+                      item.weight != '0' &&
+                      item.weight != '0.0') {
+                    final itemDef = context.read<ItemsProvider>().findById(
+                      item.itemId,
+                    );
+                    if (itemDef != null && itemDef.unitConversions.isNotEmpty) {
+                      weightStr =
+                          '${item.weight} ${itemDef.unitConversions.first.unitSymbol}';
+                    } else {
+                      weightStr = '${item.weight} kg';
                     }
-                    return _tableRow([
-                      _itemParticulars(item),
-                      item.hsnCode,
-                      item.quantityPcs,
-                      weightStr,
-                    ]);
                   }
-                ),
+                  return _tableRow([
+                    _itemParticulars(item),
+                    item.hsnCode,
+                    item.quantityPcs,
+                    weightStr,
+                  ]);
+                }),
                 for (var i = challan.items.length; i < 9; i++)
                   _tableRow(['', '', '', '']),
               ],

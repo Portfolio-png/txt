@@ -18,12 +18,10 @@ class AppSettingsDialog extends StatefulWidget {
   const AppSettingsDialog();
 
   @override
-  State<AppSettingsDialog> createState() =>
-      AppSettingsDialogState();
+  State<AppSettingsDialog> createState() => AppSettingsDialogState();
 }
 
-class AppSettingsDialogState
-    extends State<AppSettingsDialog> {
+class AppSettingsDialogState extends State<AppSettingsDialog> {
   bool _isResetting = false;
 
   Future<void> _handleClear() async {
@@ -87,7 +85,9 @@ class AppSettingsDialogState
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC0392B)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC0392B),
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Wipe & load'),
           ),
@@ -152,206 +152,256 @@ class AppSettingsDialogState
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
             child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Settings & Preferences',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Settings & Preferences',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and track data stay intact.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: SoftErpTheme.textSecondary,
-                  height: 1.45,
+                const SizedBox(height: 10),
+                Text(
+                  'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and track data stay intact.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: SoftErpTheme.textSecondary,
+                    height: 1.45,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Consumer<PreferencesProvider>(
-                builder: (context, preferences, _) {
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: SoftErpTheme.cardSurfaceAlt,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: SoftErpTheme.border),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.maintainStocks,
-                          onChanged: preferences.toggleMaintainStocks,
-                          title: const Text(
-                            'Maintain Stocks',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
+                const SizedBox(height: 20),
+                Consumer<PreferencesProvider>(
+                  builder: (context, preferences, _) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: SoftErpTheme.cardSurfaceAlt,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: SoftErpTheme.border),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.maintainStocks,
+                            onChanged: preferences.toggleMaintainStocks,
+                            title: const Text(
+                              'Maintain Stocks',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Turn off for typewriter challans that print documents without touching inventory.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
                             ),
                           ),
-                          subtitle: const Text(
-                            'Turn off for typewriter challans that print documents without touching inventory.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
-                        const Divider(height: 24),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.enableTrading,
-                          onChanged: preferences.toggleTrading,
-                          title: const Text(
-                            'Trading Mode',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
+                          const Divider(height: 24),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.enableTrading,
+                            onChanged: preferences.toggleTrading,
+                            title: const Text(
+                              'Trading Mode',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
                             ),
                           ),
-                          subtitle: const Text(
-                            'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
 
-                        const Divider(height: 24),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.enableManufacturing,
-                          onChanged: preferences.toggleManufacturing,
-                          title: const Text(
-                            'Manufacturing Mode',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
+                          const Divider(height: 24),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.enableManufacturing,
+                            onChanged: preferences.toggleManufacturing,
+                            title: const Text(
+                              'Manufacturing Mode',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Enable linkage to production runs, tracking raw material vs. finished goods.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
                             ),
                           ),
-                          subtitle: const Text(
-                            'Enable linkage to production runs, tracking raw material vs. finished goods.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
-                        const Divider(height: 24),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.enableServiceMode,
-                          onChanged: preferences.toggleServiceMode,
-                          title: const Text(
-                            'Service (Job Work) Mode',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
+                          const Divider(height: 24),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.enableServiceMode,
+                            onChanged: preferences.toggleServiceMode,
+                            title: const Text(
+                              'Service (Job Work) Mode',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
                             ),
                           ),
-                          subtitle: const Text(
-                            'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Test Scenarios',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.cardSurfaceAlt,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: SoftErpTheme.border),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Electrical Variations',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Test Scenarios',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
+                        subtitle: const Text(
+                          'Default 13 items with color & module variations.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: _isResetting
+                              ? null
+                              : () => _handleResetAndReseed('default'),
+                          child: const Text('Seed Scenario'),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Manufacturing Processes',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: const Text(
+                          'Intermediate items with processing stages (RAW-MLL-ANO).',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: _isResetting
+                              ? null
+                              : () => _handleResetAndReseed('manufacturing'),
+                          child: const Text('Seed Scenario'),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Mobiles',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: const Text(
+                          'Smartphone item with 5 properties, 5 values each.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: _isResetting
+                              ? null
+                              : () => _handleResetAndReseed('mobiles'),
+                          child: const Text('Seed Scenario'),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Scenario A · Decoupled Stock',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: const Text(
+                          'Bulk vendor stock-in, two orders consume the shared pool (500 → 350).',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: _isResetting
+                              ? null
+                              : () => _handleResetAndReseed('scenario_a'),
+                          child: const Text('Seed Scenario'),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Scenario B · On-Demand Procurement',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: const Text(
+                          'Reception challan procured for a specific client order (reception→order link).',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: _isResetting
+                              ? null
+                              : () => _handleResetAndReseed('scenario_b'),
+                          child: const Text('Seed Scenario'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.cardSurfaceAlt,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: SoftErpTheme.border),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Electrical Variations', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Default 13 items with color & module variations.', style: TextStyle(fontSize: 12)),
-                      trailing: ElevatedButton(
-                        onPressed: _isResetting ? null : () => _handleResetAndReseed('default'),
-                        child: const Text('Seed Scenario'),
-                      ),
+                    TextButton(
+                      onPressed: _isResetting
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
                     ),
-                    const Divider(height: 24),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Manufacturing Processes', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Intermediate items with processing stages (RAW-MLL-ANO).', style: TextStyle(fontSize: 12)),
-                      trailing: ElevatedButton(
-                        onPressed: _isResetting ? null : () => _handleResetAndReseed('manufacturing'),
-                        child: const Text('Seed Scenario'),
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Mobiles', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Smartphone item with 5 properties, 5 values each.', style: TextStyle(fontSize: 12)),
-                      trailing: ElevatedButton(
-                        onPressed: _isResetting ? null : () => _handleResetAndReseed('mobiles'),
-                        child: const Text('Seed Scenario'),
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Scenario A · Decoupled Stock', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Bulk vendor stock-in, two orders consume the shared pool (500 → 350).', style: TextStyle(fontSize: 12)),
-                      trailing: ElevatedButton(
-                        onPressed: _isResetting ? null : () => _handleResetAndReseed('scenario_a'),
-                        child: const Text('Seed Scenario'),
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Scenario B · On-Demand Procurement', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Reception challan procured for a specific client order (reception→order link).', style: TextStyle(fontSize: 12)),
-                      trailing: ElevatedButton(
-                        onPressed: _isResetting ? null : () => _handleResetAndReseed('scenario_b'),
-                        child: const Text('Seed Scenario'),
-                      ),
+                    const SizedBox(width: 10),
+                    OutlinedButton(
+                      onPressed: _isResetting ? null : _handleClear,
+                      child: _isResetting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Clear DB (Empty)'),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _isResetting ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Close'),
-                  ),
-                  const SizedBox(width: 10),
-                  OutlinedButton(
-                    onPressed: _isResetting ? null : _handleClear,
-                    child: _isResetting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Clear DB (Empty)'),
-                  ),
-                ],
-              ),
-            ],
-          ),
+              ],
+            ),
           ),
         ),
       ),

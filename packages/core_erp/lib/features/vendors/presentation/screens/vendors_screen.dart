@@ -223,7 +223,9 @@ class _VendorsCardGrid extends StatelessWidget {
           subtitle: vendor.alias.trim().isEmpty
               ? vendor.contactName
               : vendor.alias,
-          photoUrl: vendor.photoUrl.isNotEmpty ? vendor.photoUrl : vendor.logoUrl,
+          photoUrl: vendor.photoUrl.isNotEmpty
+              ? vendor.photoUrl
+              : vendor.logoUrl,
           fallbackIcon: Icons.local_shipping_outlined,
           onTap: () => VendorsScreen.openEditor(context, vendor: vendor),
           details: [

@@ -58,7 +58,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   late final TextEditingController _storageLocationController;
   late final TextEditingController _numberOfCavitiesController;
   late final TextEditingController _maxStrokesController;
-  late final TextEditingController _strokesPerPieceController;
   late final TextEditingController _setupMinutesController;
   late final TextEditingController _reportNotesController;
 
@@ -93,9 +92,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     );
     _maxStrokesController = TextEditingController(
       text: widget.die?.maxStrokes?.toString() ?? '',
-    );
-    _strokesPerPieceController = TextEditingController(
-      text: _formatOptionalNumber(widget.die?.strokesPerPiece),
     );
     _setupMinutesController = TextEditingController(
       text: _formatOptionalNumber(widget.die?.setupMinutes),
@@ -137,7 +133,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     _storageLocationController.dispose();
     _numberOfCavitiesController.dispose();
     _maxStrokesController.dispose();
-    _strokesPerPieceController.dispose();
     _setupMinutesController.dispose();
     _reportNotesController.dispose();
     super.dispose();
@@ -480,20 +475,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            Expanded(
-                              child: _DieTextField(
-                                controller: _strokesPerPieceController,
-                                label: 'Strokes / Piece',
-                                helper: 'Formula multiplier',
-                                required: false,
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
                             Expanded(
                               child: _DieTextField(
                                 controller: _maxStrokesController,
@@ -1023,7 +1004,9 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       storageLocation: _storageLocationController.text.trim(),
       numberOfCavities: _optionalInt(_numberOfCavitiesController),
       maxStrokes: _optionalInt(_maxStrokesController),
-      strokesPerPiece: _optionalDouble(_strokesPerPieceController),
+      // No longer asked for on this form. Preserved so editing a die that
+      // already carries one does not silently clear it.
+      strokesPerPiece: widget.die?.strokesPerPiece,
       setupMinutes: _optionalDouble(_setupMinutesController),
       reportNotes: _reportNotesController.text.trim(),
       physicalSpecs: customPropsList,

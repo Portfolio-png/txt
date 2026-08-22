@@ -275,7 +275,9 @@ class _ClientsCardGrid extends StatelessWidget {
         return SoftEntityCard(
           title: client.name,
           subtitle: client.alias,
-          photoUrl: client.photoUrl.isNotEmpty ? client.photoUrl : client.logoUrl,
+          photoUrl: client.photoUrl.isNotEmpty
+              ? client.photoUrl
+              : client.logoUrl,
           fallbackIcon: Icons.groups_outlined,
           onTap: () => ClientsScreen.openEditor(context, client: client),
           details: [

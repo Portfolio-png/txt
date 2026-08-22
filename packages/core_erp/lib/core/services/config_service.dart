@@ -51,10 +51,7 @@ class ConfigService {
       "showReport": true,
     },
     "features": {"disableMachineCustomFields": false},
-    "production": {
-      "multiScrapItems": true,
-      "materialVariationPaths": true,
-    },
+    "production": {"multiScrapItems": true, "materialVariationPaths": true},
     "enhancements": {"catalogInventory": true, "boardingPassCards": true},
     "challans": {"singleTypeView": true, "reconciliation": true},
     "catalog": {"purchaseItems": true},

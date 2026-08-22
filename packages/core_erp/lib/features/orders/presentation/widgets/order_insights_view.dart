@@ -124,9 +124,7 @@ class _OrderInsightsViewState extends State<OrderInsightsView> {
     final unattached = visible
         .where((order) => !_hasPipeline(order))
         .toList(growable: false);
-    final attached = visible
-        .where(_hasPipeline)
-        .toList(growable: false);
+    final attached = visible.where(_hasPipeline).toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,7 +173,8 @@ class _OrderInsightsViewState extends State<OrderInsightsView> {
                       fulfilment: widget.fulfilment,
                       onOpenChallan: widget.onOpenChallan,
                       showFulfilment: false,
-                      emptyMessage: 'Every order has a pipeline. Nothing blocked.',
+                      emptyMessage:
+                          'Every order has a pipeline. Nothing blocked.',
                       isStalled: _isStalled,
                       isOld: _isOld,
                     ),
@@ -191,7 +190,8 @@ class _OrderInsightsViewState extends State<OrderInsightsView> {
                       fulfilment: widget.fulfilment,
                       onOpenChallan: widget.onOpenChallan,
                       showFulfilment: true,
-                      emptyMessage: 'No orders with a pipeline match this filter.',
+                      emptyMessage:
+                          'No orders with a pipeline match this filter.',
                       isStalled: _isStalled,
                       isOld: _isOld,
                     ),
@@ -269,9 +269,7 @@ class _FilterPill extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
           decoration: BoxDecoration(
-            color: selected
-                ? SoftErpTheme.accent
-                : SoftErpTheme.cardSurfaceAlt,
+            color: selected ? SoftErpTheme.accent : SoftErpTheme.cardSurfaceAlt,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
@@ -459,8 +457,18 @@ class _OrderInsightCard extends StatelessWidget {
 
   static String _date(DateTime value) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${value.day} ${months[value.month - 1]} ${value.year}';
   }
@@ -597,11 +605,7 @@ class _StateTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: fg,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
+        style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w800),
       ),
     );
   }

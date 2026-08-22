@@ -74,6 +74,8 @@ class CreateItemInput {
     this.developedForClientId,
     this.availableForPurchase = false,
     this.penPaperBaseline,
+    this.blankWidthMm = 0,
+    this.blankHeightMm = 0,
   });
 
   final String name;
@@ -94,6 +96,10 @@ class CreateItemInput {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+
+  /// The blank size this part is cut as, in millimetres. Zero when unmeasured.
+  final double blankWidthMm;
+  final double blankHeightMm;
 
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.
@@ -122,6 +128,8 @@ class UpdateItemInput {
     this.developedForClientId,
     this.availableForPurchase = false,
     this.penPaperBaseline,
+    this.blankWidthMm = 0,
+    this.blankHeightMm = 0,
   });
 
   final int id;
@@ -143,6 +151,10 @@ class UpdateItemInput {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+
+  /// The blank size this part is cut as, in millimetres. Zero when unmeasured.
+  final double blankWidthMm;
+  final double blankHeightMm;
 
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.

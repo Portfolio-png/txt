@@ -66,7 +66,8 @@ class _ItemCardState extends State<ItemCard> {
     final groupName = context.select<GroupsProvider, String>(
       (p) => p.findById(widget.item.groupId)?.name ?? '',
     );
-    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+    final isScrap =
+        groupName.toLowerCase().trim() == 'scrap' ||
         widget.item.name.toLowerCase().contains('scrap') ||
         widget.item.displayName.toLowerCase().contains('scrap');
 
@@ -79,8 +80,8 @@ class _ItemCardState extends State<ItemCard> {
     final subtitle = isScrap
         ? 'Scrap material'
         : (leafCount == 0
-            ? 'Base item'
-            : '$leafCount variant${leafCount == 1 ? '' : 's'}');
+              ? 'Base item'
+              : '$leafCount variant${leafCount == 1 ? '' : 's'}');
 
     return AppCard(
       key: ValueKey<String>('item-card-${widget.item.id}'),
@@ -115,7 +116,9 @@ class _ItemCardState extends State<ItemCard> {
               key: ValueKey<String>('item-card-footer-${widget.item.id}'),
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               decoration: BoxDecoration(
-                color: isScrap ? _itemCardScrapFooterColor : _itemCardFooterColor,
+                color: isScrap
+                    ? _itemCardScrapFooterColor
+                    : _itemCardFooterColor,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,7 +141,10 @@ class _ItemCardState extends State<ItemCard> {
                       if (isScrap) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEF3C7),
                             borderRadius: BorderRadius.circular(4),
@@ -162,7 +168,9 @@ class _ItemCardState extends State<ItemCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: isScrap ? const Color(0xFF92400E) : SoftErpTheme.textSecondary,
+                      color: isScrap
+                          ? const Color(0xFF92400E)
+                          : SoftErpTheme.textSecondary,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -207,10 +215,7 @@ class _ItemCardPreview extends StatelessWidget {
 }
 
 class _ItemCardPlaceholder extends StatelessWidget {
-  const _ItemCardPlaceholder({
-    required this.item,
-    this.isScrap = false,
-  });
+  const _ItemCardPlaceholder({required this.item, this.isScrap = false});
 
   final ItemDefinition item;
   final bool isScrap;
@@ -220,7 +225,9 @@ class _ItemCardPlaceholder extends StatelessWidget {
     final theme = Theme.of(context);
     final token = _itemToken(item);
     final tokenBg = isScrap ? const Color(0xFFFEF3C7) : SoftErpTheme.accentSoft;
-    final tokenColor = isScrap ? const Color(0xFFB45309) : SoftErpTheme.accentDark;
+    final tokenColor = isScrap
+        ? const Color(0xFFB45309)
+        : SoftErpTheme.accentDark;
     final gradientColors = isScrap
         ? const [Color(0xFFFFFDF8), Color(0xFFFEF3C7)]
         : const [Color(0xFFFDFBF6), Color(0xFFF7F8FC)];
@@ -286,7 +293,9 @@ class _ItemCardPlaceholder extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: isScrap ? const Color(0xFF92400E) : SoftErpTheme.textSecondary,
+                      color: isScrap
+                          ? const Color(0xFF92400E)
+                          : SoftErpTheme.textSecondary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

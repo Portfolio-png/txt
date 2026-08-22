@@ -107,8 +107,7 @@ class OrderFulfilment {
   /// same unit the line was ordered in.
   double? get producedProgress {
     if (orderedQty <= 0 || producedQty <= 0) return null;
-    if (producedUnit.trim().toLowerCase() !=
-        orderedUnit.trim().toLowerCase()) {
+    if (producedUnit.trim().toLowerCase() != orderedUnit.trim().toLowerCase()) {
       return null;
     }
     return (producedQty / orderedQty).clamp(0.0, 1.0);

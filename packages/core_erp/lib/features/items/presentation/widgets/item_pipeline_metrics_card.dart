@@ -5,21 +5,18 @@ import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../domain/item_definition.dart';
 import '../providers/items_provider.dart';
 
-
 enum PipelineGraphView { materialFlow, massBreakdown, efficiencyYield }
 
 /// A card displayed in Item View modal showing the default pipeline's
 /// mass balance KPIs, material recovery efficiency, and interactive charts.
 class ItemPipelineMetricsCard extends StatefulWidget {
-  const ItemPipelineMetricsCard({
-    super.key,
-    required this.item,
-  });
+  const ItemPipelineMetricsCard({super.key, required this.item});
 
   final ItemDefinition item;
 
   @override
-  State<ItemPipelineMetricsCard> createState() => _ItemPipelineMetricsCardState();
+  State<ItemPipelineMetricsCard> createState() =>
+      _ItemPipelineMetricsCardState();
 }
 
 class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
@@ -59,9 +56,11 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
         _pipelineName = matched['name'];
       }
 
-      // Create or compute realistic baseline for display
+      // The card previews a baseline it has no recorded figures for, so it
+      // shows this pipeline's own stage nodes rather than invented stage names.
+      final nodesByPipeline = await itemsProvider.fetchPipelineStageNodes();
       final defaultBaseline = PenPaperBaseline.createDefaultForStages(
-        const ['Stage 1 (Cutting)', 'Stage 2 (Molding)', 'Stage 3 (Finishing)'],
+        nodesByPipeline[pipelineId],
       );
 
       if (mounted) {
@@ -104,9 +103,15 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
 
     final baseline = _baseline ?? PenPaperBaseline.createDefault();
     final stages = baseline.stageReconciliations;
-    final totalInput = baseline.totalInputKg > 0 ? baseline.totalInputKg : 100.0;
-    final finalGoodOutput = baseline.totalFinalOutputKg > 0 ? baseline.totalFinalOutputKg : 73.0;
-    final netRecoveryPercent = totalInput > 0 ? (finalGoodOutput / totalInput) * 100.0 : 73.0;
+    final totalInput = baseline.totalInputKg > 0
+        ? baseline.totalInputKg
+        : 100.0;
+    final finalGoodOutput = baseline.totalFinalOutputKg > 0
+        ? baseline.totalFinalOutputKg
+        : 73.0;
+    final netRecoveryPercent = totalInput > 0
+        ? (finalGoodOutput / totalInput) * 100.0
+        : 73.0;
 
     double totalScrap = 0.0;
     double totalRejection = 0.0;
@@ -126,9 +131,15 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
       totalWeightLoss = 5.0;
     }
 
-    final averageStageEfficiency = stages.isNotEmpty ? sumStageYield / stages.length : 90.0;
-    final scrapPercent = totalInput > 0 ? (totalScrap / totalInput) * 100.0 : 14.0;
-    final rejectionPercent = totalInput > 0 ? (totalRejection / totalInput) * 100.0 : 8.0;
+    final averageStageEfficiency = stages.isNotEmpty
+        ? sumStageYield / stages.length
+        : 90.0;
+    final scrapPercent = totalInput > 0
+        ? (totalScrap / totalInput) * 100.0
+        : 14.0;
+    final rejectionPercent = totalInput > 0
+        ? (totalRejection / totalInput) * 100.0
+        : 8.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -159,7 +170,11 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
                   ),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.analytics_rounded, color: Colors.white, size: 18),
+                child: const Icon(
+                  Icons.analytics_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -168,7 +183,10 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
                   children: [
                     const Text(
                       'Pipeline Mass Balance & Metrics',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
                     Text(
                       _pipelineName != null && _pipelineName!.isNotEmpty
@@ -214,7 +232,8 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
               final card4 = _buildKpiCard(
                 label: 'Total Rejection',
                 value: '${totalRejection.toStringAsFixed(1)} kg',
-                subtitle: '${rejectionPercent.toStringAsFixed(1)}% of Raw Inflow',
+                subtitle:
+                    '${rejectionPercent.toStringAsFixed(1)}% of Raw Inflow',
                 icon: Icons.warning_amber_rounded,
                 color: const Color(0xFFD32F2F),
                 backgroundColor: const Color(0xFFFFEBEE),
@@ -262,7 +281,9 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: theme.brightness == Brightness.dark ? Colors.grey.shade800 : Colors.grey.shade100,
+              color: theme.brightness == Brightness.dark
+                  ? Colors.grey.shade800
+                  : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
@@ -308,7 +329,9 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
                     : [const Color(0xFFF8FAFC), const Color(0xFFEEF2F6)],
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
+              border: Border.all(
+                color: theme.dividerColor.withValues(alpha: 0.15),
+              ),
             ),
             child: CustomPaint(
               painter: WholePipelineGarnishedPainter(
@@ -423,7 +446,9 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
             Icon(
               icon,
               size: 14,
-              color: isSelected ? const Color(0xFF1E88E5) : Colors.grey.shade600,
+              color: isSelected
+                  ? const Color(0xFF1E88E5)
+                  : Colors.grey.shade600,
             ),
             const SizedBox(width: 6),
             Flexible(
@@ -434,7 +459,9 @@ class _ItemPipelineMetricsCardState extends State<ItemPipelineMetricsCard> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                  color: isSelected ? const Color(0xFF1E88E5) : Colors.grey.shade700,
+                  color: isSelected
+                      ? const Color(0xFF1E88E5)
+                      : Colors.grey.shade700,
                 ),
               ),
             ),
@@ -504,18 +531,37 @@ class WholePipelineGarnishedPainter extends CustomPainter {
 
     for (int i = 0; i <= 4; i++) {
       final y = topPad + height * (1 - i / 4);
-      canvas.drawLine(Offset(leftPad, y), Offset(size.width - rightPad, y), gridPaint);
+      canvas.drawLine(
+        Offset(leftPad, y),
+        Offset(size.width - rightPad, y),
+        gridPaint,
+      );
 
       final val = (maxKg * i / 4).round();
       final tp = TextPainter(
-        text: TextSpan(text: '$val kg', style: TextStyle(fontSize: 9, color: theme.hintColor)),
+        text: TextSpan(
+          text: '$val kg',
+          style: TextStyle(fontSize: 9, color: theme.hintColor),
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(leftPad - tp.width - 6, y - tp.height / 2));
     }
 
-    final labels = ['Raw Inflow', 'Good Product', 'Scrap', 'Rejection', 'Process Loss'];
-    final values = [totalInputKg, finalGoodOutputKg, totalScrapKg, totalRejectionKg, totalWeightLossKg];
+    final labels = [
+      'Raw Inflow',
+      'Good Product',
+      'Scrap',
+      'Rejection',
+      'Process Loss',
+    ];
+    final values = [
+      totalInputKg,
+      finalGoodOutputKg,
+      totalScrapKg,
+      totalRejectionKg,
+      totalWeightLossKg,
+    ];
     final colors = [
       const Color(0xFF1E88E5), // Blue
       const Color(0xFF43A047), // Green
@@ -541,7 +587,10 @@ class WholePipelineGarnishedPainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(colX, barY, barWidth, barH));
 
       canvas.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromLTWH(colX, barY, barWidth, barH), const Radius.circular(5)),
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(colX, barY, barWidth, barH),
+          const Radius.circular(5),
+        ),
         paint,
       );
 
@@ -549,21 +598,38 @@ class WholePipelineGarnishedPainter extends CustomPainter {
       final valTp = TextPainter(
         text: TextSpan(
           text: '${val.toStringAsFixed(1)}k',
-          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: colors[i]),
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            color: colors[i],
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      valTp.paint(canvas, Offset(colX + (barWidth - valTp.width) / 2, barY - valTp.height - 2));
+      valTp.paint(
+        canvas,
+        Offset(colX + (barWidth - valTp.width) / 2, barY - valTp.height - 2),
+      );
 
       // Category label below
       final labelTp = TextPainter(
         text: TextSpan(
           text: labels[i],
-          style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: theme.hintColor),
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: theme.hintColor,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      labelTp.paint(canvas, Offset(colX + (barWidth - labelTp.width) / 2, size.height - bottomPad + 6));
+      labelTp.paint(
+        canvas,
+        Offset(
+          colX + (barWidth - labelTp.width) / 2,
+          size.height - bottomPad + 6,
+        ),
+      );
     }
   }
 
@@ -602,20 +668,43 @@ class WholePipelineGarnishedPainter extends CustomPainter {
     final centerTp = TextPainter(
       text: TextSpan(
         text: '${netRecoveryPercent.toStringAsFixed(0)}%\nRecovery',
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, height: 1.1),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          height: 1.1,
+        ),
       ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     )..layout();
-    centerTp.paint(canvas, Offset(center.dx - centerTp.width / 2, center.dy - centerTp.height / 2));
+    centerTp.paint(
+      canvas,
+      Offset(center.dx - centerTp.width / 2, center.dy - centerTp.height / 2),
+    );
 
     // Legend on the Right Hand Side
     final legendX = size.width * 0.60;
     final items = [
-      {'label': 'Good Yield (${(goodRatio * 100).toStringAsFixed(1)}%)', 'color': const Color(0xFF43A047), 'kg': '${finalGoodOutputKg.toStringAsFixed(1)} kg'},
-      {'label': 'Scrap Material (${(scrapRatio * 100).toStringAsFixed(1)}%)', 'color': const Color(0xFFFB8C00), 'kg': '${totalScrapKg.toStringAsFixed(1)} kg'},
-      {'label': 'Rejections (${(rejRatio * 100).toStringAsFixed(1)}%)', 'color': const Color(0xFFE53935), 'kg': '${totalRejectionKg.toStringAsFixed(1)} kg'},
-      {'label': 'Process Loss (${(lossRatio * 100).toStringAsFixed(1)}%)', 'color': const Color(0xFF8E24AA), 'kg': '${totalWeightLossKg.toStringAsFixed(1)} kg'},
+      {
+        'label': 'Good Yield (${(goodRatio * 100).toStringAsFixed(1)}%)',
+        'color': const Color(0xFF43A047),
+        'kg': '${finalGoodOutputKg.toStringAsFixed(1)} kg',
+      },
+      {
+        'label': 'Scrap Material (${(scrapRatio * 100).toStringAsFixed(1)}%)',
+        'color': const Color(0xFFFB8C00),
+        'kg': '${totalScrapKg.toStringAsFixed(1)} kg',
+      },
+      {
+        'label': 'Rejections (${(rejRatio * 100).toStringAsFixed(1)}%)',
+        'color': const Color(0xFFE53935),
+        'kg': '${totalRejectionKg.toStringAsFixed(1)} kg',
+      },
+      {
+        'label': 'Process Loss (${(lossRatio * 100).toStringAsFixed(1)}%)',
+        'color': const Color(0xFF8E24AA),
+        'kg': '${totalWeightLossKg.toStringAsFixed(1)} kg',
+      },
     ];
 
     double legY = size.height * 0.18;
@@ -629,7 +718,11 @@ class WholePipelineGarnishedPainter extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: '$legText\n$kgText',
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: theme.hintColor),
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: theme.hintColor,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -655,10 +748,17 @@ class WholePipelineGarnishedPainter extends CustomPainter {
 
     for (int i = 0; i <= 4; i++) {
       final y = topPad + height * (1 - i / 4);
-      canvas.drawLine(Offset(leftPad, y), Offset(size.width - rightPad, y), gridPaint);
+      canvas.drawLine(
+        Offset(leftPad, y),
+        Offset(size.width - rightPad, y),
+        gridPaint,
+      );
 
       final tp = TextPainter(
-        text: TextSpan(text: '${i * 25}%', style: TextStyle(fontSize: 9, color: theme.hintColor)),
+        text: TextSpan(
+          text: '${i * 25}%',
+          style: TextStyle(fontSize: 9, color: theme.hintColor),
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(leftPad - tp.width - 6, y - tp.height / 2));
@@ -667,7 +767,8 @@ class WholePipelineGarnishedPainter extends CustomPainter {
     if (stages.isEmpty) return;
 
     // Average Yield Benchmark Line (Dashed)
-    final avgY = topPad + height * (1 - (averageEfficiency / 100.0).clamp(0.0, 1.0));
+    final avgY =
+        topPad + height * (1 - (averageEfficiency / 100.0).clamp(0.0, 1.0));
     final dashPaint = Paint()
       ..color = const Color(0xFF1E88E5)
       ..strokeWidth = 1.5
@@ -675,19 +776,34 @@ class WholePipelineGarnishedPainter extends CustomPainter {
 
     double curX = leftPad;
     while (curX < size.width - rightPad) {
-      canvas.drawLine(Offset(curX, avgY), Offset(math.min(curX + 5, size.width - rightPad), avgY), dashPaint);
+      canvas.drawLine(
+        Offset(curX, avgY),
+        Offset(math.min(curX + 5, size.width - rightPad), avgY),
+        dashPaint,
+      );
       curX += 9;
     }
 
     // Benchmark Label
     final benchTp = TextPainter(
       text: TextSpan(
-        text: 'Average Pipeline Efficiency (${averageEfficiency.toStringAsFixed(1)}%)',
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5)),
+        text:
+            'Average Pipeline Efficiency (${averageEfficiency.toStringAsFixed(1)}%)',
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF1E88E5),
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    benchTp.paint(canvas, Offset(size.width - rightPad - benchTp.width - 4, avgY - benchTp.height - 3));
+    benchTp.paint(
+      canvas,
+      Offset(
+        size.width - rightPad - benchTp.width - 4,
+        avgY - benchTp.height - 3,
+      ),
+    );
 
     // Smooth Yield Line Curve across stages
     final points = <Offset>[];
@@ -696,7 +812,8 @@ class WholePipelineGarnishedPainter extends CustomPainter {
     for (int i = 0; i < stages.length; i++) {
       final s = stages[i];
       final px = stages.length > 1 ? leftPad + i * stepW : leftPad + width / 2;
-      final py = topPad + height * (1 - (s.yieldPercentage / 100.0).clamp(0.0, 1.0));
+      final py =
+          topPad + height * (1 - (s.yieldPercentage / 100.0).clamp(0.0, 1.0));
       points.add(Offset(px, py));
     }
 
@@ -726,20 +843,34 @@ class WholePipelineGarnishedPainter extends CustomPainter {
       final valTp = TextPainter(
         text: TextSpan(
           text: '${stages[i].yieldPercentage.toStringAsFixed(1)}%',
-          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF2E7D32),
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      valTp.paint(canvas, Offset(pt.dx - valTp.width / 2, pt.dy - valTp.height - 4));
+      valTp.paint(
+        canvas,
+        Offset(pt.dx - valTp.width / 2, pt.dy - valTp.height - 4),
+      );
 
       final nameTp = TextPainter(
         text: TextSpan(
           text: 'Stage ${i + 1}',
-          style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: theme.hintColor),
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: theme.hintColor,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      nameTp.paint(canvas, Offset(pt.dx - nameTp.width / 2, size.height - bottomPad + 5));
+      nameTp.paint(
+        canvas,
+        Offset(pt.dx - nameTp.width / 2, size.height - bottomPad + 5),
+      );
     }
   }
 

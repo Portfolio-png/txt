@@ -526,7 +526,9 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                       builder: (context) => Dialog(
                         insetPadding: const EdgeInsets.all(16),
                         clipBehavior: Clip.antiAlias,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         child: Stack(
                           children: [
                             ChallanPrintableDocument(challan: row.challan),
@@ -928,4 +930,3 @@ class _ChallanPrintPreviewPanel extends StatelessWidget {
     );
   }
 }
-

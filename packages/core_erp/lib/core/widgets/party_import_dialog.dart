@@ -231,7 +231,9 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
                     onPressed: _isWorking ? null : _downloadTemplate,
                   ),
                   AppButton(
-                    label: parsed == null ? 'Choose filled file' : 'Choose another file',
+                    label: parsed == null
+                        ? 'Choose filled file'
+                        : 'Choose another file',
                     icon: Icons.upload_file_outlined,
                     variant: AppButtonVariant.secondary,
                     onPressed: _isWorking ? null : _pickFile,
@@ -260,7 +262,9 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
                           : 'Import ${parsed.importable.length}',
                       isLoading: _isWorking,
                       onPressed:
-                          (parsed == null || parsed.importable.isEmpty || _isWorking)
+                          (parsed == null ||
+                              parsed.importable.isEmpty ||
+                              _isWorking)
                           ? null
                           : _runImport,
                     ),
@@ -370,7 +374,10 @@ class _PartyImportDialogState extends State<PartyImportDialog> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: border),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 

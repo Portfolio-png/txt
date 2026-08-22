@@ -2672,6 +2672,8 @@ async function rowToItemDto(row) {
     availableForPurchase: Boolean(row.available_for_purchase),
     // null until a sample run is recorded on this specific item.
     penPaperBaseline: parseJson(row.pen_paper_baseline_json, null),
+    blankWidthMm: Number(row.blank_width_mm || 0),
+    blankHeightMm: Number(row.blank_height_mm || 0),
     defaultPipelineId: row.default_pipeline_id || null,
     defaultPipelineName: row.default_pipeline_name || (row.default_pipeline_id ? (await get('SELECT name FROM pipeline_templates WHERE id = ?', [row.default_pipeline_id]))?.name || null : null),
   };
@@ -2695,6 +2697,8 @@ function rowToTemplate(row) {
     flows: parseJson(row.flows_json, []),
     intermediateNamingConvention: row.intermediate_naming_convention || '',
     penPaperBaseline: parseJson(row.pen_paper_baseline_json, null),
+    blankWidthMm: Number(row.blank_width_mm || 0),
+    blankHeightMm: Number(row.blank_height_mm || 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -5141,6 +5145,8 @@ async function initDb() {
   // Per-item sample baseline (migrations/029). Separate from the pipeline
   // template's copy, which every item on that template would otherwise share.
   await ensureColumnExists('items', 'pen_paper_baseline_json', 'TEXT');
+  await ensureColumnExists('items', 'blank_width_mm', 'REAL DEFAULT 0');
+  await ensureColumnExists('items', 'blank_height_mm', 'REAL DEFAULT 0');
   await ensureColumnExists('item_unit_conversions', 'factor_to_primary', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
@@ -15467,6 +15473,8 @@ async function saveItem({
   // Same undefined-preserving contract: an update that doesn't mention the
   // sample baseline keeps whatever is already recorded. `null` clears it.
   penPaperBaseline,
+  blankWidthMm,
+  blankHeightMm,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -15577,8 +15585,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, available_for_purchase, pen_paper_baseline_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, available_for_purchase, pen_paper_baseline_json, blank_width_mm, blank_height_mm, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -15596,6 +15604,8 @@ async function saveItem({
           developedForClientId ? Number(developedForClientId) : null,
           availableForPurchase ? 1 : 0,
           penPaperBaseline ? JSON.stringify(penPaperBaseline) : null,
+          Number(blankWidthMm || 0),
+          Number(blankHeightMm || 0),
           now,
           now,
         ],
@@ -15619,7 +15629,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, blank_width_mm = ?, blank_height_mm = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -15667,6 +15677,12 @@ async function saveItem({
           penPaperBaseline !== undefined
             ? (penPaperBaseline ? JSON.stringify(penPaperBaseline) : null)
             : (existing.pen_paper_baseline_json || null),
+          blankWidthMm !== undefined
+            ? Number(blankWidthMm || 0)
+            : Number(existing.blank_width_mm || 0),
+          blankHeightMm !== undefined
+            ? Number(blankHeightMm || 0)
+            : Number(existing.blank_height_mm || 0),
           now,
           id,
         ],

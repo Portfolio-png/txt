@@ -148,6 +148,8 @@ class ItemDefinition {
     this.combinationGroupIds = const <int>[],
     this.availableForPurchase = false,
     this.penPaperBaseline,
+    this.blankWidthMm = 0,
+    this.blankHeightMm = 0,
   });
 
   final int id;
@@ -193,6 +195,19 @@ class ItemDefinition {
 
   /// Dies used to produce this item.
   final List<ItemDieLink> dies;
+
+  /// The blank this part is cut as, in millimetres.
+  ///
+  /// Sheet planning needs a part to have a size before it can be planned onto a
+  /// sheet. Held on the item rather than on the die because the blank IS the
+  /// item — the die is the tool that happens to produce it, and one part can
+  /// outlive several dies. Zero means nobody has measured it, and the planner
+  /// says so rather than guessing.
+  final double blankWidthMm;
+  final double blankHeightMm;
+
+  /// Whether this part can be planned onto a sheet at all.
+  bool get hasBlankSize => blankWidthMm > 0 && blankHeightMm > 0;
 
   /// Client this item was developed for, so it can be listed under them.
   final int? developedForClientId;
@@ -257,6 +272,8 @@ class ItemDefinition {
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
       penPaperBaseline: penPaperBaseline,
+      blankWidthMm: blankWidthMm,
+      blankHeightMm: blankHeightMm,
     );
   }
 

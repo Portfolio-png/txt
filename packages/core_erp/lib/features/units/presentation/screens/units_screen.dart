@@ -83,14 +83,18 @@ class _UnitsScreenState extends State<UnitsScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.public, color: SoftErpTheme.accent, size: 20),
+                  const Icon(
+                    Icons.public,
+                    color: SoftErpTheme.accent,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Global Units Library',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: SoftErpTheme.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: SoftErpTheme.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -260,7 +264,10 @@ class _UnitsTableState extends State<_UnitsTable> {
                     });
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: SoftErpTheme.accentSurface.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
@@ -285,7 +292,10 @@ class _UnitsTableState extends State<_UnitsTable> {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
@@ -343,14 +353,21 @@ class _UnitsTableState extends State<_UnitsTable> {
                                           SoftTableColumn('Name', flex: 3),
                                           SoftTableColumn('Symbol', flex: 2),
                                           SoftTableColumn('Group', flex: 2),
-                                          SoftTableColumn('Conversion', flex: 1),
+                                          SoftTableColumn(
+                                            'Conversion',
+                                            flex: 1,
+                                          ),
                                           SoftTableColumn('Used In', flex: 1),
                                           SoftTableColumn('Status', flex: 1),
                                           SoftTableColumn('Actions', flex: 2),
                                         ],
                                       ),
                                       const SizedBox(height: 10),
-                                      for (int idx = 0; idx < familyUnits.length; idx++) ...[
+                                      for (
+                                        int idx = 0;
+                                        idx < familyUnits.length;
+                                        idx++
+                                      ) ...[
                                         _UnitRow(unit: familyUnits[idx]),
                                         if (idx < familyUnits.length - 1)
                                           const SizedBox(height: 10),

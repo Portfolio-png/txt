@@ -55,8 +55,11 @@ class BoardingPassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveCardColor = cardColor ?? (isScrap ? const Color(0xFFFFFDF8) : Colors.white);
-    final effectiveBorderColor = borderColor ?? (isScrap ? const Color(0xFFFED7AA) : const Color(0xFFE9EBF2));
+    final effectiveCardColor =
+        cardColor ?? (isScrap ? const Color(0xFFFFFDF8) : Colors.white);
+    final effectiveBorderColor =
+        borderColor ??
+        (isScrap ? const Color(0xFFFED7AA) : const Color(0xFFE9EBF2));
 
     return Material(
       color: effectiveCardColor,
@@ -71,7 +74,9 @@ class BoardingPassCard extends StatelessWidget {
             border: Border.all(color: effectiveBorderColor),
             boxShadow: [
               BoxShadow(
-                color: isScrap ? const Color(0x12B45309) : const Color(0x0F1B1F3B),
+                color: isScrap
+                    ? const Color(0x12B45309)
+                    : const Color(0x0F1B1F3B),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -83,7 +88,9 @@ class BoardingPassCard extends StatelessWidget {
               final h = c.maxHeight.isFinite ? c.maxHeight : w * 1.35;
               // Wide + short cell (e.g. 1-2 columns) -> horizontal ticket layout.
               final horizontal = w > h * 1.3 && w > 360;
-              return horizontal ? _horizontal(context, w, h) : _vertical(context, w, h);
+              return horizontal
+                  ? _horizontal(context, w, h)
+                  : _vertical(context, w, h);
             },
           ),
         ),
@@ -108,7 +115,12 @@ class BoardingPassCard extends StatelessWidget {
       children: [
         Expanded(child: _hero(context)),
         Padding(
-          padding: EdgeInsets.fromLTRB(pad, compact ? 8 : 10, pad, compact ? 9 : 12),
+          padding: EdgeInsets.fromLTRB(
+            pad,
+            compact ? 8 : 10,
+            pad,
+            compact ? 9 : 12,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,7 +224,9 @@ class BoardingPassCard extends StatelessWidget {
             decoration: const BoxDecoration(
               border: Border(left: BorderSide(color: Color(0xFFE9EBF2))),
             ),
-            child: Center(child: _barcodeStrip(height: double.infinity, vertical: true)),
+            child: Center(
+              child: _barcodeStrip(height: double.infinity, vertical: true),
+            ),
           ),
       ],
     );
@@ -239,11 +253,7 @@ class BoardingPassCard extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           imageWidget,
-          Positioned(
-            top: 8,
-            right: 8,
-            child: badge ?? _scrapBadge(),
-          ),
+          Positioned(top: 8, right: 8, child: badge ?? _scrapBadge()),
         ],
       );
     }
@@ -287,7 +297,9 @@ class BoardingPassCard extends StatelessWidget {
   Widget _placeholder(BuildContext context, {bool shimmer = false}) {
     final effectiveAccent = isScrap ? const Color(0xFFD97706) : accent;
     final tokenBg = isScrap ? const Color(0xFFFEF3C7) : SoftErpTheme.accentSoft;
-    final tokenColor = isScrap ? const Color(0xFFB45309) : SoftErpTheme.accentDark;
+    final tokenColor = isScrap
+        ? const Color(0xFFB45309)
+        : SoftErpTheme.accentDark;
     final gradientColors = isScrap
         ? const [Color(0xFFFFFDF8), Color(0xFFFEF3C7)]
         : const [Color(0xFFFDFBF6), Color(0xFFEFF1F8)];
@@ -314,7 +326,9 @@ class BoardingPassCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: tokenBg,
                     borderRadius: BorderRadius.circular(s * 0.3),
-                    border: Border.all(color: effectiveAccent.withValues(alpha: 0.35)),
+                    border: Border.all(
+                      color: effectiveAccent.withValues(alpha: 0.35),
+                    ),
                   ),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -342,7 +356,9 @@ class BoardingPassCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: isScrap ? const Color(0xFF92400E) : SoftErpTheme.textSecondary,
+                        color: isScrap
+                            ? const Color(0xFF92400E)
+                            : SoftErpTheme.textSecondary,
                       ),
                     ),
                   ),
@@ -360,10 +376,16 @@ class BoardingPassCard extends StatelessWidget {
     final cells = <Widget>[];
     for (var i = 0; i < shown.length; i++) {
       if (i > 0) {
-        cells.add(const SizedBox(
-          height: 30,
-          child: VerticalDivider(width: 13, thickness: 1, color: Color(0xFFEDEFF5)),
-        ));
+        cells.add(
+          const SizedBox(
+            height: 30,
+            child: VerticalDivider(
+              width: 13,
+              thickness: 1,
+              color: Color(0xFFEDEFF5),
+            ),
+          ),
+        );
       }
       cells.add(Expanded(child: _detailCell(shown[i])));
     }
@@ -432,7 +454,9 @@ class BoardingPassCard extends StatelessWidget {
     }
     return Row(
       children: [
-        Expanded(child: SizedBox(height: height, child: bar)),
+        Expanded(
+          child: SizedBox(height: height, child: bar),
+        ),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
@@ -466,12 +490,15 @@ class _Perforation extends StatelessWidget {
           const gap = 4.0;
           final count = (c.maxWidth / (dash + gap)).floor().clamp(0, 400);
           return Row(
-            children: List<Widget>.generate(count, (_) => Container(
-              width: dash,
-              height: 1,
-              margin: const EdgeInsets.only(right: gap),
-              color: const Color(0xFFDFE2EC),
-            )),
+            children: List<Widget>.generate(
+              count,
+              (_) => Container(
+                width: dash,
+                height: 1,
+                margin: const EdgeInsets.only(right: gap),
+                color: const Color(0xFFDFE2EC),
+              ),
+            ),
           );
         },
       ),

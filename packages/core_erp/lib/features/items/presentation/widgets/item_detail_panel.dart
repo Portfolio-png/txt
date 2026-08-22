@@ -22,7 +22,6 @@ import '../providers/items_provider.dart';
 
 import 'item_pipeline_metrics_card.dart';
 
-
 Future<void> showItemDetailPanel(
   BuildContext context, {
   required ItemDefinition item,
@@ -259,7 +258,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
         .map((i) => i.displayName)
         .toList(growable: false);
 
-    final isScrap = groupName.toLowerCase().trim() == 'scrap' ||
+    final isScrap =
+        groupName.toLowerCase().trim() == 'scrap' ||
         item.name.toLowerCase().contains('scrap') ||
         item.displayName.toLowerCase().contains('scrap');
 
@@ -303,7 +303,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                       if (isScrap) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEF3C7),
                             borderRadius: BorderRadius.circular(6),
@@ -312,7 +315,11 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.recycling_rounded, size: 13, color: Color(0xFFD97706)),
+                              Icon(
+                                Icons.recycling_rounded,
+                                size: 13,
+                                color: Color(0xFFD97706),
+                              ),
                               SizedBox(width: 4),
                               Text(
                                 'SCRAP MATERIAL',
@@ -346,7 +353,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                       ),
                     ],
                     selected: {_activeTab},
-                    onSelectionChanged: (set) => setState(() => _activeTab = set.first),
+                    onSelectionChanged: (set) =>
+                        setState(() => _activeTab = set.first),
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -366,7 +374,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             ),
           ),
           Expanded(
-            child: _activeTab == 1 &&
+            child:
+                _activeTab == 1 &&
                     item.defaultPipelineId != null &&
                     item.defaultPipelineId!.isNotEmpty
                 ? SingleChildScrollView(
@@ -379,7 +388,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                       final sameNamingFormatItems = itemsProvider.items.where((
                         other,
                       ) {
-                        if (other.namingFormat.length != item.namingFormat.length)
+                        if (other.namingFormat.length !=
+                            item.namingFormat.length)
                           return false;
                         for (int i = 0; i < item.namingFormat.length; i++) {
                           if (other.namingFormat[i] != item.namingFormat[i])
@@ -391,14 +401,16 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                       final imagePreview = _ItemImagePreview(
                         item: item,
                         primaryAsset: primaryAsset,
-                        isUploading: _isUploading || itemsProvider.isAssetUploading,
+                        isUploading:
+                            _isUploading || itemsProvider.isAssetUploading,
                         onUpload: _pickAndUploadImage,
                         onOpenImage:
                             (primaryAsset?.readUrl?.toString() ?? item.photoUrl)
                                 .isEmpty
                             ? null
                             : () => _openImagePreview(
-                                primaryAsset?.readUrl?.toString() ?? item.photoUrl,
+                                primaryAsset?.readUrl?.toString() ??
+                                    item.photoUrl,
                               ),
                         onDeleteImage: primaryAsset == null
                             ? null
@@ -426,7 +438,6 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                               },
                             );
 
-
                       final content = useTwoColumn
                           ? Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,7 +445,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                 SizedBox(
                                   width: 240,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       imagePreview,
                                       if (cadFileCard != null) ...[
@@ -451,7 +463,9 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                 const SizedBox(width: 16),
                                 SizedBox(width: 320, child: factsheet),
                                 const SizedBox(width: 16),
-                                Expanded(child: _ItemVariationSection(item: item)),
+                                Expanded(
+                                  child: _ItemVariationSection(item: item),
+                                ),
                               ],
                             )
                           : Column(

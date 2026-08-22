@@ -108,13 +108,18 @@ class AuthProvider extends ChangeNotifier {
       String platform;
       if (kIsWeb) {
         platform = 'web';
-      } else if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android) {
+      } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android) {
         platform = 'mobile';
       } else {
         platform = 'desktop';
       }
 
-      final result = await _api.login(email: email, password: password, platform: platform);
+      final result = await _api.login(
+        email: email,
+        password: password,
+        platform: platform,
+      );
       _user = result.user;
       _token = result.token;
       _api.token = _token;
@@ -136,7 +141,8 @@ class AuthProvider extends ChangeNotifier {
       String platform;
       if (kIsWeb) {
         platform = 'web';
-      } else if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android) {
+      } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android) {
         platform = 'mobile';
       } else {
         platform = 'desktop';
@@ -471,7 +477,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<bool> factoryResetDatabase() async {
     if (!can('config.write')) {
-      _errorMessage = 'You do not have permission to factory reset the database.';
+      _errorMessage =
+          'You do not have permission to factory reset the database.';
       notifyListeners();
       return false;
     }
@@ -698,8 +705,10 @@ class AuthProvider extends ChangeNotifier {
     try {
       return await _api.getUserRecordPermissions(userId);
     } catch (error) {
-      _errorMessage =
-          _friendly(error, fallback: 'Failed to load record permissions.');
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to load record permissions.',
+      );
       notifyListeners();
       return const [];
     }
@@ -713,8 +722,10 @@ class AuthProvider extends ChangeNotifier {
       await _api.updateUserRecordPermissions(userId, records);
       return true;
     } catch (error) {
-      _errorMessage =
-          _friendly(error, fallback: 'Failed to save record permissions.');
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to save record permissions.',
+      );
       notifyListeners();
       return false;
     }

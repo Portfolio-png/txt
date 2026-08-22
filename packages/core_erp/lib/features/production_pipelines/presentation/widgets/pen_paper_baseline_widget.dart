@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,6 +7,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/pm_segmented_control.dart';
 import '../../domain/pen_paper_baseline.dart';
+import '../../domain/pipeline_stage_node.dart';
 
 /// Write-only record for a sample production run's material flow, in kilograms.
 /// Either the pipeline as a whole, or stage by stage.
@@ -15,7 +17,7 @@ class PenPaperBaselineWidget extends StatefulWidget {
     required this.baseline,
     required this.onChanged,
     this.readOnly = false,
-    this.stageNames = const [],
+    this.stageNodes = const [],
     this.showChrome = true,
     this.pipelineId,
     this.pipelineName = '',
@@ -25,7 +27,11 @@ class PenPaperBaselineWidget extends StatefulWidget {
   final PenPaperBaseline baseline;
   final ValueChanged<PenPaperBaseline> onChanged;
   final bool readOnly;
-  final List<String> stageNames;
+
+  /// The pipeline's process nodes, in reading order. The stage-by-stage table
+  /// titles a row per node — the node names are the work ("Piercing"), where the
+  /// board's column labels are only positions ("Stage 2").
+  final List<PipelineStageNode> stageNodes;
 
   /// Whether to draw the surrounding card and the title row. Hosts that already
   /// sit the widget inside their own titled section pass false, so the heading
@@ -74,7 +80,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
   @override
   void didUpdateWidget(PenPaperBaselineWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.stageNames != oldWidget.stageNames) {
+    if (!listEquals(widget.stageNodes, oldWidget.stageNodes)) {
       _ensureStageReconciliations();
     }
   }
@@ -128,8 +134,20 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
   /// base material in the name — "dolly - sheet - 6 amp" is a sheet — so the
   /// type is read rather than asked for.
   static const List<String> _materialNouns = [
-    'sheet', 'coil', 'rod', 'billet', 'wire', 'plate', 'strip',
-    'bar', 'tube', 'pipe', 'ingot', 'granule', 'powder', 'roll',
+    'sheet',
+    'coil',
+    'rod',
+    'billet',
+    'wire',
+    'plate',
+    'strip',
+    'bar',
+    'tube',
+    'pipe',
+    'ingot',
+    'granule',
+    'powder',
+    'roll',
   ];
 
   /// The material type shown on both sides of the table.
@@ -186,12 +204,18 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
 
   void _ensureStageReconciliations() {
     final currentList = widget.baseline.stageReconciliations;
-    final stages = widget.stageNames.isNotEmpty
-        ? widget.stageNames
-        : const ['Stage 1 (Cutting)', 'Stage 2 (Molding)', 'Stage 3 (Finishing)'];
+    final stages = widget.stageNodes;
 
-    if (currentList.isEmpty ||
-        (_isGranular && currentList.length != stages.length)) {
+    // Rebuilt when the node set changes, not only when the count does: a
+    // renamed or reordered stage would otherwise keep the old titles.
+    final namesDiffer =
+        stages.isNotEmpty &&
+        (currentList.length != stages.length ||
+            !listEquals(
+              currentList.map((row) => row.stageName).toList(growable: false),
+              stages.map((node) => node.name).toList(growable: false),
+            ));
+    if (currentList.isEmpty || (_isGranular && namesDiffer)) {
       final newBaseline = PenPaperBaseline.createDefaultForStages(
         stages,
       ).copyWith(isGranular: _isGranular);
@@ -267,7 +291,10 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
 
       widget.onChanged(
         _stamped(
-          widget.baseline.copyWith(isGranular: true, stageReconciliations: list),
+          widget.baseline.copyWith(
+            isGranular: true,
+            stageReconciliations: list,
+          ),
         ),
       );
     }
@@ -286,7 +313,8 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     scrapKg: double.tryParse(_wholeScrapCtrl.text) ?? 0,
     // The live draft mirrors the save path: rejection comes from the
     // percentage, so the balance strip agrees with what gets stored.
-    rejectionKg: (double.tryParse(_wholeInputCtrl.text) ?? 0) *
+    rejectionKg:
+        (double.tryParse(_wholeInputCtrl.text) ?? 0) *
         ((double.tryParse(_wholeRejectionPctCtrl.text) ?? 0) / 100.0),
     weightLossKg: double.tryParse(_wholeLossCtrl.text) ?? 0,
     inputQty: double.tryParse(_wholeInputQtyCtrl.text) ?? 0,
@@ -658,10 +686,7 @@ InputDecoration _softDecoration({
       fontSize: 13,
       fontWeight: FontWeight.w600,
     ),
-    hintStyle: const TextStyle(
-      color: SoftErpTheme.textSecondary,
-      fontSize: 13,
-    ),
+    hintStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 13),
     suffixStyle: const TextStyle(
       color: SoftErpTheme.textSecondary,
       fontSize: 12.5,
@@ -806,7 +831,10 @@ class _BalanceStrip extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           _metric('Yield', '${entry.yieldPercentage.toStringAsFixed(1)}%'),
-          _metric('Accounted', '${entry.totalAccountedKg.toStringAsFixed(1)} kg'),
+          _metric(
+            'Accounted',
+            '${entry.totalAccountedKg.toStringAsFixed(1)} kg',
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
@@ -1009,7 +1037,9 @@ class _StageEditorDialogState extends State<_StageEditorDialog> {
     _recordRejection = stage.recordRejection;
     _recordWeightLoss = stage.recordWeightLoss;
     _inputCtrl = TextEditingController(text: stage.inputKg.toStringAsFixed(1));
-    _outputCtrl = TextEditingController(text: stage.outputKg.toStringAsFixed(1));
+    _outputCtrl = TextEditingController(
+      text: stage.outputKg.toStringAsFixed(1),
+    );
     _scrapCtrl = TextEditingController(text: stage.scrapKg.toStringAsFixed(1));
     _rejectionCtrl = TextEditingController(
       text: stage.rejectionKg.toStringAsFixed(1),
@@ -1041,7 +1071,9 @@ class _StageEditorDialogState extends State<_StageEditorDialog> {
     rejectionKg: _recordRejection
         ? (double.tryParse(_rejectionCtrl.text) ?? 0)
         : 0,
-    weightLossKg: _recordWeightLoss ? (double.tryParse(_lossCtrl.text) ?? 0) : 0,
+    weightLossKg: _recordWeightLoss
+        ? (double.tryParse(_lossCtrl.text) ?? 0)
+        : 0,
     notes: _notesCtrl.text.trim(),
   );
 
@@ -1228,7 +1260,9 @@ class _MeasureColumn extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.07),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(11),
+              ),
               border: const Border(
                 bottom: BorderSide(color: Color(0xFFE2E8F0)),
               ),

@@ -38,6 +38,11 @@ import '../../domain/item_form_sections.dart';
 import '../providers/item_form_sections_provider.dart';
 
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
+import 'package:core_erp/features/production_pipelines/domain/pipeline_stage_node.dart';
+import 'package:core_erp/features/production_pipelines/domain/dxf_blank.dart';
+import 'package:core_erp/features/production_pipelines/domain/sheet_part.dart';
+import 'package:core_erp/features/production_pipelines/presentation/widgets/dxf_blank_picker.dart';
+import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/pen_paper_baseline_widget.dart';
 
 import '../providers/items_provider.dart';
@@ -2091,8 +2096,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   /// Stage labels per pipeline id, so a sample baseline recorded stage-by-stage
   /// uses the selected pipeline's real stages instead of generic placeholders.
-  Map<String, List<String>> _pipelineStageLabels =
-      const <String, List<String>>{};
+  Map<String, List<PipelineStageNode>> _pipelineStageNodes =
+      const <String, List<PipelineStageNode>>{};
   PenPaperBaseline _penPaperBaseline = PenPaperBaseline.createDefault();
 
   /// Whether [_penPaperBaseline] holds a real recording rather than the
@@ -2116,6 +2121,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// others.
   int _masterDataRecordCount = 0;
   bool _availableForPurchase = false;
+  late final TextEditingController _blankWidthController;
+  late final TextEditingController _blankHeightController;
   int? _developedForClientId;
 
   bool get _isReadOnly => false;
@@ -2166,6 +2173,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _resolveMasterData());
     }
     _availableForPurchase = _item?.availableForPurchase ?? false;
+    _blankWidthController = TextEditingController(
+      text: _blankInitial(_item?.blankWidthMm ?? 0),
+    );
+    _blankHeightController = TextEditingController(
+      text: _blankInitial(_item?.blankHeightMm ?? 0),
+    );
+    _blankWidthController.addListener(_handleChange);
+    _blankHeightController.addListener(_handleChange);
     _developedForClientId = _item?.developedForClientId;
     final storedBaseline = _item?.penPaperBaseline;
     if (storedBaseline != null) {
@@ -2401,6 +2416,62 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   /// Content-only fingerprint of the identity fields, ignoring the dirty flag
   /// itself (which would make the comparison circular).
+  static String _blankInitial(double value) {
+    if (value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toString();
+  }
+
+  /// Where the blank size came from, when it was read off a drawing rather than
+  /// typed. Answers "where did 60 × 40 come from?" six months later.
+  String _blankSource = '';
+  bool _importingBlank = false;
+
+  /// Reads a blank size out of a DXF the user picks.
+  ///
+  /// Parsed here rather than on the server: the bytes are already in hand at
+  /// pick time, and the drawing never has to be uploaded for its size to be
+  /// read. Nothing is chosen automatically — the picker asks which shape is the
+  /// part, because a die drawing's biggest shape is the paper.
+  Future<void> _importBlankFromDxf() async {
+    const group = XTypeGroup(label: 'DXF drawing', extensions: <String>['dxf']);
+    final file = await _pickFileOrNull(group, 'DXF drawing');
+    if (file == null || !mounted) return;
+
+    setState(() => _importingBlank = true);
+    DxfBlankCandidates candidates;
+    try {
+      candidates = const DxfBlankReader().read(await file.readAsString());
+    } catch (_) {
+      // A binary DXF or a DWG renamed to .dxf will not decode as text.
+      candidates = const DxfBlankCandidates(
+        profiles: <DxfProfile>[],
+        units: DxfUnits.unspecified,
+      );
+    }
+    if (!mounted) return;
+    setState(() => _importingBlank = false);
+
+    final choice = await showDxfBlankPicker(
+      context,
+      candidates: candidates,
+      fileName: file.name,
+    );
+    if (choice == null || !mounted) return;
+    setState(() {
+      _blankWidthController.text = _blankInitial(choice.profile.widthMm);
+      _blankHeightController.text = _blankInitial(choice.profile.heightMm);
+      _blankSource = choice.provenance;
+      _handleChange();
+    });
+  }
+
+  double get _blankWidthMm =>
+      double.tryParse(_blankWidthController.text.trim()) ?? 0;
+  double get _blankHeightMm =>
+      double.tryParse(_blankHeightController.text.trim()) ?? 0;
+
   String _identitySignature() {
     final properties = _rootNodes
         .where((node) => node.kind == ItemVariationNodeKind.property)
@@ -2965,6 +3036,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _aliasController.dispose();
     _displayNameController.dispose();
     _photoUrlController.dispose();
+    _blankWidthController.dispose();
+    _blankHeightController.dispose();
     _cadFileKeyController.dispose();
     _cadFileNameController.dispose();
     for (final attachment in _attachments) {
@@ -3348,6 +3421,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               },
             ),
           ],
+          const SizedBox(height: 12),
+          _BlankSizeField(
+            width: _blankWidthController,
+            height: _blankHeightController,
+            readOnly: _isReadOnly,
+            source: _blankSource,
+            onImport: _isReadOnly ? null : _importBlankFromDxf,
+            importing: _importingBlank,
+          ),
           // Compact, flag-gated: adds no height for clients without the flag.
           if (FeatureFlags.isEnabled(FeatureKeys.catalogPurchaseItems))
             SwitchListTile.adaptive(
@@ -3825,7 +3907,39 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   children: [
                     Row(
                       children: [
-                        const Spacer(),
+                        if (_penPaperBaseline.hasSheetDimensions)
+                          Expanded(
+                            child: Text(
+                              _sheetDimensionLine(),
+                              style: const TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        else
+                          const Spacer(),
+                        if (_hasPenPaperBaseline)
+                          TextButton.icon(
+                            onPressed: () =>
+                                _openMasterDataDialog(_penPaperBaseline),
+                            icon: const Icon(
+                              Icons.open_in_full_rounded,
+                              size: 15,
+                            ),
+                            label: Text(
+                              _isReadOnly ? 'Open' : 'Edit in window',
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: SoftErpTheme.accent,
+                              textStyle: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
                         if (_hasPenPaperBaseline && !_isReadOnly)
                           TextButton.icon(
                             onPressed: _clearSampleData,
@@ -3863,7 +3977,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         showChrome: false,
                         pipelineId: _defaultPipelineId,
                         pipelineName: _selectedPipelineName,
-                        stageNames: _selectedPipelineStages,
+                        stageNodes: _selectedPipelineStageNodes,
                         // The material type is read off the name, so
                         // the table can say what was weighed.
                         itemName: _nameController.text.trim().isEmpty
@@ -4672,9 +4786,76 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
   }
 
-  void _addSampleData() {
+  /// The recorded sheet, in one line for the card — the window has the drawing.
+  String _sheetDimensionLine() {
+    final baseline = _penPaperBaseline;
+    final parts = <String>[
+      if (baseline.sheetWidthInches > 0 && baseline.sheetHeightInches > 0)
+        '${_trimDimension(baseline.sheetWidthInches)}" × '
+            '${_trimDimension(baseline.sheetHeightInches)}"'
+      else if (baseline.sheetWidthInches > 0)
+        '${_trimDimension(baseline.sheetWidthInches)}" wide'
+      else if (baseline.sheetHeightInches > 0)
+        '${_trimDimension(baseline.sheetHeightInches)}" tall',
+      if (baseline.sheetThicknessMm > 0)
+        '${_trimDimension(baseline.sheetThicknessMm)} mm',
+    ];
+    return 'Sheet ${parts.join(' · ')}';
+  }
+
+  static String _trimDimension(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toString();
+
+  /// Master Data is recorded in a window of its own: the sheet it came off,
+  /// drawn from the dimensions as they are typed, beside the figures it
+  /// produced. Cancelling leaves the card as it was.
+  Future<void> _addSampleData() => _openMasterDataDialog(
+    _hasPenPaperBaseline
+        ? _penPaperBaseline
+        : PenPaperBaseline.createDefaultForStages(_selectedPipelineStageNodes),
+  );
+
+  /// Everything in the catalogue that carries a blank size, so a sheet plan can
+  /// be a choice rather than four numbers copied off a drawing. Archived parts
+  /// are left out: nobody plans a sheet for a part that has been retired.
+  List<SheetPart> _plannableParts() {
+    final items = context.read<ItemsProvider>().items;
+    final parts = items
+        .where((item) => !item.isArchived && item.hasBlankSize)
+        .map(
+          (item) => SheetPart(
+            id: item.id,
+            name: item.displayName.trim().isEmpty
+                ? item.name
+                : item.displayName,
+            widthMm: item.blankWidthMm,
+            heightMm: item.blankHeightMm,
+          ),
+        )
+        .toList();
+    parts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return parts;
+  }
+
+  Future<void> _openMasterDataDialog(PenPaperBaseline seed) async {
+    final saved = await showMasterDataDialog(
+      context,
+      baseline: seed,
+      pipelineId: _defaultPipelineId,
+      pipelineName: _selectedPipelineName,
+      stageNodes: _selectedPipelineStageNodes,
+      parts: _plannableParts(),
+      readOnly: _isReadOnly,
+      // The material type is read off the name, so the sheet and the table can
+      // both say what was weighed.
+      itemName: _nameController.text.trim().isEmpty
+          ? (_item?.displayName ?? '')
+          : _nameController.text.trim(),
+    );
+    if (saved == null || !mounted) return;
     setState(() {
-      _penPaperBaseline = PenPaperBaseline.createDefault();
+      _penPaperBaseline = saved;
       _hasPenPaperBaseline = true;
       _handleChange();
     });
@@ -5009,6 +5190,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         dieIds: _selectedDieIds.toList(growable: false),
         developedForClientId: _developedForClientId,
         availableForPurchase: _availableForPurchase,
+        blankWidthMm: _blankWidthMm,
+        blankHeightMm: _blankHeightMm,
       );
       final createdItem = await itemsProvider.createItem(input);
       if (createdItem != null) {
@@ -5244,6 +5427,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               dieIds: _selectedDieIds.toList(growable: false),
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
+              blankWidthMm: _blankWidthMm,
+              blankHeightMm: _blankHeightMm,
               penPaperBaseline: _hasPenPaperBaseline ? _penPaperBaseline : null,
             ),
           )
@@ -5278,6 +5463,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               dieIds: _selectedDieIds.toList(growable: false),
               developedForClientId: _developedForClientId,
               availableForPurchase: _availableForPurchase,
+              blankWidthMm: _blankWidthMm,
+              blankHeightMm: _blankHeightMm,
               penPaperBaseline: _hasPenPaperBaseline ? _penPaperBaseline : null,
             ),
           );
@@ -5593,11 +5780,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   Future<void> _fetchPipelines() async {
     final provider = context.read<ItemsProvider>();
     final pipelines = await provider.fetchPipelineTemplates();
-    final stageLabels = await provider.fetchPipelineStageLabels();
+    final stageNodes = await provider.fetchPipelineStageNodes();
     if (mounted) {
       setState(() {
         _availablePipelines = pipelines;
-        _pipelineStageLabels = stageLabels;
+        _pipelineStageNodes = stageNodes;
       });
     }
   }
@@ -5643,10 +5830,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   /// Stages of the selected pipeline, for the sample baseline's granular mode.
-  List<String> get _selectedPipelineStages {
+  /// The selected pipeline's process nodes, in reading order. Stage-by-stage
+  /// Master Data titles a row per node, so this is what the rows are built from.
+  List<PipelineStageNode> get _selectedPipelineStageNodes {
     final id = _defaultPipelineId;
-    if (id == null || id.isEmpty) return const <String>[];
-    return _pipelineStageLabels[id] ?? const <String>[];
+    if (id == null || id.isEmpty) return const <PipelineStageNode>[];
+    return _pipelineStageNodes[id] ?? const <PipelineStageNode>[];
   }
 
   String _generateLeafDisplayName(_NodeDraft leaf) {
@@ -6611,6 +6800,177 @@ class _UnitConversionRow extends StatelessWidget {
 ///
 /// The weight only needs to be right relative to the other sections — it drives
 /// which column a card lands in, never how it is laid out.
+/// The blank this part is cut as — the size sheet planning needs before it can
+/// nest the part onto anything.
+///
+/// Two plain millimetre boxes rather than a unit-switching pair: a blank is
+/// quoted in millimetres on the floor whatever the sheet it comes off is bought
+/// in, and offering a choice here would invite the mix-up it looks like it
+/// prevents.
+class _BlankSizeField extends StatelessWidget {
+  const _BlankSizeField({
+    required this.width,
+    required this.height,
+    required this.readOnly,
+    this.source = '',
+    this.onImport,
+    this.importing = false,
+  });
+
+  final TextEditingController width;
+  final TextEditingController height;
+  final bool readOnly;
+
+  /// The drawing a size was read from, when it was not typed.
+  final String source;
+  final Future<void> Function()? onImport;
+  final bool importing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Blank size',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'for sheet planning',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            if (onImport != null)
+              TextButton.icon(
+                onPressed: importing ? null : () => onImport!(),
+                icon: importing
+                    ? const SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.file_open_outlined, size: 15),
+                label: Text(importing ? 'Reading…' : 'Import from DXF'),
+                style: TextButton.styleFrom(
+                  foregroundColor: SoftErpTheme.accent,
+                  textStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(child: _box(width, 'width')),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '×',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Expanded(child: _box(height, 'height')),
+            const SizedBox(width: 8),
+            const Text(
+              'mm',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        if (source.trim().isNotEmpty) ...[
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              const Icon(
+                Icons.link_rounded,
+                size: 13,
+                color: SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  'From $source',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _box(TextEditingController controller, String hint) {
+    return SizedBox(
+      height: 38,
+      child: TextField(
+        controller: controller,
+        readOnly: readOnly,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: <TextInputFormatter>[
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+        ],
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: SoftErpTheme.textPrimary,
+        ),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hint,
+          hintStyle: const TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 12.5,
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 9,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            borderSide: const BorderSide(color: SoftErpTheme.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            borderSide: const BorderSide(color: SoftErpTheme.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            borderSide: const BorderSide(color: SoftErpTheme.accent),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Says which of the four resolution steps produced the numbers in the Master
 /// Data card. A pipeline is shared across many variants, so "these numbers were
 /// measured here" and "these were copied from the pipeline" are different

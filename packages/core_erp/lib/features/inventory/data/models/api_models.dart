@@ -1313,8 +1313,9 @@ class EffectiveGroupSchemaDto {
       retiredPropertyDrafts:
           (json['retiredPropertyDrafts'] as List<dynamic>? ?? const [])
               .map(
-                (item) =>
-                    GroupPropertyDraftDto.fromJson(item as Map<String, dynamic>),
+                (item) => GroupPropertyDraftDto.fromJson(
+                  item as Map<String, dynamic>,
+                ),
               )
               .toList(growable: false),
       discardedPropertyKeys:

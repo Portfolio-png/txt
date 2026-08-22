@@ -20,9 +20,7 @@ const Map<String, String> _opLabels = {
 };
 
 // Legacy / reserved keys never shown in the editor.
-const Set<String> _hiddenKeys = {
-  'config.read',
-};
+const Set<String> _hiddenKeys = {'config.read'};
 
 // Map un-categorized capability keys to their logical parent modules.
 const Map<String, String> _capabilityToModule = {
@@ -56,8 +54,6 @@ const Map<String, IconData> _moduleIcons = {
   'dies': Icons.grid_view_outlined,
   'pipelines': Icons.account_tree_outlined,
 };
-
-
 
 /// Group definitions for super-clubbing related modules into unified Domain Suites.
 class _DomainSuite {
@@ -106,7 +102,8 @@ const List<_DomainSuite> _domainSuites = [
   _DomainSuite(
     id: 'people_security',
     title: 'People, Accounts & Security',
-    subtitle: 'Employee directory, clients, vendors, password resets & permissions',
+    subtitle:
+        'Employee directory, clients, vendors, password resets & permissions',
     icon: Icons.people_alt_outlined,
     modules: ['people', 'clients', 'vendors'],
     accentColor: Color(0xFF7C3AED), // Purple
@@ -176,7 +173,8 @@ class _PermissionTreeState extends State<PermissionTree> {
       // 2. If 'read' (View) is turned OFF, all child keys under that module are turned OFF.
       if (!value && moduleKey != null && op == 'read') {
         for (final k in _t.keys.toList()) {
-          if (k.startsWith('$moduleKey.') || _capabilityToModule[k] == moduleKey) {
+          if (k.startsWith('$moduleKey.') ||
+              _capabilityToModule[k] == moduleKey) {
             _t[k] = false;
           }
         }
@@ -203,7 +201,8 @@ class _PermissionTreeState extends State<PermissionTree> {
   }
 
   /// Calculates real-time security risk profile based on current active toggles.
-  ({String label, Color color, IconData icon, String explanation}) _calculateRiskProfile() {
+  ({String label, Color color, IconData icon, String explanation})
+  _calculateRiskProfile() {
     final activeCount = _t.values.where((v) => v).length;
     if (activeCount == 0) {
       return (
@@ -214,7 +213,8 @@ class _PermissionTreeState extends State<PermissionTree> {
       );
     }
 
-    final hasHighRiskPrivileges = _t['users.manage_permissions'] == true ||
+    final hasHighRiskPrivileges =
+        _t['users.manage_permissions'] == true ||
         _t['users.reset_password'] == true ||
         _t['delete_requests.review'] == true ||
         _t['users.update_status'] == true;
@@ -224,12 +224,17 @@ class _PermissionTreeState extends State<PermissionTree> {
         label: 'High Administrative Risk',
         color: const Color(0xFFDC2626), // Red
         icon: Icons.gavel_outlined,
-        explanation: 'Includes account security, password resets, or system governance access.',
+        explanation:
+            'Includes account security, password resets, or system governance access.',
       );
     }
 
-    final hasDelete = _t.keys.any((k) => k.endsWith('.delete') && _t[k] == true);
-    final hasUpdateOrCreate = _t.keys.any((k) => (k.endsWith('.update') || k.endsWith('.create')) && _t[k] == true);
+    final hasDelete = _t.keys.any(
+      (k) => k.endsWith('.delete') && _t[k] == true,
+    );
+    final hasUpdateOrCreate = _t.keys.any(
+      (k) => (k.endsWith('.update') || k.endsWith('.create')) && _t[k] == true,
+    );
 
     if (hasDelete || hasUpdateOrCreate) {
       return (
@@ -266,7 +271,8 @@ class _PermissionTreeState extends State<PermissionTree> {
         byModuleCoarse.putIfAbsent(module, () => {})[d.op!] = d;
       } else if (d.category == 'fine') {
         final keyEnding = d.key.split('.').last;
-        if (['create', 'read', 'update', 'delete'].contains(keyEnding) || d.op != null) {
+        if (['create', 'read', 'update', 'delete'].contains(keyEnding) ||
+            d.op != null) {
           final op = d.op ?? keyEnding;
           byModuleCoarse.putIfAbsent(module, () => {}).putIfAbsent(op, () => d);
         } else {
@@ -339,7 +345,10 @@ class _PermissionTreeState extends State<PermissionTree> {
                       decoration: InputDecoration(
                         hintText: 'Search permissions…',
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
                         prefixIcon: const Icon(Icons.search, size: 16),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
@@ -352,10 +361,13 @@ class _PermissionTreeState extends State<PermissionTree> {
                             : null,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.15)),
+                          borderSide: BorderSide(
+                            color: Colors.black.withValues(alpha: 0.15),
+                          ),
                         ),
                       ),
-                      onChanged: (q) => setState(() => _searchQuery = q.trim().toLowerCase()),
+                      onChanged: (q) =>
+                          setState(() => _searchQuery = q.trim().toLowerCase()),
                     ),
                   ),
                 ],
@@ -389,7 +401,9 @@ class _PermissionTreeState extends State<PermissionTree> {
   ) {
     // Collect all keys in this domain suite
     final suiteKeys = <String>[];
-    final activeModulesInSuite = suite.modules.where((m) => byModuleCoarse.containsKey(m)).toList();
+    final activeModulesInSuite = suite.modules
+        .where((m) => byModuleCoarse.containsKey(m))
+        .toList();
 
     for (final m in activeModulesInSuite) {
       suiteKeys.addAll((byModuleCoarse[m] ?? {}).values.map((d) => d.key));
@@ -399,9 +413,12 @@ class _PermissionTreeState extends State<PermissionTree> {
 
     // Check search filter match
     if (_searchQuery.isNotEmpty) {
-      final matchesSearch = suiteKeys.any((k) => k.toLowerCase().contains(_searchQuery)) ||
+      final matchesSearch =
+          suiteKeys.any((k) => k.toLowerCase().contains(_searchQuery)) ||
           suite.title.toLowerCase().contains(_searchQuery) ||
-          activeModulesInSuite.any((m) => (labels[m] ?? m).toLowerCase().contains(_searchQuery));
+          activeModulesInSuite.any(
+            (m) => (labels[m] ?? m).toLowerCase().contains(_searchQuery),
+          );
       if (!matchesSearch) return const SizedBox.shrink();
     }
 
@@ -434,7 +451,8 @@ class _PermissionTreeState extends State<PermissionTree> {
           // Suite Super-Card Header
           InkWell(
             onTap: () => setState(() {
-              if (!_collapsedSuites.remove(suite.id)) _collapsedSuites.add(suite.id);
+              if (!_collapsedSuites.remove(suite.id))
+                _collapsedSuites.add(suite.id);
             }),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
             child: Container(
@@ -475,7 +493,10 @@ class _PermissionTreeState extends State<PermissionTree> {
                             ),
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: activeCount > 0
                                     ? suite.accentColor.withValues(alpha: 0.15)
@@ -487,7 +508,9 @@ class _PermissionTreeState extends State<PermissionTree> {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: activeCount > 0 ? suite.accentColor : SoftErpTheme.textSecondary,
+                                  color: activeCount > 0
+                                      ? suite.accentColor
+                                      : SoftErpTheme.textSecondary,
                                 ),
                               ),
                             ),
@@ -504,14 +527,25 @@ class _PermissionTreeState extends State<PermissionTree> {
                     ),
                   ),
                   // Suite Quick Actions
-                  _quickButton('Full Suite', () => _quickSetSuite(suiteKeys, 'full', auth)),
+                  _quickButton(
+                    'Full Suite',
+                    () => _quickSetSuite(suiteKeys, 'full', auth),
+                  ),
                   const SizedBox(width: 4),
-                  _quickButton('View Only', () => _quickSetSuite(suiteKeys, 'view_only', auth)),
+                  _quickButton(
+                    'View Only',
+                    () => _quickSetSuite(suiteKeys, 'view_only', auth),
+                  ),
                   const SizedBox(width: 4),
-                  _quickButton('Clear', () => _quickSetSuite(suiteKeys, 'clear', auth)),
+                  _quickButton(
+                    'Clear',
+                    () => _quickSetSuite(suiteKeys, 'clear', auth),
+                  ),
                   const SizedBox(width: 8),
                   Icon(
-                    isCollapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                    isCollapsed
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_up,
                     color: SoftErpTheme.textSecondary,
                     size: 20,
                   ),
@@ -527,7 +561,11 @@ class _PermissionTreeState extends State<PermissionTree> {
               padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
-                  _buildSuiteTableHeader(activeModulesInSuite, byModuleCoarse, auth),
+                  _buildSuiteTableHeader(
+                    activeModulesInSuite,
+                    byModuleCoarse,
+                    auth,
+                  ),
                   for (final m in activeModulesInSuite)
                     _buildNestedModuleNode(
                       m,
@@ -587,7 +625,11 @@ class _PermissionTreeState extends State<PermissionTree> {
     return false;
   }
 
-  void _toggleModuleAll(Map<String, PermissionDescriptor> coarseOps, bool turnOn, AuthProvider auth) {
+  void _toggleModuleAll(
+    Map<String, PermissionDescriptor> coarseOps,
+    bool turnOn,
+    AuthProvider auth,
+  ) {
     setState(() {
       for (final d in coarseOps.values) {
         if (_isActorAuthorized(d.key, auth)) {
@@ -616,7 +658,11 @@ class _PermissionTreeState extends State<PermissionTree> {
             width: 140,
             child: Text(
               'Module Name',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: SoftErpTheme.textSecondary),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.bold,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
           ),
           SizedBox(
@@ -624,12 +670,21 @@ class _PermissionTreeState extends State<PermissionTree> {
             child: Tooltip(
               message: 'Toggle all CRUD permissions across suite',
               child: InkWell(
-                onTap: () => _toggleSuiteColumn(activeModulesInSuite, byModuleCoarse, null, auth),
+                onTap: () => _toggleSuiteColumn(
+                  activeModulesInSuite,
+                  byModuleCoarse,
+                  null,
+                  auth,
+                ),
                 borderRadius: BorderRadius.circular(4),
                 child: const Center(
                   child: Text(
                     'All',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: SoftErpTheme.accent),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: SoftErpTheme.accent,
+                    ),
                   ),
                 ),
               ),
@@ -641,12 +696,21 @@ class _PermissionTreeState extends State<PermissionTree> {
               child: Tooltip(
                 message: 'Toggle ${_opLabels[op]} column across suite',
                 child: InkWell(
-                  onTap: () => _toggleSuiteColumn(activeModulesInSuite, byModuleCoarse, op, auth),
+                  onTap: () => _toggleSuiteColumn(
+                    activeModulesInSuite,
+                    byModuleCoarse,
+                    op,
+                    auth,
+                  ),
                   borderRadius: BorderRadius.circular(4),
                   child: Center(
                     child: Text(
                       _opLabels[op] ?? op,
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: SoftErpTheme.accent),
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: SoftErpTheme.accent,
+                      ),
                     ),
                   ),
                 ),
@@ -656,7 +720,11 @@ class _PermissionTreeState extends State<PermissionTree> {
           const Expanded(
             child: Text(
               'Capabilities & Overrides',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: SoftErpTheme.textSecondary),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.bold,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
           ),
         ],
@@ -675,7 +743,9 @@ class _PermissionTreeState extends State<PermissionTree> {
     if (d == null) {
       return const SizedBox(
         width: 44,
-        child: Center(child: Text('-', style: TextStyle(color: Colors.grey, fontSize: 11))),
+        child: Center(
+          child: Text('-', style: TextStyle(color: Colors.grey, fontSize: 11)),
+        ),
       );
     }
 
@@ -693,7 +763,15 @@ class _PermissionTreeState extends State<PermissionTree> {
             visualDensity: VisualDensity.compact,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             activeColor: themeColor,
-            onChanged: canEdit ? (v) => _setOne(d.key, v == true, auth, moduleKey: moduleKey, op: op) : null,
+            onChanged: canEdit
+                ? (v) => _setOne(
+                    d.key,
+                    v == true,
+                    auth,
+                    moduleKey: moduleKey,
+                    op: op,
+                  )
+                : null,
           ),
         ),
       ),
@@ -761,23 +839,48 @@ class _PermissionTreeState extends State<PermissionTree> {
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       activeColor: themeColor,
-                      onChanged: (v) => _toggleModuleAll(coarseOps, v == true, auth),
+                      onChanged: (v) =>
+                          _toggleModuleAll(coarseOps, v == true, auth),
                     ),
                   ),
                 ),
               ),
 
               // 3. Create Checkbox (Width 44)
-              _buildOpColumnCheckbox(coarseOps, 'create', moduleKey, themeColor, auth),
+              _buildOpColumnCheckbox(
+                coarseOps,
+                'create',
+                moduleKey,
+                themeColor,
+                auth,
+              ),
 
               // 4. View Checkbox (Width 44)
-              _buildOpColumnCheckbox(coarseOps, 'read', moduleKey, themeColor, auth),
+              _buildOpColumnCheckbox(
+                coarseOps,
+                'read',
+                moduleKey,
+                themeColor,
+                auth,
+              ),
 
               // 5. Update Checkbox (Width 44)
-              _buildOpColumnCheckbox(coarseOps, 'update', moduleKey, themeColor, auth),
+              _buildOpColumnCheckbox(
+                coarseOps,
+                'update',
+                moduleKey,
+                themeColor,
+                auth,
+              ),
 
               // 6. Delete Checkbox (Width 44)
-              _buildOpColumnCheckbox(coarseOps, 'delete', moduleKey, themeColor, auth),
+              _buildOpColumnCheckbox(
+                coarseOps,
+                'delete',
+                moduleKey,
+                themeColor,
+                auth,
+              ),
 
               const SizedBox(width: 12),
 
@@ -788,9 +891,21 @@ class _PermissionTreeState extends State<PermissionTree> {
                   runSpacing: 4,
                   children: [
                     for (final f in fineKeys)
-                      _buildCapabilityChip(f, moduleKey, true, themeColor, auth),
+                      _buildCapabilityChip(
+                        f,
+                        moduleKey,
+                        true,
+                        themeColor,
+                        auth,
+                      ),
                     for (final c in caps)
-                      _buildCapabilityChip(c, moduleKey, true, themeColor, auth),
+                      _buildCapabilityChip(
+                        c,
+                        moduleKey,
+                        true,
+                        themeColor,
+                        auth,
+                      ),
                   ],
                 ),
               ),
@@ -798,7 +913,8 @@ class _PermissionTreeState extends State<PermissionTree> {
           ),
 
           // 8. Specific Record Level Permissions (Hierarchical Groups -> Items, Clients, Vendors, etc.)
-          if (widget.grants != null && _recordModules.containsKey(moduleKey)) ...[
+          if (widget.grants != null &&
+              _recordModules.containsKey(moduleKey)) ...[
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.only(left: 6),
@@ -813,8 +929,6 @@ class _PermissionTreeState extends State<PermissionTree> {
       ),
     );
   }
-
-
 
   Widget _quickButton(String label, VoidCallback onPressed) {
     return InkWell(
@@ -883,8 +997,12 @@ class _PermissionTreeState extends State<PermissionTree> {
                   d.label,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: isOn && isReadOn ? FontWeight.w700 : FontWeight.w500,
-                    color: isOn && isReadOn ? themeColor : SoftErpTheme.textPrimary,
+                    fontWeight: isOn && isReadOn
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: isOn && isReadOn
+                        ? themeColor
+                        : SoftErpTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -897,7 +1015,12 @@ class _PermissionTreeState extends State<PermissionTree> {
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     activeColor: themeColor,
                     onChanged: isEnabled
-                        ? (v) => _setOne(d.key, v == true, auth, moduleKey: moduleKey)
+                        ? (v) => _setOne(
+                            d.key,
+                            v == true,
+                            auth,
+                            moduleKey: moduleKey,
+                          )
                         : null,
                   ),
                 ),
@@ -981,9 +1104,10 @@ class _RecordGrantsSectionState extends State<_RecordGrantsSection> {
 
   Future<void> _fetch() async {
     setState(() => _loading = true);
-    final opts = await context
-        .read<AuthProvider>()
-        .getRecordOptions(_module, query: _searchCtrl.text);
+    final opts = await context.read<AuthProvider>().getRecordOptions(
+      _module,
+      query: _searchCtrl.text,
+    );
     if (!mounted) return;
     setState(() {
       _options = opts;
@@ -1120,14 +1244,17 @@ class _RecordGrantsSectionState extends State<_RecordGrantsSection> {
                       children: [
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(o.label,
-                              style: const TextStyle(fontSize: 13)),
+                          child: Text(
+                            o.label,
+                            style: const TextStyle(fontSize: 13),
+                          ),
                         ),
                         for (final op in _recordOps)
                           Center(
                             child: Checkbox(
-                              value: widget.grants
-                                  .containsKey('$_module:${o.id}:$op'),
+                              value: widget.grants.containsKey(
+                                '$_module:${o.id}:$op',
+                              ),
                               visualDensity: VisualDensity.compact,
                               materialTapTargetSize:
                                   MaterialTapTargetSize.shrinkWrap,
@@ -1189,7 +1316,8 @@ class _ModuleRecordGrantsTree extends StatefulWidget {
   final VoidCallback onChanged;
 
   @override
-  State<_ModuleRecordGrantsTree> createState() => _ModuleRecordGrantsTreeState();
+  State<_ModuleRecordGrantsTree> createState() =>
+      _ModuleRecordGrantsTreeState();
 }
 
 class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
@@ -1207,7 +1335,9 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
 
   Future<void> _loadAsyncOptions() async {
     setState(() => _loading = true);
-    final opts = await context.read<AuthProvider>().getRecordOptions(widget.moduleKey);
+    final opts = await context.read<AuthProvider>().getRecordOptions(
+      widget.moduleKey,
+    );
     if (!mounted) return;
     setState(() {
       _asyncOptions = opts;
@@ -1215,7 +1345,13 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
     });
   }
 
-  void _toggleGrant(String entityType, String entityId, String op, String label, bool on) {
+  void _toggleGrant(
+    String entityType,
+    String entityId,
+    String op,
+    String label,
+    bool on,
+  ) {
     final key = '$entityType:$entityId:$op';
     setState(() {
       if (on) {
@@ -1238,7 +1374,15 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
     final grants = widget.grants;
 
     // Active grants count for this module
-    final activeCount = grants.values.where((g) => g.entityType == moduleKey || (moduleKey == 'items' && g.entityType == 'groups') || (moduleKey == 'inventory' && (g.entityType == 'items' || g.entityType == 'groups'))).length;
+    final activeCount = grants.values
+        .where(
+          (g) =>
+              g.entityType == moduleKey ||
+              (moduleKey == 'items' && g.entityType == 'groups') ||
+              (moduleKey == 'inventory' &&
+                  (g.entityType == 'items' || g.entityType == 'groups')),
+        )
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1261,13 +1405,18 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
-                    color: activeCount > 0 ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+                    color: activeCount > 0
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.textSecondary,
                   ),
                 ),
                 if (activeCount > 0) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: SoftErpTheme.accent.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
@@ -1307,7 +1456,9 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
     final groups = groupsProv.groups;
     final allItems = itemsProv.items;
 
-    final ungrouped = allItems.where((i) => !groups.any((g) => g.id == i.groupId)).toList();
+    final ungrouped = allItems
+        .where((i) => !groups.any((g) => g.id == i.groupId))
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1315,7 +1466,10 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
         _buildTableHeader(),
         const SizedBox(height: 6),
         if (groups.isEmpty && allItems.isEmpty)
-          const Text('No inventory groups or items found.', style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary)),
+          const Text(
+            'No inventory groups or items found.',
+            style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+          ),
         for (final g in groups) ...[
           _buildGroupRow(g, allItems.where((i) => i.groupId == g.id).toList()),
           const SizedBox(height: 4),
@@ -1323,7 +1477,14 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
         if (ungrouped.isNotEmpty) ...[
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 4),
-            child: Text('Ungrouped Items', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: SoftErpTheme.textSecondary)),
+            child: Text(
+              'Ungrouped Items',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
           ),
           for (final item in ungrouped) _buildItemRow(item),
         ],
@@ -1331,7 +1492,10 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
     );
   }
 
-  Widget _buildGroupRow(GroupDefinition group, List<ItemDefinition> groupItems) {
+  Widget _buildGroupRow(
+    GroupDefinition group,
+    List<ItemDefinition> groupItems,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.all(6),
@@ -1345,12 +1509,19 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
         children: [
           Row(
             children: [
-              const Icon(Icons.folder_outlined, size: 14, color: Color(0xFF059669)),
+              const Icon(
+                Icons.folder_outlined,
+                size: 14,
+                color: Color(0xFF059669),
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   group.name,
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               _buildOpCheckboxes('groups', '${group.id}', group.name),
@@ -1361,9 +1532,7 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
             Padding(
               padding: const EdgeInsets.only(left: 12),
               child: Column(
-                children: [
-                  for (final item in groupItems) _buildItemRow(item),
-                ],
+                children: [for (final item in groupItems) _buildItemRow(item)],
               ),
             ),
           ],
@@ -1373,17 +1542,26 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
   }
 
   Widget _buildItemRow(ItemDefinition item) {
-    final title = item.displayName.isNotEmpty ? item.displayName : 'Item #${item.id}';
+    final title = item.displayName.isNotEmpty
+        ? item.displayName
+        : 'Item #${item.id}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          const Icon(Icons.category_outlined, size: 13, color: SoftErpTheme.textSecondary),
+          const Icon(
+            Icons.category_outlined,
+            size: 13,
+            color: SoftErpTheme.textSecondary,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(fontSize: 11, color: SoftErpTheme.textPrimary),
+              style: const TextStyle(
+                fontSize: 11,
+                color: SoftErpTheme.textPrimary,
+              ),
             ),
           ),
           _buildOpCheckboxes('items', '${item.id}', title),
@@ -1398,15 +1576,25 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
         height: 24,
         child: Row(
           children: [
-            SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             SizedBox(width: 8),
-            Text('Loading live records...', style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary)),
+            Text(
+              'Loading live records...',
+              style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+            ),
           ],
         ),
       );
     }
     if (_asyncOptions.isEmpty) {
-      return const Text('No records found for this module.', style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary));
+      return const Text(
+        'No records found for this module.',
+        style: TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+      );
     }
     return Column(
       children: [
@@ -1420,7 +1608,10 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
                 Expanded(
                   child: Text(
                     opt.label,
-                    style: const TextStyle(fontSize: 11, color: SoftErpTheme.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: SoftErpTheme.textPrimary,
+                    ),
                   ),
                 ),
                 _buildOpCheckboxes(widget.moduleKey, opt.id, opt.label),
@@ -1483,13 +1674,8 @@ class _ModuleRecordGrantsTreeState extends State<_ModuleRecordGrantsTree> {
                   value: widget.grants.containsKey('$entityType:$entityId:$op'),
                   visualDensity: VisualDensity.compact,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (v) => _toggleGrant(
-                    entityType,
-                    entityId,
-                    op,
-                    label,
-                    v == true,
-                  ),
+                  onChanged: (v) =>
+                      _toggleGrant(entityType, entityId, op, label, v == true),
                 ),
               ),
             ),
@@ -1531,7 +1717,9 @@ Future<void> showPermissionsEditor(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setLocal) {
-        final templates = dialogContext.watch<AuthProvider>().permissionTemplates;
+        final templates = dialogContext
+            .watch<AuthProvider>()
+            .permissionTemplates;
         final auth = dialogContext.watch<AuthProvider>();
         final isDesktopAllowed = toggles['login.desktop'] ?? false;
         final isMobileAllowed = toggles['login.mobile'] ?? false;
@@ -1543,18 +1731,27 @@ Future<void> showPermissionsEditor(
               const Spacer(),
               // Overall security badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: SoftErpTheme.shellSurface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black.withValues(alpha: 0.1)),
+                  border: Border.all(
+                    color: Colors.black.withValues(alpha: 0.1),
+                  ),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       isDesktopAllowed && isMobileAllowed
                           ? Icons.devices
-                          : (isDesktopAllowed ? Icons.desktop_windows : (isMobileAllowed ? Icons.phone_android : Icons.portable_wifi_off)),
+                          : (isDesktopAllowed
+                                ? Icons.desktop_windows
+                                : (isMobileAllowed
+                                      ? Icons.phone_android
+                                      : Icons.portable_wifi_off)),
                       size: 14,
                       color: SoftErpTheme.accent,
                     ),
@@ -1562,7 +1759,11 @@ Future<void> showPermissionsEditor(
                     Text(
                       isDesktopAllowed && isMobileAllowed
                           ? 'Desktop + Mobile'
-                          : (isDesktopAllowed ? 'Desktop Only' : (isMobileAllowed ? 'Mobile Only' : 'No Access Enabled')),
+                          : (isDesktopAllowed
+                                ? 'Desktop Only'
+                                : (isMobileAllowed
+                                      ? 'Mobile Only'
+                                      : 'No Access Enabled')),
                       style: const TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.bold,
@@ -1597,8 +1798,10 @@ Future<void> showPermissionsEditor(
                           isSelected: selectedPlatformView == 'desktop',
                           isAllowed: isDesktopAllowed,
                           color: const Color(0xFF2563EB),
-                          onTap: () => setLocal(() => selectedPlatformView = 'desktop'),
-                          onToggleLogin: (v) => setLocal(() => toggles['login.desktop'] = v),
+                          onTap: () =>
+                              setLocal(() => selectedPlatformView = 'desktop'),
+                          onToggleLogin: (v) =>
+                              setLocal(() => toggles['login.desktop'] = v),
                         ),
 
                         const SizedBox(height: 10),
@@ -1610,8 +1813,10 @@ Future<void> showPermissionsEditor(
                           isSelected: selectedPlatformView == 'mobile',
                           isAllowed: isMobileAllowed,
                           color: const Color(0xFF7C3AED),
-                          onTap: () => setLocal(() => selectedPlatformView = 'mobile'),
-                          onToggleLogin: (v) => setLocal(() => toggles['login.mobile'] = v),
+                          onTap: () =>
+                              setLocal(() => selectedPlatformView = 'mobile'),
+                          onToggleLogin: (v) =>
+                              setLocal(() => toggles['login.mobile'] = v),
                         ),
 
                         const Divider(height: 24),
@@ -1622,7 +1827,10 @@ Future<void> showPermissionsEditor(
                         if (templates.isEmpty)
                           const Text(
                             'No custom presets created yet.',
-                            style: TextStyle(fontSize: 11.5, color: SoftErpTheme.textSecondary),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: SoftErpTheme.textSecondary,
+                            ),
                           )
                         else
                           Wrap(
@@ -1633,7 +1841,9 @@ Future<void> showPermissionsEditor(
                                 ActionChip(
                                   visualDensity: VisualDensity.compact,
                                   label: Text(
-                                    t.isSystemDefault ? '${t.name} (Role)' : t.name,
+                                    t.isSystemDefault
+                                        ? '${t.name} (Role)'
+                                        : t.name,
                                     style: const TextStyle(fontSize: 11),
                                   ),
                                   onPressed: () => setLocal(() {
@@ -1651,12 +1861,24 @@ Future<void> showPermissionsEditor(
                             Expanded(
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
                                   visualDensity: VisualDensity.compact,
                                 ),
-                                onPressed: () => _saveCurrentAsPresetDialog(dialogContext, toggles),
-                                icon: const Icon(Icons.bookmark_add_outlined, size: 14),
-                                label: const Text('Save Preset', style: TextStyle(fontSize: 11)),
+                                onPressed: () => _saveCurrentAsPresetDialog(
+                                  dialogContext,
+                                  toggles,
+                                ),
+                                icon: const Icon(
+                                  Icons.bookmark_add_outlined,
+                                  size: 14,
+                                ),
+                                label: const Text(
+                                  'Save Preset',
+                                  style: TextStyle(fontSize: 11),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -1684,7 +1906,11 @@ Future<void> showPermissionsEditor(
                           // DESKTOP ERP PERMISSIONS MAIN VIEW
                           Row(
                             children: [
-                              const Icon(Icons.desktop_windows, size: 18, color: Color(0xFF2563EB)),
+                              const Icon(
+                                Icons.desktop_windows,
+                                size: 18,
+                                color: Color(0xFF2563EB),
+                              ),
                               const SizedBox(width: 8),
                               const Text(
                                 'Desktop & Web ERP Permissions Matrix',
@@ -1696,11 +1922,15 @@ Future<void> showPermissionsEditor(
                               ),
                               const Spacer(),
                               Text(
-                                isDesktopAllowed ? 'Desktop Login Enabled' : 'Desktop Login Disabled',
+                                isDesktopAllowed
+                                    ? 'Desktop Login Enabled'
+                                    : 'Desktop Login Disabled',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  color: isDesktopAllowed ? Colors.green.shade800 : Colors.red.shade800,
+                                  color: isDesktopAllowed
+                                      ? Colors.green.shade800
+                                      : Colors.red.shade800,
                                 ),
                               ),
                             ],
@@ -1717,7 +1947,11 @@ Future<void> showPermissionsEditor(
                           // MOBILE APP PERMISSIONS MAIN VIEW
                           Row(
                             children: [
-                              const Icon(Icons.phone_android, size: 18, color: Color(0xFF7C3AED)),
+                              const Icon(
+                                Icons.phone_android,
+                                size: 18,
+                                color: Color(0xFF7C3AED),
+                              ),
                               const SizedBox(width: 8),
                               const Text(
                                 'Challan Mobile App Permissions Matrix',
@@ -1729,11 +1963,15 @@ Future<void> showPermissionsEditor(
                               ),
                               const Spacer(),
                               Text(
-                                isMobileAllowed ? 'Mobile PIN Login Enabled' : 'Mobile PIN Login Disabled',
+                                isMobileAllowed
+                                    ? 'Mobile PIN Login Enabled'
+                                    : 'Mobile PIN Login Disabled',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  color: isMobileAllowed ? Colors.purple.shade800 : Colors.red.shade800,
+                                  color: isMobileAllowed
+                                      ? Colors.purple.shade800
+                                      : Colors.red.shade800,
                                 ),
                               ),
                             ],
@@ -1783,7 +2021,17 @@ Future<void> showPermissionsEditor(
                           Opacity(
                             opacity: isMobileAllowed ? 1.0 : 0.45,
                             child: PermissionTree(
-                              descriptors: descriptors.where((d) => ['challans', 'inventory', 'orders', 'action_center', 'items'].contains(d.module)).toList(),
+                              descriptors: descriptors
+                                  .where(
+                                    (d) => [
+                                      'challans',
+                                      'inventory',
+                                      'orders',
+                                      'action_center',
+                                      'items',
+                                    ].contains(d.module),
+                                  )
+                                  .toList(),
                               toggles: toggles,
                               grants: recordGrants,
                               onChanged: () => setLocal(() {}),
@@ -1810,11 +2058,13 @@ Future<void> showPermissionsEditor(
                 );
                 if (!ok1) return;
                 final nextStates = states
-                    .map((s) => UserPermissionState(
-                          key: s.key,
-                          allowed: toggles[s.key] ?? s.allowed,
-                          source: s.source,
-                        ))
+                    .map(
+                      (s) => UserPermissionState(
+                        key: s.key,
+                        allowed: toggles[s.key] ?? s.allowed,
+                        source: s.source,
+                      ),
+                    )
                     .toList(growable: false);
                 final ok = await auth.updateUserPermissions(
                   userId: userId,
@@ -1823,11 +2073,13 @@ Future<void> showPermissionsEditor(
                 await auth.updateUserRecordPermissions(
                   userId,
                   recordGrants.values
-                      .map((g) => {
-                            'entityType': g.entityType,
-                            'entityId': g.entityId,
-                            'op': g.op,
-                          })
+                      .map(
+                        (g) => {
+                          'entityType': g.entityType,
+                          'entityId': g.entityId,
+                          'op': g.op,
+                        },
+                      )
                       .toList(growable: false),
                 );
                 if (dialogContext.mounted && ok) {
@@ -1872,7 +2124,9 @@ Future<void> _saveCurrentAsPresetDialog(
             const SizedBox(height: 10),
             TextField(
               controller: descCtrl,
-              decoration: const InputDecoration(labelText: 'Description (optional)'),
+              decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+              ),
             ),
           ],
         ),
@@ -1899,7 +2153,9 @@ Future<void> _saveCurrentAsPresetDialog(
               Navigator.of(dialogContext).pop();
             }
             showGlobalToast(
-              ok ? 'Preset created.' : (auth.errorMessage ?? 'Failed to create preset.'),
+              ok
+                  ? 'Preset created.'
+                  : (auth.errorMessage ?? 'Failed to create preset.'),
               kind: ok ? AppToastKind.success : AppToastKind.error,
             );
           },
@@ -1960,25 +2216,34 @@ Future<void> showPresetManager(BuildContext context) async {
                                 style: const TextStyle(fontSize: 11.5),
                               ),
                               trailing: t.isSystemDefault
-                                  ? const Text('locked',
+                                  ? const Text(
+                                      'locked',
                                       style: TextStyle(
-                                          fontSize: 11,
-                                          color: SoftErpTheme.textSecondary))
+                                        fontSize: 11,
+                                        color: SoftErpTheme.textSecondary,
+                                      ),
+                                    )
                                   : Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
                                           tooltip: 'Edit',
-                                          icon: const Icon(Icons.edit_outlined,
-                                              size: 18),
+                                          icon: const Icon(
+                                            Icons.edit_outlined,
+                                            size: 18,
+                                          ),
                                           onPressed: () => _showPresetEditor(
-                                              dialogContext,
-                                              template: t),
+                                            dialogContext,
+                                            template: t,
+                                          ),
                                         ),
                                         IconButton(
                                           tooltip: 'Delete',
-                                          icon: const Icon(Icons.delete_outline,
-                                              size: 18, color: Color(0xFFD64545)),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                            color: Color(0xFFD64545),
+                                          ),
                                           onPressed: () async {
                                             final ok = await auth
                                                 .deletePermissionPreset(t.id);
@@ -1986,7 +2251,7 @@ Future<void> showPresetManager(BuildContext context) async {
                                               ok
                                                   ? 'Preset deleted.'
                                                   : (auth.errorMessage ??
-                                                      'Delete failed.'),
+                                                        'Delete failed.'),
                                               kind: ok
                                                   ? AppToastKind.success
                                                   : AppToastKind.error,
@@ -2080,8 +2345,11 @@ Future<void> _showPresetEditor(
                               isSelected: selectedPlatformView == 'desktop',
                               isAllowed: toggles['login.desktop'] ?? false,
                               color: const Color(0xFF2563EB),
-                              onTap: () => setLocal(() => selectedPlatformView = 'desktop'),
-                              onToggleLogin: (v) => setLocal(() => toggles['login.desktop'] = v),
+                              onTap: () => setLocal(
+                                () => selectedPlatformView = 'desktop',
+                              ),
+                              onToggleLogin: (v) =>
+                                  setLocal(() => toggles['login.desktop'] = v),
                             ),
                             const SizedBox(height: 10),
                             _sidebarPlatformCard(
@@ -2090,8 +2358,11 @@ Future<void> _showPresetEditor(
                               isSelected: selectedPlatformView == 'mobile',
                               isAllowed: toggles['login.mobile'] ?? false,
                               color: const Color(0xFF7C3AED),
-                              onTap: () => setLocal(() => selectedPlatformView = 'mobile'),
-                              onToggleLogin: (v) => setLocal(() => toggles['login.mobile'] = v),
+                              onTap: () => setLocal(
+                                () => selectedPlatformView = 'mobile',
+                              ),
+                              onToggleLogin: (v) =>
+                                  setLocal(() => toggles['login.mobile'] = v),
                             ),
                           ],
                         ),
@@ -2107,7 +2378,11 @@ Future<void> _showPresetEditor(
                             if (selectedPlatformView == 'desktop') ...[
                               Row(
                                 children: [
-                                  const Icon(Icons.desktop_windows, size: 18, color: Color(0xFF2563EB)),
+                                  const Icon(
+                                    Icons.desktop_windows,
+                                    size: 18,
+                                    color: Color(0xFF2563EB),
+                                  ),
                                   const SizedBox(width: 8),
                                   const Text(
                                     'Desktop & Web ERP Permissions Matrix',
@@ -2119,11 +2394,15 @@ Future<void> _showPresetEditor(
                                   ),
                                   const Spacer(),
                                   Text(
-                                    (toggles['login.desktop'] ?? false) ? 'Desktop Login Enabled' : 'Desktop Login Disabled',
+                                    (toggles['login.desktop'] ?? false)
+                                        ? 'Desktop Login Enabled'
+                                        : 'Desktop Login Disabled',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: (toggles['login.desktop'] ?? false) ? Colors.green.shade800 : Colors.red.shade800,
+                                      color: (toggles['login.desktop'] ?? false)
+                                          ? Colors.green.shade800
+                                          : Colors.red.shade800,
                                     ),
                                   ),
                                 ],
@@ -2137,7 +2416,11 @@ Future<void> _showPresetEditor(
                             ] else ...[
                               Row(
                                 children: [
-                                  const Icon(Icons.phone_android, size: 18, color: Color(0xFF7C3AED)),
+                                  const Icon(
+                                    Icons.phone_android,
+                                    size: 18,
+                                    color: Color(0xFF7C3AED),
+                                  ),
                                   const SizedBox(width: 8),
                                   const Text(
                                     'Challan Mobile App Permissions Matrix',
@@ -2149,21 +2432,35 @@ Future<void> _showPresetEditor(
                                   ),
                                   const Spacer(),
                                   Text(
-                                    (toggles['login.mobile'] ?? false) ? 'Mobile PIN Login Enabled' : 'Mobile PIN Login Disabled',
+                                    (toggles['login.mobile'] ?? false)
+                                        ? 'Mobile PIN Login Enabled'
+                                        : 'Mobile PIN Login Disabled',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: (toggles['login.mobile'] ?? false) ? Colors.purple.shade800 : Colors.red.shade800,
+                                      color: (toggles['login.mobile'] ?? false)
+                                          ? Colors.purple.shade800
+                                          : Colors.red.shade800,
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 10),
                               Opacity(
-                                opacity: (toggles['login.mobile'] ?? false) ? 1.0 : 0.45,
+                                opacity: (toggles['login.mobile'] ?? false)
+                                    ? 1.0
+                                    : 0.45,
                                 child: PermissionTree(
                                   descriptors: descriptors
-                                      .where((d) => ['challans', 'inventory', 'orders', 'action_center', 'items'].contains(d.module))
+                                      .where(
+                                        (d) => [
+                                          'challans',
+                                          'inventory',
+                                          'orders',
+                                          'action_center',
+                                          'items',
+                                        ].contains(d.module),
+                                      )
                                       .toList(),
                                   toggles: toggles,
                                   onChanged: () => setLocal(() {}),
@@ -2189,7 +2486,10 @@ Future<void> _showPresetEditor(
             onPressed: () async {
               final name = nameCtrl.text.trim();
               if (name.isEmpty) {
-                showGlobalToast('A name is required.', kind: AppToastKind.error);
+                showGlobalToast(
+                  'A name is required.',
+                  kind: AppToastKind.error,
+                );
                 return;
               }
               final keys = toggles.entries
@@ -2241,7 +2541,9 @@ Widget _mobilePresetChip({
       decoration: BoxDecoration(
         color: (color ?? SoftErpTheme.accent).withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: (color ?? SoftErpTheme.accent).withValues(alpha: 0.3)),
+        border: Border.all(
+          color: (color ?? SoftErpTheme.accent).withValues(alpha: 0.3),
+        ),
       ),
       child: Text(
         label,
@@ -2254,8 +2556,6 @@ Widget _mobilePresetChip({
     ),
   );
 }
-
-
 
 Widget _sidebarPlatformCard({
   required String title,
@@ -2273,7 +2573,9 @@ Widget _sidebarPlatformCard({
       duration: const Duration(milliseconds: 150),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isSelected ? color.withValues(alpha: 0.08) : SoftErpTheme.shellSurface,
+        color: isSelected
+            ? color.withValues(alpha: 0.08)
+            : SoftErpTheme.shellSurface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isSelected ? color : Colors.black.withValues(alpha: 0.1),
@@ -2305,7 +2607,10 @@ Widget _sidebarPlatformCard({
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 11, color: SoftErpTheme.textSecondary),
+            style: const TextStyle(
+              fontSize: 11,
+              color: SoftErpTheme.textSecondary,
+            ),
           ),
           const SizedBox(height: 6),
           Container(
@@ -2334,7 +2639,9 @@ Widget _sidebarPlatformCard({
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: isAllowed ? Colors.green.shade800 : Colors.grey.shade700,
+                    color: isAllowed
+                        ? Colors.green.shade800
+                        : Colors.grey.shade700,
                   ),
                 ),
               ],

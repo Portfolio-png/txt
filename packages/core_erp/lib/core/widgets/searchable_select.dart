@@ -63,7 +63,10 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   final overlayBox = overlayContext.findRenderObject() as RenderBox?;
   final anchorBox = context.findRenderObject() as RenderBox?;
   final isTablet = MediaQuery.of(context).size.width >= 600;
-  if (anchorRect == null && overlayBox != null && anchorBox != null && isTablet) {
+  if (anchorRect == null &&
+      overlayBox != null &&
+      anchorBox != null &&
+      isTablet) {
     final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlayBox);
     anchorRect = topLeft & anchorBox.size;
   }

@@ -552,11 +552,8 @@ class AuthApi {
         .whereType<Map<String, dynamic>>()
         .map(GlobalAuditLog.fromJson)
         .toList(growable: false);
-    
-    return (
-      logs: logs,
-      total: payload['total'] as int? ?? logs.length,
-    );
+
+    return (logs: logs, total: payload['total'] as int? ?? logs.length);
   }
 
   /// Track feed for one master record (the "Track" tab on a master).
@@ -565,9 +562,9 @@ class AuthApi {
     String entityId, {
     int limit = 200,
   }) async {
-    final uri = Uri.parse('$baseUrl/api/track/$entityType/$entityId').replace(
-      queryParameters: {'limit': '$limit'},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/api/track/$entityType/$entityId',
+    ).replace(queryParameters: {'limit': '$limit'});
     final response = await _client.get(uri, headers: _authHeaders);
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||
@@ -585,9 +582,9 @@ class AuthApi {
 
   /// Track feed for one person — everything they changed across the app.
   Future<List<TrackEvent>> getActorTrack(int userId, {int limit = 200}) async {
-    final uri = Uri.parse('$baseUrl/api/track/actor/$userId').replace(
-      queryParameters: {'limit': '$limit'},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/api/track/actor/$userId',
+    ).replace(queryParameters: {'limit': '$limit'});
     final response = await _client.get(uri, headers: _authHeaders);
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||
@@ -882,4 +879,3 @@ class AuthApi {
     return {'Content-Type': 'application/json', ..._authHeaders};
   }
 }
-

@@ -206,14 +206,13 @@ class PipelineMasterDataRoster {
   factory PipelineMasterDataRoster.fromJson(Map<String, dynamic> json) {
     return PipelineMasterDataRoster(
       pipelineId: json['pipelineId']?.toString() ?? '',
-      entries:
-          (json['entries'] as List<dynamic>? ?? const <dynamic>[])
-              .whereType<Map>()
-              .map(
-                (entry) =>
-                    ItemMasterDataRecord.fromJson(entry.cast<String, dynamic>()),
-              )
-              .toList(growable: false),
+      entries: (json['entries'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map>()
+          .map(
+            (entry) =>
+                ItemMasterDataRecord.fromJson(entry.cast<String, dynamic>()),
+          )
+          .toList(growable: false),
       measuredCount: (json['measuredCount'] as num?)?.toInt() ?? 0,
       inheritedCount: (json['inheritedCount'] as num?)?.toInt() ?? 0,
       blankCount: (json['blankCount'] as num?)?.toInt() ?? 0,

@@ -219,7 +219,8 @@ class SocketService {
 
   void _scheduleReconnect(String baseUrl) {
     _client?.close();
-    if (!_isConnected || _currentToken == null || _currentToken!.isEmpty) return;
+    if (!_isConnected || _currentToken == null || _currentToken!.isEmpty)
+      return;
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 3), () {

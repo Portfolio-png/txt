@@ -5,7 +5,11 @@ import 'package:http/http.dart' as http;
 /// A machine or die the item editor can link to, reduced to what the picker
 /// needs.
 class ItemLinkOption {
-  const ItemLinkOption({required this.id, required this.label, this.subtitle = ''});
+  const ItemLinkOption({
+    required this.id,
+    required this.label,
+    this.subtitle = '',
+  });
 
   final String id;
   final String label;
@@ -36,15 +40,18 @@ class ItemLinkOptionsService {
       ];
     }
     final rows = await _fetchList('/api/machines', 'machines');
-    return rows.map((row) {
-      final name = (row['name'] as String? ?? '').trim();
-      final assetId = (row['assetId'] as String? ?? '').trim();
-      return ItemLinkOption(
-        id: row['id']?.toString() ?? '',
-        label: name.isNotEmpty ? name : assetId,
-        subtitle: assetId,
-      );
-    }).where((option) => option.id.isNotEmpty).toList(growable: false);
+    return rows
+        .map((row) {
+          final name = (row['name'] as String? ?? '').trim();
+          final assetId = (row['assetId'] as String? ?? '').trim();
+          return ItemLinkOption(
+            id: row['id']?.toString() ?? '',
+            label: name.isNotEmpty ? name : assetId,
+            subtitle: assetId,
+          );
+        })
+        .where((option) => option.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<List<ItemLinkOption>> fetchDies() async {
@@ -55,14 +62,17 @@ class ItemLinkOptionsService {
       ];
     }
     final rows = await _fetchList('/api/dies', 'dies');
-    return rows.map((row) {
-      final toolCode = (row['toolCode'] as String? ?? '').trim();
-      final id = row['id']?.toString() ?? '';
-      return ItemLinkOption(
-        id: id,
-        label: toolCode.isNotEmpty ? toolCode : 'Die $id',
-      );
-    }).where((option) => option.id.isNotEmpty).toList(growable: false);
+    return rows
+        .map((row) {
+          final toolCode = (row['toolCode'] as String? ?? '').trim();
+          final id = row['id']?.toString() ?? '';
+          return ItemLinkOption(
+            id: id,
+            label: toolCode.isNotEmpty ? toolCode : 'Die $id',
+          );
+        })
+        .where((option) => option.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<List<Map<String, dynamic>>> _fetchList(

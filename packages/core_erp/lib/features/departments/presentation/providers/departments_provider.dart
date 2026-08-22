@@ -317,9 +317,14 @@ class DepartmentsProvider extends ChangeNotifier {
     _setSaving(true);
     _clearError();
     try {
-      _replaceEmployee(await _repository.createEmployeeLogin(
-        employeeId, email: email, password: password, role: role,
-      ));
+      _replaceEmployee(
+        await _repository.createEmployeeLogin(
+          employeeId,
+          email: email,
+          password: password,
+          role: role,
+        ),
+      );
       return true;
     } catch (e) {
       _setError(e.toString());

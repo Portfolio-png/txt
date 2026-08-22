@@ -145,6 +145,7 @@ class DeliveryChallanItem {
   final String note;
   final String quantityPcs;
   final String weight;
+
   /// Per-sheet weight breakdown for purchase intake. One entry per received
   /// sheet; the entries sum to [weight] (total-in = total-out). Empty when the
   /// line does not track individual sheets.
@@ -219,12 +220,18 @@ class DeliveryChallanItem {
           (json['sheetWeights'] as List<dynamic>? ??
                   json['sheet_weights'] as List<dynamic>? ??
                   const <dynamic>[])
-              .map((value) => value is num ? value.toDouble() : double.tryParse('$value'))
+              .map(
+                (value) =>
+                    value is num ? value.toDouble() : double.tryParse('$value'),
+              )
               .whereType<double>()
               .toList(growable: false),
-      pieceBarcodes: (json['pieceBarcodes'] as List<dynamic>? ?? json['piece_barcodes'] as List<dynamic>? ?? [])
-          .map((e) => e as Map<String, dynamic>)
-          .toList(growable: false),
+      pieceBarcodes:
+          (json['pieceBarcodes'] as List<dynamic>? ??
+                  json['piece_barcodes'] as List<dynamic>? ??
+                  [])
+              .map((e) => e as Map<String, dynamic>)
+              .toList(growable: false),
     );
   }
 

@@ -4496,36 +4496,38 @@ class _InventoryBoardingCardState extends State<_InventoryBoardingCard> {
     // because the variation values were never captured. Build the item's ideal
     // name instead — its naming format from the item master applied to whatever
     // IS recorded (buildLabelForLeaf omits, rather than prints, missing values).
-    final naming = context.select<ItemsProvider, ({String title, String subtitle})?>((provider) {
-      if (itemId == null) return null;
-      final item = provider.items.where((i) => i.id == itemId).firstOrNull;
-      if (item == null) return null;
-      final baseName = item.displayName.trim().isEmpty
-          ? item.name.trim()
-          : item.displayName.trim();
-      final full = NamingFormatHelper.buildLabelForLeaf(
-        item,
-        record.linkedVariationLeafNodeId ?? 0,
-        _boardingCustomValues(record.customVariationValues, item),
-        false,
-      ).trim();
-      final title = full.isEmpty ? baseName : full;
-      if (title.isEmpty) return null;
-      // If the naming format added recorded values, the title carries the
-      // variation. If nothing was recorded (title == base name), show the
-      // variation property names so the dimensions are still visible.
-      final hasRecordedValues = full.isNotEmpty && full != baseName;
-      if (hasRecordedValues) {
-        return (title: title, subtitle: 'Variation');
-      }
-      final props = _boardingPropertyNames(item);
-      return (
-        title: title,
-        subtitle: props.isEmpty ? 'Variation' : props.join(' / '),
-      );
-    });
+    final naming = context
+        .select<ItemsProvider, ({String title, String subtitle})?>((provider) {
+          if (itemId == null) return null;
+          final item = provider.items.where((i) => i.id == itemId).firstOrNull;
+          if (item == null) return null;
+          final baseName = item.displayName.trim().isEmpty
+              ? item.name.trim()
+              : item.displayName.trim();
+          final full = NamingFormatHelper.buildLabelForLeaf(
+            item,
+            record.linkedVariationLeafNodeId ?? 0,
+            _boardingCustomValues(record.customVariationValues, item),
+            false,
+          ).trim();
+          final title = full.isEmpty ? baseName : full;
+          if (title.isEmpty) return null;
+          // If the naming format added recorded values, the title carries the
+          // variation. If nothing was recorded (title == base name), show the
+          // variation property names so the dimensions are still visible.
+          final hasRecordedValues = full.isNotEmpty && full != baseName;
+          if (hasRecordedValues) {
+            return (title: title, subtitle: 'Variation');
+          }
+          final props = _boardingPropertyNames(item);
+          return (
+            title: title,
+            subtitle: props.isEmpty ? 'Variation' : props.join(' / '),
+          );
+        });
     final title = naming?.title ?? widget.entry.displayName ?? record.name;
-    final subtitle = naming?.subtitle ??
+    final subtitle =
+        naming?.subtitle ??
         (record.type.trim().isEmpty ? 'Material' : record.type.trim());
     final barcode = widget.entry.displayId ?? record.barcode;
     final stock = _stripPrimaryUnitFromLabel(
@@ -4533,7 +4535,8 @@ class _InventoryBoardingCardState extends State<_InventoryBoardingCard> {
         widget.entry.aggregateStockLabel ??
             (record.displayStock.trim().isNotEmpty
                 ? record.displayStock
-                : '${record.onHand} ${_effectiveUnitSymbol(record.unit)}'.trim()),
+                : '${record.onHand} ${_effectiveUnitSymbol(record.unit)}'
+                      .trim()),
       ),
     );
     final imageUrl = context.select<ItemsProvider, String?>((provider) {
@@ -8695,7 +8698,10 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         .itemGroups
         .where((g) => !g.isArchived)
         .toList(growable: false);
-    final units = context.watch<UnitsProvider>().includedUnitsFor(null, 'inventory');
+    final units = context.watch<UnitsProvider>().includedUnitsFor(
+      null,
+      'inventory',
+    );
     final items = context
         .watch<ItemsProvider>()
         .items
@@ -9818,7 +9824,10 @@ class _InventoryCreateGroupEditorState
             .toSet()
             .toList(growable: false)
           ..sort();
-    final units = context.watch<UnitsProvider>().includedUnitsFor(null, 'inventory');
+    final units = context.watch<UnitsProvider>().includedUnitsFor(
+      null,
+      'inventory',
+    );
     final inheritedProperties = _derivedInheritedProperties(items);
     final selectedCount = _selectedItemIds.length;
     final activeInheritedProperties = _inheritPropertiesFromItems
@@ -13161,7 +13170,8 @@ class _UnitPickerSheetState extends State<_UnitPickerSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<UnitsProvider>();
     final query = _normalizeUnitQuery(_searchController.text);
-    final units = provider.includedUnitsFor(null, 'inventory')
+    final units = provider
+        .includedUnitsFor(null, 'inventory')
         .where((unit) {
           if (query.isEmpty) {
             return true;
@@ -13172,11 +13182,13 @@ class _UnitPickerSheetState extends State<_UnitPickerSheet> {
         .toList(growable: false);
     final canCreate =
         query.isNotEmpty &&
-        !provider.includedUnitsFor(null, 'inventory').any(
-          (unit) =>
-              _normalizeUnitQuery(unit.name) == query ||
-              _normalizeUnitQuery(unit.symbol) == query,
-        );
+        !provider
+            .includedUnitsFor(null, 'inventory')
+            .any(
+              (unit) =>
+                  _normalizeUnitQuery(unit.name) == query ||
+                  _normalizeUnitQuery(unit.symbol) == query,
+            );
 
     return Padding(
       padding: const EdgeInsets.all(24),

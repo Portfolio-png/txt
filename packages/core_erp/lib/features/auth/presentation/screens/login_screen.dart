@@ -119,7 +119,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _codeController,
                           decoration: const InputDecoration(
                             labelText: 'Staff code (4 digits)',
-                            hintText: 'Day + month of your birthday · e.g. 1503',
+                            hintText:
+                                'Day + month of your birthday · e.g. 1503',
                           ),
                           keyboardType: TextInputType.number,
                           maxLength: 4,

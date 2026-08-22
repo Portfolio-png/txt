@@ -1,4 +1,5 @@
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../../production_pipelines/domain/pipeline_stage_node.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
@@ -15,6 +16,7 @@ abstract class ItemRepository {
 
   Future<void> deleteItem(int id);
   Future<ItemDefinition> reassignItemGroup(int id, int groupId);
+
   /// Mints a fresh, short-lived download link for the item's CAD file. The item
   /// stores a permanent object key, so the link is signed per request.
   Future<Uri> createCadFileReadUrl(int itemId);
@@ -31,9 +33,11 @@ abstract class ItemRepository {
   Future<List<ItemUsageRecord>> getItemUsage(int itemId);
   Future<List<Map<String, String>>> getPipelineTemplates();
 
-  /// Stage labels per pipeline template id, so a sample baseline recorded
-  /// against a pipeline can use that pipeline's real stages.
-  Future<Map<String, List<String>>> getPipelineStageLabels();
+  /// The process nodes of each pipeline template, in reading order, keyed by
+  /// template id. Stage-by-stage Master Data titles its rows from these — the
+  /// node names are the work ("Piercing"), where the board's column labels are
+  /// only positions ("Stage 2").
+  Future<Map<String, List<PipelineStageNode>>> getPipelineStageNodes();
 
   // --- Master Data, keyed by (variant, pipeline) ---------------------------
   //

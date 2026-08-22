@@ -4,10 +4,11 @@ import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart
 import 'package:core_erp/features/items/data/repositories/favorites_repository.dart';
 
 class FavoritesProvider extends ChangeNotifier {
-  FavoritesProvider({required FavoritesRepository repository}) : _repository = repository;
+  FavoritesProvider({required FavoritesRepository repository})
+    : _repository = repository;
 
   final FavoritesRepository _repository;
-  
+
   List<DeliveryChallanItem> _favorites = [];
   bool _isLoading = false;
   bool _initialized = false;
@@ -35,12 +36,18 @@ class FavoritesProvider extends ChangeNotifier {
           itemId: f['itemId'] as int,
           variationLeafNodeId: f['variationLeafNodeId'] as int,
           variationPathLabel: f['variationPathLabel'] as String? ?? '',
-          variationPathNodeIds: (f['variationPathNodeIds'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
-          customVariationValues: (f['customVariationValues'] as Map<String, dynamic>?)?.map(
+          variationPathNodeIds:
+              (f['variationPathNodeIds'] as List<dynamic>?)
+                  ?.map((e) => e as int)
+                  .toList() ??
+              [],
+          customVariationValues:
+              (f['customVariationValues'] as Map<String, dynamic>?)?.map(
                 (k, v) => MapEntry(int.tryParse(k) ?? 0, v.toString()),
               ) ??
               {},
-          particulars: '', // UI will hydrate this if needed, or we can look it up in ItemsProvider
+          particulars:
+              '', // UI will hydrate this if needed, or we can look it up in ItemsProvider
           quantityPcs: '1',
           weight: '0.0',
           lineNo: 0,
@@ -57,7 +64,14 @@ class FavoritesProvider extends ChangeNotifier {
   }
 
   bool isFavorite(int itemId, List<int> variationPathNodeIds) {
-    return _favorites.any((f) => f.itemId == itemId && const ListEquality().equals(f.variationPathNodeIds, variationPathNodeIds));
+    return _favorites.any(
+      (f) =>
+          f.itemId == itemId &&
+          const ListEquality().equals(
+            f.variationPathNodeIds,
+            variationPathNodeIds,
+          ),
+    );
   }
 
   Future<void> toggleFavorite(DeliveryChallanItem item, bool isFav) async {
@@ -66,7 +80,7 @@ class FavoritesProvider extends ChangeNotifier {
       if (!isFavorite(item.itemId ?? 0, item.variationPathNodeIds)) {
         _favorites.add(item);
         notifyListeners();
-        
+
         final success = await _repository.addFavorite(
           itemId: item.itemId ?? 0,
           variationLeafNodeId: item.variationLeafNodeId,
@@ -74,21 +88,38 @@ class FavoritesProvider extends ChangeNotifier {
           variationPathNodeIds: item.variationPathNodeIds,
           customVariationValues: item.customVariationValues,
         );
-        
+
         if (!success) {
-          _favorites.removeWhere((f) => f.itemId == item.itemId && const ListEquality().equals(f.variationPathNodeIds, item.variationPathNodeIds));
+          _favorites.removeWhere(
+            (f) =>
+                f.itemId == item.itemId &&
+                const ListEquality().equals(
+                  f.variationPathNodeIds,
+                  item.variationPathNodeIds,
+                ),
+          );
           notifyListeners();
         }
       }
     } else {
       // Remove
-      final existingIndex = _favorites.indexWhere((f) => f.itemId == item.itemId && const ListEquality().equals(f.variationPathNodeIds, item.variationPathNodeIds));
+      final existingIndex = _favorites.indexWhere(
+        (f) =>
+            f.itemId == item.itemId &&
+            const ListEquality().equals(
+              f.variationPathNodeIds,
+              item.variationPathNodeIds,
+            ),
+      );
       if (existingIndex >= 0) {
         final removed = _favorites.removeAt(existingIndex);
         notifyListeners();
 
-        final success = await _repository.removeFavorite(item.itemId ?? 0, item.variationLeafNodeId);
-        
+        final success = await _repository.removeFavorite(
+          item.itemId ?? 0,
+          item.variationLeafNodeId,
+        );
+
         if (!success) {
           _favorites.insert(existingIndex, removed);
           notifyListeners();

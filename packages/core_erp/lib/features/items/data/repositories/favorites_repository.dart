@@ -2,10 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class FavoritesRepository {
-  FavoritesRepository({
-    required http.Client client,
-    required this.baseUrl,
-  }) : _client = client;
+  FavoritesRepository({required http.Client client, required this.baseUrl})
+    : _client = client;
 
   final http.Client _client;
   final String baseUrl;
@@ -51,7 +49,9 @@ class FavoritesRepository {
   }
 
   Future<bool> removeFavorite(int itemId, int variationLeafNodeId) async {
-    final uri = Uri.parse('$baseUrl/api/favorites/$itemId/$variationLeafNodeId');
+    final uri = Uri.parse(
+      '$baseUrl/api/favorites/$itemId/$variationLeafNodeId',
+    );
     final response = await _client.delete(uri);
 
     if (response.statusCode == 200) {

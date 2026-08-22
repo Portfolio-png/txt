@@ -134,6 +134,8 @@ class ItemDto {
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
     this.availableForPurchase = false,
+    this.blankWidthMm = 0,
+    this.blankHeightMm = 0,
     this.penPaperBaseline,
   });
 
@@ -166,6 +168,10 @@ class ItemDto {
   final String developedForClientName;
   final List<int> combinationGroupIds;
   final bool availableForPurchase;
+
+  /// The blank size this part is cut as, in millimetres.
+  final double blankWidthMm;
+  final double blankHeightMm;
   final PenPaperBaseline? penPaperBaseline;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
@@ -173,7 +179,8 @@ class ItemDto {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       alias: json['alias'] as String? ?? '',
-      shortCode: json['shortCode'] as String? ?? json['short_code'] as String? ?? '',
+      shortCode:
+          json['shortCode'] as String? ?? json['short_code'] as String? ?? '',
       displayName: json['displayName'] as String? ?? '',
       quantity: (json['quantity'] as num? ?? 0).toDouble(),
       groupId: json['groupId'] as int? ?? 0,
@@ -251,6 +258,8 @@ class ItemDto {
               .map((e) => e as int)
               .toList(growable: false),
       availableForPurchase: json['availableForPurchase'] as bool? ?? false,
+      blankWidthMm: (json['blankWidthMm'] as num?)?.toDouble() ?? 0,
+      blankHeightMm: (json['blankHeightMm'] as num?)?.toDouble() ?? 0,
       penPaperBaseline: json['penPaperBaseline'] is Map<String, dynamic>
           ? PenPaperBaseline.fromJson(
               json['penPaperBaseline'] as Map<String, dynamic>,
@@ -296,6 +305,8 @@ class ItemDto {
       developedForClientName: developedForClientName,
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
+      blankWidthMm: blankWidthMm,
+      blankHeightMm: blankHeightMm,
       penPaperBaseline: penPaperBaseline,
     );
   }
@@ -517,6 +528,8 @@ class CreateItemRequest {
     this.dieIds = const [],
     this.developedForClientId,
     this.availableForPurchase = false,
+    this.blankWidthMm = 0,
+    this.blankHeightMm = 0,
     this.penPaperBaseline,
   });
 
@@ -538,6 +551,10 @@ class CreateItemRequest {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+
+  /// The blank size this part is cut as, in millimetres.
+  final double blankWidthMm;
+  final double blankHeightMm;
   final PenPaperBaseline? penPaperBaseline;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
@@ -564,6 +581,8 @@ class CreateItemRequest {
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
       availableForPurchase: input.availableForPurchase,
+      blankWidthMm: input.blankWidthMm,
+      blankHeightMm: input.blankHeightMm,
       penPaperBaseline: input.penPaperBaseline,
     );
   }
@@ -600,6 +619,8 @@ class CreateItemRequest {
       'dieIds': dieIds,
       'developedForClientId': developedForClientId,
       'availableForPurchase': availableForPurchase,
+      'blankWidthMm': blankWidthMm,
+      'blankHeightMm': blankHeightMm,
       // Omitted rather than sent as null: the server preserves whatever is
       // already recorded when the key is absent, and clears it on an explicit
       // null. The editor only sends a baseline it actually has.
@@ -629,6 +650,8 @@ class UpdateItemRequest {
     this.dieIds = const [],
     this.developedForClientId,
     this.availableForPurchase = false,
+    this.blankWidthMm = 0,
+    this.blankHeightMm = 0,
     this.penPaperBaseline,
   });
 
@@ -650,6 +673,10 @@ class UpdateItemRequest {
   final List<String> dieIds;
   final int? developedForClientId;
   final bool availableForPurchase;
+
+  /// The blank size this part is cut as, in millimetres.
+  final double blankWidthMm;
+  final double blankHeightMm;
   final PenPaperBaseline? penPaperBaseline;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
@@ -676,6 +703,8 @@ class UpdateItemRequest {
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
       availableForPurchase: input.availableForPurchase,
+      blankWidthMm: input.blankWidthMm,
+      blankHeightMm: input.blankHeightMm,
       penPaperBaseline: input.penPaperBaseline,
     );
   }
@@ -712,6 +741,8 @@ class UpdateItemRequest {
       'dieIds': dieIds,
       'developedForClientId': developedForClientId,
       'availableForPurchase': availableForPurchase,
+      'blankWidthMm': blankWidthMm,
+      'blankHeightMm': blankHeightMm,
       // Omitted rather than sent as null: the server preserves whatever is
       // already recorded when the key is absent, and clears it on an explicit
       // null. The editor only sends a baseline it actually has.

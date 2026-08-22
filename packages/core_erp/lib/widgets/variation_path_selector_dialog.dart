@@ -594,9 +594,7 @@ class _VariationPathSelectorWidgetState
         _replaceSelectionUnderProperty(step.property, const <int>[]);
       } else {
         _customVariationValues[step.property.id] = text;
-        _replaceSelectionUnderProperty(step.property, <int>[
-          -step.property.id,
-        ]);
+        _replaceSelectionUnderProperty(step.property, <int>[-step.property.id]);
       }
     });
     _notifyChanges();
@@ -1284,9 +1282,9 @@ class _GaugeStepFieldState extends State<_GaugeStepField> {
             children: [
               Text(
                 'Select Gauge (SWG)',
-                style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               GridView.builder(
@@ -1393,10 +1391,7 @@ class _GaugeStepFieldState extends State<_GaugeStepField> {
               onTap: widget.readOnly ? null : _openGaugePicker,
               borderRadius: BorderRadius.circular(8),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 9,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
                 decoration: BoxDecoration(
                   color: hasGauge
                       ? SoftErpTheme.accentSoft

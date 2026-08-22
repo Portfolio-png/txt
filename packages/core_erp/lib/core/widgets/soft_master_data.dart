@@ -639,114 +639,114 @@ class _SoftEntityCardState extends State<SoftEntityCard> {
       // the lines already printed just makes the reader re-read them.
       message: overflowFacts.isEmpty ? null : _bubble(overflowFacts),
       child: MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: widget.onTap,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: SoftErpTheme.cardSurface,
           borderRadius: BorderRadius.circular(12),
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: SoftErpTheme.border),
-              boxShadow: SoftErpTheme.insetShadow,
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    flex: 5,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (hasPhoto)
-                          Image.network(
-                            photoUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                _fallback(),
-                          )
-                        else
-                          _fallback(),
-                        if (widget.badge != null)
-                          Positioned(top: 8, left: 8, child: widget.badge!),
-                        if (widget.actions != null)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 150),
-                              opacity: _hovered ? 1 : 0,
-                              child: IgnorePointer(
-                                ignoring: !_hovered,
-                                child: widget.actions!,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: SoftErpTheme.border),
+                boxShadow: SoftErpTheme.insetShadow,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (hasPhoto)
+                            Image.network(
+                              photoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _fallback(),
+                            )
+                          else
+                            _fallback(),
+                          if (widget.badge != null)
+                            Positioned(top: 8, left: 8, child: widget.badge!),
+                          if (widget.actions != null)
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 150),
+                                opacity: _hovered ? 1 : 0,
+                                child: IgnorePointer(
+                                  ignoring: !_hovered,
+                                  child: widget.actions!,
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 6,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          if (widget.subtitle.trim().isNotEmpty) ...[
-                            const SizedBox(height: 2),
+                    Expanded(
+                      flex: 6,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             Text(
-                              widget.subtitle,
+                              widget.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: SoftErpTheme.textSecondary,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
+                                color: SoftErpTheme.textPrimary,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                          ],
-                          if (shown.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            for (final detail in shown) _line(detail),
-                            if (hidden > 0)
+                            if (widget.subtitle.trim().isNotEmpty) ...[
+                              const SizedBox(height: 2),
                               Text(
-                                '+$hidden more — hover for details',
+                                widget.subtitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: SoftErpTheme.textSecondary,
-                                  fontSize: 10.5,
-                                  fontStyle: FontStyle.italic,
+                                  fontSize: 11.5,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
+                            ],
+                            if (shown.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              for (final detail in shown) _line(detail),
+                              if (hidden > 0)
+                                Text(
+                                  '+$hidden more — hover for details',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: SoftErpTheme.textSecondary,
+                                    fontSize: 10.5,
+                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -769,18 +769,22 @@ class _SoftEntityCardState extends State<SoftEntityCard> {
       fontSize: 11,
       height: 1.5,
     );
-    return TextSpan(children: [
-      TextSpan(text: widget.title, style: heading),
-      if (widget.subtitle.trim().isNotEmpty)
-        TextSpan(text: '\n${widget.subtitle}', style: label),
-      for (final fact in facts)
-        TextSpan(children: [
-          const TextSpan(text: '\n'),
-          if (fact.label != null)
-            TextSpan(text: '${fact.label}: ', style: label),
-          TextSpan(text: fact.value, style: body),
-        ]),
-    ]);
+    return TextSpan(
+      children: [
+        TextSpan(text: widget.title, style: heading),
+        if (widget.subtitle.trim().isNotEmpty)
+          TextSpan(text: '\n${widget.subtitle}', style: label),
+        for (final fact in facts)
+          TextSpan(
+            children: [
+              const TextSpan(text: '\n'),
+              if (fact.label != null)
+                TextSpan(text: '${fact.label}: ', style: label),
+              TextSpan(text: fact.value, style: body),
+            ],
+          ),
+      ],
+    );
   }
 
   Widget _line(SoftEntityDetail detail) {

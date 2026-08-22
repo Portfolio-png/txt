@@ -336,11 +336,16 @@ class DepartmentsRepository {
         payload['error'] as String? ?? 'Failed to create login.',
       );
     }
-    return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
+    return EmployeeDefinition.fromJson(
+      payload['employee'] as Map<String, dynamic>,
+    );
   }
 
   /// Link an in-house employee to an existing login account.
-  Future<EmployeeDefinition> linkEmployeeLogin(int employeeId, int userId) async {
+  Future<EmployeeDefinition> linkEmployeeLogin(
+    int employeeId,
+    int userId,
+  ) async {
     final uri = Uri.parse('$baseUrl/api/employees/$employeeId/link-login');
     final response = await _client.post(
       uri,
@@ -355,13 +360,18 @@ class DepartmentsRepository {
         payload['error'] as String? ?? 'Failed to link login.',
       );
     }
-    return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
+    return EmployeeDefinition.fromJson(
+      payload['employee'] as Map<String, dynamic>,
+    );
   }
 
   /// Unlink an employee from its login (the account itself is kept).
   Future<EmployeeDefinition> unlinkEmployeeLogin(int employeeId) async {
     final uri = Uri.parse('$baseUrl/api/employees/$employeeId/unlink-login');
-    final response = await _client.post(uri, headers: const {'Content-Type': 'application/json'});
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+    );
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
@@ -370,7 +380,9 @@ class DepartmentsRepository {
         payload['error'] as String? ?? 'Failed to unlink login.',
       );
     }
-    return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
+    return EmployeeDefinition.fromJson(
+      payload['employee'] as Map<String, dynamic>,
+    );
   }
 
   Future<void> deleteEmployee(int id) async {

@@ -199,13 +199,19 @@ class ApiUnitRepository implements UnitRepository {
     final uri = Uri.parse('$baseUrl/api/units/gauge-table');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw UnitApiException(payload['error'] as String? ?? 'Failed to fetch gauge points.');
+
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw UnitApiException(
+        payload['error'] as String? ?? 'Failed to fetch gauge points.',
+      );
     }
-    
+
     final pointsList = payload['points'] as List<dynamic>? ?? [];
-    return pointsList.map((p) => ConversionPoint.fromJson(p as Map<String, dynamic>)).toList();
+    return pointsList
+        .map((p) => ConversionPoint.fromJson(p as Map<String, dynamic>))
+        .toList();
   }
 
   void _seedMockStoreIfNeeded() {

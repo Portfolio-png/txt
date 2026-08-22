@@ -260,8 +260,7 @@ class ChallanDraftInput {
       'location': location.trim(),
       'source_reference': sourceReference.trim(),
       if (poNumber.trim().isNotEmpty) 'po_number': poNumber.trim(),
-      if (poDate != null)
-        'po_date': poDate!.toIso8601String().substring(0, 10),
+      if (poDate != null) 'po_date': poDate!.toIso8601String().substring(0, 10),
       'notes': notes.trim(),
       'maintain_stocks': maintainStocks,
       'customer_name': customerName.trim(),

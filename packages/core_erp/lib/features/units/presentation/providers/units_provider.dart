@@ -125,63 +125,71 @@ class UnitsProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
-  List<UnitDefinition> includedUnitsFor(int? familyBaseUnitId, String context, {int? currentUnitId}) {
+  List<UnitDefinition> includedUnitsFor(
+    int? familyBaseUnitId,
+    String context, {
+    int? currentUnitId,
+  }) {
     if (familyBaseUnitId == null) {
       return activeUnits;
     }
-    
+
     final familyBase = findById(familyBaseUnitId);
     if (familyBase == null) return activeUnits;
     final dimension = familyBase.unitGroupDimension?.toLowerCase() ?? '';
-    
+
     final config = ConfigService.instance.config;
     final familiesConfig = config['units']?['families'];
-    
+
     if (familiesConfig == null || familiesConfig is! Map) {
       return compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
     }
-    
+
     final dimensionConfig = familiesConfig[dimension];
     if (dimensionConfig == null || dimensionConfig is! Map) {
       return compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
     }
-    
+
     final contextList = dimensionConfig[context];
     if (contextList == null || contextList is! List) {
       return compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
     }
-    
+
     final includedIds = contextList.map((e) => e as int).toSet();
-    
+
     final candidates = compatibleActiveUnitsForGroupUnitId(familyBaseUnitId);
-    return candidates.where((unit) {
-      if (currentUnitId != null && unit.id == currentUnitId) {
-        return true; 
-      }
-      return includedIds.contains(unit.id);
-    }).toList(growable: false);
+    return candidates
+        .where((unit) {
+          if (currentUnitId != null && unit.id == currentUnitId) {
+            return true;
+          }
+          return includedIds.contains(unit.id);
+        })
+        .toList(growable: false);
   }
 
   String? convertValue(dynamic value, int? fromUnitId, int? toUnitId) {
     if (fromUnitId == null || toUnitId == null || value == null) return null;
     if (fromUnitId == toUnitId) return value.toString();
-    
+
     final from = findById(fromUnitId);
     final to = findById(toUnitId);
-    
+
     if (from == null || to == null) return null;
-    
+
     final fromBaseId = from.conversionBaseUnitId ?? from.id;
     final toBaseId = to.conversionBaseUnitId ?? to.id;
     if (fromBaseId != toBaseId) {
       return null;
     }
-    
+
     double valInBase = 0.0;
     final valStr = value.toString().trim();
-    
+
     if (from.conversionType == 'table') {
-      final point = from.conversionPoints.where((p) => p.pointKey.toLowerCase() == valStr.toLowerCase()).firstOrNull;
+      final point = from.conversionPoints
+          .where((p) => p.pointKey.toLowerCase() == valStr.toLowerCase())
+          .firstOrNull;
       if (point != null) {
         valInBase = point.baseValue;
       } else {
@@ -191,11 +199,13 @@ class UnitsProvider extends ChangeNotifier {
       final numVal = double.tryParse(valStr) ?? 0.0;
       valInBase = numVal * from.conversionFactor;
     }
-    
+
     if (to.conversionType == 'table') {
       final tolerance = 0.0005; // 0.0005 mm tolerance as per spec
       // assuming table values are exact within tolerance
-      final point = to.conversionPoints.where((p) => (p.baseValue - valInBase).abs() < tolerance).firstOrNull;
+      final point = to.conversionPoints
+          .where((p) => (p.baseValue - valInBase).abs() < tolerance)
+          .firstOrNull;
       if (point != null) {
         return point.pointKey;
       }
@@ -221,12 +231,12 @@ class UnitsProvider extends ChangeNotifier {
       await _repository.init();
       final units = await _repository.getUnits();
       final gaugePoints = await _repository.getGaugePoints();
-      
+
       final pointsByUnitId = <int, List<ConversionPoint>>{};
       for (final p in gaugePoints) {
         pointsByUnitId.putIfAbsent(p.unitId, () => []).add(p);
       }
-      
+
       for (var i = 0; i < units.length; i++) {
         if (units[i].conversionType == 'table') {
           final points = pointsByUnitId[units[i].id] ?? [];

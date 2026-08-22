@@ -48,12 +48,13 @@ class _CompanyProfileDialogState extends State<CompanyProfileDialog> {
     final profile = _existing;
     _companyName = TextEditingController(text: profile.companyName)
       ..addListener(_refresh);
-    _businessDescription =
-        TextEditingController(text: profile.businessDescription)
-          ..addListener(_refresh);
+    _businessDescription = TextEditingController(
+      text: profile.businessDescription,
+    )..addListener(_refresh);
     _address = TextEditingController(text: profile.address)
       ..addListener(_refresh);
-    _mobile = TextEditingController(text: profile.mobile)..addListener(_refresh);
+    _mobile = TextEditingController(text: profile.mobile)
+      ..addListener(_refresh);
     _gstin = TextEditingController(text: profile.gstin);
     _stateCode = TextEditingController(text: profile.stateCode);
     _signatureLabel = TextEditingController(text: profile.signatureLabel);
@@ -347,7 +348,9 @@ class _LetterheadPreview extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            companyName.trim().isEmpty ? 'Your Company Name' : companyName.trim(),
+            companyName.trim().isEmpty
+                ? 'Your Company Name'
+                : companyName.trim(),
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 20,

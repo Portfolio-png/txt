@@ -37,13 +37,18 @@ class OrderReturn {
       orderItemId: (json['orderItemId'] ?? json['order_item_id']) as int?,
       quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
       unit: json['unit'] as String? ?? 'pcs',
-      reasonCode: (json['reasonCode'] ?? json['reason_code']) as String? ?? 'defect',
+      reasonCode:
+          (json['reasonCode'] ?? json['reason_code']) as String? ?? 'defect',
       defectDescription:
-          (json['defectDescription'] ?? json['defect_description']) as String? ?? '',
+          (json['defectDescription'] ?? json['defect_description'])
+              as String? ??
+          '',
       status: json['status'] as String? ?? 'open',
       returnedBarcode:
-          (json['returnedBarcode'] ?? json['returned_barcode']) as String? ?? '',
-      pipelineRunId: (json['pipelineRunId'] ?? json['pipeline_run_id']) as String?,
+          (json['returnedBarcode'] ?? json['returned_barcode']) as String? ??
+          '',
+      pipelineRunId:
+          (json['pipelineRunId'] ?? json['pipeline_run_id']) as String?,
       loggedBy: (json['loggedBy'] ?? json['logged_by']) as String? ?? '',
     );
   }
@@ -70,15 +75,15 @@ class CreateOrderReturnInput {
   final String returnedBarcode;
 
   Map<String, dynamic> toJson() => {
-        if (orderItemId != null) 'orderItemId': orderItemId,
-        'quantity': quantity,
-        'unit': unit,
-        'reasonCode': reasonCode,
-        if (defectDescription.trim().isNotEmpty)
-          'defectDescription': defectDescription.trim(),
-        if (returnedBarcode.trim().isNotEmpty)
-          'returnedBarcode': returnedBarcode.trim(),
-      };
+    if (orderItemId != null) 'orderItemId': orderItemId,
+    'quantity': quantity,
+    'unit': unit,
+    'reasonCode': reasonCode,
+    if (defectDescription.trim().isNotEmpty)
+      'defectDescription': defectDescription.trim(),
+    if (returnedBarcode.trim().isNotEmpty)
+      'returnedBarcode': returnedBarcode.trim(),
+  };
 }
 
 /// One die+machine stage a run passed through.

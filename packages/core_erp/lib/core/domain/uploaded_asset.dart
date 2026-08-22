@@ -34,19 +34,40 @@ class UploadedAsset {
   factory UploadedAsset.fromJson(Map<String, dynamic> json) {
     return UploadedAsset(
       id: json['id'] as int? ?? 0,
-      entityType: json['entityType'] as String? ?? json['entity_type'] as String? ?? '',
+      entityType:
+          json['entityType'] as String? ?? json['entity_type'] as String? ?? '',
       entityId: json['entityId'] as int? ?? json['entity_id'] as int? ?? 0,
-      fileName: json['fileName'] as String? ?? json['file_name'] as String? ?? '',
-      contentType: json['contentType'] as String? ?? json['content_type'] as String? ?? '',
+      fileName:
+          json['fileName'] as String? ?? json['file_name'] as String? ?? '',
+      contentType:
+          json['contentType'] as String? ??
+          json['content_type'] as String? ??
+          '',
       sizeBytes: json['sizeBytes'] as int? ?? json['size_bytes'] as int? ?? 0,
       sha256: json['sha256'] as String? ?? '',
-      objectKey: json['objectKey'] as String? ?? json['object_key'] as String? ?? '',
+      objectKey:
+          json['objectKey'] as String? ?? json['object_key'] as String? ?? '',
       status: json['status'] as String? ?? '',
-      isPrimary: (json['isPrimary'] as bool?) ?? (json['is_primary'] as bool?) ?? false,
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) : (json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null),
-      uploadedAt: json['uploadedAt'] != null ? DateTime.tryParse(json['uploadedAt'] as String) : (json['uploaded_at'] != null ? DateTime.tryParse(json['uploaded_at'] as String) : null),
-      readUrl: json['readUrl'] != null ? Uri.tryParse(json['readUrl'] as String) : null,
-      readUrlExpiresAt: json['readUrlExpiresAt'] != null ? DateTime.tryParse(json['readUrlExpiresAt'] as String) : null,
+      isPrimary:
+          (json['isPrimary'] as bool?) ??
+          (json['is_primary'] as bool?) ??
+          false,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'] as String)
+          : (json['created_at'] != null
+                ? DateTime.tryParse(json['created_at'] as String)
+                : null),
+      uploadedAt: json['uploadedAt'] != null
+          ? DateTime.tryParse(json['uploadedAt'] as String)
+          : (json['uploaded_at'] != null
+                ? DateTime.tryParse(json['uploaded_at'] as String)
+                : null),
+      readUrl: json['readUrl'] != null
+          ? Uri.tryParse(json['readUrl'] as String)
+          : null,
+      readUrlExpiresAt: json['readUrlExpiresAt'] != null
+          ? DateTime.tryParse(json['readUrlExpiresAt'] as String)
+          : null,
     );
   }
 }

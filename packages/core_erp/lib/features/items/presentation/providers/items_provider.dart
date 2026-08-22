@@ -7,6 +7,7 @@ import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_master_data.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../../production_pipelines/domain/pipeline_stage_node.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../../core/services/socket_service.dart';
 
@@ -229,13 +230,14 @@ class ItemsProvider extends ChangeNotifier {
     }
   }
 
-  /// Stage labels keyed by pipeline template id. Empty on failure — the sample
-  /// baseline falls back to generic stage names rather than blocking.
-  Future<Map<String, List<String>>> fetchPipelineStageLabels() async {
+  /// Process nodes keyed by pipeline template id, in reading order. Empty on
+  /// failure — stage-by-stage Master Data falls back to generic stage names
+  /// rather than blocking.
+  Future<Map<String, List<PipelineStageNode>>> fetchPipelineStageNodes() async {
     try {
-      return await _repository.getPipelineStageLabels();
+      return await _repository.getPipelineStageNodes();
     } catch (e) {
-      return const <String, List<String>>{};
+      return const <String, List<PipelineStageNode>>{};
     }
   }
 
@@ -427,7 +429,10 @@ class ItemsProvider extends ChangeNotifier {
     required String pipelineId,
   }) async {
     try {
-      await _repository.deleteMasterData(itemId: itemId, pipelineId: pipelineId);
+      await _repository.deleteMasterData(
+        itemId: itemId,
+        pipelineId: pipelineId,
+      );
       _errorMessage = null;
       notifyListeners();
       return true;
@@ -439,7 +444,9 @@ class ItemsProvider extends ChangeNotifier {
   }
 
   /// Every variant's Master Data on one pipeline — the insight view.
-  Future<PipelineMasterDataRoster?> pipelineMasterData(String pipelineId) async {
+  Future<PipelineMasterDataRoster?> pipelineMasterData(
+    String pipelineId,
+  ) async {
     try {
       return await _repository.getPipelineMasterData(pipelineId);
     } catch (error) {

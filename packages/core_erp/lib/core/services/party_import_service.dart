@@ -10,8 +10,9 @@ enum PartyKind { client, vendor }
 extension PartyKindX on PartyKind {
   String get label => this == PartyKind.client ? 'Client' : 'Vendor';
   String get pluralLabel => this == PartyKind.client ? 'Clients' : 'Vendors';
-  String get templateFileName =>
-      this == PartyKind.client ? 'clients-import-template' : 'vendors-import-template';
+  String get templateFileName => this == PartyKind.client
+      ? 'clients-import-template'
+      : 'vendors-import-template';
 }
 
 /// One spreadsheet column, mapped to a field on the create input.
@@ -85,8 +86,7 @@ class PartyImportResult {
       'Columns found: ${headersFound.isEmpty ? 'none' : headersFound.join(' | ')}.',
       '$dataRowsSeen row(s) below the header.',
       if (blankRowsSkipped > 0) '$blankRowsSkipped blank row(s) skipped.',
-      if (exampleRowsSkipped > 0)
-        '$exampleRowsSkipped example row(s) skipped.',
+      if (exampleRowsSkipped > 0) '$exampleRowsSkipped example row(s) skipped.',
     ];
     return parts.join(' ');
   }
@@ -236,7 +236,10 @@ class PartyImportService {
     help.appendRow([TextCellValue('')]);
     help.appendRow([TextCellValue('Column'), TextCellValue('Notes')]);
     for (final column in columns) {
-      help.appendRow([TextCellValue(column.header), TextCellValue(column.hint)]);
+      help.appendRow([
+        TextCellValue(column.header),
+        TextCellValue(column.hint),
+      ]);
     }
     help.setColumnWidth(0, 24);
     help.setColumnWidth(1, 54);
@@ -245,7 +248,8 @@ class PartyImportService {
   }
 
   /// Rows whose name cell is this are template samples, not real data.
-  static const String _exampleMarker = '↑ example row — delete or leave, it is ignored';
+  static const String _exampleMarker =
+      '↑ example row — delete or leave, it is ignored';
 
   /// Extensions the picker should offer.
   ///
@@ -317,11 +321,7 @@ class PartyImportService {
         headerProblems: ['The file has no rows.'],
       );
     }
-    return _resultFromGrids(
-      {'CSV': grid},
-      kind,
-      existingNames: existingNames,
-    );
+    return _resultFromGrids({'CSV': grid}, kind, existingNames: existingNames);
   }
 
   /// RFC 4180-ish reader: honours quoted fields, escaped quotes and newlines
@@ -515,7 +515,10 @@ class PartyImportService {
       final row = grid[r];
       final values = <String, String>{
         for (final column in columns)
-          column.field: cellAt(row, headerIndex[column.header.toLowerCase()] ?? -1),
+          column.field: cellAt(
+            row,
+            headerIndex[column.header.toLowerCase()] ?? -1,
+          ),
       };
 
       dataRowsSeen++;

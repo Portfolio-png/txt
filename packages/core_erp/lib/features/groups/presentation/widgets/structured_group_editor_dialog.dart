@@ -272,7 +272,10 @@ class _StructuredGroupEditorDialogState
     final groups = groupsProvider
         .filteredGroupsByType(widget.groupType)
         .toList(growable: false);
-    final units = context.watch<UnitsProvider>().includedUnitsFor(null, 'inventory');
+    final units = context.watch<UnitsProvider>().includedUnitsFor(
+      null,
+      'inventory',
+    );
     final items = _activeItems();
     final saveError =
         groupsProvider.errorMessage ??
@@ -1722,10 +1725,7 @@ class _StructuredGroupEditorDialogState
   }
 }
 
-InputDecoration _selectDecoration({
-  required String label,
-  String? helper,
-}) {
+InputDecoration _selectDecoration({required String label, String? helper}) {
   return InputDecoration(
     labelText: label,
     helperText: helper,

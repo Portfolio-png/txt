@@ -347,7 +347,6 @@ class _ChallanScreenState extends State<ChallanScreen> {
     );
   }
 
-
   Future<void> _openPrintPreview(
     BuildContext context,
     DeliveryChallan challan,
@@ -4969,10 +4968,16 @@ class _ItemsEditor extends StatelessWidget {
     final valStr = draft.enteredValue.trim();
     if (valStr.isNotEmpty && draft.selectedUnitId != null) {
       for (final u in units) {
-        final convertedStr = unitsProvider.convertValue(valStr, draft.selectedUnitId, u.id);
+        final convertedStr = unitsProvider.convertValue(
+          valStr,
+          draft.selectedUnitId,
+          u.id,
+        );
         if (convertedStr != null) {
           final convertedNum = double.tryParse(convertedStr);
-          final displayStr = convertedNum != null ? draft.formatDouble(convertedNum) : convertedStr;
+          final displayStr = convertedNum != null
+              ? draft.formatDouble(convertedNum)
+              : convertedStr;
           parts.add('$displayStr ${u.symbol}');
         }
       }
@@ -5214,11 +5219,15 @@ class _ItemDraft {
   ) {
     final list = <ItemUnitOption>[];
     final primary = unitsProvider.findById(item.unitId);
-    
+
     if (primary != null) {
       final familyBaseId = primary.conversionBaseUnitId ?? primary.id;
-      final includedUnits = unitsProvider.includedUnitsFor(familyBaseId, 'sales', currentUnitId: item.unitId);
-      
+      final includedUnits = unitsProvider.includedUnitsFor(
+        familyBaseId,
+        'sales',
+        currentUnitId: item.unitId,
+      );
+
       for (final unit in includedUnits) {
         list.add(
           ItemUnitOption(
@@ -5327,7 +5336,11 @@ class _ItemDraft {
     }
 
     if (wtOpt != null) {
-      final converted = unitsProvider.convertValue(valStr, selectedUnitId, wtOpt.id);
+      final converted = unitsProvider.convertValue(
+        valStr,
+        selectedUnitId,
+        wtOpt.id,
+      );
       if (converted != null) {
         final numVal = double.tryParse(converted);
         weight = numVal != null ? formatDouble(numVal) : converted;
@@ -5339,7 +5352,11 @@ class _ItemDraft {
     }
 
     if (qtyOpt != null) {
-      final converted = unitsProvider.convertValue(valStr, selectedUnitId, qtyOpt.id);
+      final converted = unitsProvider.convertValue(
+        valStr,
+        selectedUnitId,
+        qtyOpt.id,
+      );
       if (converted != null) {
         final numVal = double.tryParse(converted);
         quantityPcs = numVal != null ? formatDouble(numVal) : converted;

@@ -503,8 +503,10 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                           child: Column(
                             children: [
                               DropdownButtonFormField<String>(
-                                value: _supportedEmploymentTypes
-                                        .containsKey(_employmentType)
+                                value:
+                                    _supportedEmploymentTypes.containsKey(
+                                      _employmentType,
+                                    )
                                     ? _employmentType
                                     : 'in-house',
                                 isExpanded: true,

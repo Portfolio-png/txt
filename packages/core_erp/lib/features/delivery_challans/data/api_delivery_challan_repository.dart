@@ -471,7 +471,8 @@ class ApiChallanRepository implements ChallanRepository {
       );
     }
     final body = jsonDecode(response.body);
-    if (body is Map<String, dynamic> && body['result'] is Map<String, dynamic>) {
+    if (body is Map<String, dynamic> &&
+        body['result'] is Map<String, dynamic>) {
       return body['result'] as Map<String, dynamic>;
     }
     return null;
@@ -1323,9 +1324,7 @@ class ApiChallanRepository implements ChallanRepository {
     int? templateId,
     required String mode,
   }) {
-    return Uri.parse(
-      '$baseUrl/api/challans/$challanId/print-preview',
-    ).replace(
+    return Uri.parse('$baseUrl/api/challans/$challanId/print-preview').replace(
       queryParameters: <String, String>{
         'mode': mode,
         if (templateId != null) 'templateId': '$templateId',

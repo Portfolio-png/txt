@@ -1,7 +1,6 @@
 import '../annotations/feature_annotation.dart';
 import 'dev_config.dart';
 
-
 class FeatureKeys {
   @FeatureFlag(
     category: 'Modules',

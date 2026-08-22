@@ -232,7 +232,8 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       return;
     }
     final viewportBox =
-        _compositionViewportKey.currentContext?.findRenderObject() as RenderBox?;
+        _compositionViewportKey.currentContext?.findRenderObject()
+            as RenderBox?;
     if (viewportBox == null || !viewportBox.hasSize) {
       return;
     }
@@ -353,7 +354,8 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       return 0;
     }
     final viewportBox =
-        _compositionViewportKey.currentContext?.findRenderObject() as RenderBox?;
+        _compositionViewportKey.currentContext?.findRenderObject()
+            as RenderBox?;
     final rowBox = line.rowKey.currentContext?.findRenderObject() as RenderBox?;
     if (viewportBox == null ||
         rowBox == null ||
@@ -734,7 +736,6 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     );
   }
 
-
   Widget _buildLineRow({
     required int index,
     required _EditableInventorySetLine line,
@@ -1040,7 +1041,8 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
         itemId: itemId,
         itemLabel: itemLabel.isEmpty ? 'Item #$itemId' : itemLabel,
         variationLabel: variationLabel.isEmpty ? 'Base item' : variationLabel,
-        isBaseItem: (reference?.variationLeafNodeId ?? line.variationLeafNodeId) == 0,
+        isBaseItem:
+            (reference?.variationLeafNodeId ?? line.variationLeafNodeId) == 0,
         quantity: (existing?.quantity ?? 0) + (quantity > 0 ? quantity : 0),
         photoUrl: itemById[itemId]?.photoUrl ?? '',
       );
@@ -1997,10 +1999,7 @@ class _SetSelectionPreviewCardState extends State<_SetSelectionPreviewCard> {
     );
   }
 
-  Widget _buildListRow(
-    ItemsProvider itemsProvider,
-    _SetSelectionEntry entry,
-  ) {
+  Widget _buildListRow(ItemsProvider itemsProvider, _SetSelectionEntry entry) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -2123,10 +2122,7 @@ class _SetSelectionTile extends StatelessWidget {
               right: 4,
               bottom: 4,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xE60F172A),
                   borderRadius: BorderRadius.circular(999),

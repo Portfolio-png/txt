@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../domain/item_asset.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../../production_pipelines/domain/pipeline_stage_node.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
@@ -553,7 +554,6 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
-  
   Future<ItemDefinition> updateShortCode(int id, String shortCode) async {
     if (useMockResponses) {
       final index = _mockItems.indexWhere((item) => item.id == id);
@@ -607,7 +607,9 @@ class ApiItemRepository implements ItemRepository {
         final parsed = ItemResponse.fromJson(payload);
         return parsed.item!.toDomain();
       } else {
-        throw ItemApiException(payload['error']?.toString() ?? 'Failed to update short code');
+        throw ItemApiException(
+          payload['error']?.toString() ?? 'Failed to update short code',
+        );
       }
     } catch (e) {
       if (e is ItemApiException) rethrow;
@@ -2173,10 +2175,14 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
-  Future<Map<String, List<String>>> getPipelineStageLabels() async {
+  Future<Map<String, List<PipelineStageNode>>> getPipelineStageNodes() async {
     if (useMockResponses) {
-      return const <String, List<String>>{
-        '1': <String>['Cutting', 'Molding', 'Finishing'],
+      return const <String, List<PipelineStageNode>>{
+        '1': <PipelineStageNode>[
+          PipelineStageNode(id: 'n1', name: 'Cutting', stageIndex: 0),
+          PipelineStageNode(id: 'n2', name: 'Molding', stageIndex: 1),
+          PipelineStageNode(id: 'n3', name: 'Finishing', stageIndex: 2),
+        ],
       };
     }
     final uri = Uri.parse('$baseUrl/api/production/pipeline-templates');
@@ -2187,18 +2193,15 @@ class ApiItemRepository implements ItemRepository {
         payload['error']?.toString() ?? 'Failed to fetch pipeline templates',
       );
     }
-    final result = <String, List<String>>{};
+    final result = <String, List<PipelineStageNode>>{};
     for (final entry in payload['templates'] as List<dynamic>? ?? const []) {
       final map = entry as Map<String, dynamic>;
-      result[map['id'].toString()] =
-          (map['stageLabels'] as List<dynamic>? ?? const [])
-              .map((label) => label.toString())
-              .where((label) => label.trim().isNotEmpty)
-              .toList(growable: false);
+      result[map['id'].toString()] = PipelineStageNode.listFromJson(
+        map['nodes'] as List<dynamic>?,
+      );
     }
     return result;
   }
-
 
   // --- Master Data, keyed by (variant, pipeline) ---------------------------
 
@@ -2218,14 +2221,14 @@ class ApiItemRepository implements ItemRepository {
         baseline: PenPaperBaseline.createDefault(),
       );
     }
-    final uri = Uri.parse(
-      '$baseUrl/api/items/$itemId/master-data/resolve',
-    ).replace(
-      queryParameters: <String, String>{
-        if ((pipelineId ?? '').trim().isNotEmpty) 'pipelineId': pipelineId!.trim(),
-        if (adopt) 'adopt': '1',
-      },
-    );
+    final uri = Uri.parse('$baseUrl/api/items/$itemId/master-data/resolve')
+        .replace(
+          queryParameters: <String, String>{
+            if ((pipelineId ?? '').trim().isNotEmpty)
+              'pipelineId': pipelineId!.trim(),
+            if (adopt) 'adopt': '1',
+          },
+        );
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {

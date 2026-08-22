@@ -132,8 +132,11 @@ class _TrackEmpty extends StatelessWidget {
       alignment: Alignment.center,
       child: const Column(
         children: [
-          Icon(Icons.history_toggle_off_outlined,
-              size: 26, color: SoftErpTheme.textSecondary),
+          Icon(
+            Icons.history_toggle_off_outlined,
+            size: 26,
+            color: SoftErpTheme.textSecondary,
+          ),
           SizedBox(height: 8),
           Text(
             'No activity tracked yet',
@@ -189,9 +192,7 @@ class _TrackTile extends StatelessWidget {
       final label = event.label.isEmpty ? event.entityNoun : event.label;
       return '${s.verb} $label · ${event.entityNoun}';
     }
-    return event.actorName.isEmpty
-        ? s.verb
-        : '${s.verb} by ${event.actorName}';
+    return event.actorName.isEmpty ? s.verb : '${s.verb} by ${event.actorName}';
   }
 
   @override
@@ -283,7 +284,10 @@ class _ChangeLine extends StatelessWidget {
       padding: const EdgeInsets.only(top: 2),
       child: RichText(
         text: TextSpan(
-          style: const TextStyle(fontSize: 11.5, color: SoftErpTheme.textSecondary),
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: SoftErpTheme.textSecondary,
+          ),
           children: [
             TextSpan(
               text: '${change.field}: ',
@@ -305,8 +309,18 @@ String _formatTime(DateTime? dt) {
   final local = dt.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${two(local.day)} ${months[local.month - 1]} ${local.year}, '
       '${two(local.hour)}:${two(local.minute)}';

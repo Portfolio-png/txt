@@ -136,7 +136,10 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
   Future<void> _create() async {
     final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
-      showGlobalToast('Enter an email for the login.', kind: AppToastKind.error);
+      showGlobalToast(
+        'Enter an email for the login.',
+        kind: AppToastKind.error,
+      );
       return;
     }
     if (_passCtrl.text.isEmpty) {
@@ -271,7 +274,10 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
                 title: Text(t.name, style: const TextStyle(fontSize: 13)),
                 subtitle: t.description.isEmpty
                     ? null
-                    : Text(t.description, style: const TextStyle(fontSize: 11.5)),
+                    : Text(
+                        t.description,
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
               ),
             ),
           const SizedBox(height: 4),
@@ -506,8 +512,10 @@ class _AccountControlsState extends State<_AccountControls> {
                     : 'Allow this person to sign in again.',
                 onTap: auth.can('users.update_status') && !_busy
                     ? () => _guard(
-                        () =>
-                            auth.setUserActive(userId: userId, active: !isActive),
+                        () => auth.setUserActive(
+                          userId: userId,
+                          active: !isActive,
+                        ),
                         isActive ? 'Login deactivated.' : 'Login activated.',
                       )
                     : null,
@@ -526,7 +534,8 @@ class _AccountControlsState extends State<_AccountControls> {
               _ActionRow(
                 icon: Icons.delete_forever_outlined,
                 label: 'Delete account',
-                subtitle: 'Permanently remove the login. This cannot be undone.',
+                subtitle:
+                    'Permanently remove the login. This cannot be undone.',
                 danger: true,
                 onTap: auth.can('users.manage_permissions')
                     ? () => _confirmDeleteAccount(
@@ -543,8 +552,7 @@ class _AccountControlsState extends State<_AccountControls> {
         const SizedBox(height: 16),
         ErpDialogSectionCard(
           title: 'Track',
-          subtitle:
-              'Everything ${widget.emp.name} has changed across the app.',
+          subtitle: 'Everything ${widget.emp.name} has changed across the app.',
           child: TrackPanel.actor(actorUserId: userId, showHeader: false),
         ),
       ],
@@ -771,7 +779,11 @@ class _ActionRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           child: Row(
             children: [
-              Icon(icon, size: 20, color: danger ? color : SoftErpTheme.textSecondary),
+              Icon(
+                icon,
+                size: 20,
+                color: danger ? color : SoftErpTheme.textSecondary,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

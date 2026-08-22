@@ -3,10 +3,11 @@ import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart
 import 'package:core_erp/features/vendors/data/repositories/vendor_history_repository.dart';
 
 class VendorHistoryProvider extends ChangeNotifier {
-  VendorHistoryProvider({required VendorHistoryRepository repository}) : _repository = repository;
+  VendorHistoryProvider({required VendorHistoryRepository repository})
+    : _repository = repository;
 
   final VendorHistoryRepository _repository;
-  
+
   final Map<int, List<DeliveryChallanItem>> _vendorHistories = {};
   bool _isLoading = false;
 

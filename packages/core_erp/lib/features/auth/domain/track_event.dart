@@ -1,6 +1,10 @@
 /// One field-level change captured in a Track event's diff.
 class TrackChange {
-  const TrackChange({required this.field, required this.from, required this.to});
+  const TrackChange({
+    required this.field,
+    required this.from,
+    required this.to,
+  });
 
   final String field;
   final String from;

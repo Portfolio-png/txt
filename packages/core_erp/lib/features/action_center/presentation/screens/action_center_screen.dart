@@ -136,7 +136,8 @@ class _ActionCenterScreenState extends State<ActionCenterScreen> {
       return const AppEmptyState(
         icon: Icons.task_alt_outlined,
         title: 'No pending delete requests',
-        message: 'When someone requests a deletion that needs approval, it '
+        message:
+            'When someone requests a deletion that needs approval, it '
             'shows up here for review.',
       );
     }
