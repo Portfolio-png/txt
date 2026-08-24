@@ -219,6 +219,47 @@ test('items module routes work end-to-end after evacuation', async () => {
     assert.equal(variantRename.status, 200);
     assert.equal(variantRename.body.item.baseItemId, itemId);
 
+    // A variant can be filed somewhere else on its own — the variant editor
+    // offers the group as a real field. Moving it must not detach it from its
+    // base, and must not drag the base along with it.
+    const elsewhere = await sendJson('POST', '/api/groups', {
+      name: 'Evacuation Elsewhere Group',
+      unitId,
+    });
+    assert.equal(elsewhere.status, 201);
+    const elsewhereId = elsewhere.body.group.id;
+
+    const variantMove = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      displayName: 'Evacuation Test Item - Black',
+      groupId: elsewhereId,
+      unitId,
+    });
+    assert.equal(variantMove.status, 200, JSON.stringify(variantMove.body));
+    assert.equal(variantMove.body.item.groupId, elsewhereId);
+    assert.equal(
+      variantMove.body.item.baseItemId,
+      itemId,
+      'moving a variant must not graduate it into a base item',
+    );
+
+    const baseAfterMove = await getJson(`/api/items/${itemId}`);
+    assert.equal(
+      baseAfterMove.body.item.groupId,
+      groupId,
+      'the base item stays where it was',
+    );
+
+    // Put it back so the rest of the walkthrough sees the shape it expects.
+    const variantMoveBack = await sendJson('PATCH', `/api/items/${variantId}`, {
+      name: 'Evacuation Test Item - Black',
+      displayName: 'Evacuation Test Item - Black',
+      groupId,
+      unitId,
+    });
+    assert.equal(variantMoveBack.status, 200);
+    assert.equal(variantMoveBack.body.item.groupId, groupId);
+
     const sampleBaseline = {
       isGranular: true,
       keyEfficiencyBenchmark: 88,

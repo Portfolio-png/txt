@@ -37,6 +37,7 @@ import '../../data/services/item_link_options_service.dart';
 import '../../domain/item_form_sections.dart';
 import '../providers/item_form_sections_provider.dart';
 
+import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
 import 'package:core_erp/features/production_pipelines/domain/pipeline_stage_node.dart';
 import 'package:core_erp/features/production_pipelines/domain/dxf_blank.dart';
@@ -60,9 +61,19 @@ import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
 class ItemsScreen extends StatefulWidget {
-  const ItemsScreen({super.key, this.initialTab = 0, this.onCreatePipeline});
+  const ItemsScreen({
+    super.key,
+    this.initialTab = 0,
+    this.initialSetsView = false,
+    this.onCreatePipeline,
+  });
 
   final int initialTab;
+
+  /// Open straight into the Sets view. The Sets tab is reachable from the
+  /// Groups screen as well, and it has no sets list of its own to show — it
+  /// hands over to this screen already switched.
+  final bool initialSetsView;
   final Future<String?> Function()? onCreatePipeline;
 
   /// The whole item-creation flow in one window: define the item, build and
@@ -166,12 +177,25 @@ class _ItemsScreenState extends State<ItemsScreen> {
   /// Sets view. Kept separate from [_isGridView] rather than folded into a
   /// three-way enum: the List/Card button is asserted as a strict two-cycle by
   /// the items widget tests, and a third state on it would break them.
-  bool _isSetsView = false;
+  late bool _isSetsView = widget.initialSetsView;
   double _cardWidth = 200;
   double _cardHeight = 250;
   // Boarding-pass card view: number of columns the resize slider requests
   // (clamped to what the desktop width can fit). 1 = full-width hero, up to 10.
   int _columnCount = 4;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSetsView) {
+      // Arriving straight on Sets skips the toggle that would normally have
+      // loaded them. Sets live on the inventory provider, which this screen
+      // otherwise never touches. Idempotent.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<InventoryProvider>().initialize();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1002,15 +1026,20 @@ class _ItemsTableState extends State<_ItemsTable> {
     // filtered order of items within each.
     final byGroup = <int, List<ItemDefinition>>{};
     final variantsByBase = <int, List<ItemDefinition>>{};
-    final presentIds = widget.items.map((item) => item.id).toSet();
+    final groupOfItem = <int, int>{
+      for (final item in widget.items) item.id: item.groupId,
+    };
     for (final item in widget.items) {
       final base = item.baseItemId;
-      if (base != null) {
+      // A variant nests under its base — but only if the base is here to nest
+      // under AND is filed in the same group. A base left out by a search or
+      // archived away, or a variant moved to a group of its own, is listed at
+      // its own group's level instead: otherwise it would either become
+      // unreachable, or be drawn inside a group it no longer belongs to while
+      // its own Group cell named a different one.
+      if (base != null && groupOfItem[base] == item.groupId) {
         variantsByBase.putIfAbsent(base, () => <ItemDefinition>[]).add(item);
-        // A variant nests under its base — but only if the base is here to
-        // nest under. When a search or an archived base leaves it orphaned it
-        // is listed in its own group instead, so it never becomes unreachable.
-        if (presentIds.contains(base)) continue;
+        continue;
       }
       byGroup.putIfAbsent(item.groupId, () => <ItemDefinition>[]).add(item);
     }
@@ -4839,6 +4868,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   Future<void> _openMasterDataDialog(PenPaperBaseline seed) async {
+    // The master is small and rarely edited, but it has to be in hand before
+    // the dialog draws: an empty list hides the material picker, and the plan
+    // then quietly has no weight.
+    await context.read<MaterialsProvider>().ensureLoaded();
+    if (!mounted) return;
     final saved = await showMasterDataDialog(
       context,
       baseline: seed,
@@ -4846,6 +4880,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       pipelineName: _selectedPipelineName,
       stageNodes: _selectedPipelineStageNodes,
       parts: _plannableParts(),
+      materials: context.read<MaterialsProvider>().materials,
       readOnly: _isReadOnly,
       // The material type is read off the name, so the sheet and the table can
       // both say what was weighed.
@@ -4869,17 +4904,37 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
   }
 
-  /// The details card for a basic item. Group and unit are shown as inherited
-  /// context rather than fields: a spawned variant takes them from its base
-  /// item, and changing them on one variant would silently split the set.
+  /// Moves a spawned variant to another group on its own.
+  ///
+  /// Deliberately not [_handleGroupChanged]: that also pulls the new group's
+  /// property schema into the variation tree, and a spawned variant's tree is
+  /// empty by design — its values come from the base item, not from a group.
+  /// The unit is left alone for the same reason it is still shown as
+  /// inherited: it is what the variant is measured in, and a move between
+  /// groups is not a change of measure.
+  void _handleBasicItemGroupChanged(int? value) {
+    if (value == null || value == _selectedGroupId) return;
+    setState(() {
+      _selectedGroupId = value;
+      _localError = null;
+    });
+    _handleChange();
+  }
+
+  /// The details card for a basic item. Unit stays inherited context — changing
+  /// it on one variant would put the set in two measures — but the group is a
+  /// real field: a variant can be filed somewhere else on its own without
+  /// dragging its siblings along.
   Widget _buildBasicItemDetailsSection(
     BuildContext context,
     GroupsProvider groupsProvider,
     UnitsProvider unitsProvider,
   ) {
     final item = _item;
-    final group = groupsProvider.findById(_selectedGroupId);
     final unit = unitsProvider.findById(_selectedUnitId ?? -1);
+    final availableGroups = groupsProvider.itemGroups
+        .where((group) => !group.isArchived)
+        .toList(growable: false);
     final baseItem = _lookupBaseItem(context);
     final combinationGroupNames = (item?.combinationGroupIds ?? const <int>[])
         .map((id) => groupsProvider.findById(id)?.name ?? 'Group #$id')
@@ -4908,6 +4963,39 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 label: 'Display Name',
                 helper: 'How this variant is labelled across the app',
                 readOnly: _isReadOnly,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              SearchableSelectField<int>(
+                tapTargetKey: ValueKey<String>(
+                  'basic-item-group-field${widget.keyScope}',
+                ),
+                value: availableGroups.any(
+                  (group) => group.id == _selectedGroupId,
+                )
+                    ? _selectedGroupId
+                    : null,
+                decoration: _fieldDecoration(
+                  label: 'Group',
+                  helper: 'Move this variant to another group on its own.',
+                ),
+                dialogTitle: 'Group',
+                searchHintText: 'Search group',
+                fieldEnabled: !_isReadOnly,
+                options: [
+                  ...availableGroups.map(
+                    (group) => SearchableSelectOption<int>(
+                      value: group.id,
+                      label: _groupOptionLabel(group, groupsProvider),
+                      searchText: _groupOptionSearchText(group, groupsProvider),
+                    ),
+                  ),
+                ],
+                onChanged: _handleBasicItemGroupChanged,
+                validator: (value) => value == null ? 'Required' : null,
               ),
             ],
           ),
@@ -4947,7 +5035,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       ? baseItem!.displayName
                       : (baseItem?.name ?? 'Item #${item?.baseItemId}'),
                 ),
-                _basicInheritedRow(context, 'Group', group?.name ?? '—'),
                 _basicInheritedRow(context, 'Unit', unit?.displayLabel ?? '—'),
                 _basicInheritedRow(
                   context,
@@ -5130,18 +5217,103 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// The (name, displayName) a variant of [combo] carries. [useCodes] names it
   /// from each value's Code instead of its name; null follows the item's own
   /// `__format:codes` setting.
+  ///
+  /// Both follow the Naming Format the user built: the order of the blocks,
+  /// where the Base Name block sits among them, and the separator the Display
+  /// Format asks for. The base name is part of the format, not a prefix glued
+  /// on in front of it.
   (String, String) variantNames(List<_VariantOption> combo, {bool? useCodes}) {
     final byCode = useCodes ?? _useValueCodes;
     // The item name is identity and stays spelled out; only the display name
     // switches to codes, so the two are free to differ.
-    final namePart = combo.map((option) => option.label).join(' - ');
-    final displayPart = combo
-        .map((option) => byCode ? option.codeOrLabel : option.label)
-        .join(' - ');
     return (
-      '${_nameController.text.trim()} - $namePart',
-      '${_displayNameController.text.trim()} - $displayPart',
+      _composeVariantName(combo, _nameController.text.trim(), byCode: false),
+      _composeVariantName(
+        combo,
+        _displayNameController.text.trim(),
+        byCode: byCode,
+      ),
     );
+  }
+
+  /// The picked values alone, in Naming Format order — the variant's name with
+  /// the Base Name block left out. Used for the pending-variant preview, which
+  /// shows the values under the full name.
+  String variantValuesLabel(List<_VariantOption> combo, {bool? useCodes}) =>
+      _composeVariantName(
+        combo,
+        '',
+        byCode: useCodes ?? _useValueCodes,
+      );
+
+  /// Lays [combo] out in Naming Format order around [baseName]. The 'name'
+  /// token emits the base name wherever the user dragged the Base Name block;
+  /// 'prop_N' emits that property's picked value. Values join with the Display
+  /// Format's separator — a plain space by default, never a dash. The base name
+  /// always joins with a space, so "Dimensions" reads "Sheet 14 x 48" rather
+  /// than "Sheet x 14 x 48".
+  ///
+  /// A property the user dragged out of the format is left out, as it is
+  /// everywhere else the format is honoured. If that would leave the name with
+  /// no values at all, every picked value is appended instead: two variants of
+  /// the same item must not end up sharing one name.
+  String _composeVariantName(
+    List<_VariantOption> combo,
+    String baseName, {
+    required bool byCode,
+  }) {
+    final isDetailed = _namingFormat.contains('__format:detailed');
+    final isDimensions = _namingFormat.contains('__format:dimensions');
+    final valueSeparator = isDetailed
+        ? ', '
+        : isDimensions
+        ? ' x '
+        : ' ';
+
+    String valueOf(_VariantOption option) {
+      final value = byCode ? option.codeOrLabel : option.label;
+      if (!isDetailed || value.isEmpty) return value;
+      final propertyName = option.property.nameController.text.trim();
+      return propertyName.isEmpty ? value : '$propertyName: $value';
+    }
+
+    // (text, isBaseName) — the flag decides which separator precedes a part.
+    final parts = <(String, bool)>[];
+    var valuesEmitted = 0;
+    for (final token in _activeNamingFormat) {
+      if (token == 'name') {
+        if (baseName.isNotEmpty) parts.add((baseName, true));
+        continue;
+      }
+      if (!token.startsWith('prop_')) continue;
+      final index = int.tryParse(token.substring(5));
+      if (index == null || index < 0 || index >= _rootNodes.length) continue;
+      final property = _rootNodes[index];
+      for (final option in combo) {
+        if (!identical(option.property, property)) continue;
+        final value = valueOf(option);
+        if (value.isEmpty) continue;
+        parts.add((value, false));
+        valuesEmitted++;
+      }
+    }
+
+    if (valuesEmitted == 0) {
+      for (final option in combo) {
+        final value = valueOf(option);
+        if (value.isNotEmpty) parts.add((value, false));
+      }
+    }
+
+    final buffer = StringBuffer();
+    for (var i = 0; i < parts.length; i++) {
+      if (i > 0) {
+        final joinsBaseName = parts[i - 1].$2 || parts[i].$2;
+        buffer.write(joinsBaseName ? ' ' : valueSeparator);
+      }
+      buffer.write(parts[i].$1);
+    }
+    return buffer.toString();
   }
 
   /// Hands the base item's own fields (group, unit, conversions, media, links)
@@ -5223,6 +5395,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           groupType: 'item',
           groupStructure: 'combination',
           description: choice.newDescription,
+          parentGroupId: choice.newParentGroupId,
         ),
       );
       if (created == null) {
@@ -5241,7 +5414,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
     if (assigned == null) {
       return groupsProvider.errorMessage ??
-          'Could not add variants to the combination group.';
+          'Could not add to the combination group.';
     }
     return null;
   }
@@ -8023,6 +8196,7 @@ class _VariationPanel extends StatefulWidget {
   const _VariationPanel({
     super.key,
     required this.itemName,
+    this.previewVariantLabels,
     required this.topLevelProperties,
     required this.onSpawnItems,
     required this.onAssignToGroup,
@@ -8034,6 +8208,7 @@ class _VariationPanel extends StatefulWidget {
     required this.onGroupStepDone,
     required this.showGroupStep,
     required this.spawnedSoFar,
+    this.baseItem,
     required this.groupTargetIds,
     required this.groupRound,
     required this.onDeleteVariant,
@@ -8042,6 +8217,14 @@ class _VariationPanel extends StatefulWidget {
 
   /// Base item name, used for the generated-name preview.
   final String itemName;
+
+  /// What a pending combination will be called once it is spawned: its display
+  /// name — Naming Format order, Base Name block included where the user put it
+  /// — and the same label with the base name left out. Asking the base editor
+  /// is the point: the card previews the name the spawn will actually give the
+  /// variant instead of reconstructing one that drifts from it.
+  final (String, String) Function(List<_VariantOption> combo)?
+  previewVariantLabels;
   final List<_NodeDraft> topLevelProperties;
 
   /// Creates the variants and returns them. An empty list means nothing was
@@ -8078,6 +8261,12 @@ class _VariationPanel extends StatefulWidget {
   /// Everything spawned in this window so far, across repeated rounds — shown
   /// in the list beside the group sidebar.
   final List<ItemDefinition> spawnedSoFar;
+
+  /// The item the variants were spawned from, once it has been saved. It is
+  /// offered for filing alongside them: the base is what carries the top-level
+  /// properties, so a combination group that holds it holds the whole family
+  /// rather than only the variants struck off it. Null before the first save.
+  final ItemDefinition? baseItem;
 
   /// The ids the group step should file: the most recent round only.
   final List<int> groupTargetIds;
@@ -8136,6 +8325,11 @@ class _VariationPanelState extends State<_VariationPanel> {
   final TextEditingController _groupNameController = TextEditingController();
   final TextEditingController _groupDescriptionController =
       TextEditingController();
+
+  /// Optional parent for a new combination group, so it can be nested under an
+  /// existing item group instead of always sitting at the top level. Null means
+  /// top level, which stays the default.
+  int? _newGroupParentId;
   bool _isAssigning = false;
 
   @override
@@ -8188,7 +8382,13 @@ class _VariationPanelState extends State<_VariationPanel> {
       }
     }
     // A deleted variant must not linger in the tick set or the filed chips.
-    final liveIds = widget.spawnedSoFar.map((item) => item.id).toSet();
+    // The base item is in the tick set too and is not a spawn, so it counts as
+    // live in its own right — otherwise ticking it would be undone on the next
+    // rebuild.
+    final liveIds = <int>{
+      for (final item in widget.spawnedSoFar) item.id,
+      if (widget.baseItem != null) widget.baseItem!.id,
+    };
     _selectedVariantIds.removeWhere((id) => !liveIds.contains(id));
     _filedGroupByItemId.removeWhere((id, _) => !liveIds.contains(id));
   }
@@ -8429,8 +8629,21 @@ class _VariationPanelState extends State<_VariationPanel> {
     });
   }
 
-  String _comboLabel(List<_VariantOption> combo) =>
-      combo.map((option) => option.label).join(' - ');
+  /// The two lines a pending variant shows: the name it will be created with,
+  /// and its values on their own. Both come from the base editor so they match
+  /// the Naming Format; the plain value join is only reached before the editor
+  /// has mounted.
+  (String, String) _comboLabels(List<_VariantOption> combo) {
+    final previewed = widget.previewVariantLabels?.call(combo);
+    final name = previewed?.$1.trim() ?? '';
+    final values = previewed?.$2.trim() ?? '';
+    if (name.isNotEmpty || values.isNotEmpty) {
+      return (name, values);
+    }
+    final fallback = combo.map((option) => option.label).join(' ');
+    final base = widget.itemName.trim();
+    return (base.isEmpty ? fallback : '$base $fallback', fallback);
+  }
 
   /// Clicking a generated variant IS the spawn. There is no Spawn button any
   /// more: the click creates that one item and opens its details column, and
@@ -8517,13 +8730,25 @@ class _VariationPanelState extends State<_VariationPanel> {
     return item.displayName.trim().isEmpty ? item.name : item.displayName;
   }
 
-  /// Read-only list of what has been spawned, shown beside the group sidebar.
+  /// The base item followed by everything spawned from it — what the group step
+  /// can file. The base is offered because filing it is how the combination
+  /// group becomes the home of the family: it is the one that carries the
+  /// top-level properties every later variant is struck from.
+  List<ItemDefinition> get _filableItems => <ItemDefinition>[
+    if (widget.baseItem != null) widget.baseItem!,
+    ...widget.spawnedSoFar,
+  ];
+
+  bool _isBaseItem(ItemDefinition item) =>
+      widget.baseItem != null && widget.baseItem!.id == item.id;
+
+  /// Read-only list of what can be filed, shown beside the group sidebar.
   Widget _buildSpawnedPane() {
-    final items = widget.spawnedSoFar;
+    final items = _filableItems;
     final selectedCount = _selectedVariantIds.length;
     final allSelected = items.isNotEmpty && selectedCount == items.length;
     return _paneShell(
-      title: 'Spawned variants',
+      title: widget.baseItem == null ? 'Spawned variants' : 'Item and variants',
       caption: selectedCount == 0
           ? 'Tick the ones to file into a ${_fileTarget == _FileTarget.group ? 'group' : 'set'}.'
           : '$selectedCount of ${items.length} selected.',
@@ -8562,6 +8787,7 @@ class _VariationPanelState extends State<_VariationPanel> {
               : item.displayName;
           final selected = _selectedVariantIds.contains(item.id);
           final filedGroup = _filedGroupByItemId[item.id];
+          final isBase = _isBaseItem(item);
           return Material(
             color: Colors.transparent,
             child: InkWell(
@@ -8608,6 +8834,14 @@ class _VariationPanelState extends State<_VariationPanel> {
                         ),
                       ),
                     ),
+                    if (isBase) ...[
+                      const SizedBox(width: 8),
+                      const SoftStatusPill(
+                        label: 'Base item',
+                        background: SoftErpTheme.accentSoft,
+                        textColor: SoftErpTheme.accentDeeper,
+                      ),
+                    ],
                     if (filedGroup != null) ...[
                       const SizedBox(width: 8),
                       SoftStatusPill(
@@ -8617,20 +8851,26 @@ class _VariationPanelState extends State<_VariationPanel> {
                       ),
                     ],
                     const SizedBox(width: 6),
-                    IconButton(
-                      tooltip: 'Delete this variant',
-                      onPressed: widget.busy
-                          ? null
-                          : () => widget.onDeleteVariant(item),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                      color: SoftErpTheme.dangerText,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 30,
-                        height: 30,
+                    // The base item is the thing being created, not a spawn of
+                    // it — deleting it from the variant list is not an action
+                    // this step owns.
+                    if (isBase)
+                      const SizedBox(width: 30)
+                    else
+                      IconButton(
+                        tooltip: 'Delete this variant',
+                        onPressed: widget.busy
+                            ? null
+                            : () => widget.onDeleteVariant(item),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        color: SoftErpTheme.dangerText,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 30,
+                          height: 30,
+                        ),
+                        padding: EdgeInsets.zero,
                       ),
-                      padding: EdgeInsets.zero,
-                    ),
                   ],
                 ),
               ),
@@ -8646,7 +8886,7 @@ class _VariationPanelState extends State<_VariationPanel> {
   Future<void> _assignToGroup() async {
     if (_selectedVariantIds.isEmpty) {
       setState(
-        () => _error = 'Tick at least one variant to file into a group.',
+        () => _error = 'Tick the item or a variant to file into a group.',
       );
       return;
     }
@@ -8654,6 +8894,9 @@ class _VariationPanelState extends State<_VariationPanel> {
         ? _CombinationGroupChoice.create(
             newName: _groupNameController.text.trim(),
             newDescription: _groupDescriptionController.text.trim(),
+            newParentGroupId: _fileTarget == _FileTarget.group
+                ? _newGroupParentId
+                : null,
             target: _fileTarget,
           )
         : (_selectedCombinationGroupId == null
@@ -8717,6 +8960,7 @@ class _VariationPanelState extends State<_VariationPanel> {
       _selectedCombinationGroupId = null;
       _groupNameController.clear();
       _groupDescriptionController.clear();
+      _newGroupParentId = null;
     });
   }
 
@@ -8864,15 +9108,15 @@ class _VariationPanelState extends State<_VariationPanel> {
         return 'Name the new $noun to create it.';
       }
       if (selected == 0) {
-        return 'Tick at least one variant — a $noun cannot be created empty.';
+        return 'Tick at least one — a $noun cannot be created empty.';
       }
-      return 'Creates the $noun and puts $selected variant'
+      return 'Creates the $noun and puts $selected item'
           '${selected == 1 ? '' : 's'} in it.';
     }
     if (filed > 0) {
       return '$filed filed · $selected still selected.';
     }
-    return '$selected of ${widget.spawnedSoFar.length} selected.';
+    return '$selected of ${_filableItems.length} selected.';
   }
 
   Widget _buildGroupActions() {
@@ -9107,6 +9351,11 @@ class _VariationPanelState extends State<_VariationPanel> {
             ),
             if (isGroup) ...[
               const SizedBox(height: 10),
+              // Optional on purpose: a combination group is usually its own
+              // top-level thing, but naming a parent lets it sit inside the
+              // item group it belongs to rather than beside it.
+              _parentGroupField(),
+              const SizedBox(height: 10),
               _sidebarField(
                 controller: _groupDescriptionController,
                 label: 'Description',
@@ -9117,6 +9366,123 @@ class _VariationPanelState extends State<_VariationPanel> {
           ],
         ],
       ),
+    );
+  }
+
+  /// The hierarchical item groups a new combination group can be filed under,
+  /// in tree order with the depth each one sits at. Primary Group and anything
+  /// beneath it are both here — the depth is what tells them apart, since a
+  /// flat list of names cannot say which group is under which.
+  ///
+  /// A group whose parent is not itself in the list (archived, or a combination
+  /// group) is treated as a root so it stays pickable rather than vanishing.
+  List<(GroupDefinition, int)> _nestableParents() {
+    final all = context
+        .watch<GroupsProvider>()
+        .itemGroups
+        .where((group) => !group.isArchived)
+        .toList(growable: false);
+    final ids = {for (final group in all) group.id};
+    final byParent = <int?, List<GroupDefinition>>{};
+    for (final group in all) {
+      final parentId =
+          group.parentGroupId != null && ids.contains(group.parentGroupId)
+          ? group.parentGroupId
+          : null;
+      byParent.putIfAbsent(parentId, () => <GroupDefinition>[]).add(group);
+    }
+    for (final siblings in byParent.values) {
+      siblings.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    }
+
+    final ordered = <(GroupDefinition, int)>[];
+    // Stored parent links are cycle-checked server-side, but a walk that trusts
+    // that and is wrong hangs the dialog, so it is guarded here too.
+    final visited = <int>{};
+    void walk(int? parentId, int depth) {
+      for (final group in byParent[parentId] ?? const <GroupDefinition>[]) {
+        if (!visited.add(group.id)) continue;
+        ordered.add((group, depth));
+        walk(group.id, depth + 1);
+      }
+    }
+
+    walk(null, 0);
+    return ordered;
+  }
+
+  /// The lineage of [groupId] as one line — "Primary Group / Finish Goods" —
+  /// for the closed dropdown, where indentation has nothing to line up against.
+  String _groupPathLabel(int groupId) {
+    final provider = context.read<GroupsProvider>();
+    final crumbs = <String>[];
+    final seen = <int>{};
+    int? current = groupId;
+    while (current != null && seen.add(current)) {
+      final group = provider.findById(current);
+      if (group == null) break;
+      crumbs.insert(0, group.name);
+      current = group.parentGroupId;
+    }
+    return crumbs.join(' / ');
+  }
+
+  /// Where a new combination group is filed. Hierarchical item groups only —
+  /// nesting one combination group inside another is not a tree anyone reads.
+  Widget _parentGroupField() {
+    final parents = _nestableParents();
+    final selected = parents.any((entry) => entry.$1.id == _newGroupParentId)
+        ? _newGroupParentId
+        : null;
+    return DropdownButtonFormField<int?>(
+      initialValue: selected,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: 'Nest under',
+        helperText: 'Optional — leave as Top level to keep it standalone.',
+        helperMaxLines: 2,
+        isDense: true,
+        filled: true,
+        fillColor: SoftErpTheme.cardSurfaceAlt,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+      ),
+      // Open, the list is a tree; closed, it is the lineage on one line.
+      selectedItemBuilder: (context) => [
+        const Text('Top level', overflow: TextOverflow.ellipsis),
+        for (final (group, _) in parents)
+          Text(_groupPathLabel(group.id), overflow: TextOverflow.ellipsis),
+      ],
+      items: [
+        const DropdownMenuItem<int?>(
+          value: null,
+          child: Text('Top level', overflow: TextOverflow.ellipsis),
+        ),
+        for (final (group, depth) in parents)
+          DropdownMenuItem<int?>(
+            value: group.id,
+            child: Padding(
+              padding: EdgeInsets.only(left: depth * 14.0),
+              child: Text(group.name, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+      ],
+      onChanged: (value) => setState(() {
+        _error = null;
+        _newGroupParentId = value;
+      }),
     );
   }
 
@@ -9601,10 +9967,9 @@ class _VariationPanelState extends State<_VariationPanel> {
 
   Widget _buildVariantCard(int index) {
     final combo = _createdCombinations[index];
-    final label = _comboLabel(combo);
+    final (variantName, valuesLabel) = _comboLabels(combo);
     final selected = _selectedIndex == index;
     final spawning = _spawningIndex == index;
-    final base = widget.itemName.trim();
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -9656,8 +10021,11 @@ class _VariationPanelState extends State<_VariationPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // The name it will be created with, spelled out in full so
+                    // the base name is visible here and not only after the
+                    // spawn; its values sit under it.
                     Text(
-                      label.isEmpty ? 'No values' : label,
+                      variantName.isEmpty ? 'No values' : variantName,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: SoftErpTheme.textPrimary,
@@ -9665,10 +10033,10 @@ class _VariationPanelState extends State<_VariationPanel> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    if (base.isNotEmpty) ...[
+                    if (valuesLabel.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        '$base - $label',
+                        valuesLabel,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: SoftErpTheme.textSecondary,
@@ -10087,12 +10455,14 @@ class _CombinationGroupChoice {
   const _CombinationGroupChoice.existing(this.existingGroupId, this.target)
     : isCreateNew = false,
       newName = '',
-      newDescription = '';
+      newDescription = '',
+      newParentGroupId = null;
 
   const _CombinationGroupChoice.create({
     required this.newName,
     required this.newDescription,
     required this.target,
+    this.newParentGroupId,
   }) : isCreateNew = true,
        existingGroupId = null;
 
@@ -10100,6 +10470,10 @@ class _CombinationGroupChoice {
   final int? existingGroupId;
   final String newName;
   final String newDescription;
+
+  /// Optional parent for a group being created, so it nests under an existing
+  /// item group. Null means top level. Sets ignore it — they are not a tree.
+  final int? newParentGroupId;
   final _FileTarget target;
 
   String get targetNoun => target == _FileTarget.group ? 'group' : 'set';
@@ -11537,11 +11911,19 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     return _VariationPanel(
       key: ValueKey<String>('variation-panel-$_panelGeneration'),
       itemName: _summary?.displayName ?? '',
+      // The base editor owns the Naming Format, so it is the only thing that
+      // can say what a pending variant will be called.
+      previewVariantLabels: (combo) {
+        final editor = _baseEditorKey.currentState;
+        if (editor == null) return ('', '');
+        return (editor.variantNames(combo).$2, editor.variantValuesLabel(combo));
+      },
       topLevelProperties:
           _baseEditorKey.currentState?.topLevelProperties ??
           const <_NodeDraft>[],
       showGroupStep: _step == _WorkflowStep.group,
       spawnedSoFar: _spawnedItems,
+      baseItem: _savedItem,
       groupTargetIds: _lastRoundIds,
       groupRound: _spawnRound,
       onDeleteVariant: _deleteSpawnedVariant,

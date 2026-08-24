@@ -51,6 +51,8 @@ import 'features/production/data/repositories/sqlite_production_repository.dart'
 import 'features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'package:core_erp/features/units/data/repositories/api_unit_repository.dart';
 import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
+import 'package:core_erp/features/materials/data/material_repository.dart';
+import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/vendors/data/repositories/api_vendor_repository.dart';
 import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
@@ -119,7 +121,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   const clientId = String.fromEnvironment('CLIENT_ID', defaultValue: 'default');
-  await ConfigService.instance.init(_resolveApiBaseUrl(), clientId, isDemoMode: _isDemoMode);
+  await ConfigService.instance.init(
+    _resolveApiBaseUrl(),
+    clientId,
+    isDemoMode: _isDemoMode,
+  );
 
   DataSyncService.instance.initialize(_resolveApiBaseUrl(), clientId);
 
@@ -373,6 +379,10 @@ class MyApp extends StatelessWidget {
               inventoryRepository ??
               _buildInventoryRepository(context.read<AuthProvider>()),
         ),
+        Provider<MaterialRepository>(
+          create: (context) =>
+              _buildMaterialRepository(context.read<AuthProvider>()),
+        ),
         Provider<UnitRepository>(
           create: (context) =>
               unitRepository ??
@@ -418,7 +428,8 @@ class MyApp extends StatelessWidget {
               _buildPipelineRunRepository(context.read<AuthProvider>()),
         ),
         Provider<SearchRepository>(
-          create: (context) => _buildSearchRepository(context.read<AuthProvider>()),
+          create: (context) =>
+              _buildSearchRepository(context.read<AuthProvider>()),
         ),
         Provider<ProductionRepository>(
           create: (_) => SqliteProductionRepository(),
@@ -466,10 +477,17 @@ class MyApp extends StatelessWidget {
               previous ?? OrdersProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
-          create: (context) =>
-              InventoryProvider(repository: context.read<InventoryRepository>()),
+          create: (context) => InventoryProvider(
+            repository: context.read<InventoryRepository>(),
+          ),
           update: (context, repository, previous) =>
               previous ?? InventoryProvider(repository: repository),
+        ),
+        ChangeNotifierProxyProvider<MaterialRepository, MaterialsProvider>(
+          create: (context) =>
+              MaterialsProvider(repository: context.read<MaterialRepository>()),
+          update: (context, repository, previous) =>
+              previous ?? MaterialsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<UnitRepository, UnitsProvider>(
           create: (context) =>
@@ -489,9 +507,13 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? ClientsProvider(repository: repository),
         ),
-        ChangeNotifierProxyProvider<SubContractorRepository, SubContractorsProvider>(
-          create: (context) =>
-              SubContractorsProvider(repository: context.read<SubContractorRepository>()),
+        ChangeNotifierProxyProvider<
+          SubContractorRepository,
+          SubContractorsProvider
+        >(
+          create: (context) => SubContractorsProvider(
+            repository: context.read<SubContractorRepository>(),
+          ),
           update: (context, repository, previous) =>
               previous ?? SubContractorsProvider(repository: repository),
         ),
@@ -551,9 +573,13 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? DiesProvider(repository: repository),
         ),
-        ChangeNotifierProxyProvider<ActionCenterRepository, ActionCenterProvider>(
-          create: (context) =>
-              ActionCenterProvider(repository: context.read<ActionCenterRepository>()),
+        ChangeNotifierProxyProvider<
+          ActionCenterRepository,
+          ActionCenterProvider
+        >(
+          create: (context) => ActionCenterProvider(
+            repository: context.read<ActionCenterRepository>(),
+          ),
           update: (context, repository, previous) =>
               previous ?? ActionCenterProvider(repository: repository),
         ),
@@ -565,8 +591,10 @@ class MyApp extends StatelessWidget {
               previous ?? DepartmentsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<SearchRepository, SearchProvider>(
-          create: (context) => SearchProvider(repository: context.read<SearchRepository>()),
-          update: (context, repository, previous) => previous ?? SearchProvider(repository: repository),
+          create: (context) =>
+              SearchProvider(repository: context.read<SearchRepository>()),
+          update: (context, repository, previous) =>
+              previous ?? SearchProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<JobsRepository, JobsProvider>(
           create: (context) =>
@@ -614,44 +642,46 @@ class MyApp extends StatelessWidget {
       ],
       child: _RealtimeSocketConnector(
         child: MaterialApp(
-        navigatorKey: appNavigatorKey,
-        navigatorObservers: [ReplayNavigatorObserver()],
-        title: 'Paper',
-        debugShowCheckedModeBanner: false,
-        theme: base.copyWith(
-          textTheme: base.textTheme.apply(
-            bodyColor: SoftErpTheme.textPrimary,
-            displayColor: SoftErpTheme.textPrimary,
+          navigatorKey: appNavigatorKey,
+          navigatorObservers: [ReplayNavigatorObserver()],
+          title: 'Paper',
+          debugShowCheckedModeBanner: false,
+          theme: base.copyWith(
+            textTheme: base.textTheme.apply(
+              bodyColor: SoftErpTheme.textPrimary,
+              displayColor: SoftErpTheme.textPrimary,
+            ),
           ),
-        ),
-        builder: (context, child) {
-          return Listener(
-            onPointerDown: (event) {
-              final media = MediaQuery.of(context);
-              SessionReplayService.instance.recordTap(
-                event.position.dx,
-                event.position.dy,
-                media.size.width,
-                media.size.height,
-              );
-            },
-            child: child ?? const SizedBox(),
-          );
-        },
-        onGenerateRoute: (settings) {
-          if (settings.name != null &&
-              settings.name!.startsWith('/freelancer-portal')) {
-            final uri = Uri.parse(settings.name!);
-            final token = uri.queryParameters['token'] ?? '';
-            return MaterialPageRoute(
-              settings: settings,
-              builder: (_) =>
-                  FreelancerPortalScreen(token: token, apiBaseUrl: _apiBaseUrl),
+          builder: (context, child) {
+            return Listener(
+              onPointerDown: (event) {
+                final media = MediaQuery.of(context);
+                SessionReplayService.instance.recordTap(
+                  event.position.dx,
+                  event.position.dy,
+                  media.size.width,
+                  media.size.height,
+                );
+              },
+              child: child ?? const SizedBox(),
             );
-          }
-          return null;
-        },
-        home: _AuthGate(isDemoMode: _effectiveDemoMode),
+          },
+          onGenerateRoute: (settings) {
+            if (settings.name != null &&
+                settings.name!.startsWith('/freelancer-portal')) {
+              final uri = Uri.parse(settings.name!);
+              final token = uri.queryParameters['token'] ?? '';
+              return MaterialPageRoute(
+                settings: settings,
+                builder: (_) => FreelancerPortalScreen(
+                  token: token,
+                  apiBaseUrl: _apiBaseUrl,
+                ),
+              );
+            }
+            return null;
+          },
+          home: _AuthGate(isDemoMode: _effectiveDemoMode),
         ),
       ),
     );
@@ -670,6 +700,14 @@ class MyApp extends StatelessWidget {
 
   InventoryRepository _buildInventoryRepository(AuthProvider auth) {
     return ApiInventoryRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  MaterialRepository _buildMaterialRepository(AuthProvider auth) {
+    return MaterialRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
@@ -700,7 +738,9 @@ class MyApp extends StatelessWidget {
     );
   }
 
-  SubContractorRepository _buildSubContractorRepository(AuthProvider authProvider) {
+  SubContractorRepository _buildSubContractorRepository(
+    AuthProvider authProvider,
+  ) {
     return ApiSubContractorRepository(
       client: _authClient(authProvider),
       baseUrl: _apiBaseUrl,
@@ -775,10 +815,7 @@ class MyApp extends StatelessWidget {
   }
 
   SearchRepository _buildSearchRepository(AuthProvider auth) {
-    return ApiSearchRepository(
-      client: _authClient(auth),
-      baseUrl: _apiBaseUrl,
-    );
+    return ApiSearchRepository(client: _authClient(auth), baseUrl: _apiBaseUrl);
   }
 }
 
@@ -809,7 +846,7 @@ class _AuthGateState extends State<_AuthGate> {
       }
       return;
     }
-    
+
     final activated = await ActivationService.isActivated();
     if (mounted) {
       setState(() {
@@ -850,16 +887,20 @@ class _AuthGateState extends State<_AuthGate> {
     if (_isActivated == null) {
       return const Scaffold(
         backgroundColor: Color(0xFF0F172A),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF8B5CF6))),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF8B5CF6)),
+        ),
       );
     }
 
     if (!_isActivated!) {
-      return ActivationScreen(onActivated: () {
-        setState(() {
-          _isActivated = true;
-        });
-      });
+      return ActivationScreen(
+        onActivated: () {
+          setState(() {
+            _isActivated = true;
+          });
+        },
+      );
     }
 
     final auth = context.watch<AuthProvider>();

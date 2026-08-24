@@ -15250,10 +15250,12 @@ async function saveGroup({
     itemFormSections && typeof itemFormSections === 'object'
       ? JSON.stringify(itemFormSections)
       : null;
-  // Combination groups are flat: they never have a parent and never auto-attach
-  // to the Primary Group, and their unit is optional (members carry their own).
-  let normalizedParentId =
-    isCombination || parentGroupId == null ? null : Number(parentGroupId);
+  // A combination group may be nested under a hierarchical group when the
+  // caller names one, so a variant set can live inside the item group it
+  // belongs to. It is never auto-attached to the Primary Group the way a
+  // hierarchical group is — left alone it stays top level — and its unit stays
+  // optional (members carry their own).
+  let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
   let normalizedUnitId = unitId ? Number(unitId) : null;
 
   if (
@@ -27476,7 +27478,11 @@ async function clearAllData() {
       'user_permission_overrides',
       'permission_templates',
       'permission_template_permissions',
-      'user_permission_templates'
+      'user_permission_templates',
+      // Reference data, not workspace data: a density is a property of steel,
+      // not of this shop's transactions. Wiping it left every sheet plan
+      // unable to weigh itself until someone retyped the periodic table.
+      'material_types'
     ];
     for (const table of allTables) {
       if (!preserveTables.includes(table.name)) {
@@ -29460,6 +29466,13 @@ registerItemsModuleRoutes({
   itemsPorts,
   getIo: () => io,
 });
+
+// Material types carry the one number that turns a sheet's volume into its
+// weight. Named apart from `materials`, which is barcoded physical stock.
+const {
+  registerMaterialTypeRoutes,
+} = require('./modules/items/material-types');
+registerMaterialTypeRoutes({ app, requirePermission, get, all, run, logChange });
 
 // Master Data lives on the (variant, pipeline) pair — see modules/items/
 // master-data.js for the resolution rule.

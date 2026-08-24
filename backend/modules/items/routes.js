@@ -15,6 +15,12 @@
 // ---------------------------------------------------------------------------
 
 const contracts = require('./contract');
+const { buildGroupOverview } = require('./group-overview');
+const {
+  coversByGroup,
+  itemCountsByGroup,
+  coverBasis,
+} = require('./group-covers');
 
 module.exports = function registerItemsModuleRoutes(ctx) {
   const {
@@ -52,7 +58,24 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   app.get('/api/groups', requirePermission('config.read'), async (req, res) => {
     try {
       const rows = await getGroupsWithUsage();
-      res.json({ success: true, groups: rows.map(rowToGroupDto), error: null });
+      const groups = rows.map(rowToGroupDto);
+      // How many items are in each group is one GROUP BY over an indexed
+      // column, and both the table and the cards say it — so it always ships.
+      const counts = await itemCountsByGroup({ all });
+      for (const group of groups) {
+        group.itemCount = counts.get(Number(group.id)) || 0;
+      }
+      // The cover mosaic is a different matter: it reads real item rows per
+      // group, so it stays asked-for rather than always paid for.
+      if (String(req.query.withCovers || '') === '1') {
+        const covers = await coversByGroup({ all });
+        for (const group of groups) {
+          const forGroup = covers.get(Number(group.id)) || [];
+          group.coverItems = forGroup;
+          group.coverBasis = coverBasis(forGroup);
+        }
+      }
+      res.json({ success: true, groups, error: null });
     } catch (error) {
       res.status(500).json({ success: false, groups: [], error: error.message });
     }
@@ -578,6 +601,40 @@ module.exports = function registerItemsModuleRoutes(ctx) {
         itemCount: 0,
         missingProperties: [],
         retiredProperties: [],
+        error: error.message,
+      });
+    }
+  });
+
+  // Everything a group is, in one read: what it holds, what it inherits, and
+  // what its items say about it. Clicking a group asks "what is this", which
+  // the editor was never the answer to.
+  app.get('/api/groups/:id/overview', requirePermission('config.read'), async (req, res) => {
+    try {
+      const groupId = Number(req.params.id);
+      const group = await getGroupRowById(groupId);
+      if (!group) {
+        res.status(404).json({ success: false, overview: null, error: 'Group not found.' });
+        return;
+      }
+      // A group with a broken lineage should still show its items rather than
+      // failing the whole read for a schema nobody asked to see.
+      let schema = null;
+      try {
+        schema = await getEffectiveSchema(groupId);
+      } catch (error) {
+        console.warn(`[groups] schema unavailable for ${groupId}: ${error.message}`);
+      }
+      const overview = await buildGroupOverview({ all, group, schema });
+      res.json({
+        success: true,
+        overview: { ...overview, group: rowToGroupDto(group) },
+        error: null,
+      });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        overview: null,
         error: error.message,
       });
     }

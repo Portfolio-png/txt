@@ -129,6 +129,45 @@ class _StructuredGroupEditorDialogState
 
   bool get _isCombination => _groupStructure == 'combination';
 
+  /// Where this group sits in the tree. Shared by hierarchical and combination
+  /// groups: both can be nested, and a group whose parent cannot be changed
+  /// after it is created is nested only by accident.
+  Widget _buildParentGroupField(
+    GroupsProvider groupsProvider,
+    List<GroupDefinition> groups,
+  ) {
+    return KeyedSubtree(
+      key: const ValueKey<String>('groups-parent-field'),
+      child: SearchableSelectField<int?>(
+        tapTargetKey: const ValueKey<String>('masters-group-parent'),
+        value: groups.any((group) => group.id == _selectedParentGroupId)
+            ? _selectedParentGroupId
+            : null,
+        decoration: _selectDecoration(label: 'Parent Group'),
+        dialogTitle: 'Parent Group',
+        searchHintText: 'Search group',
+        options: [
+          const SearchableSelectOption<int?>(value: null, label: 'Primary'),
+          // Hide the group itself and everything under it: the server rejects
+          // those with a 409, so offering them only produces a dead end.
+          ...groups
+              .where(
+                (group) =>
+                    group.id != widget.group?.id &&
+                    !_wouldCreateCycle(groupsProvider, group.id),
+              )
+              .map(
+                (group) => SearchableSelectOption<int?>(
+                  value: group.id,
+                  label: group.name,
+                ),
+              ),
+        ],
+        onChanged: _setSelectedParentGroup,
+      ),
+    );
+  }
+
   /// Component groups share every field and code path with item groups; only
   /// the stored structure and the labelling differ.
   bool get _isComponent => _groupStructure == 'component';
@@ -427,55 +466,18 @@ class _StructuredGroupEditorDialogState
                               ),
                             ),
                           ],
+                          // A combination group can be nested too, so where it
+                          // sits is editable here rather than being fixed at
+                          // the moment it was created. The unit and the rest of
+                          // the hierarchical fields below still do not apply to
+                          // one, which is why only this field is shared.
+                          if (_isCombination) ...[
+                            const SizedBox(height: 16),
+                            _buildParentGroupField(groupsProvider, groups),
+                          ],
                           if (!_isCombination) ...[
                             const SizedBox(height: 16),
-                            KeyedSubtree(
-                              key: const ValueKey<String>(
-                                'groups-parent-field',
-                              ),
-                              child: SearchableSelectField<int?>(
-                                tapTargetKey: const ValueKey<String>(
-                                  'masters-group-parent',
-                                ),
-                                value:
-                                    groups.any(
-                                      (group) =>
-                                          group.id == _selectedParentGroupId,
-                                    )
-                                    ? _selectedParentGroupId
-                                    : null,
-                                decoration: _selectDecoration(
-                                  label: 'Parent Group',
-                                ),
-                                dialogTitle: 'Parent Group',
-                                searchHintText: 'Search group',
-                                options: [
-                                  const SearchableSelectOption<int?>(
-                                    value: null,
-                                    label: 'Primary',
-                                  ),
-                                  // Hide the group itself and everything under
-                                  // it: the server rejects those with a 409, so
-                                  // offering them only produces a dead end.
-                                  ...groups
-                                      .where(
-                                        (group) =>
-                                            group.id != widget.group?.id &&
-                                            !_wouldCreateCycle(
-                                              groupsProvider,
-                                              group.id,
-                                            ),
-                                      )
-                                      .map(
-                                        (group) => SearchableSelectOption<int?>(
-                                          value: group.id,
-                                          label: group.name,
-                                        ),
-                                      ),
-                                ],
-                                onChanged: _setSelectedParentGroup,
-                              ),
-                            ),
+                            _buildParentGroupField(groupsProvider, groups),
                             const SizedBox(height: 16),
                             KeyedSubtree(
                               key: const ValueKey<String>('groups-unit-field'),
@@ -1167,8 +1169,10 @@ class _StructuredGroupEditorDialogState
     );
   }
 
-  /// Persists a flat combination group. Parent, unit and structured properties
-  /// do not apply, so this bypasses the inventory-backed material path.
+  /// Persists a combination group. Unit and structured properties do not apply,
+  /// so this bypasses the inventory-backed material path — but the parent does
+  /// apply, and it has to be sent on every save: leaving it off an update reads
+  /// as "no parent" and would quietly un-nest a group that was nested.
   Future<void> _submitCombinationGroup(BuildContext context) async {
     final groupsProvider = context.read<GroupsProvider>();
     final name = _nameController.text.trim();
@@ -1182,6 +1186,7 @@ class _StructuredGroupEditorDialogState
           groupType: widget.groupType,
           groupStructure: 'combination',
           description: description,
+          parentGroupId: _selectedParentGroupId,
         ),
       );
     } else {
@@ -1191,6 +1196,7 @@ class _StructuredGroupEditorDialogState
           groupType: widget.groupType,
           groupStructure: 'combination',
           description: description,
+          parentGroupId: _selectedParentGroupId,
         ),
       );
     }

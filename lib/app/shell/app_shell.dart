@@ -33,6 +33,7 @@ import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart
 import '../../features/jobs/presentation/screens/jobs_screen.dart';
 import '../../features/jobs/presentation/widgets/freelancer_barcode_listener.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
+import 'package:core_erp/features/materials/presentation/screens/materials_screen.dart';
 import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
 import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
 import '../../features/machines/presentation/screens/machine_list_screen.dart';
@@ -88,170 +89,182 @@ class _AppShellState extends State<AppShell> {
     return ShowCaseWidget(
       builder: (showcaseContext) {
         if (!_tutorialChecked) {
-            _tutorialChecked = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _checkAndShowTutorial(showcaseContext);
-            });
-          }
+          _tutorialChecked = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _checkAndShowTutorial(showcaseContext);
+          });
+        }
 
-          final navProvider = showcaseContext.watch<NavigationProvider>();
-          final isSidebarVisible = navProvider.isSidebarVisible;
+        final navProvider = showcaseContext.watch<NavigationProvider>();
+        final isSidebarVisible = navProvider.isSidebarVisible;
 
-          return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile =
-            constraints.maxWidth < _ShellLayoutMetrics.mobileBreakpoint;
-        final compact =
-            constraints.maxWidth < _ShellLayoutMetrics.compactBreakpoint;
-        final sidebarWidth = compact
-            ? _ShellLayoutMetrics.compactSidebarWidth
-            : _ShellLayoutMetrics.sidebarWidth;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile =
+                constraints.maxWidth < _ShellLayoutMetrics.mobileBreakpoint;
+            final compact =
+                constraints.maxWidth < _ShellLayoutMetrics.compactBreakpoint;
+            final sidebarWidth = compact
+                ? _ShellLayoutMetrics.compactSidebarWidth
+                : _ShellLayoutMetrics.sidebarWidth;
 
-        final actualSidebarWidth = isSidebarVisible ? sidebarWidth : 0.0;
-        final actualLeftInset = isSidebarVisible
-            ? _ShellLayoutMetrics.sidebarLeftInset
-            : 0.0;
-        final actualRightGap = isSidebarVisible
-            ? _ShellLayoutMetrics.sidebarRightGap
-            : 0.0;
-        final totalSidebarSpace =
-            actualSidebarWidth + actualLeftInset + actualRightGap;
+            final actualSidebarWidth = isSidebarVisible ? sidebarWidth : 0.0;
+            final actualLeftInset = isSidebarVisible
+                ? _ShellLayoutMetrics.sidebarLeftInset
+                : 0.0;
+            final actualRightGap = isSidebarVisible
+                ? _ShellLayoutMetrics.sidebarRightGap
+                : 0.0;
+            final totalSidebarSpace =
+                actualSidebarWidth + actualLeftInset + actualRightGap;
 
-        final shell = FreelancerBarcodeListener(
-          child: PaperShortcutManager(
-            child: MouseRegion(
-            onHover: (e) => GlobalMouseTracker.position.value = e.position,
-            child: Scaffold(
-            backgroundColor: Colors.transparent,
-            drawer: isMobile
-                ? Drawer(width: 236, child: _ShellDrawerContent())
-                : null,
-            appBar: isMobile
-                ? AppBar(
-                    backgroundColor: SoftErpTheme.shellSurface,
-                    foregroundColor: SoftErpTheme.textPrimary,
-                    title: const Text('Paper ERP'),
-                  )
-                : null,
-            body: SafeArea(
-              top: !isMobile,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFE8E8F0), Color(0xFFA7B9F9)],
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    Column(
-                      children: [
-                        if (!isMobile)
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOutCubic,
-                            height: 78,
-                            child: ClipRect(
-                              child: OverflowBox(
-                                minHeight: 0,
-                                maxHeight: 78,
-                                alignment: Alignment.topCenter,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 250,
-                                      ),
-                                      curve: Curves.easeOutCubic,
-                                      width: totalSidebarSpace,
-                                      child: const Padding(
-                                        padding: EdgeInsets.fromLTRB(
-                                          _ShellLayoutMetrics.brandLeftInset,
-                                          _ShellLayoutMetrics.brandTopInset,
-                                          0,
-                                          0,
-                                        ),
-                                        child: _ShellCompanyBrand(),
-                                      ),
-                                    ),
-                                    const Expanded(child: AppTopBar()),
-                                  ],
-                                ),
-                              ),
-                            ),
+            final shell = FreelancerBarcodeListener(
+              child: PaperShortcutManager(
+                child: MouseRegion(
+                  onHover: (e) =>
+                      GlobalMouseTracker.position.value = e.position,
+                  child: Scaffold(
+                    backgroundColor: Colors.transparent,
+                    drawer: isMobile
+                        ? Drawer(width: 236, child: _ShellDrawerContent())
+                        : null,
+                    appBar: isMobile
+                        ? AppBar(
+                            backgroundColor: SoftErpTheme.shellSurface,
+                            foregroundColor: SoftErpTheme.textPrimary,
+                            title: const Text('Paper ERP'),
+                          )
+                        : null,
+                    body: SafeArea(
+                      top: !isMobile,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFFE8E8F0), Color(0xFFA7B9F9)],
                           ),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              if (!isMobile)
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 250),
-                                  curve: Curves.easeOutCubic,
-                                  width: totalSidebarSpace,
-                                  child: ClipRect(
-                                    child: OverflowBox(
-                                      minWidth: 0,
-                                      maxWidth:
-                                          sidebarWidth +
-                                          _ShellLayoutMetrics.sidebarLeftInset +
-                                          _ShellLayoutMetrics.sidebarRightGap,
-                                      alignment: Alignment.topLeft,
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          _ShellLayoutMetrics.sidebarLeftInset,
-                                          _ShellLayoutMetrics.sidebarTopGap,
-                                          _ShellLayoutMetrics.sidebarRightGap,
-                                          _ShellLayoutMetrics
-                                              .sidebarBottomInset,
-                                        ),
-                                        child: SizedBox(
-                                          width: sidebarWidth,
-                                          child: AppSidebar(
-                                            compact: false,
-                                            ordersShowcaseKey: _ordersKey,
-                                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            Column(
+                              children: [
+                                if (!isMobile)
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 250),
+                                    curve: Curves.easeOutCubic,
+                                    height: 78,
+                                    child: ClipRect(
+                                      child: OverflowBox(
+                                        minHeight: 0,
+                                        maxHeight: 78,
+                                        alignment: Alignment.topCenter,
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            AnimatedContainer(
+                                              duration: const Duration(
+                                                milliseconds: 250,
+                                              ),
+                                              curve: Curves.easeOutCubic,
+                                              width: totalSidebarSpace,
+                                              child: const Padding(
+                                                padding: EdgeInsets.fromLTRB(
+                                                  _ShellLayoutMetrics
+                                                      .brandLeftInset,
+                                                  _ShellLayoutMetrics
+                                                      .brandTopInset,
+                                                  0,
+                                                  0,
+                                                ),
+                                                child: _ShellCompanyBrand(),
+                                              ),
+                                            ),
+                                            const Expanded(child: AppTopBar()),
+                                          ],
                                         ),
                                       ),
                                     ),
                                   ),
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      if (!isMobile)
+                                        AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 250,
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                          width: totalSidebarSpace,
+                                          child: ClipRect(
+                                            child: OverflowBox(
+                                              minWidth: 0,
+                                              maxWidth:
+                                                  sidebarWidth +
+                                                  _ShellLayoutMetrics
+                                                      .sidebarLeftInset +
+                                                  _ShellLayoutMetrics
+                                                      .sidebarRightGap,
+                                              alignment: Alignment.topLeft,
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      _ShellLayoutMetrics
+                                                          .sidebarLeftInset,
+                                                      _ShellLayoutMetrics
+                                                          .sidebarTopGap,
+                                                      _ShellLayoutMetrics
+                                                          .sidebarRightGap,
+                                                      _ShellLayoutMetrics
+                                                          .sidebarBottomInset,
+                                                    ),
+                                                child: SizedBox(
+                                                  width: sidebarWidth,
+                                                  child: AppSidebar(
+                                                    compact: false,
+                                                    ordersShowcaseKey:
+                                                        _ordersKey,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      Expanded(
+                                        child: _DesktopContentFrame(
+                                          enabled: _isDesktopPlatform,
+                                          child: const _ShellContentSwitcher(),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              Expanded(
-                                child: _DesktopContentFrame(
-                                  enabled: _isDesktopPlatform,
-                                  child: const _ShellContentSwitcher(),
+                              ],
+                            ),
+                            if (!isSidebarVisible && !isMobile)
+                              Positioned(
+                                top: 28,
+                                left: 0,
+                                child: _FloatingSidebarHandle(
+                                  isLeft: true,
+                                  icon: Icons.menu_rounded,
+                                  onTap: () => context
+                                      .read<NavigationProvider>()
+                                      .toggleSidebar(),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (!isSidebarVisible && !isMobile)
-                      Positioned(
-                        top: 28,
-                        left: 0,
-                        child: _FloatingSidebarHandle(
-                          isLeft: true,
-                          icon: Icons.menu_rounded,
-                          onTap: () => context.read<NavigationProvider>().toggleSidebar(),
+                          ],
                         ),
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-        )));
-        return Stack(
-          children: [
-            shell,
-            const GlobalSearchOverlay(),
-          ],
+            );
+            return Stack(children: [shell, const GlobalSearchOverlay()]);
+          },
         );
-      },
-    );
       },
     );
   }
@@ -450,15 +463,25 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
       case 'configurator_vendors':
         _runModalShortcut(() => VendorsScreen.openEditor(context));
       case 'configurator_items':
-        _runModalShortcut(() => ItemsScreen.openEditor(context,
-            onCreatePipeline: () => _handleCreatePipeline(context)));
+        _runModalShortcut(
+          () => ItemsScreen.openEditor(
+            context,
+            onCreatePipeline: () => _handleCreatePipeline(context),
+          ),
+        );
       case 'configurator_groups':
         _runModalShortcut(() => GroupsScreen.openEditor(context));
       case 'configurator_units':
         _runModalShortcut(() async => UnitsScreen.openEditor(context));
+      case 'configurator_materials':
+        _runModalShortcut(
+          () async => MaterialsScreen.openMaterialEditor(context),
+        );
       case 'configurator_machines':
       case 'configurator_machine_groups':
-        _runModalShortcut(() async => MachinesScreen.openMachineEditor(context));
+        _runModalShortcut(
+          () async => MachinesScreen.openMachineEditor(context),
+        );
       case 'configurator_dies':
         _runModalShortcut(() async => DiesScreen.openDieEditor(context));
     }
@@ -519,44 +542,67 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
     showSearchableSelectDialog<String>(
       context: context,
       anchorRect: relativeRect,
-      title: 'Create new', 
+      title: 'Create new',
       searchHintText: 'Search...',
       options: const [
         SearchableSelectOption(value: 'order', label: 'new order'),
         SearchableSelectOption(value: 'item', label: 'new item'),
         SearchableSelectOption(value: 'client', label: 'new client'),
         SearchableSelectOption(value: 'vendor', label: 'new vendor'),
-        SearchableSelectOption(value: 'machine', label: 'new machine', highlightColor: Color(0xFFE4C17C)),
-        SearchableSelectOption(value: 'receipt_challan', label: 'new receipt challan', highlightColor: Color(0xFFE84A5F)),
-        SearchableSelectOption(value: 'die', label: 'new die', highlightColor: Color(0xFFB0B3B8)),
-        SearchableSelectOption(value: 'pipeline', label: 'new pipeline', highlightColor: Color(0xFF43B047)),
+        SearchableSelectOption(
+          value: 'machine',
+          label: 'new machine',
+          highlightColor: Color(0xFFE4C17C),
+        ),
+        SearchableSelectOption(
+          value: 'receipt_challan',
+          label: 'new receipt challan',
+          highlightColor: Color(0xFFE84A5F),
+        ),
+        SearchableSelectOption(
+          value: 'die',
+          label: 'new die',
+          highlightColor: Color(0xFFB0B3B8),
+        ),
+        SearchableSelectOption(
+          value: 'pipeline',
+          label: 'new pipeline',
+          highlightColor: Color(0xFF43B047),
+        ),
       ],
     ).then((option) {
       if (!context.mounted || option == null) return;
       switch (option.value) {
-        case 'order': 
-          _handleCreateOrder(context); 
+        case 'order':
+          _handleCreateOrder(context);
           break;
         case 'item':
-          _runModalShortcut(() => ItemsScreen.openEditor(context, onCreatePipeline: () => _handleCreatePipeline(context)));
+          _runModalShortcut(
+            () => ItemsScreen.openEditor(
+              context,
+              onCreatePipeline: () => _handleCreatePipeline(context),
+            ),
+          );
           break;
-        case 'client': 
-          _runModalShortcut(() => ClientsScreen.openEditor(context)); 
+        case 'client':
+          _runModalShortcut(() => ClientsScreen.openEditor(context));
           break;
-        case 'vendor': 
-          _runModalShortcut(() => VendorsScreen.openEditor(context)); 
+        case 'vendor':
+          _runModalShortcut(() => VendorsScreen.openEditor(context));
           break;
-        case 'machine': 
-          _runModalShortcut(() async => MachinesScreen.openMachineEditor(context)); 
+        case 'machine':
+          _runModalShortcut(
+            () async => MachinesScreen.openMachineEditor(context),
+          );
           break;
-        case 'receipt_challan': 
-          _handleCreateReceptionChallan(context); 
+        case 'receipt_challan':
+          _handleCreateReceptionChallan(context);
           break;
-        case 'die': 
-          _runModalShortcut(() async => DiesScreen.openDieEditor(context)); 
+        case 'die':
+          _runModalShortcut(() async => DiesScreen.openDieEditor(context));
           break;
-        case 'pipeline': 
-          _handleCreatePipeline(context); 
+        case 'pipeline':
+          _handleCreatePipeline(context);
           break;
       }
     });
@@ -620,49 +666,50 @@ class _ShellCompanyBrand extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: SoftErpTheme.accentGradient,
-            ),
-            child: Center(
-              child: Container(
-                width: 20,
-                height: 20,
+              Container(
+                width: 36,
+                height: 36,
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Color(0xFFF3F5FE),
+                  gradient: SoftErpTheme.accentGradient,
+                ),
+                child: Center(
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFFF3F5FE),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 180,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Sarvadnya Udyog Private Limited',
-                maxLines: 1,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 16,
-                  height: 1.0,
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 180,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Sarvadnya Udyog Private Limited',
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: SoftErpTheme.textPrimary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                      height: 1.0,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Collapse navbar',
-            icon: const Icon(Icons.menu_open_rounded, size: 20),
-            color: SoftErpTheme.textSecondary,
-            onPressed: () => context.read<NavigationProvider>().toggleSidebar(),
-          ),
-        ],
+              IconButton(
+                tooltip: 'Collapse navbar',
+                icon: const Icon(Icons.menu_open_rounded, size: 20),
+                color: SoftErpTheme.textSecondary,
+                onPressed: () =>
+                    context.read<NavigationProvider>().toggleSidebar(),
+              ),
+            ],
           ),
         ),
       ),
@@ -755,112 +802,173 @@ class _ShellContentSwitcher extends StatelessWidget {
             child: !allowed
                 ? const DashboardScreen()
                 : switch (key) {
-              'inventory' => const InventoryScreen(),
-              'inventory_scan' => const MaterialScanScreen(),
-              'production' => const ProductionPipelinesScreen(
-                embeddedInShell: true,
-                mode: ProductionPipelinesScreenMode.production,
-              ),
-              'insights' => const ProductionRunsScreen(
-                initialTab: 'insights',
-                showTabs: false,
-              ),
-              'production_pipelines' => const ProductionPipelinesScreen(
-                embeddedInShell: true,
-                mode: ProductionPipelinesScreenMode.manage,
-              ),
-              'jobs' => const JobsScreen(),
-              'pm' => const PMScreen(),
-              'telemetry' => const MachineTelemetryScreen(),
-              'orders' => OrdersScreen(
-                onGoToProduction: (screenContext, orderGroup, [preselectedItem]) async {
-                  final stableContext = outerContext;
-                  final created = await showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
-                  if (created == true && screenContext.mounted) {
-                    // Attaching a run changes the order's derived status and
-                    // moves it into the "In production" row of insights. The
-                    // server emits nothing the client listens to, so refresh
-                    // here or the order book stays stale until something else
-                    // happens to reload it.
-                    unawaited(screenContext.read<OrdersProvider>().refresh());
-                    screenContext.read<AppNavigation>().select('production');
-                  }
-                },
-                getProductionStatus: (orderGroup) async {
-                  final repo = outerContext.read<PipelineRunRepository>();
-                  final runs = await repo.getRunsForOrder(orderGroup.orderNo);
-                  final assignedItemIds = runs.map((r) => r.orderItemId).whereType<int>().toSet();
+                    'inventory' => const InventoryScreen(),
+                    'inventory_scan' => const MaterialScanScreen(),
+                    'production' => const ProductionPipelinesScreen(
+                      embeddedInShell: true,
+                      mode: ProductionPipelinesScreenMode.production,
+                    ),
+                    'insights' => const ProductionRunsScreen(
+                      initialTab: 'insights',
+                      showTabs: false,
+                    ),
+                    'production_pipelines' => const ProductionPipelinesScreen(
+                      embeddedInShell: true,
+                      mode: ProductionPipelinesScreenMode.manage,
+                    ),
+                    'jobs' => const JobsScreen(),
+                    'pm' => const PMScreen(),
+                    'telemetry' => const MachineTelemetryScreen(),
+                    'orders' => OrdersScreen(
+                      onGoToProduction: (screenContext, orderGroup, [preselectedItem]) async {
+                        final stableContext = outerContext;
+                        final created = await showStartProductionDialog(
+                          stableContext,
+                          orderGroup,
+                          preselectedItem: preselectedItem,
+                        );
+                        if (created == true && screenContext.mounted) {
+                          // Attaching a run changes the order's derived status and
+                          // moves it into the "In production" row of insights. The
+                          // server emits nothing the client listens to, so refresh
+                          // here or the order book stays stale until something else
+                          // happens to reload it.
+                          unawaited(
+                            screenContext.read<OrdersProvider>().refresh(),
+                          );
+                          screenContext.read<AppNavigation>().select(
+                            'production',
+                          );
+                        }
+                      },
+                      getProductionStatus: (orderGroup) async {
+                        final repo = outerContext.read<PipelineRunRepository>();
+                        final runs = await repo.getRunsForOrder(
+                          orderGroup.orderNo,
+                        );
+                        final assignedItemIds = runs
+                            .map((r) => r.orderItemId)
+                            .whereType<int>()
+                            .toSet();
 
-                  int activeTimelineIndex = orderGroup.overallStatus == OrderStatus.draft ? 0 : 0;
-                  if (runs.isNotEmpty) {
-                    final allItemsAssigned = assignedItemIds.length == orderGroup.items.length;
-                    final anyActive = runs.any((r) => r.status == 'active' || r.nodeStatuses.values.any((s) => s.name == 'active' || s.name == 'done'));
-                    final allCompleted = allItemsAssigned && runs.every((r) => r.status == 'completed');
+                        int activeTimelineIndex =
+                            orderGroup.overallStatus == OrderStatus.draft
+                            ? 0
+                            : 0;
+                        if (runs.isNotEmpty) {
+                          final allItemsAssigned =
+                              assignedItemIds.length == orderGroup.items.length;
+                          final anyActive = runs.any(
+                            (r) =>
+                                r.status == 'active' ||
+                                r.nodeStatuses.values.any(
+                                  (s) => s.name == 'active' || s.name == 'done',
+                                ),
+                          );
+                          final allCompleted =
+                              allItemsAssigned &&
+                              runs.every((r) => r.status == 'completed');
 
-                    if (allCompleted) {
-                      activeTimelineIndex = 4;
-                    } else if (anyActive) {
-                      activeTimelineIndex = 3;
-                    } else if (allItemsAssigned) {
-                      activeTimelineIndex = 2;
-                    } else {
-                      activeTimelineIndex = 1;
-                    }
-                  }
+                          if (allCompleted) {
+                            activeTimelineIndex = 4;
+                          } else if (anyActive) {
+                            activeTimelineIndex = 3;
+                          } else if (allItemsAssigned) {
+                            activeTimelineIndex = 2;
+                          } else {
+                            activeTimelineIndex = 1;
+                          }
+                        }
 
-                  return (assignedItemIds: assignedItemIds, activeTimelineIndex: activeTimelineIndex);
-                },
-                onShowPipeline: (screenContext, orderGroup, item) async {
-                  final stableContext = outerContext;
-                  final repo = stableContext.read<PipelineRunRepository>();
-                  final runs = await repo.getRunsForOrder(orderGroup.orderNo);
-                  final run = runs.firstWhereOrNull((r) => r.orderItemId == item.id);
-                  if (run != null) {
-                    final templates = await repo.getTemplates();
-                    final template = templates.firstWhereOrNull((t) => t.id == run.templateId);
-                    if (template != null) {
-                      if (!stableContext.mounted) return;
-                      stableContext.read<ProductionProvider>().loadTemplate(
-                        template,
-                        orderId: run.orderItemId,
-                        orderNo: run.orderNo,
-                        clientName: run.clientName,
-                      );
-                      stableContext.read<ProductionRunProvider>().initializeIdleRun(run.id);
-                      Navigator.of(stableContext).push(
-                        MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),
-                      );
-                      return;
-                    }
-                  }
-                  // Fallback: just go to the production tab
-                  if (!screenContext.mounted) return;
-                  screenContext.read<AppNavigation>().select('production');
-                },
-              ),
-              'delivery_challans' => const ChallanScreen(),
-              'challan_invoice_report' =>
-                const ChallanInvoiceReconciliationScreen(),
-              'configurator' => const _ModulePlaceholder(
-                title: 'Configurator',
-                description:
-                    'Choose a master-data section from the sidebar to manage configuration records.',
-                icon: Icons.tune_outlined,
-              ),
-              'configurator_employees' => const DepartmentsScreen(),
-              'configurator_clients' => const ClientsScreen(),
-              'configurator_vendors' => const VendorsScreen(),
-              'configurator_items' => ItemsScreen(initialTab: 0, onCreatePipeline: () => _handleCreatePipeline(outerContext)),
-              'configurator_groups' => ItemsScreen(initialTab: 1, onCreatePipeline: () => _handleCreatePipeline(outerContext)),
-              'configurator_units' => const UnitsScreen(),
-              'configurator_machines' => const MachinesScreen(initialTab: 0),
-              'configurator_machine_groups' => const MachinesScreen(
-                initialTab: 1,
-              ),
-              'configurator_dies' => const DiesScreen(),
-              'action_center' => const ActionCenterScreen(),
-              _ => const DashboardScreen(),
-            },
+                        return (
+                          assignedItemIds: assignedItemIds,
+                          activeTimelineIndex: activeTimelineIndex,
+                        );
+                      },
+                      onShowPipeline: (screenContext, orderGroup, item) async {
+                        final stableContext = outerContext;
+                        final repo = stableContext
+                            .read<PipelineRunRepository>();
+                        final runs = await repo.getRunsForOrder(
+                          orderGroup.orderNo,
+                        );
+                        final run = runs.firstWhereOrNull(
+                          (r) => r.orderItemId == item.id,
+                        );
+                        if (run != null) {
+                          final templates = await repo.getTemplates();
+                          final template = templates.firstWhereOrNull(
+                            (t) => t.id == run.templateId,
+                          );
+                          if (template != null) {
+                            if (!stableContext.mounted) return;
+                            stableContext
+                                .read<ProductionProvider>()
+                                .loadTemplate(
+                                  template,
+                                  orderId: run.orderItemId,
+                                  orderNo: run.orderNo,
+                                  clientName: run.clientName,
+                                );
+                            stableContext
+                                .read<ProductionRunProvider>()
+                                .initializeIdleRun(run.id);
+                            Navigator.of(stableContext).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const LiveProductionMonitorScreen(),
+                              ),
+                            );
+                            return;
+                          }
+                        }
+                        // Fallback: just go to the production tab
+                        if (!screenContext.mounted) return;
+                        screenContext.read<AppNavigation>().select(
+                          'production',
+                        );
+                      },
+                    ),
+                    'delivery_challans' => const ChallanScreen(),
+                    'challan_invoice_report' =>
+                      const ChallanInvoiceReconciliationScreen(),
+                    'configurator' => const _ModulePlaceholder(
+                      title: 'Configurator',
+                      description:
+                          'Choose a master-data section from the sidebar to manage configuration records.',
+                      icon: Icons.tune_outlined,
+                    ),
+                    'configurator_employees' => const DepartmentsScreen(),
+                    'configurator_clients' => const ClientsScreen(),
+                    'configurator_vendors' => const VendorsScreen(),
+                    'configurator_items' => ItemsScreen(
+                      initialTab: 0,
+                      onCreatePipeline: () =>
+                          _handleCreatePipeline(outerContext),
+                    ),
+                    'configurator_groups' => ItemsScreen(
+                      initialTab: 1,
+                      onCreatePipeline: () =>
+                          _handleCreatePipeline(outerContext),
+                    ),
+                    'configurator_sets' => ItemsScreen(
+                      initialTab: 0,
+                      initialSetsView: true,
+                      onCreatePipeline: () =>
+                          _handleCreatePipeline(outerContext),
+                    ),
+                    'configurator_units' => const UnitsScreen(),
+                    'configurator_materials' => const MaterialsScreen(),
+                    'configurator_machines' => const MachinesScreen(
+                      initialTab: 0,
+                    ),
+                    'configurator_machine_groups' => const MachinesScreen(
+                      initialTab: 1,
+                    ),
+                    'configurator_dies' => const DiesScreen(),
+                    'action_center' => const ActionCenterScreen(),
+                    _ => const DashboardScreen(),
+                  },
           ),
         );
       },

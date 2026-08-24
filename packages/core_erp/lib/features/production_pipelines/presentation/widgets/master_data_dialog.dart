@@ -8,6 +8,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/pipeline_stage_node.dart';
 import '../../../units/domain/global_length_units.dart';
+import '../../../materials/domain/material_definition.dart';
 import '../../domain/sheet_part.dart';
 import 'pen_paper_baseline_widget.dart';
 import 'sheet_dimension_figure.dart';
@@ -28,6 +29,7 @@ Future<PenPaperBaseline?> showMasterDataDialog(
   String itemName = '',
   List<PipelineStageNode> stageNodes = const <PipelineStageNode>[],
   List<SheetPart> parts = const <SheetPart>[],
+  List<MaterialDefinition> materials = const <MaterialDefinition>[],
   bool readOnly = false,
 }) {
   return showDialog<PenPaperBaseline>(
@@ -40,6 +42,7 @@ Future<PenPaperBaseline?> showMasterDataDialog(
       itemName: itemName,
       stageNodes: stageNodes,
       parts: parts,
+      materials: materials,
       readOnly: readOnly,
     ),
   );
@@ -53,6 +56,7 @@ class _MasterDataDialog extends StatefulWidget {
     required this.itemName,
     required this.stageNodes,
     required this.parts,
+    required this.materials,
     required this.readOnly,
   });
 
@@ -65,6 +69,11 @@ class _MasterDataDialog extends StatefulWidget {
   /// Parts the catalogue already knows the blank size of. Empty when the caller
   /// has none, in which case the panel stays a place to type sizes by hand.
   final List<SheetPart> parts;
+
+  /// The material master, for the one number that turns a planned volume into
+  /// a weight. Empty when the caller has none, in which case the sheet is
+  /// planned in millimetres alone and no weight is claimed.
+  final List<MaterialDefinition> materials;
   final bool readOnly;
 
   @override
@@ -976,6 +985,10 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
             _partPicker(),
             const SizedBox(height: 10),
           ],
+          if (widget.materials.isNotEmpty) ...[
+            _materialPicker(),
+            const SizedBox(height: 10),
+          ],
           _machineRow(),
           const SizedBox(height: 10),
           _primaryBlock(),
@@ -1071,6 +1084,95 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
           ),
         ),
       ],
+    );
+  }
+
+  /// The material the sheet is, from the master.
+  ///
+  /// One choice, and every figure on this screen gains a weight — which is the
+  /// only reason the shop can price a plan without putting anything on a scale.
+  MaterialDefinition? get _material {
+    final name = _baseline.materialName.trim().toLowerCase();
+    if (name.isEmpty) return null;
+    for (final material in widget.materials) {
+      if (material.name.toLowerCase() == name) return material;
+    }
+    // The name is kept even when the master no longer has the row, so an old
+    // plan still says what it was cut from. It just cannot be weighed.
+    return null;
+  }
+
+  SheetWeights get _weights => _material == null
+      ? SheetWeights.zero
+      : _baseline.weighAt(_material!.densityGCm3);
+
+  Widget _materialPicker() {
+    final chosen = _material;
+    final named = _baseline.materialName.trim();
+    final unknown = named.isNotEmpty && chosen == null;
+    final enabled = !widget.readOnly;
+    return Row(
+      children: [
+        const SizedBox(
+          width: 74,
+          child: Text(
+            'MATERIAL',
+            style: TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ),
+        Expanded(
+          child: _MaterialPickerField(
+            key: const ValueKey<String>('sheet-material'),
+            label: chosen?.name ?? (unknown ? named : ''),
+            trailing: chosen?.densityLabel ?? '',
+            hint: unknown
+                ? '$named (not in the master)'
+                : 'Not set — no weight',
+            enabled: enabled,
+            onPressed: enabled
+                ? (anchorContext) async {
+                    final picked = await _showMaterialMenu(anchorContext);
+                    if (picked == null || !mounted) return;
+                    setState(() {
+                      _baseline = _baseline.copyWith(
+                        materialName: picked.isEmpty ? '' : picked,
+                      );
+                    });
+                  }
+                : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Opened under the field, capped in height and kept on screen.
+  ///
+  /// A plain dropdown menu of thirty-six materials is taller than the window
+  /// and opens over the controls it belongs to, which is how it stopped being
+  /// usable. This is the same list the unit chips use: anchored, bounded, and
+  /// searched rather than scrolled.
+  Future<String?> _showMaterialMenu(BuildContext anchorContext) {
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return Future<String?>.value();
+    return showDialog<String>(
+      context: anchorContext,
+      barrierColor: Colors.transparent,
+      builder: (context) => _MaterialMenu(
+        materials: widget.materials,
+        currentName: _baseline.materialName,
+        anchor: box.localToGlobal(Offset.zero, ancestor: overlay),
+        anchorWidth: box.size.width,
+        anchorHeight: box.size.height,
+        overlaySize: overlay.size,
+      ),
     );
   }
 
@@ -1555,7 +1657,105 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
         const SizedBox(height: 6),
         for (final entry in parts) _yieldRow(entry),
         for (final entry in waste) _yieldRow(entry),
+        _weightBlock(),
       ],
+    );
+  }
+
+  /// What the plan weighs, once a material has been chosen.
+  ///
+  /// This is the answer to how a job gets costed without anyone entering a
+  /// price here. Material is bought by the kilogram and scrap is sold by it, so
+  /// a plan that says "37.3 kg in, 28.1 kg of parts, 8.4 kg back on the rack"
+  /// is already a costing — it only needs today's rate, which the shop knows
+  /// and which changes weekly anyway.
+  ///
+  /// The fourth number is the one paper never has. Kerf and trim are real
+  /// weight that leaves as dust, belonging to neither the parts nor the offcut,
+  /// and it is only visible because the plan accounted for the blade.
+  Widget _weightBlock() {
+    final material = _material;
+    if (material == null) return const SizedBox.shrink();
+    final weights = _weights;
+    if (weights.isEmpty) return const SizedBox.shrink();
+
+    String kg(double value) => '${value.toStringAsFixed(1)} kg';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'IN ${material.name.toUpperCase()}',
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${weights.yieldPercent.toStringAsFixed(0)}% yield',
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _weightRow('Sheet in', kg(weights.sheetKg), emphasis: true),
+          _weightRow('Parts out', kg(weights.partsKg), emphasis: true),
+          if (weights.offcutKg > 0.05)
+            _weightRow('Offcut to stock', kg(weights.offcutKg)),
+          if (weights.lostKg > 0.05)
+            _weightRow('Blade and trim', kg(weights.lostKg)),
+        ],
+      ),
+    );
+  }
+
+  Widget _weightRow(String label, String value, {bool emphasis = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: emphasis
+                    ? SoftErpTheme.textPrimary
+                    : SoftErpTheme.textSecondary,
+                fontSize: 12,
+                fontWeight: emphasis ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: emphasis
+                  ? SoftErpTheme.textPrimary
+                  : SoftErpTheme.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2079,6 +2279,290 @@ class _RowRemoveState extends State<_RowRemove> {
 /// it, and more to come, scanning is slower than typing. The search matches the
 /// symbol, the name and what people actually type, so "swg" finds gauge and
 /// "millimetre" finds mm.
+/// The material field: reads like the part picker beside it, but opens a
+/// bounded list rather than a menu as tall as the catalogue.
+///
+/// It hands its own context back to [onPressed] so the menu can anchor to this
+/// field rather than to the dialog.
+class _MaterialPickerField extends StatelessWidget {
+  const _MaterialPickerField({
+    super.key,
+    required this.label,
+    required this.trailing,
+    required this.hint,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String trailing;
+  final String hint;
+  final bool enabled;
+  final Future<void> Function(BuildContext anchorContext)? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final chosen = label.trim().isNotEmpty;
+    return SizedBox(
+      height: 32,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        child: InkWell(
+          onTap: onPressed == null ? null : () => onPressed!(context),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    chosen ? label : hint,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: chosen
+                          ? SoftErpTheme.textPrimary
+                          : SoftErpTheme.textSecondary,
+                      fontSize: chosen ? 12.5 : 12,
+                      fontWeight: chosen ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (trailing.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 6),
+                  Text(
+                    trailing,
+                    style: const TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+                Icon(
+                  Icons.expand_more_rounded,
+                  size: 16,
+                  color: enabled
+                      ? SoftErpTheme.textSecondary
+                      : SoftErpTheme.border,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The material list: a search box and the materials that match it.
+///
+/// Returns the chosen name, or an empty string for "not set". Thirty-six rows
+/// is past the point where scanning beats typing, which is why the search sits
+/// above them and takes focus straight away.
+class _MaterialMenu extends StatefulWidget {
+  const _MaterialMenu({
+    required this.materials,
+    required this.currentName,
+    required this.anchor,
+    required this.anchorWidth,
+    required this.anchorHeight,
+    required this.overlaySize,
+  });
+
+  final List<MaterialDefinition> materials;
+  final String currentName;
+  final Offset anchor;
+  final double anchorWidth;
+  final double anchorHeight;
+  final Size overlaySize;
+
+  @override
+  State<_MaterialMenu> createState() => _MaterialMenuState();
+}
+
+class _MaterialMenuState extends State<_MaterialMenu> {
+  final TextEditingController _query = TextEditingController();
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const maxHeight = 320.0;
+    // As wide as the field it drops from, so it reads as that field's list.
+    final width = math.max(240.0, widget.anchorWidth);
+    final matches = widget.materials
+        .where((material) => material.matches(_query.text))
+        .toList(growable: false);
+
+    // Kept on screen: a field near the right edge would otherwise open a list
+    // that runs off it — which is exactly what the plain dropdown did.
+    final left = widget.anchor.dx
+        .clamp(8.0, math.max(8.0, widget.overlaySize.width - width - 8))
+        .toDouble();
+    final below = widget.anchor.dy + widget.anchorHeight + 4;
+    final fitsBelow = below + maxHeight < widget.overlaySize.height - 8;
+    final top = fitsBelow
+        ? below
+        : math.max(8.0, widget.anchor.dy - maxHeight - 4);
+
+    return Stack(
+      children: <Widget>[
+        Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+            child: Container(
+              width: width,
+              constraints: const BoxConstraints(maxHeight: maxHeight),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+                border: Border.all(color: SoftErpTheme.border),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+                    child: TextField(
+                      key: const ValueKey<String>('material-search'),
+                      controller: _query,
+                      autofocus: true,
+                      onChanged: (_) => setState(() {}),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'Search materials',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                        prefixIconConstraints: const BoxConstraints(
+                          minWidth: 30,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                            SoftErpTheme.radiusSm,
+                          ),
+                          borderSide: const BorderSide(
+                            color: SoftErpTheme.border,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Flexible(
+                    child: matches.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.fromLTRB(12, 6, 12, 14),
+                            child: Text(
+                              'No material by that name.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            padding: const EdgeInsets.only(bottom: 6),
+                            // The clearing row only when there is something to
+                            // clear, so it is not a permanent first option.
+                            itemCount: matches.length + (_canClear ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (_canClear && index == 0) return _clearRow();
+                              return _row(matches[index - (_canClear ? 1 : 0)]);
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  bool get _canClear =>
+      widget.currentName.trim().isNotEmpty && _query.text.trim().isEmpty;
+
+  Widget _clearRow() {
+    return InkWell(
+      key: const ValueKey<String>('material-option-none'),
+      onTap: () => Navigator.of(context).pop(''),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: const Text(
+          'Not set — no weight',
+          style: TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(MaterialDefinition material) {
+    final selected =
+        material.name.toLowerCase() == widget.currentName.trim().toLowerCase();
+    return InkWell(
+      key: ValueKey<String>('material-option-${material.id}'),
+      onTap: () => Navigator.of(context).pop(material.name),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        color: selected ? SoftErpTheme.accentSurface : Colors.transparent,
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                material.name,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? SoftErpTheme.accentDeeper
+                      : SoftErpTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              material.densityLabel,
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _UnitPicker extends StatelessWidget {
   const _UnitPicker({
     required this.symbol,

@@ -13,6 +13,7 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/widgets/company_profile_dialog.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
@@ -117,6 +118,15 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
           placeholder: 'Search units or symbols',
           initialValue: provider.searchQuery,
           onChanged: provider.setSearchQuery,
+        ),
+      );
+    case 'configurator_materials':
+      final materialsProvider = context.watch<MaterialsProvider>();
+      return ShellTopStripConfig(
+        search: ShellTopStripSearchConfig(
+          placeholder: 'Search materials by name, category or note',
+          initialValue: materialsProvider.searchQuery,
+          onChanged: materialsProvider.setSearchQuery,
         ),
       );
     case 'configurator_machines':
@@ -502,64 +512,64 @@ class TopStripProfileCard extends StatelessWidget {
               ),
             ],
             child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 8 : 10,
-              vertical: compact ? 5 : 6,
-            ),
-            decoration: BoxDecoration(
-              color: const Color(0x6EFFFFFF),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0x40FFFFFF)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: compact ? 14 : 16,
-                  backgroundColor: const Color(0xFFD9DCEC),
-                  child: Text(
-                    initials.isEmpty ? 'U' : initials,
-                    style: TextStyle(
-                      color: SoftErpTheme.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: compact ? 11 : 12,
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 8 : 10,
+                vertical: compact ? 5 : 6,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0x6EFFFFFF),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0x40FFFFFF)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: compact ? 14 : 16,
+                    backgroundColor: const Color(0xFFD9DCEC),
+                    child: Text(
+                      initials.isEmpty ? 'U' : initials,
+                      style: TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: compact ? 11 : 12,
+                      ),
                     ),
                   ),
-                ),
-                if (!compact) ...[
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: SoftErpTheme.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                  if (!compact) ...[
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        Text(
-                          role,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: SoftErpTheme.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                          Text(
+                            role,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
           ),
         );
       },

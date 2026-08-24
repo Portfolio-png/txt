@@ -1,10 +1,17 @@
 import '../../domain/group_definition.dart';
+import '../../domain/group_overview.dart';
 import '../../domain/group_inputs.dart';
 
 abstract class GroupRepository {
   Future<void> init();
 
-  Future<List<GroupDefinition>> getGroups();
+  /// [withCovers] also fetches the items each group's card is made of. Off by
+  /// default: the table view never draws them and is fetched far more often.
+  Future<List<GroupDefinition>> getGroups({bool withCovers = false});
+
+  /// Everything a group is: its items, its children, the properties its items
+  /// inherit, and where in its lineage each of those came from.
+  Future<GroupOverview> getGroupOverview(int groupId);
 
   Future<GroupDefinition> createGroup(CreateGroupInput input);
 

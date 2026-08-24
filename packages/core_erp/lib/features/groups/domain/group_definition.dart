@@ -1,4 +1,5 @@
 import '../../items/domain/item_form_sections.dart';
+import 'group_cover.dart';
 
 class GroupDefinition {
   const GroupDefinition({
@@ -14,6 +15,9 @@ class GroupDefinition {
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
+    this.coverItems = const <GroupCoverItem>[],
+    this.itemCount = 0,
+    this.coverBasis = GroupCoverBasis.empty,
   });
 
   final int id;
@@ -40,6 +44,17 @@ class GroupDefinition {
   final ItemFormSections? itemFormSections;
   final bool isArchived;
   final int usageCount;
+
+  /// The items whose photos make up this group's card, best first. Empty unless
+  /// the covers were asked for — the table view does not need them.
+  final List<GroupCoverItem> coverItems;
+
+  /// Why those items and not others.
+  final GroupCoverBasis coverBasis;
+
+  /// Live items in this group. Distinct from [usageCount], which also counts
+  /// child groups and linked materials.
+  final int itemCount;
   final DateTime createdAt;
   final DateTime updatedAt;
 

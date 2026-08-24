@@ -1,3 +1,4 @@
+import '../../domain/group_cover.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_inputs.dart';
 import '../../../items/domain/item_form_sections.dart';
@@ -16,6 +17,9 @@ class GroupDto {
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
+    this.coverItems = const <GroupCoverItem>[],
+    this.itemCount = 0,
+    this.coverBasis = GroupCoverBasis.empty,
   });
 
   final int id;
@@ -28,6 +32,9 @@ class GroupDto {
   final ItemFormSections? itemFormSections;
   final bool isArchived;
   final int usageCount;
+  final List<GroupCoverItem> coverItems;
+  final int itemCount;
+  final GroupCoverBasis coverBasis;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -47,6 +54,12 @@ class GroupDto {
           : null,
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
+      coverItems: (json['coverItems'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map>()
+          .map((row) => GroupCoverItem.fromJson(row.cast<String, dynamic>()))
+          .toList(growable: false),
+      coverBasis: GroupCoverBasis.parse(json['coverBasis']?.toString()),
+      itemCount: (json['itemCount'] as num?)?.toInt() ?? 0,
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
@@ -68,6 +81,9 @@ class GroupDto {
       itemFormSections: itemFormSections,
       isArchived: isArchived,
       usageCount: usageCount,
+      coverItems: coverItems,
+      coverBasis: coverBasis,
+      itemCount: itemCount,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

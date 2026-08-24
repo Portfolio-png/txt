@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/group_definition.dart';
+import '../../domain/group_overview.dart';
 import '../../domain/group_inputs.dart';
 import '../models/group_api_models.dart';
 import 'group_repository.dart';
@@ -36,13 +37,43 @@ class ApiGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<List<GroupDefinition>> getGroups() async {
+  Future<GroupOverview> getGroupOverview(int groupId) async {
+    if (useMockResponses) {
+      final group = _mockGroups.firstWhere(
+        (candidate) => candidate.id == groupId,
+        orElse: () => _mockGroups.first,
+      );
+      return GroupOverview(group: group);
+    }
+
+    final uri = Uri.parse('$baseUrl/api/groups/$groupId/overview');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw GroupApiException(
+        payload['error'] as String? ?? 'Failed to open the group.',
+      );
+    }
+    final overview =
+        (payload['overview'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+    final group = GroupDto.fromJson(
+      (overview['group'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    ).toDomain();
+    return GroupOverview.fromJson(overview, group);
+  }
+
+  @override
+  Future<List<GroupDefinition>> getGroups({bool withCovers = false}) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
       return List<GroupDefinition>.from(_mockGroups);
     }
 
-    final uri = Uri.parse('$baseUrl/api/groups');
+    final uri = Uri.parse(
+      '$baseUrl/api/groups${withCovers ? '?withCovers=1' : ''}',
+    );
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = GroupsListResponse.fromJson(payload);

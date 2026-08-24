@@ -46,22 +46,49 @@ function splitSqlStatements(sql) {
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n');
+
+  // Walked character by character rather than split on ';', because a
+  // semicolon inside a quoted value is data, not a statement boundary. Naive
+  // splitting tore `'Grey iron; ductile runs nearer 7.10'` in half and left the
+  // migration half-applied with a syntax error.
   const statements = [];
   let buffer = '';
-  let triggerDepth = 0;
-  for (const rawChunk of withoutComments.split(';')) {
-    buffer += rawChunk;
-    const upper = buffer.toUpperCase();
-    const begins = (upper.match(/\bBEGIN\b/g) || []).length;
-    const ends = (upper.match(/\bEND\b/g) || []).length;
-    triggerDepth = begins - ends;
-    if (triggerDepth > 0) {
-      buffer += ';';
+  let inString = false;
+  for (let i = 0; i < withoutComments.length; i += 1) {
+    const char = withoutComments[i];
+    if (inString) {
+      buffer += char;
+      if (char === "'") {
+        // Two quotes in a row is an escaped quote, not the end of the string.
+        if (withoutComments[i + 1] === "'") {
+          buffer += withoutComments[i + 1];
+          i += 1;
+        } else {
+          inString = false;
+        }
+      }
       continue;
     }
-    const statement = buffer.trim();
-    if (statement) statements.push(statement);
-    buffer = '';
+    if (char === "'") {
+      inString = true;
+      buffer += char;
+      continue;
+    }
+    if (char === ';') {
+      const upper = buffer.toUpperCase();
+      const begins = (upper.match(/\bBEGIN\b/g) || []).length;
+      const ends = (upper.match(/\bEND\b/g) || []).length;
+      // Inside a trigger body: its BEGIN ... END has semicolons of its own.
+      if (begins > ends) {
+        buffer += char;
+        continue;
+      }
+      const statement = buffer.trim();
+      if (statement) statements.push(statement);
+      buffer = '';
+      continue;
+    }
+    buffer += char;
   }
   const tail = buffer.trim();
   if (tail) statements.push(tail);

@@ -83,6 +83,11 @@ class _AppSidebarState extends State<AppSidebar> {
     _SidebarItemData('configurator_items', 'Items', Icons.inventory_outlined),
     _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
     _SidebarItemData(
+      'configurator_materials',
+      'Materials',
+      Icons.layers_outlined,
+    ),
+    _SidebarItemData(
       'configurator_machines',
       'Machines',
       Icons.precision_manufacturing_outlined,
@@ -114,9 +119,12 @@ class _AppSidebarState extends State<AppSidebar> {
   List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
     final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     return <String>[
-      ..._moduleItems.where((item) => ConfigService.instance.isModuleEnabled(item.key)).map((item) => item.key),
+      ..._moduleItems
+          .where((item) => ConfigService.instance.isModuleEnabled(item.key))
+          .map((item) => item.key),
       if (mastersOn) 'configurator',
-      if (mastersOn && isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
+      if (mastersOn && isConfiguratorExpanded)
+        ..._configuratorItems.map((item) => item.key),
     ];
   }
 
@@ -227,8 +235,8 @@ class _AppSidebarState extends State<AppSidebar> {
             color: widget.transparentBackground
                 ? Colors.transparent
                 : (_isHovered
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.8)),
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.8)),
             borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
             boxShadow: widget.transparentBackground
                 ? const <BoxShadow>[]
@@ -253,7 +261,12 @@ class _AppSidebarState extends State<AppSidebar> {
                               _SidebarSection(
                                 title: 'Modules',
                                 compact: widget.compact,
-                                children: _moduleItems.where((item) => ConfigService.instance.isModuleEnabled(item.key)).toList(),
+                                children: _moduleItems
+                                    .where(
+                                      (item) => ConfigService.instance
+                                          .isModuleEnabled(item.key),
+                                    )
+                                    .toList(),
                                 selectedKey: selectedKey,
                                 onSelected: _selectKey,
                                 focusNodeForKey: _focusNodeFor,
@@ -490,28 +503,27 @@ class _SidebarSection extends StatelessWidget {
               ),
             ),
           ),
-        ...children.map(
-          (item) {
-            Widget tile = _SidebarTile(
-              item: item,
-              compact: compact,
-              isSelected: _matchesSelectedKey(item.key),
-              focusNode: focusNodeForKey(item.key),
-              onTap: () => onSelected(item.key),
-            );
-            if (item.key == 'orders' && ordersShowcaseKey != null) {
-              tile = Showcase(
-                key: ordersShowcaseKey!,
-                description: 'Manage and update client order statuses dynamically from the orders menu!',
-                child: tile,
-              );
-            }
-            return Padding(
-              padding: EdgeInsets.only(bottom: tileSpacing),
+        ...children.map((item) {
+          Widget tile = _SidebarTile(
+            item: item,
+            compact: compact,
+            isSelected: _matchesSelectedKey(item.key),
+            focusNode: focusNodeForKey(item.key),
+            onTap: () => onSelected(item.key),
+          );
+          if (item.key == 'orders' && ordersShowcaseKey != null) {
+            tile = Showcase(
+              key: ordersShowcaseKey!,
+              description:
+                  'Manage and update client order statuses dynamically from the orders menu!',
               child: tile,
             );
           }
-        ),
+          return Padding(
+            padding: EdgeInsets.only(bottom: tileSpacing),
+            child: tile,
+          );
+        }),
       ],
     );
   }
@@ -757,13 +769,13 @@ class _SettingsPreferencesDialogState
     }
     return _navGroups
         .map(
-          (group) =>
-              group.where((item) => item.matches(query)).toList(growable: false),
+          (group) => group
+              .where((item) => item.matches(query))
+              .toList(growable: false),
         )
         .where((group) => group.isNotEmpty)
         .toList(growable: false);
   }
-
 
   /// Both Danger Zone actions used to fire on a single click. Clearing asks a
   /// plain yes/no; the factory reset makes you type the phrase, because it also
@@ -863,14 +875,16 @@ class _SettingsPreferencesDialogState
       );
       return;
     }
-    
+
     // Force logout since the user account was likely deleted.
     auth.logout();
-    
+
     if (!mounted) return;
-    
+
     showAppSnack(
-      const SnackBar(content: Text('Factory reset complete. Please log in again.')),
+      const SnackBar(
+        content: Text('Factory reset complete. Please log in again.'),
+      ),
     );
   }
 
@@ -961,7 +975,10 @@ class _SettingsPreferencesDialogState
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
     final dialogWidth = math.min(920.0, math.max(360.0, screenSize.width - 64));
-    final dialogHeight = math.min(624.0, math.max(420.0, screenSize.height - 96));
+    final dialogHeight = math.min(
+      624.0,
+      math.max(420.0, screenSize.height - 96),
+    );
     final isNarrow = dialogWidth < 640;
 
     return Dialog(
@@ -1262,9 +1279,7 @@ class _SettingsPreferencesDialogState
           side: const BorderSide(color: SoftErpTheme.accent),
           minimumSize: const Size(88, 34),
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(9),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
         ),
         child: Text(_isResetting ? 'Working…' : 'Seed'),
       );
@@ -1430,7 +1445,9 @@ class _SettingsNavRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w500,
                       color: isSelected
                           ? SoftErpTheme.accent
                           : SoftErpTheme.textPrimary,
@@ -1633,10 +1650,7 @@ class _SettingsRow extends StatelessWidget {
               ],
             ),
           ),
-          if (trailing != null) ...[
-            const SizedBox(width: 12),
-            trailing!,
-          ],
+          if (trailing != null) ...[const SizedBox(width: 12), trailing!],
         ],
       ),
     );
@@ -1671,9 +1685,7 @@ class _SidebarTile extends StatelessWidget {
             : viewportWidth < 1240
             ? 14.5
             : 16.0;
-        final foreground = isSelected
-            ? Colors.white
-            : SoftErpTheme.textPrimary;
+        final foreground = isSelected ? Colors.white : SoftErpTheme.textPrimary;
 
         return Material(
           color: Colors.transparent,
@@ -1696,15 +1708,13 @@ class _SidebarTile extends StatelessWidget {
                 boxShadow: isSelected ? SoftErpTheme.subtleShadow : const [],
               ),
               child: Row(
-                mainAxisAlignment: compact ? MainAxisAlignment.center : MainAxisAlignment.start,
+                mainAxisAlignment: compact
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
                 children: [
                   if (compact) ...[
                     if (item.key == 'insights')
-                      Image.asset(
-                        'assets/sparkle.png',
-                        width: 20,
-                        height: 20,
-                      )
+                      Image.asset('assets/sparkle.png', width: 20, height: 20)
                     else
                       Icon(item.icon, color: foreground, size: 18),
                   ] else ...[
@@ -1736,7 +1746,6 @@ class _SidebarItemData {
   final String label;
   final IconData icon;
 }
-
 
 /// Factory reset is the one irreversible control in the app: it deletes every
 /// row in every table, accounts included. A yes/no is too easy to click

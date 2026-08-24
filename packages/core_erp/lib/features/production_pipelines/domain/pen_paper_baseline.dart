@@ -139,6 +139,48 @@ class SheetYield {
       : value.toStringAsFixed(1);
 }
 
+/// What a plan weighs, once the material is known.
+///
+/// Four numbers that must reconcile: the sheet that goes in, the parts that
+/// come out, the offcut that is still material, and the remainder lost to the
+/// blade and the trimmed edge. The last one is the reason this is a breakdown
+/// rather than a single figure — kerf is real weight that leaves as dust and
+/// never appears on either side of a paper calculation.
+class SheetWeights {
+  const SheetWeights({
+    required this.sheetKg,
+    required this.partsKg,
+    required this.offcutKg,
+  });
+
+  static const SheetWeights zero = SheetWeights(
+    sheetKg: 0,
+    partsKg: 0,
+    offcutKg: 0,
+  );
+
+  /// One whole sheet as bought.
+  final double sheetKg;
+
+  /// Everything the plan calls a part.
+  final double partsKg;
+
+  /// Material left whole but unplanned — still worth something on a rack.
+  final double offcutKg;
+
+  /// Swarf and trimmed edge: what the sheet weighed less what survives it.
+  ///
+  /// Clamped at zero. A plan can be over-committed while it is being typed,
+  /// and a negative loss on screen would read as a bug rather than as a plan
+  /// that does not fit yet.
+  double get lostKg => math.max(0, sheetKg - partsKg - offcutKg);
+
+  /// The share of the sheet that leaves as parts, 0-100.
+  double get yieldPercent => sheetKg <= 0 ? 0 : partsKg / sheetKg * 100;
+
+  bool get isEmpty => sheetKg <= 0;
+}
+
 /// The two axes a sheet is divided along, named for what they yield.
 enum SheetCutAxis {
   /// Cuts running down the sheet, dividing its width into columns. The x axis.
@@ -331,6 +373,7 @@ class PenPaperBaseline {
     this.plannedPartName = '',
     this.faceUnit = 'in',
     this.gaugeUnit = 'mm',
+    this.materialName = '',
   });
 
   /// The units the sheet's own measurements are read in, by symbol.
@@ -341,6 +384,14 @@ class PenPaperBaseline {
   /// names a unit the whole system knows rather than one this screen invented.
   final String faceUnit;
   final String gaugeUnit;
+
+  /// What the sheet is made of, by name, matched against the material master.
+  ///
+  /// A name rather than an id: the master is a shop's own list and a row can be
+  /// renamed or archived, but a plan recorded last year still has to say what it
+  /// was cut from. The density is looked up when the weight is wanted, so a
+  /// corrected density improves old plans instead of leaving them stale.
+  final String materialName;
 
   /// The part this plan is cutting, when it came from the catalogue rather than
   /// from typed sizes. Stamped so the record says what it was planning, and so
@@ -926,6 +977,33 @@ class PenPaperBaseline {
     return sheetAreaSqInches * sqInchToSqCm * (sheetThicknessMm / 10.0);
   }
 
+  /// What this plan weighs in a material of [densityGCm3].
+  ///
+  /// Density is passed in rather than held here: the material master owns that
+  /// number and can correct it, and a plan that stored a copy would keep
+  /// quoting the old one. Areas come from [yields], so the split between parts
+  /// and offcut is exactly the split drawn on the sheet.
+  SheetWeights weighAt(double densityGCm3) {
+    if (densityGCm3 <= 0 || sheetVolumeCc <= 0) return SheetWeights.zero;
+    // areaMm2 x thickness gives mm3; a cubic centimetre is 1000 of those.
+    final ccPerMm2 = sheetThicknessMm / 1000.0;
+    var parts = 0.0;
+    var offcut = 0.0;
+    for (final yield in yields) {
+      final kg = yield.areaMm2 * ccPerMm2 * densityGCm3 / 1000.0;
+      if (yield.isOffcut) {
+        offcut += kg;
+      } else {
+        parts += kg;
+      }
+    }
+    return SheetWeights(
+      sheetKg: sheetVolumeCc * densityGCm3 / 1000.0,
+      partsKg: parts,
+      offcutKg: offcut,
+    );
+  }
+
   /// The production pipeline this sample was measured on. A baseline only means
   /// something in the context of a route, so it is stamped at capture time —
   /// if the item's default pipeline later changes, the record still says which
@@ -1032,6 +1110,7 @@ class PenPaperBaseline {
     String? plannedPartName,
     String? faceUnit,
     String? gaugeUnit,
+    String? materialName,
   }) {
     return PenPaperBaseline(
       isGranular: isGranular ?? this.isGranular,
@@ -1055,6 +1134,7 @@ class PenPaperBaseline {
       plannedPartName: plannedPartName ?? this.plannedPartName,
       faceUnit: faceUnit ?? this.faceUnit,
       gaugeUnit: gaugeUnit ?? this.gaugeUnit,
+      materialName: materialName ?? this.materialName,
     );
   }
 
@@ -1085,6 +1165,7 @@ class PenPaperBaseline {
       'plannedPartName': plannedPartName,
       'faceUnit': faceUnit,
       'gaugeUnit': gaugeUnit,
+      'materialName': materialName,
     };
   }
 
@@ -1124,6 +1205,7 @@ class PenPaperBaseline {
         fallback: 'in',
       ).symbol,
       gaugeUnit: lengthUnitBySymbol(json['gaugeUnit']?.toString()).symbol,
+      materialName: json['materialName']?.toString() ?? '',
     );
   }
 }

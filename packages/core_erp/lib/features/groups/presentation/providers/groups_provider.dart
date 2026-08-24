@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/group_repository.dart';
 import '../../domain/group_definition.dart';
+import '../../domain/group_overview.dart';
 import '../../domain/group_inputs.dart';
 
 enum GroupDuplicateWarning { none, sameParent }
@@ -81,13 +82,43 @@ class GroupsProvider extends ChangeNotifier {
     await refresh();
   }
 
+  /// Whether the card view has been opened, and so whether covers are wanted.
+  ///
+  /// Sticky once set: switching back to the table does not throw away covers
+  /// already in hand, and switching to cards again should not have to refetch.
+  bool _wantsCovers = false;
+
+  bool get hasCovers => _wantsCovers;
+
+  /// Ask for the items each group's card is made of, fetching them if this is
+  /// the first time they have been wanted.
+  Future<void> ensureCovers() async {
+    if (_wantsCovers) return;
+    _wantsCovers = true;
+    await refresh();
+  }
+
+  /// Read one group in full, for the group view.
+  ///
+  /// Not cached: a group's items change from elsewhere in the app, and a view
+  /// showing a stale item list is worse than one that takes a moment.
+  Future<GroupOverview?> loadOverview(int groupId) async {
+    try {
+      return await _repository.getGroupOverview(groupId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<void> refresh() async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
       await _repository.init();
-      final groups = await _repository.getGroups();
+      final groups = await _repository.getGroups(withCovers: _wantsCovers);
       final namesById = <int, String>{
         for (final group in groups) group.id: group.name,
       };
