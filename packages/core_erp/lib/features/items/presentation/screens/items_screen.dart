@@ -2531,12 +2531,32 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   /// Route-independent replacement for `Navigator.maybePop()`.
-  void _requestClose() {
+  /// Closes the editor, asking first when there are edits it would throw away.
+  ///
+  /// Save sits at the foot of a long form — below the Track history on a
+  /// variant — so it is easy to change a field, close, and be left thinking the
+  /// change did not take. The form already knows it is dirty; it just used to
+  /// discard that without a word.
+  Future<void> _requestClose() async {
+    if (_isDirty && !_isReadOnly) {
+      final discard = await showConfirmDialog(
+        context,
+        title: 'Discard changes?',
+        message:
+            'This item has edits that have not been saved yet. Closing now '
+            'loses them.',
+        confirmLabel: 'Discard',
+      );
+      if (!discard || !mounted) {
+        return;
+      }
+    }
     final onRequestClose = widget.onRequestClose;
     if (onRequestClose != null) {
       onRequestClose();
       return;
     }
+    if (!mounted) return;
     Navigator.of(context).maybePop();
   }
 
@@ -3107,7 +3127,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       variationTree: _variationTreeInputs,
       excludeId: _item?.id,
     );
-    final availableGroups = groupsProvider.itemGroups
+    final availableGroups = groupsProvider.filableItemGroups
         .where((g) => !g.isArchived)
         .toList(growable: false);
     final selectedGroup = groupsProvider.findById(_selectedGroupId);
@@ -4932,7 +4952,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   ) {
     final item = _item;
     final unit = unitsProvider.findById(_selectedUnitId ?? -1);
-    final availableGroups = groupsProvider.itemGroups
+    final availableGroups = groupsProvider.filableItemGroups
         .where((group) => !group.isArchived)
         .toList(growable: false);
     final baseItem = _lookupBaseItem(context);
@@ -5761,10 +5781,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     GroupsProvider groupsProvider,
   ) {
     final primaryGroup = _primaryGroupFor(group, groupsProvider);
+    // A combination group is a legitimate home for an item, but it is not the
+    // same kind of thing as a hierarchical one — the list says which is which
+    // rather than leaving two kinds of group looking identical.
+    final kind = group.isCombination ? ' • Set' : '';
     if (primaryGroup.id == group.id) {
-      return group.name;
+      return '${group.name}$kind';
     }
-    return '${group.name} • Primary: ${primaryGroup.name}';
+    return '${group.name}$kind • Primary: ${primaryGroup.name}';
   }
 
   String _groupOptionSearchText(
@@ -5772,7 +5796,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     GroupsProvider groupsProvider,
   ) {
     final primaryGroup = _primaryGroupFor(group, groupsProvider);
-    return '${group.name} ${primaryGroup.name}';
+    final kind = group.isCombination ? ' set combination' : '';
+    return '${group.name} ${primaryGroup.name}$kind';
   }
 
   GroupDefinition _primaryGroupFor(

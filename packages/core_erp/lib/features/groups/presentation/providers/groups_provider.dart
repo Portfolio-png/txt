@@ -42,6 +42,18 @@ class GroupsProvider extends ChangeNotifier {
   /// Active combination groups (flat variant sets).
   List<GroupDefinition> get combinationGroups =>
       _groups.where((g) => g.groupType == 'item' && g.isCombination).toList();
+
+  /// Every group an item can be filed under — hierarchical and combination
+  /// alike.
+  ///
+  /// Separate from [itemGroups] on purpose: the tree pickers, the scrap
+  /// destination and the inventory selectors all want hierarchical groups only,
+  /// and folding combinations into that list would change all of them. This is
+  /// for the one question "where does this item live", where a combination
+  /// group is a legitimate answer — an item filed under one shows up in its
+  /// overview alongside the members curated into it.
+  List<GroupDefinition> get filableItemGroups =>
+      _groups.where((g) => g.groupType == 'item').toList();
   List<GroupDefinition> get machineGroups =>
       _groups.where((g) => g.groupType == 'machine').toList();
   List<GroupDefinition> get dieGroups =>

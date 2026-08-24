@@ -166,6 +166,39 @@ test('a base item with top-level properties can join a combination group', async
     assert.equal(baseRow.baseItemId, null);
     assert.equal(variantRow.isVariant, true);
     assert.equal(variantRow.baseItemId, baseId);
+
+    // A combination group is also selectable as an item's own group, the way
+    // any other group is. An item filed under one that way is not curated into
+    // it, so the overview has to read both — otherwise the item is filed
+    // somewhere it cannot be seen.
+    const lodger = await post('/api/items', {
+      name: 'Filed Straight Into The Set',
+      groupId: comboId,
+      unitId,
+      variationTree: [],
+    });
+    assert.equal(lodger.status, 201, JSON.stringify(lodger.body));
+    assert.equal(lodger.body.item.groupId, comboId);
+
+    const reread = await fetch(`${baseUrl}/api/groups/${comboId}/overview`, {
+      headers: authHeaders,
+    });
+    const rereadBody = await reread.json();
+    assert.equal(reread.status, 200, JSON.stringify(rereadBody));
+    const rereadIds = rereadBody.overview.items.map((item) => item.itemId);
+    assert.deepEqual(
+      rereadIds,
+      [baseId, variantId, lodger.body.item.id],
+      'curated members keep their order, and an owned item follows them',
+    );
+
+    // Counted once, not twice: the base item is curated in AND could be read
+    // by either query if the merge were sloppy.
+    assert.equal(
+      rereadIds.filter((id) => id === baseId).length,
+      1,
+      'a curated item that is also owned appears once',
+    );
   } finally {
     await closeServer(server);
   }

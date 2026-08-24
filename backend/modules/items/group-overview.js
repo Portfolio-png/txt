@@ -149,10 +149,22 @@ function schemaToDto(schema) {
 async function buildGroupOverview({ all, group, schema }) {
   const structure = group.group_structure || 'hierarchical';
   const isCombination = structure === 'combination';
-  const rows = await all(
-    isCombination ? CURATED_ITEMS_SQL : OWNED_ITEMS_SQL,
-    [group.id]
-  );
+  // A combination group is curated, but an item can also be filed under one
+  // outright — its `group_id` names it, the way it would name any other group.
+  // Reading only the curated list would leave those items invisible in the one
+  // place that is supposed to show what is in the group, so both are read and
+  // merged. Curated members come first: that order is the curator's.
+  let rows;
+  if (isCombination) {
+    const [curated, owned] = await Promise.all([
+      all(CURATED_ITEMS_SQL, [group.id]),
+      all(OWNED_ITEMS_SQL, [group.id]),
+    ]);
+    const seen = new Set(curated.map((row) => row.id));
+    rows = [...curated, ...owned.filter((row) => !seen.has(row.id))];
+  } else {
+    rows = await all(OWNED_ITEMS_SQL, [group.id]);
+  }
   const items = rows.map(itemToDto);
   const children = (await all(CHILDREN_SQL, [group.id])).map((row) => ({
     groupId: row.id,
