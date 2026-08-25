@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/socket_service.dart';
 import '../../data/repositories/group_repository.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_overview.dart';
@@ -91,7 +92,27 @@ class GroupsProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
+    _subscribeToChanges();
     await refresh();
+  }
+
+  bool _subscribed = false;
+
+  /// Groups carried no realtime signal at all, so a group another user created,
+  /// renamed, deleted or filled stayed invisible here until a reload. With two
+  /// or three people filing variants at once that is the difference between a
+  /// shared catalogue and three diverging ones.
+  ///
+  /// One coarse signal, deliberately: the group list is small and a refresh is
+  /// a single query, so a per-shape event would buy nothing and could go stale
+  /// in ways a refetch cannot.
+  void _subscribeToChanges() {
+    if (_subscribed) return;
+    _subscribed = true;
+    SocketService.instance.on('groups_changed', (_) => refresh());
+    // The stream can be suspended (desktop App Nap) and drop events silently;
+    // this is the signal every other provider already resyncs on.
+    SocketService.instance.on('realtime:reconnected', (_) => refresh());
   }
 
   /// Whether the card view has been opened, and so whether covers are wanted.

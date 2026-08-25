@@ -274,9 +274,22 @@ void main() {
     expect(edited, isTrue, reason: 'editing is one button away');
   });
 
-  testWidgets('child groups are listed with their sizes', (tester) async {
+  testWidgets('the panel shows what is in the group, not the tree around it', (
+    tester,
+  ) async {
     await open(tester);
-    expect(find.textContaining('Modular'), findsOneWidget);
-    expect(find.textContaining('1 child group'), findsOneWidget);
+
+    // The panel answers "what is in this group". Its contents are the point.
+    expect(find.text('Items filed under this group'), findsOneWidget);
+    expect(find.text('Anchor Roma Socket 10A'), findsOneWidget);
+
+    // The shape of the tree is the main screen's job — the groups list nests
+    // groups as groups and opens the last one onto its items. Repeating it here
+    // put the same structure in two places, drawn two different ways.
+    expect(find.text('Where this group sits'), findsNothing);
+
+    // The lineage is still one line in the header, which is a position rather
+    // than a second copy of the tree.
+    expect(find.textContaining('Primary Group'), findsWidgets);
   });
 }

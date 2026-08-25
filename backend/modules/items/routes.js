@@ -55,6 +55,36 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     getIo,
   } = ctx;
 
+  // Groups had no realtime signal at all: a group created, renamed, deleted or
+  // filled by one user stayed invisible to everyone else until they reloaded.
+  //
+  // Through the changelog rather than a bare socket emit, deliberately. The
+  // desktop reads the SSE stream, which is fed by `logChange` — a socket.io
+  // emit reaches the mobile app and nothing else. The changelog is also
+  // persisted, so a client that was asleep replays what it missed on reconnect
+  // instead of sitting on a stale list until someone reloads.
+  async function emitGroupsChanged(groupId, action) {
+    try {
+      await logChange('groups', groupId, action);
+    } catch (_) {
+      // A broadcast is a courtesy, never the reason a write fails.
+    }
+  }
+
+  /// Says that these items changed. Membership lives on the item as
+  /// `combinationGroupIds`, so filing variants into a group changes the items
+  /// as much as it changes the group — and the group sidebar reads the items.
+  async function emitItemsUpdated(itemIds) {
+    if (!Array.isArray(itemIds)) return;
+    for (const itemId of itemIds) {
+      try {
+        await logChange('items', itemId, 'UPDATE');
+      } catch (_) {
+        // As above.
+      }
+    }
+  }
+
   app.get('/api/groups', requirePermission('config.read'), async (req, res) => {
     try {
       const rows = await getGroupsWithUsage();
@@ -362,7 +392,9 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   app.post('/api/groups', requirePermission('config.write'), guardContract(contracts.groupWrite), async (req, res) => {
     try {
       const group = await saveGroup(req.body || {});
-      res.status(201).json({ success: true, group: rowToGroupDto(group), error: null });
+      const dto = rowToGroupDto(group);
+      await emitGroupsChanged(dto.id, 'INSERT');
+      res.status(201).json({ success: true, group: dto, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -445,6 +477,13 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       }
       await run('UPDATE groups SET updated_at = ? WHERE id = ?', [now, groupId]);
 
+      // Two different things changed, so two different signals. The group's
+      // membership moved — and so did `combinationGroupIds` on every item that
+      // joined it, which is what the group sidebar actually lists. Without the
+      // per-item signal every other screen keeps showing the group as empty.
+      await emitGroupsChanged(groupId, 'UPDATE');
+      await emitItemsUpdated(validIds);
+
       res.status(201).json({
         success: true,
         group: rowToGroupDto(await getGroupRowById(groupId)),
@@ -488,7 +527,9 @@ module.exports = function registerItemsModuleRoutes(ctx) {
         ...(req.body || {}),
         id: Number(req.params.id),
       });
-      res.json({ success: true, group: rowToGroupDto(group), error: null });
+      const dto = rowToGroupDto(group);
+      await emitGroupsChanged(dto.id, 'UPDATE');
+      res.json({ success: true, group: dto, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -526,6 +567,9 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
+      // No emitGroupsChanged here: the delete port already writes its own
+      // DELETE row to the changelog, and a second one would have every client
+      // refresh twice for one deletion.
       await itemsPorts.delete('group', id, req);
       res.json({ success: true, error: null });
     } catch (error) {

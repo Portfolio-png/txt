@@ -95,14 +95,22 @@ class _InventorySidebarState extends State<InventorySidebar> {
     final groupsProvider = context.watch<GroupsProvider>();
     
     // Only groups and sub groups of raw materials
+    // Raw material with something left on hand.
+    //
+    // This used to match on the group's *name* containing "raw material",
+    // which could not work: stock carries no group at all unless someone links
+    // one, so the name was the empty string and the test was false for every
+    // row. Assign Stock was therefore always empty, whatever was actually in
+    // the factory — which is why almost no stock has ever been assigned to a
+    // run, and why an order cannot say which material went into it.
+    //
+    // `materialClass` is the field the name was standing in for, and it is set
+    // on every row.
     final availableMaterials = provider.materials
-        .where((m) {
-          if (m.onHand <= 0) return false;
-          final groupName = m.linkedGroupId != null
-              ? groupsProvider.findById(m.linkedGroupId)?.name.toLowerCase() ?? ''
-              : '';
-          return groupName.contains('raw material');
-        })
+        .where(
+          (m) =>
+              m.onHand > 0 && m.materialClass == MaterialClass.rawMaterial,
+        )
         .toList();
     final materials = availableMaterials.where(_matchesSearch).toList();
     final isSearching = _query.isNotEmpty;

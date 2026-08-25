@@ -566,11 +566,261 @@ data model got stronger; the old manual view is retained as the audit path.*
   (barcode→run→node), `order_status_history`, `order_returns`
   ([server.js:5448](backend/server.js#L5448)).
 
-### Open
+**Status (2026-08-25): HALF DELIVERED — the view.** The screen now opens on one
+list of every challan, newest first, each card marked IN / OUT / INTERNAL. The
+three columns survive behind a "Compare in / out" toggle, and ticking challans
+for a statement went with them, since that is the manual pairing rather than the
+browsing. Leaving compare mode clears any half-made selection, so the statement
+button cannot be armed from a screen that no longer shows what is selected.
 
-- **What is "the report"?** Requester said "we are not taking invoice as of
-  now" — so is this a material-consumption statement per order, a job-work
-  reconciliation, or a pre-invoice? The content decides where it lives.
+The derived report is **not** built. The manual path is deliberately untouched:
+it is the only way to produce a statement today, and removing it before the
+automatic one exists would take the capability away.
+
+**"The report" is answered.** It is a **client statement** —
+`buildClientStatementReport` (`server.js:13306`), reached from
+`POST /api/reports/client-statement`, rendered as the "Client Statement Preview"
+PDF. It takes a report-group code plus two hand-picked lists (delivery challan
+nos, reception challan nos) and produces per client/item: material received in
+(kg), finished units delivered, net balance remaining, and a status of
+Balanced / Material Remaining / Over Dispatched.
+
+So deriving it from an order means resolving those two lists from the order
+instead of from tick-boxes — `delivery_challan_orders` already links challans to
+orders — and handing them to the same builder. The report itself does not need
+rewriting.
+
+### Decided (2026-08-25): the statement lives on the order
+
+The requester's reasoning: the order is what knows what has been made and how
+much of it is fulfilled; a delivery challan is already created *acknowledging*
+an order, so committing one should happen through the order too. A completed
+order then produces the reconciliation — reception against delivery, with dates,
+delivered quantity, scrap, and whatever else is known for that order.
+
+### The chain, as it actually is (verified 2026-08-25, not assumed)
+
+The requester's model — *order → pipeline → stock assigned from inventory →
+inventory fed by reception challans* — is right as a design. Every link exists.
+Three corrections to what this document said before, and one blocker.
+
+**Table names here were wrong.** The live schema has
+`order_pipeline_assignments` (not `order_material_allocations`) and
+`delivery_challan_order_items` (not `delivery_challan_orders`); orders live in
+`order_headers` / `order_items`. A run carries its order in
+`production_runs.source_metadata_json` as `{"orderId":…, "orderNo":…}` — a JSON
+blob, not a column. `pipeline_runs` has no order column at all.
+
+**The links, and how populated each one is:**
+
+| Step | Where | Populated |
+|---|---|---|
+| order item → pipeline run | `order_pipeline_assignments` | 71 rows — healthy |
+| run → order | `production_runs.source_metadata_json` | 4 rows |
+| reception challan → stock | `inventory_movements.source_challan_id` | 24 of 24 — every reception |
+| **stock → run** | **`run_barcode_inputs`** | **4 rows** |
+| order → delivery challan | `delivery_challans.order_no` | **76 of 76 — complete** |
+| reception challan → order | `delivery_challans.order_no` on reception rows | **0** |
+| challan ↔ order (many) | `delivery_challan_order_items` | **0** |
+
+**Correction (same day): the IN half IS derivable.** The line above was written
+from a join that went straight from the consumed barcode to
+`inventory_movements`, and found nothing. It found nothing because provenance
+does not sit on the barcode that gets consumed — it sits on that barcode's
+*children*. Stock arrives as a parent (a coil, a bundle) whose child pieces
+carry the reception movements; the parent is what a run consumes.
+
+With the parent → child hop the whole chain joins, on real rows:
+
+```
+order_items.order_no                      123457
+  └ order_pipeline_assignments            → pipeline_run
+      └ run_barcode_inputs.barcode        PAR-…-9626      (consumed)
+          └ materials.parent_barcode      CHD-9626-02     (its child)
+              └ inventory_movements.source_challan_id
+                  └ delivery_challans     SU-REC-307  (reception)
+```
+
+**Nothing is missing from the schema.** No column needs adding for the report;
+the links are all there and all reachable.
+
+### The blocker, and its cause
+
+There are three possible routes from an order back to the material that went
+into it, and all three are empty. The one that was *meant* to carry it is
+consumption — reception → inventory → assign stock to a run → run → order — and
+`run_barcode_inputs` has four rows in a workspace with 24 receptions and 71
+pipeline assignments.
+
+The cause is §1's dead end, and it is provable rather than suspected. Assign
+Stock filtered with:
+
+```dart
+final groupName = m.linkedGroupId != null ? …name.toLowerCase() : '';
+return groupName.contains('raw material');
+```
+
+Every material row in the workspace has `linked_group_id` NULL, so `groupName`
+is `''` for all of them and the test is false for all of them. **Assign Stock
+could never return a single row, whatever was physically in the factory.** That
+is why almost no stock has ever been assigned to a run, and therefore why an
+order cannot say what material went into it.
+
+**Fixed 2026-08-25** — the filter now tests `materialClass ==
+MaterialClass.rawMaterial`, the field the group name was standing in for, which
+is set on every row.
+
+### No columns are missing (audited 2026-08-25)
+
+The requester offered to add columns. None are needed — every link the statement
+walks is already a real column with a real relationship. Audited hop by hop:
+
+| Link | Column | Populated |
+|---|---|---|
+| order → its lines | `order_items.order_no` → `order_headers(order_no)` (FK) | 93 |
+| order line → run | `order_pipeline_assignments.order_item_id / pipeline_run_id` | 71 |
+| delivery line → order line | `delivery_challan_items.order_item_id` | **76 of 76** |
+| delivery line → run | `delivery_challan_items.production_run_id` | **0 — never written** |
+| challan → order | `delivery_challans.order_no` | 76 of 76 delivery, 0 reception |
+| run → stock consumed | `run_barcode_inputs.run_id / barcode` | **4 — the gap** |
+| stock → reception challan | `inventory_movements.source_challan_id` | 24 of 24 |
+| scrap + yield per run | `stage_reconciliations.run_id` (allotted/output/scrap/leftover) | 297 |
+| scrap per order | `production_scrap.order_no` | 0 — table unused |
+
+Two corrections to earlier notes here: `order_pipeline_assignments` points at
+`pipeline_runs`, not `production_runs` (71 of 71 join), so **the run↔order link
+already exists and is healthy** — a column on `pipeline_runs` would be a second
+source of truth, not a fix. And the barcode namespaces are the same: every
+`run_barcode_inputs.barcode` exists in `materials`.
+
+So the shortfall is **writes, not schema**. Three things are simply never
+written: `delivery_challan_items.production_run_id`, `run_barcode_inputs` (the
+assign-stock bug above), and reception challans carry **no line items at all**
+(0 rows) — so what came in is not itemised even where the challan is linked.
+
+### Built (2026-08-25): the traversal
+
+`buildOrderReconciliation({ orderNo })` (`server.js`, beside
+`buildClientStatementReport`) walks the chain above and returns the order's
+lines, the receipts traced through consumption, the runs, the deliveries with
+dates and quantities, and totals including scrap and leftover. Exposed as
+`GET /api/orders/:orderNo/reconciliation`.
+
+It carries a `coverage` block on purpose: `untracedBarcodes`, `consumedBarcodes`
+and `inboundTraceable` let a caller tell **"no material was received"** apart
+from **"we cannot say what was received"**. A gap must never render as a zero in
+a document someone bills against.
+
+`test/order-reconciliation.test.js` seeds the entire chain by hand — reception
+challan → movement → material → run input → run → assignment → order line →
+delivery challan line → stage scrap — and walks it, because in a real workspace
+the middle of the chain is empty and an integration test against live data would
+prove nothing. A second test asserts the coverage flags on stock that was
+consumed but never received, and a third that an unknown order is a 404 rather
+than an empty statement.
+
+### Correction (2026-08-25): two stock models, and they do not meet
+
+Earlier notes here said reception challans record no line items. **That was
+wrong** — it was read off seeded rows rather than tested. Driving the real API
+end to end (create → issue) shows a reception challan does record its lines, and
+does move stock. Two things had to be got right to see it: stock is applied by
+**issuing**, not by saving with `status: 'issued'`; and an issued line needs a
+variation leaf when the item has variation properties.
+
+What that test also shows is the real problem, and it is bigger than a missing
+column. Issuing a reception challan writes:
+
+- a `delivery_challan_items` row — correct;
+- an `inventory_movements` row carrying `item_id`, `variation_leaf_node_id`,
+  `source_challan_id` and `source_challan_line_id` — full provenance;
+- a `variation_stock` row — the quantity the inventory screen shows;
+- and `material_barcode = '-'`, which the source comments call
+  *"legacy barcode"*.
+
+So challans move stock at the grain of **item + variation**. Production consumes
+at the grain of a **physical barcoded piece** (`run_barcode_inputs.barcode` →
+`materials`). Nothing joins the two. Material received on a challan therefore
+never becomes assignable production stock, and an order can never trace back to
+the reception that fed it — not for want of a column, but because the two halves
+of the app count different things.
+
+`run_barcode_inputs.challan_item_id` exists — added by `ensureColumnExists`
+(`server.js:5445`) and **never written by any INSERT**. It is the intended
+bridge, unbuilt.
+
+**Decided (2026-08-26): all three.** Migration `036-challan-stock-bridge.sql`
+plus the writes that fill it.
+
+1. **Issuing a reception mints barcoded stock.** `mintReceivedMaterial` creates
+   a `materials` row per line — barcode derived from the challan and line so it
+   reads on a shop floor — linked to the item, variation and unit, carrying
+   `source_challan_id` / `source_challan_item_id` so provenance is a column
+   rather than a join through movements. The movement now carries that real
+   barcode instead of `'-'`. It is idempotent: re-issuing returns the barcode
+   already minted rather than a second pile of stock.
+
+   It also writes an `inventory_stock_positions` row. A `materials` row alone is
+   not stock anyone can draw on — availability is read off positions, and the
+   floor's assign check refuses anything without one, so minting without a
+   position would have left received material visible and still unusable. That
+   was found by the test, not by reading.
+
+2. **Production consumes by quantity as well as by piece.** `POST
+   /runs/:id/barcodes` previously required a barcode and refused anything else.
+   It now accepts `itemId` + `quantity` (+ optional variation leaf), recorded
+   with `source_kind = 'quantity'` and a synthetic `#qty-…` barcode that keeps
+   the row uniquely addressable and can never be mistaken for a real one.
+
+3. **A consumption names the challan line that supplied it.** The plain-stock
+   branch now writes `challan_item_id` (off the material's
+   `source_challan_item_id`), plus `item_id`, `variation_leaf_node_id` and
+   `consumed_qty`. The sheet branch already did this from `piece_barcodes`; the
+   ordinary stock branch never had.
+
+`buildOrderReconciliation` prefers the bridge and falls back to the old barcode
+join for stock recorded before it existed. Receipts say which route found them
+(`via: 'challan-line' | 'barcode'`), and a challan reached both ways is counted
+once.
+
+Covered by `test/challan-stock-bridge.test.js`, which drives the real API —
+create reception → issue → assign to a run — rather than writing rows directly.
+
+### `production_run_id` on delivery lines
+
+Fully supported already, which was also not what earlier notes here implied. The
+backend normalises `productionRunId` off the request (`server.js:9441`), stores
+it (`server.js:11806`), and **validates** it (`validateProductionRunForChallanLine`,
+`server.js:11198`): the run must exist, be `completed`, and match the line's item
+and variation. The challan editor has a run picker that sets it. It reads 0 in
+live data only because nobody uses the picker.
+
+It points at `production_runs` (INTEGER id), not `pipeline_runs` (TEXT id) — two
+different tables, and the floor's live run is the latter. There is no link
+between them to look one up by, so the production-floor fulfilment dialog cannot
+fill it in; that dialog now records `orderItemId` instead, which it does know and
+was discarding.
+
+### What this means for the sequencing
+
+§1 is not parallel to §5; it is a **prerequisite**. The fix above reopens the
+path, but only for material assigned *from now on* — the existing 24 receptions
+have no consumption history and never will. A statement derived per order will
+show an empty "material received in" column for every order placed before
+assignments start being recorded.
+
+So the order-side report should be built **after** there is assignment data to
+build it from, or it will be a report that is structurally right and empty.
+
+### Still open
+
+- **Which reception is a piece's origin?** 8 of the 9 challan-sourced barcodes
+  carry an `in` movement from *more than one* reception challan; only 1 has
+  exactly one. So "the reception this came from" is not a lookup, it is a
+  choice of rule — earliest `in` is the obvious one, but it needs deciding
+  before a statement quotes a challan number as fact.
+- Internal-use challans still do not map to a client order (`reconciliation_json`
+  on the challan is their settlement record).
 - Does the derived report **replace** `ChallanInvoiceReconciliationScreen`, or
   feed it?
 - Where does the surviving ledger live — a toggle on the challan screen, a mode

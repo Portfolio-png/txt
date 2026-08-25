@@ -37,6 +37,7 @@ import '../../data/services/item_link_options_service.dart';
 import '../../domain/item_form_sections.dart';
 import '../providers/item_form_sections_provider.dart';
 
+import 'package:core_erp/features/groups/presentation/group_type_style.dart';
 import 'package:core_erp/features/materials/domain/material_definition.dart';
 import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
@@ -1018,9 +1019,32 @@ class _ItemsTableState extends State<_ItemsTable> {
   /// it. Clicking a group row opens and closes it — there is no chevron.
   final Set<int> _expandedGroupIds = <int>{};
 
+  /// Opens whatever another screen asked to have revealed — the group it is
+  /// filed in, and its base item when the request is for a variant.
+  ///
+  /// Done after the frame rather than during build: it is a state change, and
+  /// the request has to be consumed so a rebuild does not keep re-opening rows
+  /// the user has since closed.
+  void _applyPendingReveal(ItemsProvider itemsProvider) {
+    final requested = itemsProvider.pendingRevealItemId;
+    if (requested == null) return;
+    final target = itemsProvider.findById(requested);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      itemsProvider.consumeReveal();
+      if (target == null) return;
+      setState(() {
+        _expandedGroupIds.add(target.groupId);
+        final base = target.baseItemId;
+        if (base != null) _expandedBaseItemIds.add(base);
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final groupsProvider = context.watch<GroupsProvider>();
+    _applyPendingReveal(context.watch<ItemsProvider>());
     final rows = <_ItemsTableRow>[];
 
     // Bucket by group, preserving the provider's ordering of groups and the
@@ -1250,6 +1274,7 @@ class _GroupHeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = GroupTypeStyle.of(group);
     return SoftMasterRow(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -1257,12 +1282,13 @@ class _GroupHeaderRow extends StatelessWidget {
         Expanded(
           child: Row(
             children: [
+              // Coloured by what kind of group it is, not by whether it is
+              // open: the colour is the thing being learned, and it has to mean
+              // the same here as it does in the picker that created the group.
               Icon(
-                expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                style.iconFor(expanded: expanded),
                 size: 18,
-                color: expanded
-                    ? SoftErpTheme.accent
-                    : SoftErpTheme.textSecondary,
+                color: style.folder,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -5664,6 +5690,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (assigned == null) {
       return groupsProvider.errorMessage ??
           'Could not add to the combination group.';
+    }
+    // Membership lives on the item as `combinationGroupIds`, and that is what
+    // the group sidebar lists — so the items have to be re-read or the group we
+    // just filled keeps reading as empty. The server broadcasts this too, but
+    // waiting on our own round trip to see our own write is not worth the
+    // flicker, and the broadcast is a courtesy that may not arrive.
+    if (mounted) {
+      await context.read<ItemsProvider>().refresh();
     }
     return null;
   }

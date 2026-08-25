@@ -496,6 +496,23 @@ app.use(cors(buildCorsOptions()));
 app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+// What is actually running here.
+//
+// A deploy that swapped the code but left the old process serving used to be
+// indistinguishable from one that worked — both answered /health identically.
+// The release stamp and commit make the difference visible, which is what lets
+// a deploy verify it is talking to the release it just shipped rather than the
+// one it replaced.
+//
+// Read once at boot: they describe this process, and a process that has been
+// reloaded onto new code is a new process.
+const RELEASE_INFO = Object.freeze({
+  // Written by deploy/release.sh into the release directory.
+  release: process.env.PAPER_RELEASE || null,
+  commit: process.env.PAPER_COMMIT || null,
+  startedAt: new Date().toISOString(),
+});
+
 app.get('/health', (_req, res) => {
   res.json({
     success: true,
@@ -504,6 +521,12 @@ app.get('/health', (_req, res) => {
     dbPath: IS_PRODUCTION ? null : DB_PATH,
     dbReady,
     dbInitError: dbInitError?.message ?? null,
+    release: RELEASE_INFO.release,
+    commit: RELEASE_INFO.commit,
+    startedAt: RELEASE_INFO.startedAt,
+    // Which deployment this is. A staging box answering a production health
+    // check is a mistake worth being able to see.
+    environment: process.env.PAPER_ENV || (IS_PRODUCTION ? 'production' : 'development'),
     timestamp: new Date().toISOString(),
   });
 });
@@ -11857,6 +11880,97 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   }
 }
 
+/// Creates the barcoded stock row a reception challan line brings into being.
+///
+/// Returns the barcode, or null when there is nothing to mint (a line with no
+/// item, or a quantity of zero). The barcode is derived from the challan and
+/// line so it is readable on a shop floor and stable for a given line, with a
+/// numeric suffix only if that name is somehow already taken.
+async function mintReceivedMaterial({
+  challan,
+  line,
+  itemId,
+  leafNodeId,
+  quantity,
+  uom,
+  locationId,
+  now,
+}) {
+  if (!(itemId > 0) || !(Number(quantity) > 0)) return null;
+
+  // Already minted — issuing is once-only today, but a retry must not create a
+  // second pile of stock for the same line.
+  const existingRow = await get(
+    'SELECT barcode FROM materials WHERE source_challan_item_id = ?',
+    [line.id],
+  );
+  if (existingRow) return existingRow.barcode;
+
+  const itemRow = await get(
+    'SELECT id, name, display_name, unit_id FROM items WHERE id = ?',
+    [itemId],
+  );
+  const slug = String(challan.challan_no || challan.id || 'REC')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const base = `${slug}-L${Number(line.line_no || 1)}`;
+  let barcode = base;
+  for (let suffix = 2; suffix < 50; suffix += 1) {
+    const clash = await get('SELECT 1 FROM materials WHERE barcode = ?', [barcode]);
+    if (!clash) break;
+    barcode = `${base}-${suffix}`;
+  }
+
+  const name = String(
+    line.particulars || itemRow?.display_name || itemRow?.name || 'Received material',
+  ).trim();
+
+  await run(
+    `
+    INSERT INTO materials (
+      barcode, name, type, kind, unit_id, supplier, location,
+      on_hand_qty, available_to_promise_qty, material_class, inventory_state,
+      linked_item_id, linked_variation_leaf_node_id,
+      source_challan_id, source_challan_item_id, created_at, updated_at
+    ) VALUES (?, ?, ?, 'parent', ?, ?, ?, ?, ?, 'raw_material', 'available',
+              ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      barcode,
+      name,
+      uom || '',
+      itemRow?.unit_id ?? null,
+      String(challan.vendor_name || '').trim(),
+      locationId,
+      quantity,
+      quantity,
+      itemId,
+      leafNodeId || null,
+      challan.id,
+      line.id,
+      now,
+      now,
+    ],
+  );
+
+  // A material row alone is not stock anyone can draw on. Availability is read
+  // off `inventory_stock_positions` — barcode, place, lot — and the floor's
+  // assign check refuses anything that has no position, so minting without one
+  // would leave the received material visible and still unusable.
+  await run(
+    `
+    INSERT INTO inventory_stock_positions (
+      material_barcode, location_id, lot_code, unit_id, on_hand_qty,
+      reserved_qty, damaged_qty, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
+    `,
+    [barcode, locationId, barcode, itemRow?.unit_id ?? null, quantity, now],
+  );
+
+  return barcode;
+}
+
 async function issueDeliveryChallan(id, actor = null) {
   const existing = await getDeliveryChallanRowById(id);
   if (!existing) {
@@ -11977,6 +12091,28 @@ async function issueDeliveryChallan(id, actor = null) {
       }
       await assertValidStockVariationLeaf(itemId, leafNodeId);
 
+      // Material arriving on a reception challan becomes a barcoded row in
+      // `materials`, not just a number on `variation_stock`.
+      //
+      // Without this the two halves of the app counted different things:
+      // challans moved "25 of this item, in this variation", production
+      // consumed "this physical piece, by barcode". Received material was
+      // therefore never assignable on the floor, and an order could never say
+      // what went into it. The row carries the challan and the line it came in
+      // on, so provenance is a column rather than a join through movements.
+      const receivedBarcode = isReception
+        ? await mintReceivedMaterial({
+            challan: existing,
+            line: item,
+            itemId,
+            leafNodeId,
+            quantity: movementQty,
+            uom: movementUom,
+            locationId,
+            now,
+          })
+        : null;
+
       await run(
         `
         INSERT INTO inventory_movements (
@@ -11988,7 +12124,9 @@ async function issueDeliveryChallan(id, actor = null) {
         `,
         [
           movementId,
-          '-', // legacy barcode
+          // A real barcode for received material; '-' remains for a delivery,
+          // which takes stock away rather than bringing a piece into being.
+          receivedBarcode || '-',
           movementType,
           movementQty,
           movementQty,
@@ -19697,15 +19835,79 @@ async function ensurePipelineRunRecord({
 
   await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [id]);
   for (const assignment of barcodeAssignments) {
-    const materialRow = await getMaterialRowByBarcode(assignment.barcode);
+    const materialRow = assignment.barcode
+      ? await getMaterialRowByBarcode(assignment.barcode)
+      : null;
+
     if (!materialRow) {
+      // Consumption by quantity rather than by piece.
+      //
+      // Not every input is a barcoded thing you can scan. Stock that arrived
+      // as "300 kg of this variation" has no piece to point at, and until now
+      // an assignment that could not be named by barcode was dropped here —
+      // silently, which is how a run came to consume material that no record
+      // admits to.
+      //
+      // Recorded in the grain it was actually consumed in: item, variation and
+      // an amount, with a synthetic barcode that could never collide with a
+      // real one so the row stays uniquely addressable.
+      const quantityItemId = Number(assignment.itemId ?? assignment.item_id ?? 0);
+      const quantity = Number(assignment.consumedQty ?? assignment.quantity ?? 0);
+      if (!(quantityItemId > 0) || !(quantity > 0)) {
+        continue;
+      }
+      const leafNodeId =
+        Number(
+          assignment.variationLeafNodeId ?? assignment.variation_leaf_node_id ?? 0,
+        ) || null;
+      await run(
+        `
+        INSERT INTO run_barcode_inputs (
+          id, run_id, node_id, barcode, material_id, material_payload_json,
+          scanned_at, challan_item_id, item_id, variation_leaf_node_id,
+          consumed_qty, source_kind
+        ) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, 'quantity')
+        `,
+        [
+          assignment.id,
+          id,
+          assignment.nodeId,
+          `#qty-${assignment.id}`,
+          JSON.stringify({
+            itemId: quantityItemId,
+            variationLeafNodeId: leafNodeId,
+            quantity,
+          }),
+          assignment.scannedAt || createdAt,
+          Number(assignment.challanItemId ?? assignment.challan_item_id ?? 0) || null,
+          quantityItemId,
+          leafNodeId,
+          quantity,
+        ],
+      );
       continue;
     }
+    // What was consumed, and where it came from.
+    //
+    // `challan_item_id` is the bridge: it names the reception line this stock
+    // arrived on, which is what lets an order say what material went into it.
+    // It comes off the material row, so it is only there for stock that was
+    // actually received rather than created directly in inventory — and a null
+    // means exactly that, rather than meaning nothing was consumed.
+    //
+    // item + variation are recorded alongside so a consumption reads in the
+    // same grain challans move stock in, and a quantity consumption (below)
+    // can be counted next to a barcoded one.
+    const consumedQty = Number(
+      assignment.consumedQty ?? assignment.quantity ?? materialRow.on_hand_qty ?? 0,
+    );
     await run(
       `
       INSERT INTO run_barcode_inputs (
-        id, run_id, node_id, barcode, material_id, material_payload_json, scanned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        id, run_id, node_id, barcode, material_id, material_payload_json,
+        scanned_at, challan_item_id, item_id, variation_leaf_node_id,
+        consumed_qty, source_kind
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         assignment.id,
@@ -19720,6 +19922,11 @@ async function ensurePipelineRunRecord({
           scanCount: materialRow.scan_count || 0,
         }),
         assignment.scannedAt || createdAt,
+        materialRow.source_challan_item_id ?? null,
+        materialRow.linked_item_id ?? null,
+        materialRow.linked_variation_leaf_node_id ?? null,
+        Number.isFinite(consumedQty) && consumedQty > 0 ? consumedQty : null,
+        'barcode',
       ],
     );
   }
@@ -23674,6 +23881,282 @@ app.get('/api/reconciliation/waste-audit', requirePermission('config.read'), asy
   }
 });
 
+// ---------------------------------------------------------------------------
+// Order reconciliation — what a finished order consumed, produced and shipped.
+//
+// The statement people actually want is per order, because the order is the
+// only thing that knows what was asked for and how much of it has been met. It
+// is assembled by walking links that already exist; nothing here needs a column
+// that is not already on a table:
+//
+//   order_items                                    the order's lines
+//     ← delivery_challan_items.order_item_id       what shipped against them
+//     ← delivery_challans.order_no                 the challans those lines are on
+//     ← order_pipeline_assignments.order_item_id   the runs that made it
+//         → run_barcode_inputs.run_id              the stock those runs consumed
+//             → inventory_movements.source_challan_id   the reception it came in on
+//         → stage_reconciliations.run_id           scrap and yield per stage
+//
+// The last two hops are the fragile ones, and the report says so rather than
+// printing a zero. Stock that was never assigned to a run, and stock created
+// without a reception challan behind it, cannot be attributed to an order by
+// any means — so `coverage` reports what could not be traced and why, and a
+// caller can tell "nothing came in" apart from "we do not know what came in".
+// ---------------------------------------------------------------------------
+async function buildOrderReconciliation(input = {}) {
+  const orderNo = String(input.orderNo ?? input.order_no ?? '').trim();
+  if (!orderNo) {
+    const error = new Error('An order number is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const orderLines = await all(
+    `SELECT * FROM order_items WHERE order_no = ? ORDER BY id ASC`,
+    [orderNo],
+  );
+  if (orderLines.length === 0) {
+    const error = new Error(`Unknown order: ${orderNo}.`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const orderItemIds = orderLines.map((row) => row.id);
+  const inClause = (values) => values.map(() => '?').join(', ');
+
+  // --- out: what shipped, and when -----------------------------------------
+  const deliveryRows = await all(
+    `
+    SELECT c.id AS challan_id, c.challan_no, c.date, c.status,
+           ci.id AS line_id, ci.order_item_id, ci.item_id, ci.particulars,
+           ci.quantity_pcs, ci.weight, ci.production_run_id,
+           ci.variation_path_label
+    FROM delivery_challans c
+    JOIN delivery_challan_items ci ON ci.challan_id = c.id
+    WHERE c.type = 'delivery' AND c.order_no = ?
+    ORDER BY c.date ASC, ci.line_no ASC
+    `,
+    [orderNo],
+  );
+
+  const deliveries = new Map();
+  for (const row of deliveryRows) {
+    if (!deliveries.has(row.challan_id)) {
+      deliveries.set(row.challan_id, {
+        challanId: row.challan_id,
+        challanNo: row.challan_no,
+        date: row.date,
+        status: row.status,
+        lines: [],
+      });
+    }
+    deliveries.get(row.challan_id).lines.push({
+      orderItemId: row.order_item_id,
+      itemId: row.item_id,
+      particulars: row.particulars,
+      variationPathLabel: row.variation_path_label || '',
+      quantityPcs: Number(row.quantity_pcs || 0),
+      weightKg: Number(row.weight || 0),
+      productionRunId: row.production_run_id || null,
+    });
+  }
+
+  // --- the runs that made it ------------------------------------------------
+  const runRows = orderItemIds.length === 0
+    ? []
+    : await all(
+        `
+        SELECT DISTINCT r.id, r.status, r.started_at, r.completed_at, r.name
+        FROM order_pipeline_assignments a
+        JOIN pipeline_runs r ON r.id = a.pipeline_run_id
+        WHERE a.order_item_id IN (${inClause(orderItemIds)})
+        `,
+        orderItemIds,
+      );
+  const runIds = runRows.map((row) => row.id);
+
+  // --- in: stock those runs consumed, and where it came from ----------------
+  const consumed = runIds.length === 0
+    ? []
+    : await all(
+        `
+        SELECT rbi.run_id, rbi.barcode, rbi.material_id, rbi.scanned_at,
+               rbi.challan_item_id, rbi.item_id, rbi.variation_leaf_node_id,
+               rbi.consumed_qty, rbi.source_kind
+        FROM run_barcode_inputs rbi
+        WHERE rbi.run_id IN (${inClause(runIds)})
+        ORDER BY rbi.scanned_at ASC
+        `,
+        runIds,
+      );
+
+  // Where the consumed stock came in.
+  //
+  // Preferred route is the bridge — a consumption names the challan line that
+  // supplied it, whether it was consumed as a barcoded piece or as a quantity.
+  // Falling back to matching on barcode covers stock recorded before the bridge
+  // existed, which is most of what is in a workspace today.
+  const challanItemIds = [
+    ...new Set(consumed.map((row) => row.challan_item_id).filter(Boolean)),
+  ];
+  const barcodes = [...new Set(consumed.map((row) => row.barcode).filter(Boolean))];
+
+  const bridged = challanItemIds.length === 0
+    ? []
+    : await all(
+        `
+        SELECT ci.id AS line_id, ci.quantity_pcs, ci.weight, ci.particulars,
+               c.id AS challan_id, c.challan_no, c.date, c.vendor_name
+        FROM delivery_challan_items ci
+        JOIN delivery_challans c ON c.id = ci.challan_id
+        WHERE ci.id IN (${inClause(challanItemIds)}) AND c.type = 'reception'
+        ORDER BY c.date ASC
+        `,
+        challanItemIds,
+      );
+
+  const legacy = barcodes.length === 0
+    ? []
+    : await all(
+        `
+        SELECT im.material_barcode, im.qty, im.primary_qty, im.uom,
+               c.id AS challan_id, c.challan_no, c.date, c.vendor_name
+        FROM inventory_movements im
+        JOIN delivery_challans c ON c.id = im.source_challan_id
+        WHERE im.material_barcode IN (${inClause(barcodes)})
+          AND c.type = 'reception'
+        ORDER BY c.date ASC
+        `,
+        barcodes,
+      );
+
+  const receipts = [
+    ...bridged.map((row) => ({
+      challanId: row.challan_id,
+      challanNo: row.challan_no,
+      date: row.date,
+      vendorName: row.vendor_name || '',
+      challanLineId: row.line_id,
+      particulars: row.particulars || '',
+      quantity: Number(row.weight || row.quantity_pcs || 0),
+      uom: '',
+      via: 'challan-line',
+    })),
+    ...legacy
+      // A receipt already reached through the bridge must not be counted twice.
+      .filter((row) => !bridged.some((b) => b.challan_id === row.challan_id))
+      .map((row) => ({
+        challanId: row.challan_id,
+        challanNo: row.challan_no,
+        date: row.date,
+        vendorName: row.vendor_name || '',
+        barcode: row.material_barcode,
+        quantity: Number(row.primary_qty ?? row.qty ?? 0),
+        uom: row.uom || '',
+        via: 'barcode',
+      })),
+  ];
+
+  // --- scrap and yield, per stage, for those runs ---------------------------
+  const scrapRow = runIds.length === 0
+    ? null
+    : await get(
+        `
+        SELECT COALESCE(SUM(allotted), 0) AS allotted,
+               COALESCE(SUM(output), 0) AS output,
+               COALESCE(SUM(scrap), 0) AS scrap,
+               COALESCE(SUM(leftover), 0) AS leftover
+        FROM stage_reconciliations
+        WHERE run_id IN (${inClause(runIds)})
+        `,
+        runIds,
+      );
+
+  // --- what could not be traced, said out loud ------------------------------
+  const tracedBarcodes = new Set(
+    receipts.map((row) => row.barcode).filter(Boolean),
+  );
+  const untracedBarcodes = consumed
+    .filter((row) => !row.challan_item_id)
+    .map((row) => row.barcode)
+    .filter((code) => code && !tracedBarcodes.has(code));
+
+  const deliveredPcs = deliveryRows.reduce(
+    (total, row) => total + Number(row.quantity_pcs || 0),
+    0,
+  );
+  const deliveredWeightKg = deliveryRows.reduce(
+    (total, row) => total + Number(row.weight || 0),
+    0,
+  );
+  const orderedQty = orderLines.reduce(
+    (total, row) => total + Number(row.quantity || 0),
+    0,
+  );
+
+  return {
+    orderNo,
+    clientName: orderLines[0]?.client_name || '',
+    lines: orderLines.map((row) => ({
+      orderItemId: row.id,
+      itemId: row.item_id,
+      itemName: row.item_name,
+      variationPathLabel: row.variation_path_label || '',
+      quantity: Number(row.quantity || 0),
+      unitSymbol: row.unit_symbol || '',
+      status: row.status || '',
+    })),
+    receipts,
+    runs: runRows.map((row) => ({
+      runId: row.id,
+      name: row.name || '',
+      status: row.status || '',
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+    })),
+    deliveries: [...deliveries.values()],
+    totals: {
+      orderedQty,
+      deliveredPcs,
+      deliveredWeightKg: roundMetric(deliveredWeightKg),
+      receivedQty: roundMetric(
+        receipts.reduce((total, row) => total + row.quantity, 0),
+      ),
+      allotted: roundMetric(Number(scrapRow?.allotted || 0)),
+      output: roundMetric(Number(scrapRow?.output || 0)),
+      scrap: roundMetric(Number(scrapRow?.scrap || 0)),
+      leftover: roundMetric(Number(scrapRow?.leftover || 0)),
+    },
+    // Never let a gap read as a zero. Each flag names something the walk could
+    // not do, so the report can say "not recorded" instead of implying "none".
+    coverage: {
+      runsFound: runIds.length,
+      consumedBarcodes: barcodes.length,
+      // Stock was assigned to a run but has no reception behind it — created
+      // directly in inventory, or received before receipts were itemised.
+      untracedBarcodes,
+      // No stock was assigned to any of this order's runs, so nothing can be
+      // said about what went into it. This is the common case until assigning
+      // stock becomes routine.
+      inboundTraceable: runIds.length > 0 && barcodes.length > 0,
+      deliveriesLinked: deliveries.size,
+    },
+  };
+}
+
+app.get('/api/orders/:orderNo/reconciliation', requirePermission('config.read'), async (req, res) => {
+  try {
+    const data = await buildOrderReconciliation({ orderNo: req.params.orderNo });
+    res.json({ success: true, data, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      error: error.message,
+    });
+  }
+});
+
 app.post('/api/reports/client-statement', requirePermission('config.read'), async (req, res) => {
   try {
     res.json({ success: true, data: await buildClientStatementReport(req.body || {}), error: null });
@@ -26504,6 +26987,55 @@ app.post('/runs/:id/barcodes', async (req, res) => {
     }
 
     const payload = req.body || {};
+
+    // Consumption by quantity: an amount of an item+variation rather than a
+    // piece you can scan. Stock that arrived on a challan as "300 kg of this
+    // variation" has no barcode to point at, and refusing it here is what left
+    // runs consuming material no record admits to.
+    const quantityItemId = Number(payload.itemId ?? payload.item_id ?? 0);
+    const quantityAmount = Number(payload.quantity ?? 0);
+    if (!payload.barcode && quantityItemId > 0 && quantityAmount > 0) {
+      if (!payload.nodeId) {
+        res.status(400).json({ success: false, run: null, error: 'nodeId is required.' });
+        return;
+      }
+      const quantityInputId = `qty-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const leafNodeId =
+        Number(payload.variationLeafNodeId ?? payload.variation_leaf_node_id ?? 0) || null;
+      await run(
+        `
+        INSERT INTO run_barcode_inputs (
+          id, run_id, node_id, barcode, material_id, material_payload_json,
+          scanned_at, challan_item_id, item_id, variation_leaf_node_id,
+          consumed_qty, source_kind
+        ) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, 'quantity')
+        `,
+        [
+          quantityInputId,
+          req.params.id,
+          payload.nodeId,
+          // Synthetic, so the row stays uniquely addressable and can never be
+          // mistaken for — or collide with — a real barcode.
+          `#qty-${quantityInputId}`,
+          JSON.stringify({
+            itemId: quantityItemId,
+            variationLeafNodeId: leafNodeId,
+            quantity: quantityAmount,
+          }),
+          new Date().toISOString(),
+          Number(payload.challanItemId ?? payload.challan_item_id ?? 0) || null,
+          quantityItemId,
+          leafNodeId,
+          quantityAmount,
+        ],
+      );
+      const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
+        req.params.id,
+      ]);
+      res.json({ success: true, run: await rowToRun(updatedRunRow) });
+      return;
+    }
+
     if (!payload.nodeId || !payload.barcode) {
       res.status(400).json({
         success: false,
@@ -26582,11 +27114,21 @@ app.post('/runs/:id/barcodes', async (req, res) => {
     }
     const material = rowToMaterialDto(materialRow);
     const barcodeInputId = `barcode-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // The bridge. `source_challan_item_id` is on the material because issuing a
+    // reception minted it there, so a consumption can name the line the stock
+    // arrived on — which is what lets an order say what went into it. Null for
+    // stock created directly in inventory, and that null means exactly that.
+    const consumedQty =
+      payload.quantity !== undefined && payload.quantity !== null
+        ? Number(payload.quantity)
+        : null;
     await run(
       `
       INSERT INTO run_barcode_inputs (
-        id, run_id, node_id, barcode, material_id, material_payload_json, scanned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        id, run_id, node_id, barcode, material_id, material_payload_json,
+        scanned_at, challan_item_id, item_id, variation_leaf_node_id,
+        consumed_qty, source_kind
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'barcode')
       `,
       [
         barcodeInputId,
@@ -26599,10 +27141,14 @@ app.post('/runs/:id/barcodes', async (req, res) => {
           materialName: material.name,
           materialType: material.type,
           scanCount: material.scanCount,
-          quantity: payload.quantity !== undefined && payload.quantity !== null ? Number(payload.quantity) : null,
+          quantity: consumedQty,
           unit: material.unit,
         }),
         new Date().toISOString(),
+        materialRow.source_challan_item_id ?? null,
+        materialRow.linked_item_id ?? null,
+        materialRow.linked_variation_leaf_node_id ?? null,
+        Number.isFinite(consumedQty) && consumedQty > 0 ? consumedQty : null,
       ],
     );
 
@@ -29672,12 +30218,97 @@ async function computeTelemetrySnapshot() {
       });
     }
   } catch (_) { users = []; }
+  // How the software is being used, as against how much of it there is.
+  //
+  // The counts above say how big a deployment is. They cannot answer the
+  // question that decides what to build next: which parts of this do people
+  // actually touch, and where are they working around it rather than with it.
+  //
+  // Everything here is derived from records the app already writes for its own
+  // audit trail — no new tracking, no per-click instrumentation. Aggregates
+  // only: which modules were touched and how often, never what was typed.
+  const usage = { moduleActivity: [], adoption: {}, workarounds: {} };
+  try {
+    // Which modules see real activity, over the last month. A module absent
+    // from this list is one nobody is using — the most useful thing to know
+    // before spending a week improving it.
+    usage.moduleActivity = (await all(
+      `SELECT entity_type AS module, COUNT(*) AS actions,
+              COUNT(DISTINCT actor_user_id) AS people,
+              MAX(created_at) AS lastAt
+       FROM entity_activity_log
+       WHERE created_at >= datetime('now', '-30 day')
+       GROUP BY entity_type
+       ORDER BY actions DESC`,
+    )) || [];
+
+    // Whether the parts that only pay off when they are filled in are being
+    // filled in. A low number is not misuse — it is usually the software
+    // asking for something at a moment the user cannot supply it.
+    usage.adoption = {
+      itemsWithVariations: await telemetryCount(
+        `SELECT COUNT(DISTINCT item_id) c FROM item_variation_nodes
+         WHERE COALESCE(is_archived,0)=0`,
+      ),
+      itemsTotal: await telemetryCount(
+        'SELECT COUNT(*) c FROM items WHERE COALESCE(is_archived,0)=0',
+      ),
+      ordersWithPipeline: await telemetryCount(
+        'SELECT COUNT(DISTINCT order_item_id) c FROM order_pipeline_assignments',
+      ),
+      runsWithStockAssigned: await telemetryCount(
+        'SELECT COUNT(DISTINCT run_id) c FROM run_barcode_inputs',
+      ),
+      runsTotal: await telemetryCount('SELECT COUNT(*) c FROM pipeline_runs'),
+      deliveriesLinkedToOrder: await telemetryCount(
+        `SELECT COUNT(*) c FROM delivery_challans
+         WHERE type='delivery' AND COALESCE(order_no,'') <> ''`,
+      ),
+      deliveriesTotal: await telemetryCount(
+        "SELECT COUNT(*) c FROM delivery_challans WHERE type='delivery'",
+      ),
+    };
+
+    // Where the shape of the software and the shape of the work disagree.
+    // These are the interesting numbers: each one is a place someone did the
+    // job anyway, around what was designed. Read them as questions, not faults.
+    usage.workarounds = {
+      // Stock created straight in inventory rather than received on a challan:
+      // material that exists but cannot be traced to where it came from.
+      materialsWithoutReceipt: await telemetryCount(
+        `SELECT COUNT(*) c FROM materials
+         WHERE COALESCE(is_archived,0)=0 AND source_challan_id IS NULL`,
+      ),
+      // Consumption that cannot name the receipt it came from — the same gap,
+      // seen from the production end.
+      consumptionWithoutSource: await telemetryCount(
+        'SELECT COUNT(*) c FROM run_barcode_inputs WHERE challan_item_id IS NULL',
+      ),
+      // Items filed nowhere in particular.
+      itemsUngrouped: await telemetryCount(
+        `SELECT COUNT(*) c FROM items i
+         WHERE COALESCE(i.is_archived,0)=0
+           AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.id = i.group_id)`,
+      ),
+      // Challans that never got issued: started and abandoned, which usually
+      // means the form asked for something the user did not have.
+      challansLeftDraft: await telemetryCount(
+        "SELECT COUNT(*) c FROM delivery_challans WHERE status='draft'",
+      ),
+    };
+  } catch (_) {
+    // Telemetry must never be the reason a deployment misbehaves.
+  }
+
   return {
     deploymentId: DEPLOYMENT_ID,
     deploymentName: DEPLOYMENT_NAME,
     appVersion: process.env.APP_VERSION || '',
+    release: process.env.PAPER_RELEASE || null,
+    environment: process.env.PAPER_ENV || null,
     capturedAt: new Date().toISOString(),
     metrics,
+    usage,
     users,
   };
 }
@@ -30073,6 +30704,8 @@ app.use((error, req, res, _next) => {
 
 module.exports = {
   applyInventoryMovement,
+  // Exported so the fleet snapshot can be asserted rather than trusted.
+  computeTelemetrySnapshot,
   buildTemplateTestChallanDto,
   completeAssetUpload,
   completePoUpload,

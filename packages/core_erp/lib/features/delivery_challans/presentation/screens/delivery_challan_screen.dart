@@ -269,6 +269,17 @@ class _ChallanScreenState extends State<ChallanScreen> {
               onStatusChanged: provider.setStatusFilter,
               onReportGroupChanged: _setActiveReportGroup,
               onClearOrderFilter: () => provider.setOrderFilter(null),
+              compareMode: _compareMode,
+              onCompareModeChanged: (value) => setState(() {
+                _compareMode = value;
+                if (!value) {
+                  // Ticking challans is what the columns are for. Leaving a
+                  // half-made selection behind would arm the statement button
+                  // from a screen that no longer shows what is selected.
+                  _selectedDeliveryChallanNos.clear();
+                  _selectedReceptionChallanNos.clear();
+                }
+              }),
             ),
             const SizedBox(height: 14),
             Expanded(
@@ -279,6 +290,8 @@ class _ChallanScreenState extends State<ChallanScreen> {
                   : _ChallanWorkspace(
                       activeReportGroupCode: activeReportGroupCode,
                       soloType: soloType,
+                      compareMode: _compareMode,
+                      allChallans: provider.challans,
                       deliveryChallans: deliveryChallans,
                       receptionChallans: receptionChallans,
                       internalChallans: internalChallans,
@@ -482,6 +495,11 @@ class _ChallanScreenState extends State<ChallanScreen> {
       ),
     );
   }
+
+  /// Whether the side-by-side columns are showing. Off by default: the split
+  /// was a manual reconciliation instrument, and the join it was doing by eye
+  /// now exists in the data.
+  bool _compareMode = false;
 
   Future<void> _generateReport(
     BuildContext context,
@@ -800,6 +818,8 @@ class _Filters extends StatelessWidget {
     required this.onStatusChanged,
     required this.onReportGroupChanged,
     required this.onClearOrderFilter,
+    required this.compareMode,
+    required this.onCompareModeChanged,
   });
 
   final TextEditingController searchController;
@@ -825,6 +845,8 @@ class _Filters extends StatelessWidget {
   final ValueChanged<String> onSearch;
   final ValueChanged<DeliveryChallanStatus?> onStatusChanged;
   final ValueChanged<String?> onReportGroupChanged;
+  final bool compareMode;
+  final ValueChanged<bool> onCompareModeChanged;
   final VoidCallback onClearOrderFilter;
 
   @override
@@ -966,7 +988,21 @@ class _Filters extends StatelessWidget {
               if (showTypeSelector) typeSelector,
               groupSelector,
               statusFilter,
-              selectionPill,
+              // The old front door, kept as a mode. Balancing material by eye
+              // is still the tie-breaker when the derived figures are argued
+              // over — it is just no longer what the screen opens on.
+              FilterChip(
+                avatar: Icon(
+                  compareMode
+                      ? Icons.view_column_rounded
+                      : Icons.view_column_outlined,
+                  size: 18,
+                ),
+                label: const Text('Compare in / out'),
+                selected: compareMode,
+                onSelected: (value) => onCompareModeChanged(value),
+              ),
+              if (compareMode) selectionPill,
             ],
           );
           if (compact) {
@@ -993,6 +1029,8 @@ class _ChallanWorkspace extends StatelessWidget {
   const _ChallanWorkspace({
     required this.activeReportGroupCode,
     this.soloType,
+    this.compareMode = false,
+    this.allChallans = const <DeliveryChallan>[],
     required this.deliveryChallans,
     required this.receptionChallans,
     this.internalChallans = const <DeliveryChallan>[],
@@ -1016,6 +1054,14 @@ class _ChallanWorkspace extends StatelessWidget {
   /// When non-null, the split Reception|Delivery layout collapses to a single
   /// full-width column for this type (unified single-type view).
   final ChallanType? soloType;
+
+  /// Side-by-side Reception | Delivery | Internal. The instrument for balancing
+  /// material by eye — kept, but no longer the front door.
+  final bool compareMode;
+
+  /// Every challan the filters left, whatever its type, for the plain list the
+  /// screen opens on.
+  final List<DeliveryChallan> allChallans;
   final List<DeliveryChallan> deliveryChallans;
   final List<DeliveryChallan> receptionChallans;
 
@@ -1048,6 +1094,8 @@ class _ChallanWorkspace extends StatelessWidget {
             padding: EdgeInsets.zero,
             child: soloType != null
                 ? _column(context, soloType!)
+                : !compareMode
+                ? _unifiedColumn(context)
                 : Row(
                     children: [
                       Expanded(child: _column(context, ChallanType.reception)),
@@ -1086,6 +1134,40 @@ class _ChallanWorkspace extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// Every challan in one list, newest first — what the screen opens on.
+  ///
+  /// The split into columns existed so a person could balance what came in
+  /// against what went out by reading two lists side by side. That join is in
+  /// the data now (order → pipeline → run → assigned stock → reception challan,
+  /// and order → delivery challan), so the everyday view is just the challans,
+  /// and the columns are what you switch to when the derived numbers are
+  /// disputed.
+  ///
+  /// Ticking challans for a statement belongs with the columns for the same
+  /// reason: it is the manual pairing, not the browsing.
+  Widget _unifiedColumn(BuildContext context) {
+    final ordered = [...allChallans]
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return _ChallanColumn(
+      title: 'Challans',
+      subtitle: 'Everything in and out, newest first',
+      challans: ordered,
+      activeReportGroupCode: activeReportGroupCode,
+      selectedChallanNos: const <String>{},
+      focusedChallanId: focusedChallan?.id,
+      showType: true,
+      onFocus: onFocus,
+      onToggle: (_, _) {},
+      onOpen: onOpen,
+      onPrint: onPrint,
+      onDuplicate: onDuplicate,
+      onCancel: onCancel,
+      onDelete: onDelete,
+      onOpenExcelView: () =>
+          ChallanExcelView.show(context, challans: ordered, title: 'Challans'),
     );
   }
 
@@ -1182,6 +1264,7 @@ class _ChallanColumn extends StatelessWidget {
     required this.onCancel,
     required this.onDelete,
     this.onOpenExcelView,
+    this.showType = false,
   });
 
   final String title;
@@ -1190,6 +1273,11 @@ class _ChallanColumn extends StatelessWidget {
   final String? activeReportGroupCode;
   final Set<String> selectedChallanNos;
   final int? focusedChallanId;
+
+  /// Whether a card has to say which kind of challan it is. In a column headed
+  /// "Reception" it does not; in one list holding all three it is the first
+  /// thing you need to know.
+  final bool showType;
   final ValueChanged<DeliveryChallan> onFocus;
   final void Function(DeliveryChallan challan, bool selected) onToggle;
   final ValueChanged<DeliveryChallan> onOpen;
@@ -1269,6 +1357,7 @@ class _ChallanColumn extends StatelessWidget {
                       onDuplicate: () => onDuplicate(challan),
                       onCancel: () => onCancel(challan),
                       onDelete: () => onDelete(challan),
+                      showType: showType,
                     );
                   },
                 ),
@@ -1281,6 +1370,7 @@ class _ChallanColumn extends StatelessWidget {
 class _ChallanCard extends StatelessWidget {
   const _ChallanCard({
     super.key,
+    this.showType = false,
     required this.challan,
     required this.focused,
     required this.selected,
@@ -1295,6 +1385,10 @@ class _ChallanCard extends StatelessWidget {
   });
 
   final DeliveryChallan challan;
+
+  /// Says which way the material went. Redundant inside a typed column, and the
+  /// only way to read a mixed list.
+  final bool showType;
   final bool focused;
   final bool selected;
   final String? activeReportGroupCode;
@@ -1379,6 +1473,24 @@ class _ChallanCard extends StatelessWidget {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
+                        if (showType)
+                          _CompactPill(
+                            label: challan.isReception
+                                ? 'IN'
+                                : challan.isDelivery
+                                ? 'OUT'
+                                : 'INTERNAL',
+                            background: challan.isReception
+                                ? const Color(0xFFE7F8EE)
+                                : challan.isDelivery
+                                ? const Color(0xFFEAF2FF)
+                                : const Color(0xFFF2F3F7),
+                            foreground: challan.isReception
+                                ? const Color(0xFF106B36)
+                                : challan.isDelivery
+                                ? const Color(0xFF1F4DBA)
+                                : SoftErpTheme.textSecondary,
+                          ),
                         _CompactPill(
                           label: challan.challanNo,
                           background: SoftErpTheme.cardSurfaceAlt,

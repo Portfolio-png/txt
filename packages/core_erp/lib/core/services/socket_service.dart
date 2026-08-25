@@ -171,6 +171,11 @@ class SocketService {
             emitEvent = 'item_updated';
           else if (action == 'DELETE')
             emitEvent = 'item_deleted';
+        } else if (tableName == 'groups') {
+          // Coarse on purpose: the group list is small and a refresh is one
+          // query, so created / renamed / deleted / filled all say the same
+          // thing — "the groups you are holding are out of date".
+          emitEvent = 'groups_changed';
         } else if (tableName == 'delivery_challans') {
           emitEvent = 'challan_updated';
         }

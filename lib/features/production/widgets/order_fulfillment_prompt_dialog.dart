@@ -84,7 +84,16 @@ class _OrderFulfillmentPromptDialogState
         items: [
           DeliveryChallanItem(
             id: 0,
-            orderItemId: null,
+            // The line is raised against the order line being fulfilled, so it
+            // says so. Left null, the challan named the order but none of its
+            // lines did, and nothing could tell which line was being met.
+            orderItemId: widget.order.id,
+            // Not set here: this dialog holds the floor's pipeline run (a text
+            // id), while a challan line's production run is a row in
+            // `production_runs` (an integer), validated to match the line's
+            // item and variation. The two are not the same key and there is no
+            // link between them to look one up by. The challan editor's own
+            // run picker is what fills this in today.
             productionRunId: null,
             itemId: widget.order.itemId,
             variationLeafNodeId: widget.order.variationLeafNodeId,

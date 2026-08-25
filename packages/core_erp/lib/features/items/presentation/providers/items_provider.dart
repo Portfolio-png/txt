@@ -246,6 +246,29 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// An item another screen has asked the items list to reveal.
+  ///
+  /// The groups tree lists items but does not own them — clicking one hands
+  /// over to the items screen, which is where an item and its variants
+  /// actually live. Handing over means arriving with the item on screen rather
+  /// than on a collapsed list the user has to go and find it in, so the id is
+  /// left here for the list to pick up and act on once.
+  int? _pendingRevealItemId;
+  int? get pendingRevealItemId => _pendingRevealItemId;
+
+  void revealItem(int itemId) {
+    _pendingRevealItemId = itemId;
+    notifyListeners();
+  }
+
+  /// Takes the request, leaving nothing behind: revealing is a one-off, and a
+  /// request that stayed set would re-open the row every time the list rebuilt.
+  int? consumeReveal() {
+    final id = _pendingRevealItemId;
+    _pendingRevealItemId = null;
+    return id;
+  }
+
   ItemDuplicateCheck checkDuplicate({
     required String name,
     required int? groupId,

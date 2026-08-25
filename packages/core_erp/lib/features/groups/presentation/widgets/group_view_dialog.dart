@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
-import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_overview.dart';
 import '../providers/groups_provider.dart';
@@ -19,21 +18,63 @@ import '../providers/groups_provider.dart';
 ///
 /// Editing is still one button away, but it is no longer the only thing a click
 /// can mean.
+/// Opened as a panel down the right-hand edge rather than a dialog over the
+/// middle of the screen — the same shape inventory uses for a record.
+///
+/// The difference is not decoration. A group is read *against* the list it came
+/// from: which of its siblings it sits beside, what else is in the tree. A
+/// centred dialog covers exactly that. The panel leaves the list in place, so
+/// walking down it and reading each group in turn is one click per group
+/// instead of open-read-close.
 Future<void> showGroupViewDialog(
   BuildContext context, {
   required GroupDefinition group,
   Future<void> Function(GroupDefinition group)? onEdit,
   void Function(int groupId)? onOpenGroup,
 }) {
-  return showErpFormDialog<void>(
-    context,
-    maxWidth: 940,
-    maxHeight: 760,
-    child: _GroupViewSheet(
-      group: group,
-      onEdit: onEdit,
-      onOpenGroup: onOpenGroup,
-    ),
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Group details',
+    barrierColor: const Color(0x66100D1F),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return SafeArea(
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12, right: 12, bottom: 12),
+            child: SizedBox(
+              height: double.infinity,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 560,
+                  minWidth: 420,
+                ),
+                child: _GroupViewSheet(
+                  group: group,
+                  onEdit: onEdit,
+                  onOpenGroup: onOpenGroup,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    transitionDuration: const Duration(milliseconds: 220),
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.08, 0),
+          end: Offset.zero,
+        ).animate(curved),
+        child: FadeTransition(opacity: curved, child: child),
+      );
+    },
   );
 }
 
@@ -159,10 +200,6 @@ class _Body extends StatelessWidget {
         // the sections below are about the group rather than its contents.
         _Items(overview: overview),
         const SizedBox(height: 16),
-        if (overview.children.isNotEmpty) ...<Widget>[
-          _ChildGroups(children: overview.children, onOpenGroup: onOpenGroup),
-          const SizedBox(height: 16),
-        ],
         _Properties(overview: overview),
       ],
     );
@@ -283,36 +320,6 @@ class _Breadcrumb extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class _ChildGroups extends StatelessWidget {
-  const _ChildGroups({required this.children, this.onOpenGroup});
-
-  final List<GroupChild> children;
-  final void Function(int groupId)? onOpenGroup;
-
-  @override
-  Widget build(BuildContext context) {
-    return ErpDialogSectionCard(
-      title: 'Groups inside this one',
-      subtitle:
-          '${children.length} child '
-          '${children.length == 1 ? 'group' : 'groups'}',
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: <Widget>[
-          for (final child in children)
-            SoftPill(
-              label: '${child.name}  ·  ${child.itemCount}',
-              onTap: onOpenGroup == null
-                  ? null
-                  : () => onOpenGroup!(child.groupId),
-            ),
-        ],
-      ),
     );
   }
 }

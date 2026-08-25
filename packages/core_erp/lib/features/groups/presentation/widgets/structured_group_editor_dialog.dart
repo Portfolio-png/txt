@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/services/feature_flags.dart';
+import '../group_type_style.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import 'delete_group_dialog.dart';
@@ -1148,19 +1149,19 @@ class _StructuredGroupEditorDialogState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _StructureOptionTile(
-            title: 'Item Group',
+            style: GroupTypeStyle.hierarchical,
             selected: _groupStructure == 'hierarchical',
             onTap: () => setState(() => _groupStructure = 'hierarchical'),
           ),
           const SizedBox(height: 8),
           _StructureOptionTile(
-            title: 'Component',
+            style: GroupTypeStyle.component,
             selected: _isComponent,
             onTap: () => setState(() => _groupStructure = 'component'),
           ),
           const SizedBox(height: 8),
           _StructureOptionTile(
-            title: 'Combination Group',
+            style: GroupTypeStyle.combination,
             selected: _isCombination,
             onTap: () => setState(() => _groupStructure = 'combination'),
           ),
@@ -1875,14 +1876,20 @@ class _CreateGroupField extends StatelessWidget {
 }
 
 /// Selectable radio-style tile used by the group-structure toggle.
+/// One choice of group kind, drawn in that kind's own colour.
+///
+/// The folder here is the same glyph and the same colour the group will be
+/// given in every list once it exists. That is the point of showing it: the
+/// choice is where the colour is learned, so a sand folder in this dialog has
+/// to be the sand folder the user meets afterwards.
 class _StructureOptionTile extends StatelessWidget {
   const _StructureOptionTile({
-    required this.title,
+    required this.style,
     required this.selected,
     required this.onTap,
   });
 
-  final String title;
+  final GroupTypeStyle style;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1894,10 +1901,13 @@ class _StructureOptionTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFF3F0FF) : Colors.white,
+          // Selected, the row takes a wash of its own colour rather than the
+          // app accent — otherwise every kind looks the same once chosen, which
+          // is exactly the association being taught.
+          color: selected ? style.background : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? const Color(0xFF6049E3) : const Color(0xFFD8E0EA),
+            color: selected ? style.folder : const Color(0xFFD8E0EA),
             width: selected ? 1.4 : 1,
           ),
         ),
@@ -1908,19 +1918,34 @@ class _StructureOptionTile extends StatelessWidget {
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_unchecked_rounded,
               size: 20,
-              color: selected
-                  ? const Color(0xFF6049E3)
-                  : const Color(0xFF9CA3AF),
+              color: selected ? style.folder : const Color(0xFF9CA3AF),
             ),
             const SizedBox(width: 10),
+            Icon(style.icon, size: 20, color: style.folder),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                title,
-                style: _inventoryInterStyle(
-                  color: const Color(0xFF111827),
-                  size: 14,
-                  weight: FontWeight.w600,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    style.label,
+                    style: _inventoryInterStyle(
+                      color: const Color(0xFF111827),
+                      size: 14,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    style.description,
+                    style: _inventoryInterStyle(
+                      color: const Color(0xFF6B7280),
+                      size: 11.5,
+                      weight: FontWeight.w400,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

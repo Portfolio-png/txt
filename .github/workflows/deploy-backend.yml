@@ -1,18 +1,42 @@
-name: Deploy Node.js Backend
+name: Deploy Backend
 
+# Two gates between a commit and a client.
+#
+# A push to main deploys to **staging** only: the same box, its own port, its
+# own database. Production is a separate, deliberate action — `workflow_dispatch`
+# with `promote: production` — so shipping to a client is something you decide
+# rather than something that happens because you pushed.
+#
+# Both go through deploy/release.sh, which lands the code in a new directory,
+# swaps a symlink, reloads pm2 without dropping connections, and puts the old
+# release back if the new one cannot answer /health.
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'backend/**'
+      - 'deploy/**'
       - 'packages/core_erp/lib/core/services/feature_flags.dart'
       - 'bin/generate_registry.dart'
   workflow_dispatch:
+    inputs:
+      promote:
+        description: 'Which environment to deploy'
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  # Two deploys to the same environment at once would race over the symlink.
+  group: deploy-${{ github.event.inputs.promote || 'staging' }}
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      TARGET_ENV: ${{ github.event.inputs.promote || 'staging' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -31,6 +55,7 @@ jobs:
         working-directory: ./backend
         run: npm install
 
+      # The tests are the first gate. A red suite must never reach a box.
       - name: Run Backend Tests
         working-directory: ./backend
         run: npm test
@@ -38,51 +63,112 @@ jobs:
       - name: Export Feature Registry
         run: dart bin/generate_registry.dart
 
-      - name: Copy files to EC2
+      - name: Resolve deployment target
+        id: target
+        run: |
+          if [ "$TARGET_ENV" = "production" ]; then
+            echo "app=paper-backend"    >> "$GITHUB_OUTPUT"
+            echo "port=18080"           >> "$GITHUB_OUTPUT"
+          else
+            echo "app=paper-staging"    >> "$GITHUB_OUTPUT"
+            echo "port=18081"           >> "$GITHUB_OUTPUT"
+          fi
+
+      # Into an incoming directory, never over the running release.
+      - name: Upload build to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
-          source: "backend"
-          target: "txt"
+          source: "backend,deploy"
+          target: "incoming/${{ steps.target.outputs.app }}"
+          overwrite: true
 
-      - name: Configure backend .env on EC2
+      - name: Configure environment
         uses: appleboy/ssh-action@v1.0.3
         env:
           PAPER_S3_BUCKET_NAME: ${{ secrets.PAPER_S3_BUCKET_NAME }}
           PAPER_S3_REGION: ${{ secrets.PAPER_S3_REGION }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          APP_NAME: ${{ steps.target.outputs.app }}
+          APP_PORT: ${{ steps.target.outputs.port }}
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
-          envs: PAPER_S3_BUCKET_NAME,PAPER_S3_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: PAPER_S3_BUCKET_NAME,PAPER_S3_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,APP_NAME,APP_PORT
           script: |
-            cd txt/backend
-            touch .env
-            # Idempotent upsert: replace only these keys, preserve everything else in .env
+            set -euo pipefail
+            SHARED="$HOME/paper/$APP_NAME/shared"
+            mkdir -p "$SHARED/data"
+            touch "$SHARED/.env"
+            # Idempotent upsert: replace only these keys, preserve the rest. The
+            # file lives in shared/, so it survives releases and rollbacks.
             upsert_env() {
               key="$1"; val="$2"
-              if [ -z "$val" ]; then return 0; fi   # skip unset secrets, don't shadow IAM role
-              grep -v "^${key}=" .env > .env.tmp 2>/dev/null || true
-              mv .env.tmp .env
-              printf '%s=%s\n' "$key" "$val" >> .env
+              [ -z "$val" ] && return 0   # unset secret: leave any IAM role alone
+              grep -v "^${key}=" "$SHARED/.env" > "$SHARED/.env.tmp" 2>/dev/null || true
+              mv "$SHARED/.env.tmp" "$SHARED/.env"
+              printf '%s=%s\n' "$key" "$val" >> "$SHARED/.env"
             }
             upsert_env PAPER_S3_BUCKET_NAME "$PAPER_S3_BUCKET_NAME"
             upsert_env PAPER_S3_REGION "$PAPER_S3_REGION"
             upsert_env AWS_ACCESS_KEY_ID "$AWS_ACCESS_KEY_ID"
             upsert_env AWS_SECRET_ACCESS_KEY "$AWS_SECRET_ACCESS_KEY"
-            chmod 600 .env
+            upsert_env PORT "$APP_PORT"
+            upsert_env DB_PATH "$SHARED/data/paper.db"
+            chmod 600 "$SHARED/.env"
 
-      - name: Install Dependencies and Restart PM2
+      - name: Release (atomic, health-gated, self-rolling-back)
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_NAME: ${{ steps.target.outputs.app }}
+          APP_PORT: ${{ steps.target.outputs.port }}
+          TARGET_ENV: ${{ env.TARGET_ENV }}
+          COMMIT: ${{ github.sha }}
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
+          envs: APP_NAME,APP_PORT,TARGET_ENV,COMMIT
           script: |
-            cd txt/backend
-            npm install --omit=dev
-            pm2 restart all --update-env || pm2 start server.js
+            set -euo pipefail
+            cd "$HOME/incoming/$APP_NAME"
+            chmod +x deploy/release.sh deploy/rollback.sh
+            PAPER_COMMIT="$COMMIT" PAPER_ENV="$TARGET_ENV" \
+              ./deploy/release.sh "$APP_NAME" "./backend" "$APP_PORT"
+
+      # Proves the box is serving the commit we just shipped, not the one it
+      # replaced. release.sh has already rolled back if it could not; this is
+      # what turns "the script said fine" into "the running code is ours".
+      - name: Verify the deployed release
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_PORT: ${{ steps.target.outputs.port }}
+          COMMIT: ${{ github.sha }}
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ${{ secrets.AWS_SSH_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          envs: APP_PORT,COMMIT
+          script: |
+            set -euo pipefail
+            body="$(curl -fsS --max-time 10 "http://127.0.0.1:$APP_PORT/health")"
+            echo "$body"
+            echo "$body" | grep -q '"status":"ok"' \
+              || { echo "health is not ok"; exit 1; }
+            echo "$body" | grep -q "\"commit\":\"$COMMIT\"" \
+              || { echo "serving a different commit than the one deployed"; exit 1; }
+
+      - name: Summary
+        run: |
+          echo "### Deployed to \`$TARGET_ENV\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- app: \`${{ steps.target.outputs.app }}\` on port ${{ steps.target.outputs.port }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$TARGET_ENV" = "staging" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Clients are untouched. Promote with **Run workflow → promote: production**." >> "$GITHUB_STEP_SUMMARY"
+          fi
