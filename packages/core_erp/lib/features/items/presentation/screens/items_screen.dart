@@ -37,6 +37,7 @@ import '../../data/services/item_link_options_service.dart';
 import '../../domain/item_form_sections.dart';
 import '../providers/item_form_sections_provider.dart';
 
+import 'package:core_erp/features/materials/domain/material_definition.dart';
 import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
 import 'package:core_erp/features/production_pipelines/domain/pipeline_stage_node.dart';
@@ -1878,6 +1879,7 @@ class _NodeDraft {
     this.inputType = 'Text',
     this.numericMin,
     this.numericMax,
+    this.materialTypeId,
     List<_NodeDraft>? children,
   }) : nameController = TextEditingController(text: name),
        codeController = TextEditingController(text: code),
@@ -1894,6 +1896,11 @@ class _NodeDraft {
   bool isNameEditing;
   bool displayNameTouched;
   String inputType;
+
+  /// Which material type this value stands for, when it sits under a
+  /// 'Material' property. Null on a property node and on any value named by
+  /// hand.
+  int? materialTypeId;
 
   /// Inclusive bounds a 'Numeric' property accepts, captured when the input
   /// type is switched to Numeric. Null on either side means open-ended.
@@ -1914,6 +1921,24 @@ class _NodeDraft {
   /// from — the variation-creation dialog offers a number field for these.
   bool get isNumericProperty =>
       kind == ItemVariationNodeKind.property && inputType == 'Numeric';
+
+  /// A property whose values come from the material master rather than being
+  /// typed. Unlike Numeric and Gauge this is still picked from value nodes —
+  /// what the type changes is where those values come from, and that each one
+  /// carries the id of the material it stands for.
+  bool get isMaterialProperty =>
+      kind == ItemVariationNodeKind.property && inputType == 'Material';
+
+  /// What the Material pill says: how many of its values are linked to the
+  /// master, so an empty property reads as needing attention rather than as
+  /// nothing at all.
+  String get materialValuesLabel {
+    final linked = children
+        .where((child) => child.materialTypeId != null)
+        .length;
+    if (linked == 0) return 'Pick materials';
+    return '$linked material${linked == 1 ? '' : 's'}';
+  }
 
   /// Human-readable range for pills and hints — '1 – 40', '≥ 1', '≤ 40'.
   String get numericRangeLabel {
@@ -2201,6 +2226,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (_item != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _resolveMasterData());
     }
+    // Material values render their density, in the tree and on the variant
+    // chips. Without the master loaded they would read as "material missing"
+    // on an item that is perfectly fine. Idempotent.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<MaterialsProvider>().ensureLoaded();
+    });
     _availableForPurchase = _item?.availableForPurchase ?? false;
     _blankWidthController = TextEditingController(
       text: _blankInitial(_item?.blankWidthMm ?? 0),
@@ -2324,6 +2355,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       inputType: inputType,
       numericMin: inputType == 'Numeric' ? node.numericMin : null,
       numericMax: inputType == 'Numeric' ? node.numericMax : null,
+      materialTypeId: node.materialTypeId,
     );
     draft.nameController.addListener(() {
       _syncLeafDisplayNames();
@@ -2885,20 +2917,37 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   List<_TreeMetaPillSpec> _propertyMetaPillsForNode(_NodeDraft node) {
     if (node.kind == ItemVariationNodeKind.value) {
-      // Only while naming by code — otherwise a missing code is not a problem
-      // and the pill would be noise on every value in the tree.
-      if (!_useValueCodes) {
-        return const <_TreeMetaPillSpec>[];
+      final pills = <_TreeMetaPillSpec>[];
+      // The density deliberately does NOT appear here. The row already carries
+      // a name box, a code box, a kind pill and six actions; a fifth thing
+      // sitting where the code is read pushed the code out of the way. It is
+      // shown where a material is actually chosen instead — the picker, and the
+      // value chips in the variant builder.
+      //
+      // A link whose material has gone is a different matter: that is a fault,
+      // not decoration, and it is rare enough to be worth the space.
+      if (node.materialTypeId != null && _materialForValue(node) == null) {
+        pills.add(
+          const _TreeMetaPillSpec(
+            label: 'Material missing',
+            tone: _TreeMetaPillTone.missing,
+          ),
+        );
       }
-      final code = node.codeController.text.trim();
-      return <_TreeMetaPillSpec>[
-        code.isEmpty
-            ? const _TreeMetaPillSpec(
-                label: 'No code',
-                tone: _TreeMetaPillTone.missing,
-              )
-            : _TreeMetaPillSpec(label: code, tone: _TreeMetaPillTone.code),
-      ];
+      // The code pill only while naming by code — otherwise a missing code is
+      // not a problem and the pill would be noise on every value in the tree.
+      if (_useValueCodes) {
+        final code = node.codeController.text.trim();
+        pills.add(
+          code.isEmpty
+              ? const _TreeMetaPillSpec(
+                  label: 'No code',
+                  tone: _TreeMetaPillTone.missing,
+                )
+              : _TreeMetaPillSpec(label: code, tone: _TreeMetaPillTone.code),
+        );
+      }
+      return pills;
     }
     if (node.kind != ItemVariationNodeKind.property) {
       return const <_TreeMetaPillSpec>[];
@@ -3715,9 +3764,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   !_rootNodes[index].isLockedInheritedProperty
                               ? () => _editNodeNumericRange(_rootNodes[index])
                               : null,
+                          onEditMaterialValues:
+                              _rootNodes[index].isMaterialProperty &&
+                                  !_isReadOnly &&
+                                  !_rootNodes[index].isLockedInheritedProperty
+                              ? () => _pickMaterialValues(_rootNodes[index])
+                              : null,
                           onRemove: () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
                         ),
+                        if (_missingCodeMessageFor(_rootNodes[index])
+                            case final message?)
+                          _PropertyCodeWarning(message: message),
                         if (index != _rootNodes.length - 1)
                           const SizedBox(height: 4),
                       ],
@@ -4239,6 +4297,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               !child.isLockedInheritedProperty
           ? () => _editNodeNumericRange(child)
           : null,
+      onEditMaterialValues:
+          child.isMaterialProperty &&
+              !_isReadOnly &&
+              !child.isLockedInheritedProperty
+          ? () => _pickMaterialValues(child)
+          : null,
       onPromoteToGroup:
           child.kind == ItemVariationNodeKind.property &&
               _selectedGroupId != null &&
@@ -4618,6 +4682,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       inputType: node.inputType,
       numericMin: node.isNumericProperty ? node.numericMin : null,
       numericMax: node.isNumericProperty ? node.numericMax : null,
+      // Only a value carries the link; a property just declares that its values
+      // are materials.
+      materialTypeId: node.kind == ItemVariationNodeKind.value
+          ? node.materialTypeId
+          : null,
       children: node.children
           .map((child) => _toInput(child, node.id))
           .toList(growable: false),
@@ -5120,6 +5189,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       node.numericMax = null;
     });
     _handleChange();
+    if (next == 'Material') {
+      await _pickMaterialValues(node);
+      return;
+    }
     if (next != 'Numeric') {
       return;
     }
@@ -5135,6 +5208,162 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       node.numericMax = range.max;
     });
     _handleChange();
+  }
+
+  /// Chooses which material types a Material property offers, and rewrites its
+  /// values to match.
+  ///
+  /// Values already linked to a material keep their node — and so their id,
+  /// their code, and every selection already pointing at them — rather than
+  /// being torn down and rebuilt, which would orphan existing order lines.
+  /// Values named by hand are left alone: turning a Text property into a
+  /// Material one should not silently delete what was typed there.
+  Future<void> _pickMaterialValues(_NodeDraft node) async {
+    final materialsProvider = context.read<MaterialsProvider>();
+    await materialsProvider.ensureLoaded();
+    if (!mounted) return;
+
+    final available = materialsProvider.materials
+        .where((material) => !material.isArchived)
+        .toList(growable: false)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    if (available.isEmpty) {
+      setState(() {
+        _localError =
+            'No materials in the master yet. Add them under Masters → '
+            'Materials, then set this property to Material.';
+      });
+      return;
+    }
+
+    final alreadyLinked = <int>{
+      for (final child in node.children)
+        if (child.materialTypeId != null) child.materialTypeId!,
+    };
+    final picked = await _showMaterialValuePicker(
+      context,
+      propertyName: node.nameController.text.trim(),
+      materials: available,
+      initiallySelected: alreadyLinked,
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+
+    final byId = {for (final material in available) material.id: material};
+    setState(() {
+      // Drop the links the user unticked; keep hand-named values untouched.
+      node.children.removeWhere((child) {
+        final id = child.materialTypeId;
+        if (id == null) return false;
+        if (picked.contains(id)) return false;
+        child.dispose();
+        return true;
+      });
+      final present = <int>{
+        for (final child in node.children)
+          if (child.materialTypeId != null) child.materialTypeId!,
+      };
+      for (final id in picked) {
+        if (present.contains(id)) continue;
+        final material = byId[id];
+        if (material == null) continue;
+        final draft = _newDraft(ItemVariationNodeKind.value, node);
+        draft.nameController.text = material.name;
+        draft.materialTypeId = material.id;
+        // Open, like any newly added value: the master supplies the name but
+        // not the code, and a code is compulsory — so the box to type it in is
+        // put in front of the user rather than behind an edit button.
+        draft.isNameEditing = true;
+        node.children.add(draft);
+      }
+      node.detailsExpanded = true;
+      _syncLeafDisplayNames();
+    });
+    _handleChange();
+  }
+
+  /// Multi-select over the material master. Returns the chosen ids, or null if
+  /// the user backed out — an empty set is a real answer ("no materials"), so
+  /// the two cannot be the same value.
+  Future<Set<int>?> _showMaterialValuePicker(
+    BuildContext context, {
+    required String propertyName,
+    required List<MaterialDefinition> materials,
+    required Set<int> initiallySelected,
+  }) {
+    final selected = <int>{...initiallySelected};
+    final label = propertyName.isEmpty ? 'this property' : '"$propertyName"';
+    return showDialog<Set<int>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: const Text(
+            'Materials for this property',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          content: SizedBox(
+            width: 420,
+            height: 420,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'The materials ticked here become the values of $label. Each '
+                  'one keeps its link to the master, so its density travels '
+                  'with anything made from it.',
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: materials.length,
+                    itemBuilder: (context, index) {
+                      final material = materials[index];
+                      return CheckboxListTile(
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: selected.contains(material.id),
+                        onChanged: (checked) => setDialogState(() {
+                          if (checked == true) {
+                            selected.add(material.id);
+                          } else {
+                            selected.remove(material.id);
+                          }
+                        }),
+                        title: Text(
+                          material.name,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(material.densityLabel),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.secondary,
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+            AppButton(
+              label: 'Use these',
+              onPressed: () => Navigator.of(dialogContext).pop(selected),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Re-opens the range prompt for a property that is already Numeric.
@@ -5547,6 +5776,36 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       setState(() {
         _localError = 'Select a unit.';
       });
+      return null;
+    }
+    // Codes are compulsory on the values of a top-level property. The tree
+    // marks the offenders in place; this says the same thing at the point the
+    // save is refused, so the reason is never off-screen.
+    final uncoded = _topLevelPropertiesMissingCodes;
+    if (uncoded.isNotEmpty) {
+      final names = uncoded
+          .map((node) => node.nameController.text.trim())
+          .where((name) => name.isNotEmpty)
+          .toList(growable: false);
+      final subject = names.isEmpty
+          ? '${uncoded.length} propert${uncoded.length == 1 ? 'y' : 'ies'}'
+          : names.join(', ');
+      final message =
+          'Every value under a top-level property needs a Code. '
+          'Missing in: $subject.';
+      // A refusal that never reaches the server leaves whatever the server last
+      // said still on screen — two banners, one of them stale and about
+      // something the user has already moved past. Only the actionable one
+      // should be up.
+      context.read<ItemsProvider>().clearError();
+      setState(() {
+        _localError = message;
+        // Open them so the marked values are on screen rather than folded away.
+        for (final property in uncoded) {
+          property.detailsExpanded = true;
+        }
+      });
+      showAppToast(context, message, kind: AppToastKind.error);
       return null;
     }
     for (final conversion in _secondaryUnitConversions) {
@@ -6014,6 +6273,76 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       .where((node) => node.codeController.text.trim().isEmpty)
       .toList(growable: false);
 
+  /// The master row a value is linked to, or null when it is named by hand (or
+  /// its material has since been archived away).
+  ///
+  /// Read rather than watched: this is called while building rows, and the
+  /// material list is loaded when the picker opens.
+  MaterialDefinition? _materialForValue(_NodeDraft node) {
+    final id = node.materialTypeId;
+    if (id == null) return null;
+    try {
+      return context
+          .read<MaterialsProvider>()
+          .materials
+          .where((material) => material.id == id)
+          .firstOrNull;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Every value under [property], however deeply nested, that has no Code.
+  ///
+  /// A code is what a variant is named and searched by once naming-by-code is
+  /// on, and a half-coded tree quietly falls back to value names — producing
+  /// two items whose codes disagree about what they mean. So a value without
+  /// one is refused rather than papered over.
+  List<_NodeDraft> _valuesMissingCodeUnder(_NodeDraft property) {
+    final missing = <_NodeDraft>[];
+    void visit(_NodeDraft node) {
+      if (node.kind == ItemVariationNodeKind.value &&
+          node.codeController.text.trim().isEmpty) {
+        missing.add(node);
+      }
+      for (final child in node.children) {
+        visit(child);
+      }
+    }
+
+    for (final child in property.children) {
+      visit(child);
+    }
+    return missing;
+  }
+
+  /// Top-level properties holding at least one value with no Code, in tree
+  /// order. Empty means the item is safe to save on this count.
+  List<_NodeDraft> get _topLevelPropertiesMissingCodes => _rootNodes
+      .where(
+        (node) =>
+            node.kind == ItemVariationNodeKind.property &&
+            _valuesMissingCodeUnder(node).isNotEmpty,
+      )
+      .toList(growable: false);
+
+  /// What to say beneath a property whose values are not fully coded, naming
+  /// the offenders so the user does not have to hunt for them.
+  String? _missingCodeMessageFor(_NodeDraft property) {
+    final missing = _valuesMissingCodeUnder(property);
+    if (missing.isEmpty) return null;
+    final names = missing
+        .map((node) => node.nameController.text.trim())
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    final subject = names.isEmpty
+        ? '${missing.length} value${missing.length == 1 ? '' : 's'}'
+        : names.take(3).join(', ') +
+              (names.length > 3 ? ' and ${names.length - 3} more' : '');
+    return 'Every value needs a Code — $subject '
+        '${missing.length == 1 ? 'has' : 'have'} none yet.';
+  }
+
   bool get _hasSelectedPipeline =>
       _defaultPipelineId != null && _defaultPipelineId!.trim().isNotEmpty;
 
@@ -6243,6 +6572,7 @@ class _TreeNodeEditor extends StatelessWidget {
     this.onAddProperty,
     this.onToggleInputType,
     this.onEditNumericRange,
+    this.onEditMaterialValues,
     this.onPromoteToGroup,
     this.onAddValue,
   });
@@ -6259,6 +6589,10 @@ class _TreeNodeEditor extends StatelessWidget {
   final VoidCallback? onAddProperty;
   final VoidCallback? onToggleInputType;
   final VoidCallback? onEditNumericRange;
+
+  /// Re-opens the material picker for a property that is already Material, the
+  /// way the range pill re-opens the bounds for a Numeric one.
+  final VoidCallback? onEditMaterialValues;
   final VoidCallback? onPromoteToGroup;
   final VoidCallback? onAddValue;
   final VoidCallback? onMoveUp;
@@ -6469,6 +6803,13 @@ class _TreeNodeEditor extends StatelessWidget {
                           _NumericRangePill(
                             label: draft.numericRangeLabel,
                             onTap: onEditNumericRange,
+                          ),
+                        ],
+                        if (draft.isMaterialProperty) ...[
+                          const SizedBox(width: 4),
+                          _NumericRangePill(
+                            label: draft.materialValuesLabel,
+                            onTap: onEditMaterialValues,
                           ),
                         ],
                         if (onAddValue != null)
@@ -9778,6 +10119,7 @@ class _VariationPanelState extends State<_VariationPanel> {
                     label: value.nameController.text.trim().isEmpty
                         ? 'Unnamed Value'
                         : value.nameController.text.trim(),
+                    subLabel: _materialSubLabel(value),
                     selected: (_selected[property] ??= <_VariantOption>[])
                         .contains(_VariantOption.value(property, value)),
                     onTap: () => _toggleOption(
@@ -9792,10 +10134,28 @@ class _VariationPanelState extends State<_VariationPanel> {
     );
   }
 
+  /// The density under a material value's chip, or null when the value is not
+  /// linked to the master. Variants are built here far more often than the
+  /// variation tree is edited, so this is where the link has to be legible.
+  String? _materialSubLabel(_NodeDraft value) {
+    final id = value.materialTypeId;
+    if (id == null) return null;
+    final material = context
+        .watch<MaterialsProvider>()
+        .materials
+        .where((entry) => entry.id == id)
+        .firstOrNull;
+    return material == null ? 'material missing' : material.densityLabel;
+  }
+
   Widget _buildEmptyValuesNote(_NodeDraft property) {
-    final message = property.inputType == 'Gauge'
-        ? 'Gauge values are entered on orders and challans, not on variants.'
-        : 'No values yet — add them to this property in the variation tree.';
+    final message = switch (property.inputType) {
+      'Gauge' =>
+        'Gauge values are entered on orders and challans, not on variants.',
+      'Material' =>
+        'No materials picked yet — choose them from the pill on this property.',
+      _ => 'No values yet — add them to this property in the variation tree.',
+    };
     return Text(
       message,
       style: const TextStyle(
@@ -10408,12 +10768,18 @@ class _SelectableChip extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.trailing,
+    this.subLabel,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
   final IconData? trailing;
+
+  /// A quieter second line under the label — the density on a material value,
+  /// so what the value carries is visible at the moment it is picked rather
+  /// than only back in the variation tree.
+  final String? subLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -10446,6 +10812,32 @@ class _SelectableChip extends StatelessWidget {
                     : SoftErpTheme.textSecondary,
               ),
               const SizedBox(width: 7),
+              if (subLabel != null)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: selected
+                            ? SoftErpTheme.accentDeeper
+                            : SoftErpTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      subLabel!,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                )
+              else
               Text(
                 label,
                 style: TextStyle(
@@ -10725,6 +11117,8 @@ String _nextVariationInputType(String current) {
       return 'Numeric';
     case 'Numeric':
       return 'Gauge';
+    case 'Gauge':
+      return 'Material';
     default:
       return 'Text';
   }
@@ -10732,6 +11126,50 @@ String _nextVariationInputType(String current) {
 
 /// The A / 1 / G marker on a property row; tapping cycles Text -> Numeric ->
 /// Gauge.
+/// Said under the property itself, not only at the top of the form: which
+/// property is at fault is the part that is hard to work out from a message
+/// listing names, and the tree is where the fix is made.
+class _PropertyCodeWarning extends StatelessWidget {
+  const _PropertyCodeWarning({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(left: 12, top: 4, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 15,
+            color: Color(0xFF991B1B),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF991B1B),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InputTypePill extends StatelessWidget {
   const _InputTypePill({required this.inputType, required this.onTap});
 
@@ -10743,21 +11181,24 @@ class _InputTypePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final MaterialColor color = inputType == 'Numeric'
-        ? Colors.blue
-        : inputType == 'Gauge'
-        ? Colors.purple
-        : Colors.grey;
-    final label = inputType == 'Numeric'
-        ? '1'
-        : inputType == 'Gauge'
-        ? 'G'
-        : 'A';
-    final name = inputType == 'Numeric'
-        ? 'Numeric input'
-        : inputType == 'Gauge'
-        ? 'Gauge input (SWG)'
-        : 'Text input';
+    final MaterialColor color = switch (inputType) {
+      'Numeric' => Colors.blue,
+      'Gauge' => Colors.purple,
+      'Material' => Colors.teal,
+      _ => Colors.grey,
+    };
+    final label = switch (inputType) {
+      'Numeric' => '1',
+      'Gauge' => 'G',
+      'Material' => 'M',
+      _ => 'A',
+    };
+    final name = switch (inputType) {
+      'Numeric' => 'Numeric input',
+      'Gauge' => 'Gauge input (SWG)',
+      'Material' => 'Material input (from the material master)',
+      _ => 'Text input',
+    };
     return Tooltip(
       message: onTap == null ? name : '$name — tap to change',
       child: InkWell(

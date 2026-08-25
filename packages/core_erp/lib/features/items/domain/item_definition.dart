@@ -20,6 +20,7 @@ class ItemVariationNodeDefinition {
     this.nameJoin = '',
     this.numericMin,
     this.numericMax,
+    this.materialTypeId,
   });
 
   final int id;
@@ -44,6 +45,20 @@ class ItemVariationNodeDefinition {
   /// (open-ended); both are null for Text/Gauge properties.
   final double? numericMin;
   final double? numericMax;
+
+  /// The material type a value under a 'Material' property stands for.
+  ///
+  /// The id, not the name: a selection records the leaf node it landed on, so
+  /// with the id here the material — and its density — is reachable from any
+  /// order line, challan line or stock row without a second lookup. Gauge
+  /// stores a bare suffixed string and nothing downstream can get back to the
+  /// table it came from; this is the difference.
+  final int? materialTypeId;
+
+  /// Whether this value is linked to the material master rather than named by
+  /// hand. A link that has been broken (the material type archived away) leaves
+  /// the value standing under its own name.
+  bool get isMaterialLinked => materialTypeId != null;
 
   /// Whether this property constrains typed numbers to a range at all.
   bool get hasNumericRange =>

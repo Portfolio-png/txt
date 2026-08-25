@@ -5,13 +5,16 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
-import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
-import 'package:core_erp/features/units/domain/unit_definition.dart';
-import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
-import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
+import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
+import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
+import 'package:core_erp/features/units/domain/unit_definition.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
+import 'package:core_erp/features/clients/domain/client_definition.dart';
+import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
@@ -22,10 +25,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
-/// A spawned variant is filed under its base item's group, but it can be moved
-/// out on its own — the variant editor carries a real Group field. What matters
-/// is that the pick reaches the save: a field that changes the dropdown and
-/// then sends the old group is worse than no field at all.
+/// A value's Code is what a variant is named and searched by once naming-by-code
+/// is on. A half-coded tree quietly falls back to value names, so two items end
+/// up disagreeing about what a code means. The editor refuses the save instead,
+/// and says which property is at fault.
 
 final _unit = UnitDefinition(
   id: 1,
@@ -47,55 +50,66 @@ final _unit = UnitDefinition(
   updatedAt: DateTime(2026),
 );
 
-GroupDefinition _group(int id, String name, {String structure = 'hierarchical'}) {
-  return GroupDefinition(
-    id: id,
-    name: name,
-    groupStructure: structure,
-    parentGroupId: null,
-    unitId: 1,
-    isArchived: false,
-    usageCount: 0,
-    createdAt: DateTime(2026),
-    updatedAt: DateTime(2026),
-  );
-}
-
-final _finishGoods = _group(10, 'Finish Goods');
-final _scrap = _group(11, 'Scrap');
-final _set = _group(12, 'Socket Family', structure: 'combination');
-
-final _variant = ItemDefinition(
-  id: 100,
-  name: '16 Amp Copper Socket',
-  displayName: '16 Amp Copper Socket',
-  alias: '',
-  groupId: _finishGoods.id,
-  unitId: _unit.id,
-  baseItemId: 99,
-  quantity: 0,
-  namingFormat: const <String>[],
-  variationTree: const <ItemVariationNodeDefinition>[],
-  usageCount: 0,
+final _group = GroupDefinition(
+  id: 10,
+  name: 'Finish Goods',
+  groupStructure: 'hierarchical',
+  parentGroupId: null,
+  unitId: 1,
   isArchived: false,
+  usageCount: 0,
   createdAt: DateTime(2026),
   updatedAt: DateTime(2026),
 );
 
-final _base = ItemDefinition(
-  id: 99,
+ItemVariationNodeDefinition _node({
+  required int id,
+  required ItemVariationNodeKind kind,
+  required String name,
+  String code = '',
+  List<ItemVariationNodeDefinition> children = const [],
+}) {
+  return ItemVariationNodeDefinition(
+    id: id,
+    itemId: 100,
+    parentNodeId: null,
+    kind: kind,
+    name: name,
+    code: code,
+    displayName: '',
+    position: 0,
+    isArchived: false,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+    children: children,
+  );
+}
+
+/// "Socket Amp" holds 6 Amp (coded) and 16 Amp (not coded).
+final _item = ItemDefinition(
+  id: 100,
   name: 'Socket',
   displayName: 'Socket',
   alias: '',
-  groupId: _finishGoods.id,
+  groupId: _group.id,
   unitId: _unit.id,
   quantity: 0,
   namingFormat: const <String>[],
-  variationTree: const <ItemVariationNodeDefinition>[],
   usageCount: 0,
   isArchived: false,
   createdAt: DateTime(2026),
   updatedAt: DateTime(2026),
+  variationTree: <ItemVariationNodeDefinition>[
+    _node(
+      id: 1,
+      kind: ItemVariationNodeKind.property,
+      name: 'Socket Amp',
+      children: <ItemVariationNodeDefinition>[
+        _node(id: 2, kind: ItemVariationNodeKind.value, name: '6 Amp', code: 'A6'),
+        _node(id: 3, kind: ItemVariationNodeKind.value, name: '16 Amp'),
+      ],
+    ),
+  ],
 );
 
 class _FakeItemRepository implements ItemRepository {
@@ -105,15 +119,12 @@ class _FakeItemRepository implements ItemRepository {
   Future<void> init() async {}
 
   @override
-  Future<List<ItemDefinition>> getItems() async => <ItemDefinition>[
-    _base,
-    _variant,
-  ];
+  Future<List<ItemDefinition>> getItems() async => <ItemDefinition>[_item];
 
   @override
   Future<ItemDefinition> updateItem(UpdateItemInput input) async {
     lastUpdate = input;
-    return _variant;
+    return _item;
   }
 
   @override
@@ -126,7 +137,30 @@ class _FakeGroupRepository implements GroupRepository {
 
   @override
   Future<List<GroupDefinition>> getGroups({bool withCovers = false}) async =>
-      <GroupDefinition>[_finishGoods, _scrap, _set];
+      <GroupDefinition>[_group];
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeUnitRepository implements UnitRepository {
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<UnitDefinition>> getUnits() async => <UnitDefinition>[_unit];
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeClientRepository implements ClientRepository {
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<ClientDefinition>> getClients() async =>
+      const <ClientDefinition>[];
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -152,20 +186,9 @@ class _FakeInventoryRepository implements InventoryRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _FakeUnitRepository implements UnitRepository {
-  @override
-  Future<void> init() async {}
-
-  @override
-  Future<List<UnitDefinition>> getUnits() async => <UnitDefinition>[_unit];
-
-  @override
-  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 void main() {
   Future<_FakeItemRepository> open(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1600, 1400);
+    tester.view.physicalSize = const Size(1700, 1500);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -186,6 +209,9 @@ void main() {
           ChangeNotifierProvider<InventoryProvider>(
             create: (_) =>
                 InventoryProvider(repository: _FakeInventoryRepository()),
+          ),
+          ChangeNotifierProvider<ClientsProvider>(
+            create: (_) => ClientsProvider(repository: _FakeClientRepository()),
           ),
           ChangeNotifierProvider<MaterialsProvider>(
             create: (_) =>
@@ -208,8 +234,7 @@ void main() {
             builder: (context) => Scaffold(
               body: Center(
                 child: ElevatedButton(
-                  onPressed: () =>
-                      ItemsScreen.openEditor(context, item: _variant),
+                  onPressed: () => ItemsScreen.openEditor(context, item: _item),
                   child: const Text('open'),
                 ),
               ),
@@ -223,61 +248,30 @@ void main() {
     return itemRepo;
   }
 
-  testWidgets('a variant can be moved to another group on its own', (
+  testWidgets('a value with no Code is refused, and the property is named', (
     tester,
   ) async {
     final repo = await open(tester);
 
-    // The trimmed variant editor, with the group as a real field.
-    expect(find.text('Edit Basic Item'), findsOneWidget);
-    expect(find.textContaining('Finish Goods'), findsWidgets);
-
-    await tester.tap(find.textContaining('Finish Goods').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Scrap').last);
-    await tester.pumpAndSettle();
+    // Said under the property itself, before anyone presses anything.
+    expect(
+      find.textContaining('Every value needs a Code'),
+      findsWidgets,
+      reason: 'the tree marks the property whose values are not coded',
+    );
 
     await tester.tap(find.text('Save Changes'));
     await tester.pumpAndSettle();
 
-    expect(repo.lastUpdate, isNotNull, reason: 'the save must reach the repo');
     expect(
-      repo.lastUpdate!.groupId,
-      _scrap.id,
-      reason: 'the group picked in the field is the group that is saved',
+      repo.lastUpdate,
+      isNull,
+      reason: 'a half-coded tree must not reach the repository',
     );
     expect(
-      repo.lastUpdate!.baseItemId,
-      _base.id,
-      reason: 'moving a variant must not detach it from its base',
+      find.textContaining('Socket Amp'),
+      findsWidgets,
+      reason: 'the refusal names the property at fault',
     );
-  });
-
-  testWidgets('closing on an unsaved group change asks before losing it', (
-    tester,
-  ) async {
-    final repo = await open(tester);
-
-    await tester.tap(find.textContaining('Finish Goods').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Scrap').last);
-    await tester.pumpAndSettle();
-
-    // Save is at the foot of a long form; closing from the header used to throw
-    // the edit away without a word, which reads exactly like it did not save.
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Discard changes?'), findsOneWidget);
-    expect(repo.lastUpdate, isNull, reason: 'nothing saved yet');
-
-    // Backing out of the prompt keeps the editor open with the edit intact.
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.text('Edit Basic Item'), findsOneWidget);
-
-    await tester.tap(find.text('Save Changes'));
-    await tester.pumpAndSettle();
-    expect(repo.lastUpdate?.groupId, _scrap.id);
   });
 }

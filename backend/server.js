@@ -5153,6 +5153,10 @@ async function initDb() {
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'input_type', "TEXT NOT NULL DEFAULT 'Text'");
+  // Bootstrap parity with migration 035: a value node under a Material property
+  // points at the material type it stands for, so the id travels with the
+  // selection instead of only its name.
+  await ensureColumnExists('item_variation_nodes', 'material_type_id', 'INTEGER');
   // Allowed range for 'Numeric' properties (migrations/028). NULL = unbounded.
   await ensureColumnExists('item_variation_nodes', 'numeric_min', 'REAL');
   await ensureColumnExists('item_variation_nodes', 'numeric_max', 'REAL');
@@ -7780,6 +7784,10 @@ async function getItemVariationTree(itemId) {
       nameJoin: row.name_join || '',
       numericMin: row.numeric_min == null ? null : Number(row.numeric_min),
       numericMax: row.numeric_max == null ? null : Number(row.numeric_max),
+      // Set on a value node under a Material property: which material type the
+      // value stands for, so density travels with the selection.
+      materialTypeId:
+        row.material_type_id == null ? null : Number(row.material_type_id),
       position: row.position || 0,
       isArchived: Boolean(row.is_archived),
       createdAt: row.created_at,
@@ -8341,6 +8349,16 @@ function sanitizeNumericRange(node, inputType, propertyName) {
   return { numericMin, numericMax };
 }
 
+/// The material type a value node stands for. Only a positive integer is a
+/// link; anything else — absent, blank, zero, a name someone hand-typed — is no
+/// link at all rather than a guess at one.
+function normalizeMaterialTypeId(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.trunc(value);
+}
+
 function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) {
   if (depth > 10) {
     const error = new Error('Variation tree is too deep.');
@@ -8400,6 +8418,9 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
       code: String(node.code || '').trim(),
       displayName:
         String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
+      // Carried on the value, not the property: the property says these values
+      // are materials, each value says which one.
+      materialTypeId: normalizeMaterialTypeId(node.materialTypeId),
       position: index,
       children,
     };
@@ -15712,7 +15733,7 @@ async function saveItem({
           await run(
             `
             UPDATE item_variation_nodes
-            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, name_join = ?, numeric_min = ?, numeric_max = ?, position = ?, updated_at = ?
+            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, name_join = ?, numeric_min = ?, numeric_max = ?, material_type_id = ?, position = ?, updated_at = ?
             WHERE id = ?
             `,
             [
@@ -15724,6 +15745,7 @@ async function saveItem({
               node.nameJoin || '',
               node.numericMin ?? null,
               node.numericMax ?? null,
+              normalizeMaterialTypeId(node.materialTypeId),
               node.position,
               now,
               nodeId,
@@ -15734,9 +15756,9 @@ async function saveItem({
             `
             INSERT INTO item_variation_nodes (
               item_id, parent_node_id, kind, name, code, display_name, input_type, name_join,
-              numeric_min, numeric_max, position,
+              numeric_min, numeric_max, material_type_id, position,
               is_archived, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             `,
             [
               itemId,
@@ -15749,6 +15771,7 @@ async function saveItem({
               node.nameJoin || '',
               node.numericMin ?? null,
               node.numericMax ?? null,
+              normalizeMaterialTypeId(node.materialTypeId),
               node.position,
               now,
               now,

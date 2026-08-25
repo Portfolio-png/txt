@@ -25,11 +25,18 @@ const variationNode = {
     name: { type: 'string', required: true, nonEmpty: true },
     code: { type: 'string' },
     displayName: { type: 'string' },
-    inputType: { type: 'string', enum: ['Text', 'Numeric', 'Gauge'] },
+    inputType: {
+      type: 'string',
+      enum: ['Text', 'Numeric', 'Gauge', 'Material'],
+    },
     nameJoin: { type: 'string' },
     // Allowed range for 'Numeric' properties; either bound may be omitted.
     numericMin: { type: 'number', nullable: true },
     numericMax: { type: 'number', nullable: true },
+    // Which material type a value under a 'Material' property stands for.
+    // On the value, never on the property: the property declares that its
+    // values are materials, each value says which one it is.
+    materialTypeId: { type: 'integer', nullable: true, min: 1 },
     position: { type: 'integer', min: 0 },
     children: { type: 'array', items: () => variationNode },
   },

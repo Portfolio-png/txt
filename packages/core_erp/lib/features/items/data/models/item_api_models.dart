@@ -30,6 +30,7 @@ class ItemVariationNodeDto {
     this.nameJoin = '',
     this.numericMin,
     this.numericMax,
+    this.materialTypeId,
   });
 
   final int id;
@@ -48,6 +49,7 @@ class ItemVariationNodeDto {
   final String nameJoin;
   final double? numericMin;
   final double? numericMax;
+  final int? materialTypeId;
 
   factory ItemVariationNodeDto.fromJson(Map<String, dynamic> json) {
     return ItemVariationNodeDto(
@@ -76,6 +78,7 @@ class ItemVariationNodeDto {
       nameJoin: json['nameJoin'] as String? ?? '',
       numericMin: (json['numericMin'] as num?)?.toDouble(),
       numericMax: (json['numericMax'] as num?)?.toDouble(),
+      materialTypeId: (json['materialTypeId'] as num?)?.toInt(),
     );
   }
 
@@ -99,6 +102,7 @@ class ItemVariationNodeDto {
       nameJoin: nameJoin,
       numericMin: numericMin,
       numericMax: numericMax,
+      materialTypeId: materialTypeId,
     );
   }
 }
@@ -457,6 +461,7 @@ class ItemVariationNodeRequest {
     required this.children,
     this.numericMin,
     this.numericMax,
+    this.materialTypeId,
   });
 
   final int? id;
@@ -469,6 +474,7 @@ class ItemVariationNodeRequest {
   final String nameJoin;
   final double? numericMin;
   final double? numericMax;
+  final int? materialTypeId;
   final List<ItemVariationNodeRequest> children;
 
   factory ItemVariationNodeRequest.fromInput(ItemVariationNodeInput input) {
@@ -483,6 +489,7 @@ class ItemVariationNodeRequest {
       nameJoin: input.nameJoin,
       numericMin: input.numericMin,
       numericMax: input.numericMax,
+      materialTypeId: input.materialTypeId,
       children: input.children
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
@@ -501,6 +508,7 @@ class ItemVariationNodeRequest {
       'nameJoin': nameJoin,
       'numericMin': numericMin,
       'numericMax': numericMax,
+      'materialTypeId': materialTypeId,
       'children': children
           .map((entry) => entry.toJson())
           .toList(growable: false),

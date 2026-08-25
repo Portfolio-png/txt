@@ -469,6 +469,16 @@ nodes. Benefits:
   **Do not repeat that for Material** — store the `material_type_id`, render the
   name.
 
+**Status (2026-08-25): DELIVERED.** `Material` is a fourth input type (the pill
+cycles Text → Numeric → Gauge → Material, `M` in teal). Landing on it opens a
+multi-select over `material_types`; the ticked materials become the property's
+value nodes, each carrying `material_type_id` (migration
+`035-variation-material-type.sql`, contract enum widened). The id — not a
+string — is the point: a selection already records its leaf node, so the
+material and its density reach an order line, a challan line and a stock row
+with no new per-line storage. Values named by hand are left alone when a
+property is switched to Material; unticking a material drops only its own node.
+
 **Open.**
 - Does the Material property expose **every** non-archived material type, or a
   per-item allow-list (a shop that only ever buys MS and SS should not scroll

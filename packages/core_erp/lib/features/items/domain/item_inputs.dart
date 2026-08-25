@@ -35,6 +35,7 @@ class ItemVariationNodeInput {
     this.nameJoin = '',
     this.numericMin,
     this.numericMax,
+    this.materialTypeId,
     this.children = const [],
   });
 
@@ -50,6 +51,9 @@ class ItemVariationNodeInput {
   /// Inclusive bounds for a 'Numeric' property; null means open-ended.
   final double? numericMin;
   final double? numericMax;
+
+  /// Which material type a value under a 'Material' property stands for.
+  final int? materialTypeId;
   final List<ItemVariationNodeInput> children;
 }
 
