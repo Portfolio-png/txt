@@ -120,6 +120,29 @@ test('factory reset is super_admin only and needs the confirmation phrase', asyn
       'demo seed should have left items behind',
     );
 
+    // A material the shop registered itself, plus an edit to a stock one.
+    // Both must outlive the reset: the material master is reference data,
+    // not workspace data.
+    const registered = await postJson(baseUrl, '/api/material-types', owner.token, {
+      name: 'Inconel 625',
+      densityGCm3: 8.44,
+      category: 'metal',
+    });
+    assert.equal(registered.status, 201, JSON.stringify(registered.body));
+    const materialsBefore = await getJson(baseUrl, '/api/material-types', owner.token);
+    assert.equal(materialsBefore.status, 200);
+    const brass = materialsBefore.body.materialTypes.find((m) => m.name === 'Brass');
+    assert.ok(brass, 'seeded Brass must exist');
+    const brassEdit = await fetch(`${baseUrl}/api/material-types/${brass.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${owner.token}`,
+      },
+      body: JSON.stringify({ name: 'Brass', densityGCm3: 8.6, category: 'metal' }),
+    });
+    assert.equal(brassEdit.status, 200);
+
     // The real thing.
     const nuke = await postJson(
       baseUrl,
@@ -149,6 +172,14 @@ test('factory reset is super_admin only and needs the confirmation phrase', asyn
       password: 'TeamPass1234',
     });
     assert.equal(adminAfter.status, 401);
+
+    // The material master survived, edits and all.
+    const materialsAfter = await getJson(baseUrl, '/api/material-types', after.token);
+    assert.equal(materialsAfter.status, 200);
+    const afterByName = new Map(materialsAfter.body.materialTypes.map((m) => [m.name, m]));
+    assert.equal(afterByName.get('Inconel 625')?.densityGCm3, 8.44);
+    assert.equal(afterByName.get('Brass')?.densityGCm3, 8.6);
+    assert.equal(materialsAfter.body.materialTypes.length, materialsBefore.body.materialTypes.length);
   } finally {
     await closeServer(server);
   }

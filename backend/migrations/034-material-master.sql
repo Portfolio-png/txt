@@ -40,7 +40,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_material_types_name
 -- The starting catalogue. INSERT OR IGNORE so a shop that has already edited
 -- its own densities keeps them when this runs again.
 INSERT OR IGNORE INTO material_types (name, density_g_cm3, category, notes) VALUES
-  ('Steel / MS',      7.85,  'metal',   'Mild steel, the common shop default'),
+  ('MS',              7.85,  'metal',   'Mild steel — the common shop default'),
   ('Stainless Steel', 7.90,  'metal',   '304 is nearer 8.00, 430 nearer 7.70'),
   ('Aluminium',       2.70,  'metal',   ''),
   ('Brass',           8.50,  'metal',   'Varies 8.40-8.70 by grade'),

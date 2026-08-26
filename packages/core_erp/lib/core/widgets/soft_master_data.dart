@@ -332,12 +332,16 @@ class SoftMasterTable extends StatelessWidget {
     required this.itemCount,
     required this.rowBuilder,
     this.minWidth = 980,
+    this.controller,
   });
 
   final List<SoftTableColumn> columns;
   final int itemCount;
   final IndexedWidgetBuilder rowBuilder;
   final double minWidth;
+
+  /// For a screen that needs to bring a particular row into view.
+  final ScrollController? controller;
 
   @override
   Widget build(BuildContext context) {
@@ -359,6 +363,7 @@ class SoftMasterTable extends StatelessWidget {
                 const SizedBox(height: 10),
                 Expanded(
                   child: ListView.separated(
+                    controller: controller,
                     itemCount: itemCount,
                     separatorBuilder: (context, index) =>
                         const SizedBox(height: 10),
@@ -426,6 +431,7 @@ class SoftMasterRow extends StatelessWidget {
     this.onTap,
     this.onDoubleTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    this.isHighlighted = false,
   });
 
   final List<Widget> children;
@@ -433,11 +439,16 @@ class SoftMasterRow extends StatelessWidget {
   final VoidCallback? onDoubleTap;
   final EdgeInsetsGeometry padding;
 
+  /// Lit up so the eye lands on it — the row another screen sent the user to.
+  final bool isHighlighted;
+
   @override
   Widget build(BuildContext context) {
     return SoftRowCard(
       onTap: onTap ?? () {},
       onDoubleTap: onDoubleTap,
+      isSelected: isHighlighted,
+      selectedColor: SoftErpTheme.accentSoft,
       baseColor: SoftErpTheme.cardSurface,
       hoverColor: const Color(0xFFFDFDFF),
       child: Padding(

@@ -105,8 +105,11 @@ test('the material master seeds, lists, edits and archives', async () => {
       listed.materialTypes.map((material) => [material.name, material])
     );
 
-    // The two the client named, and a spread of the rest.
-    assert.equal(byName.get('Steel / MS').densityGCm3, 7.85);
+    // The two the client named, and a spread of the rest. Mild steel is listed
+    // as MS — what it is called on a shop floor — rather than the slash-joined
+    // "Steel / MS" the seed originally shipped.
+    assert.equal(byName.get('MS').densityGCm3, 7.85);
+    assert.equal(byName.has('Steel / MS'), false);
     assert.equal(byName.get('Aluminium').densityGCm3, 2.7);
     assert.equal(byName.get('Brass').densityGCm3, 8.5);
     assert.equal(byName.get('Titanium').densityGCm3, 4.51);

@@ -24,6 +24,7 @@ import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
+import '../../../groups/presentation/group_picker_field.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/widgets/structured_group_editor_dialog.dart';
@@ -8805,35 +8806,19 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          SearchableSelectField<int?>(
+                          GroupPickerField(
                             tapTargetKey: const ValueKey<String>(
                               'inventory-create-group-parent',
                             ),
-                            value:
-                                groups.any(
-                                  (group) => group.id == _selectedParentGroupId,
-                                )
-                                ? _selectedParentGroupId
-                                : null,
+                            value: _selectedParentGroupId,
+                            scope: GroupPickerScope.hierarchical,
                             decoration: _selectDecoration(
                               label: 'Parent Group',
                               helper:
                                   'Primary means this group is a top-level inventory group.',
                             ),
                             dialogTitle: 'Parent Group',
-                            searchHintText: 'Search group',
-                            options: [
-                              const SearchableSelectOption<int?>(
-                                value: null,
-                                label: 'Primary',
-                              ),
-                              ...groups.map(
-                                (group) => SearchableSelectOption<int?>(
-                                  value: group.id,
-                                  label: group.name,
-                                ),
-                              ),
-                            ],
+                            nullOptionLabel: 'Primary',
                             onChanged: (value) {
                               _setSelectedParentGroup(value);
                             },

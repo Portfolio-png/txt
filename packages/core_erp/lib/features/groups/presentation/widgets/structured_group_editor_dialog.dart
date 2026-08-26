@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/services/feature_flags.dart';
+import '../group_picker_field.dart';
 import '../group_type_style.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -133,38 +134,33 @@ class _StructuredGroupEditorDialogState
   /// Where this group sits in the tree. Shared by hierarchical and combination
   /// groups: both can be nested, and a group whose parent cannot be changed
   /// after it is created is nested only by accident.
-  Widget _buildParentGroupField(
-    GroupsProvider groupsProvider,
-    List<GroupDefinition> groups,
-  ) {
+  /// Where this group sits in the tree.
+  ///
+  /// This used to build its own option list off `filteredGroupsByType`, which
+  /// carries the Groups screen's **search query** — so with "socket" typed into
+  /// that search box, the only parents on offer here were ones matching
+  /// "socket", and a current parent outside that set displayed as empty and was
+  /// cleared on save. It also offered archived groups, which no other picker
+  /// did. Both were consequences of building the list here instead of asking
+  /// for one.
+  Widget _buildParentGroupField() {
     return KeyedSubtree(
       key: const ValueKey<String>('groups-parent-field'),
-      child: SearchableSelectField<int?>(
+      child: GroupPickerField(
         tapTargetKey: const ValueKey<String>('masters-group-parent'),
-        value: groups.any((group) => group.id == _selectedParentGroupId)
-            ? _selectedParentGroupId
-            : null,
+        value: _selectedParentGroupId,
+        onChanged: _setSelectedParentGroup,
+        // Containers only: nesting inside a combination group is not a tree
+        // anyone reads.
+        scope: GroupPickerScope.hierarchical,
+        groupType: widget.groupType,
         decoration: _selectDecoration(label: 'Parent Group'),
         dialogTitle: 'Parent Group',
-        searchHintText: 'Search group',
-        options: [
-          const SearchableSelectOption<int?>(value: null, label: 'Primary'),
-          // Hide the group itself and everything under it: the server rejects
-          // those with a 409, so offering them only produces a dead end.
-          ...groups
-              .where(
-                (group) =>
-                    group.id != widget.group?.id &&
-                    !_wouldCreateCycle(groupsProvider, group.id),
-              )
-              .map(
-                (group) => SearchableSelectOption<int?>(
-                  value: group.id,
-                  label: group.name,
-                ),
-              ),
-        ],
-        onChanged: _setSelectedParentGroup,
+        nullOptionLabel: 'Primary',
+        // A group cannot be its own parent, nor move under its own descendant —
+        // the server rejects both with a 409, so neither is offered.
+        excludeGroupId: widget.group?.id,
+        excludeDescendantsOfSelf: true,
       ),
     );
   }
@@ -474,11 +470,11 @@ class _StructuredGroupEditorDialogState
                           // one, which is why only this field is shared.
                           if (_isCombination) ...[
                             const SizedBox(height: 16),
-                            _buildParentGroupField(groupsProvider, groups),
+                            _buildParentGroupField(),
                           ],
                           if (!_isCombination) ...[
                             const SizedBox(height: 16),
-                            _buildParentGroupField(groupsProvider, groups),
+                            _buildParentGroupField(),
                             const SizedBox(height: 16),
                             KeyedSubtree(
                               key: const ValueKey<String>('groups-unit-field'),
@@ -1126,20 +1122,6 @@ class _StructuredGroupEditorDialogState
   List<governance.GroupPropertyDraft> get _retiredDrafts =>
       _ownSchema?.retiredPropertyDrafts ??
       const <governance.GroupPropertyDraft>[];
-
-  /// Whether picking [candidateParentId] as this group's parent would put it
-  /// under one of its own descendants. Always false while creating, since a new
-  /// group has no descendants yet.
-  bool _wouldCreateCycle(GroupsProvider groupsProvider, int candidateParentId) {
-    final editingId = widget.group?.id;
-    if (editingId == null) {
-      return false;
-    }
-    return groupsProvider.wouldCreateCycle(
-      groupId: editingId,
-      parentGroupId: candidateParentId,
-    );
-  }
 
   /// Radio toggle that selects the group structure (Enhancement 2.1).
   Widget _buildStructureToggle() {

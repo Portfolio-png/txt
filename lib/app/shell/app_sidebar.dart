@@ -1378,7 +1378,9 @@ class _SettingsPreferencesDialogState
             ),
           ),
           // Factory reset deletes every row in every table, user accounts
-          // included. The backend already refuses anyone below super_admin;
+          // included — only the material master (reference data, not
+          // workspace data) survives. The backend already refuses anyone
+          // below super_admin;
           // this keeps the control itself out of an admin's Settings rather
           // than offering a button that can only 403.
           if (isSuperAdmin)
@@ -1748,8 +1750,9 @@ class _SidebarItemData {
 }
 
 /// Factory reset is the one irreversible control in the app: it deletes every
-/// row in every table, accounts included. A yes/no is too easy to click
-/// through, so the phrase has to be typed exactly.
+/// row in every table, accounts included; only the material master is kept.
+/// A yes/no is too easy to click through, so the phrase has to be typed
+/// exactly.
 class _FactoryResetConfirmDialog extends StatefulWidget {
   const _FactoryResetConfirmDialog();
 
@@ -1791,7 +1794,8 @@ class _FactoryResetConfirmDialogState
             const Text(
               'This deletes every record in the database — items, orders, '
               'challans, inventory, logs and every user account except the '
-              'bootstrapped super admin. You will be signed out.',
+              'bootstrapped super admin. Registered materials (the material '
+              'master) are kept. You will be signed out.',
               style: TextStyle(height: 1.45),
             ),
             const SizedBox(height: 10),

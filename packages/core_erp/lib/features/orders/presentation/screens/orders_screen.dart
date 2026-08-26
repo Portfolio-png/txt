@@ -33,6 +33,7 @@ import '../../../../core/widgets/export_preview_dialog.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
+import '../../../groups/presentation/group_picker_field.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
@@ -4071,40 +4072,20 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   /// hierarchical and combination groups are selectable.
   Widget _buildGroupFilterForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
-    final groupsProvider = context.watch<GroupsProvider>();
-    // Group ids are positive auto-increment values, so 0 is a safe sentinel for
-    // the "All groups" (clear filter) option in the dropdown.
-    const allGroupsSentinel = 0;
-    final groupOptions = <SearchableSelectOption<int>>[
-      const SearchableSelectOption<int>(
-        value: allGroupsSentinel,
-        label: 'All groups',
-      ),
-      ...[...groupsProvider.itemGroups, ...groupsProvider.combinationGroups]
-          .where((group) => !group.isArchived)
-          .map(
-            (group) => SearchableSelectOption<int>(
-              value: group.id,
-              label: group.isCombination
-                  ? '${group.name} (combination)'
-                  : group.isComponent
-                  ? '${group.name} (component)'
-                  : group.name,
-            ),
-          ),
-    ];
     final fieldKey = ValueKey<String>('orders-editor-group-filter-${line.id}');
-    return SearchableSelectField<int>(
+    // Filtering, so every kind of group is fair game — but drawn from the same
+    // picker as everywhere else, which is what makes the nesting visible here
+    // and the wording for a combination group the same as in the item editor.
+    return GroupPickerField(
       key: fieldKey,
       tapTargetKey: fieldKey,
       value: line.groupFilterId,
+      scope: GroupPickerScope.all,
       decoration: _inputDecoration(hintText: 'All groups'),
       dialogTitle: 'Filter by group',
-      searchHintText: 'Search group',
-      emptyText: 'No groups available',
-      options: groupOptions,
+      nullOptionLabel: 'All groups',
       onChanged: (raw) {
-        final value = (raw == null || raw == allGroupsSentinel) ? null : raw;
+        final value = raw;
         setState(() {
           line.groupFilterId = value;
           // Drop the current item if it no longer belongs to the filtered set.

@@ -11,6 +11,7 @@ import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/material_definition.dart';
 import '../providers/materials_provider.dart';
+import '../widgets/global_materials_dialog.dart';
 
 /// The material master: a name and a density, and nothing else.
 ///
@@ -77,9 +78,9 @@ class _MaterialsScreenState extends State<MaterialsScreen> {
 
         return SoftMasterDataPage(
           title: 'Materials',
-          subtitle:
-              'Density is what turns a planned sheet into a weight. '
-              'Edit any figure — your supplier’s brass is not a handbook’s.',
+          subtitleWidget: _MaterialsSubtitle(
+            onOpenLibrary: () => GlobalMaterialsLibraryDialog.show(context),
+          ),
           action: AppButton(
             label: 'Add Material',
             icon: Icons.add,
@@ -142,6 +143,56 @@ class _MaterialsScreenState extends State<MaterialsScreen> {
               : _MaterialTable(materials: materials),
         );
       },
+    );
+  }
+}
+
+/// The one-line why, and next to it the way into the global catalogue — the
+/// same place the Units screen puts its library link.
+class _MaterialsSubtitle extends StatelessWidget {
+  const _MaterialsSubtitle({required this.onOpenLibrary});
+
+  final VoidCallback onOpenLibrary;
+
+  @override
+  Widget build(BuildContext context) {
+    final body = Theme.of(context).textTheme.bodyMedium;
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 14,
+      runSpacing: 4,
+      children: [
+        Text(
+          'Density is what turns a planned sheet into a weight. '
+          'Edit any figure — your supplier’s brass is not a handbook’s.',
+          style: body?.copyWith(
+            color: SoftErpTheme.textSecondary,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
+          ),
+        ),
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            key: const ValueKey('open-global-materials-library'),
+            onTap: onOpenLibrary,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.public, color: SoftErpTheme.accent, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Global Materials Library',
+                  style: body?.copyWith(
+                    color: SoftErpTheme.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

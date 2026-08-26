@@ -28012,12 +28012,26 @@ app.use('/api', (error, req, res, _next) => {
   });
 });
 
+// Tables a factory reset leaves alone. Everything else — accounts, items,
+// stock, orders, audit — is gone.
+const FACTORY_RESET_PRESERVED_TABLES = [
+  // The migration ledger is schema state, not workspace data. Wiping it
+  // re-runs every migration on the next boot, and 034's INSERT OR IGNORE
+  // would quietly put back any default material the shop had deleted.
+  'schema_migrations',
+  // The material master is reference data, not workspace data: a density is
+  // a property of steel, not of this shop's transactions. A shop that has
+  // registered its own alloys should not have to retype them after a reset.
+  'material_types',
+];
+
 async function factoryResetData() {
   await run('PRAGMA foreign_keys = OFF');
   await run('BEGIN TRANSACTION');
   try {
     const allTables = await all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
     for (const table of allTables) {
+      if (FACTORY_RESET_PRESERVED_TABLES.includes(table.name)) continue;
       await run("DELETE FROM " + table.name + "");
     }
     await bootstrapSuperAdminIfNeeded();

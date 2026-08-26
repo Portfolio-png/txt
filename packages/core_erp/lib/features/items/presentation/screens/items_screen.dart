@@ -37,6 +37,7 @@ import '../../data/services/item_link_options_service.dart';
 import '../../domain/item_form_sections.dart';
 import '../providers/item_form_sections_provider.dart';
 
+import 'package:core_erp/features/groups/presentation/group_picker_field.dart';
 import 'package:core_erp/features/groups/presentation/group_type_style.dart';
 import 'package:core_erp/features/materials/domain/material_definition.dart';
 import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
@@ -199,6 +200,66 @@ class _ItemsScreenState extends State<ItemsScreen> {
     }
   }
 
+  /// The item another screen sent the user here to see. Kept lit until a
+  /// moment after its details close, so the eye lands on the row the list has
+  /// scrolled to rather than on a list that merely changed shape.
+  int? _revealedItemId;
+  Timer? _revealTimer;
+  bool _revealScheduled = false;
+
+  @override
+  void dispose() {
+    _revealTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Honours a reveal request wherever the screen happens to be.
+  ///
+  /// The request is a one-off left on the provider; it was consumed by the
+  /// table alone, which meant a card view, the Sets view, or a search that hid
+  /// the item all swallowed it. Handled here, above the views: switch to Items,
+  /// drop a search the item does not match, light the row or card, let the view
+  /// scroll to it, and open its details — arriving means seeing the item, not
+  /// a list it is somewhere inside of.
+  void _applyPendingReveal(ItemsProvider items) {
+    if (items.pendingRevealItemId == null || _revealScheduled) return;
+    _revealScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _revealScheduled = false;
+      if (!mounted) return;
+      final target = items.findById(items.consumeReveal());
+      if (target == null) {
+        showAppToast(
+          context,
+          'That item is no longer in the list.',
+          kind: AppToastKind.warning,
+        );
+        return;
+      }
+      if (!items.filteredItems.any((item) => item.id == target.id)) {
+        items.setSearchQuery('');
+      }
+      _revealTimer?.cancel();
+      setState(() {
+        _isSetsView = false;
+        _revealedItemId = target.id;
+      });
+      await showItemDetailPanel(
+        context,
+        item: target,
+        onEdit: () => ItemsScreen.openEditor(
+          context,
+          item: target,
+          onCreatePipeline: widget.onCreatePipeline,
+        ),
+      );
+      if (!mounted) return;
+      _revealTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _revealedItemId = null);
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.initialTab == 1) {
@@ -212,6 +273,8 @@ class _ItemsScreenState extends State<ItemsScreen> {
             (units.isLoading && units.units.isEmpty)) {
           return const Center(child: CircularProgressIndicator());
         }
+
+        _applyPendingReveal(items);
 
         return FocusableActionDetector(
           autofocus: true,
@@ -326,16 +389,19 @@ class _ItemsScreenState extends State<ItemsScreen> {
                           items: items.filteredItems,
                           columnCount: _columnCount,
                           onCreatePipeline: widget.onCreatePipeline,
+                          highlightedItemId: _revealedItemId,
                         )
                       : _ItemsGrid(
                           items: items.filteredItems,
                           cardWidth: _cardWidth,
                           cardHeight: _cardHeight,
                           onCreatePipeline: widget.onCreatePipeline,
+                          highlightedItemId: _revealedItemId,
                         ))
                 : _ItemsTable(
                     items: items.filteredItems,
                     onCreatePipeline: widget.onCreatePipeline,
+                    revealItemId: _revealedItemId,
                   ),
           ),
         );
@@ -984,10 +1050,18 @@ class _ItemsViewToggleButton extends StatelessWidget {
 }
 
 class _ItemsTable extends StatefulWidget {
-  const _ItemsTable({required this.items, this.onCreatePipeline});
+  const _ItemsTable({
+    required this.items,
+    this.onCreatePipeline,
+    this.revealItemId,
+  });
 
   final List<ItemDefinition> items;
   final Future<String?> Function()? onCreatePipeline;
+
+  /// An item the screen wants brought into view: its group and base item are
+  /// opened, the list scrolls to it, and its row stays lit while this is set.
+  final int? revealItemId;
 
   @override
   State<_ItemsTable> createState() => _ItemsTableState();
@@ -1019,32 +1093,55 @@ class _ItemsTableState extends State<_ItemsTable> {
   /// it. Clicking a group row opens and closes it — there is no chevron.
   final Set<int> _expandedGroupIds = <int>{};
 
-  /// Opens whatever another screen asked to have revealed — the group it is
-  /// filed in, and its base item when the request is for a variant.
-  ///
-  /// Done after the frame rather than during build: it is a state change, and
-  /// the request has to be consumed so a rebuild does not keep re-opening rows
-  /// the user has since closed.
-  void _applyPendingReveal(ItemsProvider itemsProvider) {
-    final requested = itemsProvider.pendingRevealItemId;
-    if (requested == null) return;
-    final target = itemsProvider.findById(requested);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      itemsProvider.consumeReveal();
-      if (target == null) return;
-      setState(() {
-        _expandedGroupIds.add(target.groupId);
-        final base = target.baseItemId;
-        if (base != null) _expandedBaseItemIds.add(base);
-      });
-    });
+  final ScrollController _scrollController = ScrollController();
+
+  /// On the revealed row only, so the scroll can find the real widget.
+  final GlobalKey _revealedRowKey = GlobalKey();
+
+  /// Set when a reveal arrives; the next build works out the row's index and
+  /// scrolls to it, because the index depends on which rows are open.
+  int? _scrollToItemId;
+
+  @override
+  void initState() {
+    super.initState();
+    _takeReveal(widget.revealItemId);
   }
+
+  @override
+  void didUpdateWidget(covariant _ItemsTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.revealItemId != oldWidget.revealItemId) {
+      _takeReveal(widget.revealItemId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Opens what a reveal needs open — the group the item is filed in, and its
+  /// base item when it is a variant — and queues the scroll. Plain field
+  /// writes: both callers are followed by a build.
+  void _takeReveal(int? itemId) {
+    if (itemId == null) return;
+    final target = widget.items.firstWhereOrNull((item) => item.id == itemId);
+    if (target == null) return;
+    _expandedGroupIds.add(target.groupId);
+    final base = target.baseItemId;
+    if (base != null) _expandedBaseItemIds.add(base);
+    _scrollToItemId = itemId;
+  }
+
+  /// Rows are taller than a card by a good margin; this only has to land the
+  /// jump near enough that the real row gets built.
+  static const double _estimatedRowExtent = 96;
 
   @override
   Widget build(BuildContext context) {
     final groupsProvider = context.watch<GroupsProvider>();
-    _applyPendingReveal(context.watch<ItemsProvider>());
     final rows = <_ItemsTableRow>[];
 
     // Bucket by group, preserving the provider's ordering of groups and the
@@ -1120,7 +1217,24 @@ class _ItemsTableState extends State<_ItemsTable> {
       }
     }
 
+    final scrollTo = _scrollToItemId;
+    if (scrollTo != null) {
+      _scrollToItemId = null;
+      final index = rows.indexWhere((row) => row.item?.id == scrollTo);
+      if (index >= 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _scrollToRevealed(
+            _scrollController,
+            index * _estimatedRowExtent - _estimatedRowExtent,
+            _revealedRowKey,
+          );
+        });
+      }
+    }
+
     return SoftMasterTable(
+      controller: _scrollController,
       minWidth: 1120,
       columns: const [
         SoftTableColumn('Item', flex: 2),
@@ -1159,9 +1273,11 @@ class _ItemsTableState extends State<_ItemsTable> {
           });
         }
 
-        return _ItemRow(
+        final isRevealed = item.id == widget.revealItemId;
+        final itemRow = _ItemRow(
           item: item,
           isVariant: isVariant,
+          isHighlighted: isRevealed,
           onCreatePipeline: widget.onCreatePipeline,
           variantCount: isVariant ? 0 : variantCount,
           variantsExpanded: _expandedBaseItemIds.contains(item.id),
@@ -1170,7 +1286,73 @@ class _ItemsTableState extends State<_ItemsTable> {
               : toggleVariants,
           onDoubleTap: isVariant || variantCount == 0 ? null : toggleVariants,
         );
+        return isRevealed
+            ? KeyedSubtree(key: _revealedRowKey, child: itemRow)
+            : itemRow;
       },
+    );
+  }
+}
+
+/// Brings a lazily built row or card into view.
+///
+/// A row far down the list has not been built yet, so there is nothing to
+/// scroll to. Jumping near it by estimate builds it; the framework then lines
+/// the real widget up, since it knows the true position and the estimate does
+/// not.
+void _scrollToRevealed(
+  ScrollController controller,
+  double estimatedOffset,
+  GlobalKey key,
+) {
+  if (!controller.hasClients) return;
+  final max = controller.position.maxScrollExtent;
+  controller.jumpTo(estimatedOffset.clamp(0.0, max));
+  WidgetsBinding.instance.ensureVisualUpdate();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final target = key.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      alignment: 0.2,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  });
+}
+
+/// The card a revealed item shows on. The grids list base items only, so a
+/// variant is found at its base's card.
+int? _revealCardIdFor(List<ItemDefinition> items, int? revealedId) {
+  if (revealedId == null) return null;
+  final item = items.firstWhereOrNull((entry) => entry.id == revealedId);
+  return item?.baseItemId ?? revealedId;
+}
+
+/// The ring drawn round a revealed card. Painted over the card rather than
+/// around it, so lighting a card does not shift the grid.
+class _RevealRing extends StatelessWidget {
+  const _RevealRing({super.key, required this.active, required this.child});
+
+  final bool active;
+  final Widget child;
+
+  /// The item card's own corner radius, so the ring hugs it.
+  static const double _radius = 18;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(
+          color: active ? SoftErpTheme.accent : Colors.transparent,
+          width: 2.5,
+        ),
+      ),
+      child: child,
     );
   }
 }
@@ -1374,12 +1556,13 @@ class _CountPill extends StatelessWidget {
   }
 }
 
-class _ItemsGrid extends StatelessWidget {
+class _ItemsGrid extends StatefulWidget {
   const _ItemsGrid({
     required this.items,
     required this.cardWidth,
     required this.cardHeight,
     this.onCreatePipeline,
+    this.highlightedItemId,
   });
 
   final List<ItemDefinition> items;
@@ -1387,29 +1570,101 @@ class _ItemsGrid extends StatelessWidget {
   final double cardHeight;
   final Future<String?> Function()? onCreatePipeline;
 
+  /// An item to scroll to and ring, while it is set.
+  final int? highlightedItemId;
+
+  @override
+  State<_ItemsGrid> createState() => _ItemsGridState();
+}
+
+class _ItemsGridState extends State<_ItemsGrid> {
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _revealedCardKey = GlobalKey();
+
+  /// The width the grid was last laid out at, for estimating where a card is.
+  double _lastWidth = 0;
+
+  static double _spacingFor(double width) => width >= 1200 ? 18.0 : 14.0;
+
+  List<ItemDefinition> get _topLevelItems =>
+      widget.items.where((i) => i.baseItemId == null).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlightedItemId != null) _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ItemsGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.highlightedItemId != null &&
+        widget.highlightedItemId != oldWidget.highlightedItemId) {
+      _scheduleReveal();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scheduleReveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _lastWidth <= 0) return;
+      final cardId = _revealCardIdFor(widget.items, widget.highlightedItemId);
+      final index = _topLevelItems.indexWhere((item) => item.id == cardId);
+      if (index < 0) return;
+      // The same arithmetic the max-extent delegate uses to pick a column
+      // count; the estimate only has to build the right neighbourhood.
+      final spacing = _spacingFor(_lastWidth);
+      final columns = ((_lastWidth + spacing) / (widget.cardWidth + spacing))
+          .ceil()
+          .clamp(1, 1 << 10);
+      final cellWidth = (_lastWidth - spacing * (columns - 1)) / columns;
+      final rowExtent = cellWidth * widget.cardHeight / widget.cardWidth;
+      _scrollToRevealed(
+        _scrollController,
+        (index ~/ columns) * (rowExtent + spacing),
+        _revealedCardKey,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cardId = _revealCardIdFor(widget.items, widget.highlightedItemId);
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final spacing = width >= 1200 ? 18.0 : 14.0;
-
-        final topLevelItems = items.where((i) => i.baseItemId == null).toList();
+        _lastWidth = width;
+        final spacing = _spacingFor(width);
+        final topLevelItems = _topLevelItems;
 
         return GridView.builder(
           key: const ValueKey<String>('items-grid-view'),
+          controller: _scrollController,
           padding: const EdgeInsets.only(bottom: 12),
           gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: cardWidth,
+            maxCrossAxisExtent: widget.cardWidth,
             crossAxisSpacing: spacing,
             mainAxisSpacing: spacing,
-            childAspectRatio: cardWidth / cardHeight,
+            childAspectRatio: widget.cardWidth / widget.cardHeight,
           ),
           itemCount: topLevelItems.length,
-          itemBuilder: (context, index) => _GridItemCard(
-            item: topLevelItems[index],
-            onCreatePipeline: onCreatePipeline,
-          ),
+          itemBuilder: (context, index) {
+            final item = topLevelItems[index];
+            final isRevealed = item.id == cardId;
+            return _RevealRing(
+              key: isRevealed ? _revealedCardKey : null,
+              active: isRevealed,
+              child: _GridItemCard(
+                item: item,
+                onCreatePipeline: widget.onCreatePipeline,
+              ),
+            );
+          },
         );
       },
     );
@@ -1443,45 +1698,120 @@ class _GridItemCard extends StatelessWidget {
 /// resize slider, clamped to what the width can fit; the tile aspect ratio (and
 /// therefore the card layout) adapts so 1 column is a wide ticket and many
 /// columns are compact portrait heroes.
-class _ItemsBoardingGrid extends StatelessWidget {
+class _ItemsBoardingGrid extends StatefulWidget {
   const _ItemsBoardingGrid({
     required this.items,
     required this.columnCount,
     this.onCreatePipeline,
+    this.highlightedItemId,
   });
 
   final List<ItemDefinition> items;
   final int columnCount;
   final Future<String?> Function()? onCreatePipeline;
 
+  /// An item to scroll to and ring, while it is set.
+  final int? highlightedItemId;
+
+  @override
+  State<_ItemsBoardingGrid> createState() => _ItemsBoardingGridState();
+}
+
+class _ItemsBoardingGridState extends State<_ItemsBoardingGrid> {
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _revealedCardKey = GlobalKey();
+  double _lastWidth = 0;
+
+  List<ItemDefinition> get _topLevelItems =>
+      widget.items.where((i) => i.baseItemId == null).toList();
+
+  /// Column count, spacing and tile aspect for [width] — one place, so the
+  /// scroll estimate and the grid cannot disagree.
+  static ({int cols, double spacing, double aspect}) _geometry(
+    double width,
+    int columnCount,
+  ) {
+    final maxCols = (width / 150).floor().clamp(1, 10);
+    final cols = columnCount.clamp(1, maxCols);
+    final spacing = width >= 1200 ? 18.0 : 14.0;
+    final aspect = cols == 1
+        ? 2.4
+        : cols == 2
+        ? 1.15
+        : 0.72;
+    return (cols: cols, spacing: spacing, aspect: aspect);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlightedItemId != null) _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ItemsBoardingGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.highlightedItemId != null &&
+        widget.highlightedItemId != oldWidget.highlightedItemId) {
+      _scheduleReveal();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scheduleReveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _lastWidth <= 0) return;
+      final cardId = _revealCardIdFor(widget.items, widget.highlightedItemId);
+      final index = _topLevelItems.indexWhere((item) => item.id == cardId);
+      if (index < 0) return;
+      final g = _geometry(_lastWidth, widget.columnCount);
+      final cellWidth = (_lastWidth - g.spacing * (g.cols - 1)) / g.cols;
+      final rowExtent = cellWidth / g.aspect;
+      _scrollToRevealed(
+        _scrollController,
+        (index ~/ g.cols) * (rowExtent + g.spacing),
+        _revealedCardKey,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final topLevelItems = items.where((i) => i.baseItemId == null).toList();
+    final cardId = _revealCardIdFor(widget.items, widget.highlightedItemId);
+    final topLevelItems = _topLevelItems;
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final maxCols = (width / 150).floor().clamp(1, 10);
-        final cols = columnCount.clamp(1, maxCols);
-        final spacing = width >= 1200 ? 18.0 : 14.0;
-        final aspect = cols == 1
-            ? 2.4
-            : cols == 2
-            ? 1.15
-            : 0.72;
+        _lastWidth = width;
+        final g = _geometry(width, widget.columnCount);
         return GridView.builder(
           key: const ValueKey<String>('items-boarding-grid'),
+          controller: _scrollController,
           padding: const EdgeInsets.only(bottom: 12),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            crossAxisSpacing: spacing,
-            mainAxisSpacing: spacing,
-            childAspectRatio: aspect,
+            crossAxisCount: g.cols,
+            crossAxisSpacing: g.spacing,
+            mainAxisSpacing: g.spacing,
+            childAspectRatio: g.aspect,
           ),
           itemCount: topLevelItems.length,
-          itemBuilder: (context, index) => _BoardingItemCard(
-            item: topLevelItems[index],
-            onCreatePipeline: onCreatePipeline,
-          ),
+          itemBuilder: (context, index) {
+            final item = topLevelItems[index];
+            final isRevealed = item.id == cardId;
+            return _RevealRing(
+              key: isRevealed ? _revealedCardKey : null,
+              active: isRevealed,
+              child: _BoardingItemCard(
+                item: item,
+                onCreatePipeline: widget.onCreatePipeline,
+              ),
+            );
+          },
         );
       },
     );
@@ -1608,6 +1938,7 @@ class _ItemRow extends StatelessWidget {
     required this.item,
     this.onCreatePipeline,
     this.isVariant = false,
+    this.isHighlighted = false,
     this.onDoubleTap,
     this.variantCount = 0,
     this.variantsExpanded = false,
@@ -1617,6 +1948,9 @@ class _ItemRow extends StatelessWidget {
   final ItemDefinition item;
   final Future<String?> Function()? onCreatePipeline;
   final bool isVariant;
+
+  /// The row another screen sent the user to.
+  final bool isHighlighted;
   final VoidCallback? onDoubleTap;
 
   /// How many variants were spawned off this item, and the control for showing
@@ -1650,6 +1984,7 @@ class _ItemRow extends StatelessWidget {
         : '${item.leafVariationNodes.length} orderable leaf${item.leafVariationNodes.length == 1 ? '' : 's'}';
 
     return SoftMasterRow(
+      isHighlighted: isHighlighted,
       onTap: () => showItemDetailPanel(
         context,
         item: item,
@@ -3202,9 +3537,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       variationTree: _variationTreeInputs,
       excludeId: _item?.id,
     );
-    final availableGroups = groupsProvider.filableItemGroups
-        .where((g) => !g.isArchived)
-        .toList(growable: false);
     final selectedGroup = groupsProvider.findById(_selectedGroupId);
     final availableUnits = unitsProvider.units
         .where((u) => !u.isArchived)
@@ -3260,20 +3592,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           const SizedBox(height: 12),
           _formRow(
             children: [
-              SearchableSelectField<int>(
+              GroupPickerField(
                 tapTargetKey: ValueKey<String>(
                   'items-group-field${widget.keyScope}',
                 ),
-                value:
-                    availableGroups.any((group) => group.id == _selectedGroupId)
-                    ? _selectedGroupId
-                    : selectedGroup?.id,
+                value: _selectedGroupId,
+                // An item can live under a combination group as well as a
+                // hierarchical one.
+                scope: GroupPickerScope.filable,
                 decoration: _fieldDecoration(
                   label: 'Group',
                   helper: 'Use the group to classify the item.',
                 ),
                 dialogTitle: 'Group',
-                searchHintText: 'Search group',
                 fieldEnabled: !_isReadOnly,
                 onCreateOption: (query) async {
                   final created = await GroupsScreen.openEditor(
@@ -3287,28 +3618,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   if (!context.mounted) {
                     return null;
                   }
-                  final refreshedGroupsProvider = context
-                      .read<GroupsProvider>();
+                  final refreshed = context.read<GroupsProvider>();
                   await _handleGroupChanged(created.id);
-                  return SearchableSelectOption<int>(
+                  return SearchableSelectOption<int?>(
                     value: created.id,
-                    label: _groupOptionLabel(created, refreshedGroupsProvider),
-                    searchText: _groupOptionSearchText(
+                    label: GroupPickerField.labelFor(created, 0),
+                    searchText: GroupPickerField.searchTextFor(
+                      refreshed,
                       created,
-                      refreshedGroupsProvider,
                     ),
                   );
                 },
                 createOptionLabelBuilder: (query) => 'Create group "$query"',
-                options: [
-                  ...availableGroups.map(
-                    (group) => SearchableSelectOption<int>(
-                      value: group.id,
-                      label: _groupOptionLabel(group, groupsProvider),
-                      searchText: _groupOptionSearchText(group, groupsProvider),
-                    ),
-                  ),
-                ],
                 onChanged: (value) => _handleGroupChanged(value),
                 validator: (value) => value == null ? 'Required' : null,
               ),
@@ -5047,9 +5368,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   ) {
     final item = _item;
     final unit = unitsProvider.findById(_selectedUnitId ?? -1);
-    final availableGroups = groupsProvider.filableItemGroups
-        .where((group) => !group.isArchived)
-        .toList(growable: false);
     final baseItem = _lookupBaseItem(context);
     final combinationGroupNames = (item?.combinationGroupIds ?? const <int>[])
         .map((id) => groupsProvider.findById(id)?.name ?? 'Group #$id')
@@ -5084,31 +5402,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           const SizedBox(height: 12),
           _formRow(
             children: [
-              SearchableSelectField<int>(
+              GroupPickerField(
                 tapTargetKey: ValueKey<String>(
                   'basic-item-group-field${widget.keyScope}',
                 ),
-                value: availableGroups.any(
-                  (group) => group.id == _selectedGroupId,
-                )
-                    ? _selectedGroupId
-                    : null,
+                value: _selectedGroupId,
+                scope: GroupPickerScope.filable,
                 decoration: _fieldDecoration(
                   label: 'Group',
                   helper: 'Move this variant to another group on its own.',
                 ),
                 dialogTitle: 'Group',
-                searchHintText: 'Search group',
                 fieldEnabled: !_isReadOnly,
-                options: [
-                  ...availableGroups.map(
-                    (group) => SearchableSelectOption<int>(
-                      value: group.id,
-                      label: _groupOptionLabel(group, groupsProvider),
-                      searchText: _groupOptionSearchText(group, groupsProvider),
-                    ),
-                  ),
-                ],
                 onChanged: _handleBasicItemGroupChanged,
                 validator: (value) => value == null ? 'Required' : null,
               ),
@@ -5249,10 +5554,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     await materialsProvider.ensureLoaded();
     if (!mounted) return;
 
-    final available = materialsProvider.materials
-        .where((material) => !material.isArchived)
-        .toList(growable: false)
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final available =
+        materialsProvider.materials
+            .where((material) => !material.isArchived)
+            .toList(growable: false)
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
     if (available.isEmpty) {
       setState(() {
         _localError =
@@ -5515,11 +5823,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// the Base Name block left out. Used for the pending-variant preview, which
   /// shows the values under the full name.
   String variantValuesLabel(List<_VariantOption> combo, {bool? useCodes}) =>
-      _composeVariantName(
-        combo,
-        '',
-        byCode: useCodes ?? _useValueCodes,
-      );
+      _composeVariantName(combo, '', byCode: useCodes ?? _useValueCodes);
 
   /// Lays [combo] out in Naming Format order around [baseName]. The 'name'
   /// token emits the base name wherever the user dragged the Base Name block;
@@ -6067,46 +6371,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       name.trim(),
       alias.trim(),
     ].where((entry) => entry.isNotEmpty).join(' / ');
-  }
-
-  String _groupOptionLabel(
-    GroupDefinition group,
-    GroupsProvider groupsProvider,
-  ) {
-    final primaryGroup = _primaryGroupFor(group, groupsProvider);
-    // A combination group is a legitimate home for an item, but it is not the
-    // same kind of thing as a hierarchical one — the list says which is which
-    // rather than leaving two kinds of group looking identical.
-    final kind = group.isCombination ? ' • Set' : '';
-    if (primaryGroup.id == group.id) {
-      return '${group.name}$kind';
-    }
-    return '${group.name}$kind • Primary: ${primaryGroup.name}';
-  }
-
-  String _groupOptionSearchText(
-    GroupDefinition group,
-    GroupsProvider groupsProvider,
-  ) {
-    final primaryGroup = _primaryGroupFor(group, groupsProvider);
-    final kind = group.isCombination ? ' set combination' : '';
-    return '${group.name} ${primaryGroup.name}$kind';
-  }
-
-  GroupDefinition _primaryGroupFor(
-    GroupDefinition group,
-    GroupsProvider groupsProvider,
-  ) {
-    var current = group;
-    final visited = <int>{current.id};
-    while (current.parentGroupId != null) {
-      final parent = groupsProvider.findById(current.parentGroupId);
-      if (parent == null || !visited.add(parent.id)) {
-        break;
-      }
-      current = parent;
-    }
-    return current;
   }
 
   /// Inserts the standard 16px gap between whichever sections are visible, so
@@ -9262,7 +9526,10 @@ class _VariationPanelState extends State<_VariationPanel> {
                         onPressed: widget.busy
                             ? null
                             : () => widget.onDeleteVariant(item),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
                         color: SoftErpTheme.dangerText,
                         visualDensity: VisualDensity.compact,
                         constraints: const BoxConstraints.tightFor(
@@ -9769,76 +10036,17 @@ class _VariationPanelState extends State<_VariationPanel> {
     );
   }
 
-  /// The hierarchical item groups a new combination group can be filed under,
-  /// in tree order with the depth each one sits at. Primary Group and anything
-  /// beneath it are both here — the depth is what tells them apart, since a
-  /// flat list of names cannot say which group is under which.
+  /// Where a new combination group is filed.
   ///
-  /// A group whose parent is not itself in the list (archived, or a combination
-  /// group) is treated as a root so it stays pickable rather than vanishing.
-  List<(GroupDefinition, int)> _nestableParents() {
-    final all = context
-        .watch<GroupsProvider>()
-        .itemGroups
-        .where((group) => !group.isArchived)
-        .toList(growable: false);
-    final ids = {for (final group in all) group.id};
-    final byParent = <int?, List<GroupDefinition>>{};
-    for (final group in all) {
-      final parentId =
-          group.parentGroupId != null && ids.contains(group.parentGroupId)
-          ? group.parentGroupId
-          : null;
-      byParent.putIfAbsent(parentId, () => <GroupDefinition>[]).add(group);
-    }
-    for (final siblings in byParent.values) {
-      siblings.sort(
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      );
-    }
-
-    final ordered = <(GroupDefinition, int)>[];
-    // Stored parent links are cycle-checked server-side, but a walk that trusts
-    // that and is wrong hangs the dialog, so it is guarded here too.
-    final visited = <int>{};
-    void walk(int? parentId, int depth) {
-      for (final group in byParent[parentId] ?? const <GroupDefinition>[]) {
-        if (!visited.add(group.id)) continue;
-        ordered.add((group, depth));
-        walk(group.id, depth + 1);
-      }
-    }
-
-    walk(null, 0);
-    return ordered;
-  }
-
-  /// The lineage of [groupId] as one line — "Primary Group / Finish Goods" —
-  /// for the closed dropdown, where indentation has nothing to line up against.
-  String _groupPathLabel(int groupId) {
-    final provider = context.read<GroupsProvider>();
-    final crumbs = <String>[];
-    final seen = <int>{};
-    int? current = groupId;
-    while (current != null && seen.add(current)) {
-      final group = provider.findById(current);
-      if (group == null) break;
-      crumbs.insert(0, group.name);
-      current = group.parentGroupId;
-    }
-    return crumbs.join(' / ');
-  }
-
-  /// Where a new combination group is filed. Hierarchical item groups only —
-  /// nesting one combination group inside another is not a tree anyone reads.
+  /// The same picker every other group field uses, so a set created here reads
+  /// the way it will read everywhere afterwards. Hierarchical groups only: a
+  /// set inside a set is not a tree anyone reads.
   Widget _parentGroupField() {
-    final parents = _nestableParents();
-    final selected = parents.any((entry) => entry.$1.id == _newGroupParentId)
-        ? _newGroupParentId
-        : null;
-    return DropdownButtonFormField<int?>(
-      initialValue: selected,
-      isExpanded: true,
+    return GroupPickerField(
+      value: _newGroupParentId,
+      scope: GroupPickerScope.hierarchical,
+      nullOptionLabel: 'Top level',
+      dialogTitle: 'Nest under',
       decoration: InputDecoration(
         labelText: 'Nest under',
         helperText: 'Optional — leave as Top level to keep it standalone.',
@@ -9859,26 +10067,6 @@ class _VariationPanelState extends State<_VariationPanel> {
           borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
       ),
-      // Open, the list is a tree; closed, it is the lineage on one line.
-      selectedItemBuilder: (context) => [
-        const Text('Top level', overflow: TextOverflow.ellipsis),
-        for (final (group, _) in parents)
-          Text(_groupPathLabel(group.id), overflow: TextOverflow.ellipsis),
-      ],
-      items: [
-        const DropdownMenuItem<int?>(
-          value: null,
-          child: Text('Top level', overflow: TextOverflow.ellipsis),
-        ),
-        for (final (group, depth) in parents)
-          DropdownMenuItem<int?>(
-            value: group.id,
-            child: Padding(
-              padding: EdgeInsets.only(left: depth * 14.0),
-              child: Text(group.name, overflow: TextOverflow.ellipsis),
-            ),
-          ),
-      ],
       onChanged: (value) => setState(() {
         _error = null;
         _newGroupParentId = value;
@@ -10872,16 +11060,16 @@ class _SelectableChip extends StatelessWidget {
                   ],
                 )
               else
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? SoftErpTheme.accentDeeper
-                      : SoftErpTheme.textPrimary,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected
+                        ? SoftErpTheme.accentDeeper
+                        : SoftErpTheme.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
               if (trailing != null) ...[
                 const SizedBox(width: 6),
                 Icon(trailing, size: 14, color: SoftErpTheme.accentDeeper),
@@ -12416,7 +12604,10 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       previewVariantLabels: (combo) {
         final editor = _baseEditorKey.currentState;
         if (editor == null) return ('', '');
-        return (editor.variantNames(combo).$2, editor.variantValuesLabel(combo));
+        return (
+          editor.variantNames(combo).$2,
+          editor.variantValuesLabel(combo),
+        );
       },
       topLevelProperties:
           _baseEditorKey.currentState?.topLevelProperties ??
