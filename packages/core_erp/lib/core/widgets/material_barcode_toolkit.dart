@@ -1,6 +1,8 @@
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:flutter/material.dart';
 
+import 'package:core_erp/core/services/barcode_codec.dart';
+import 'package:core_erp/core/services/barcode_label_service.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_card.dart';
 import 'package:core_erp/core/widgets/app_info_panel.dart';
@@ -136,16 +138,142 @@ class BarcodeSheetDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          Align(
-            alignment: Alignment.centerRight,
-            child: AppButton(
-              label: 'Close',
-              variant: AppButtonVariant.secondary,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
+          _BarcodeSheetActions(material: material),
         ],
       ),
+    );
+  }
+}
+
+/// Getting the sheet off the screen and onto stock.
+///
+/// A parent material plus its linked children is the real batch case: receive a
+/// coil, split it, and every piece needs its own label in one run. Until this
+/// existed the dialog could show them all and print none of them.
+class _BarcodeSheetActions extends StatefulWidget {
+  const _BarcodeSheetActions({required this.material});
+
+  final MaterialRecord material;
+
+  @override
+  State<_BarcodeSheetActions> createState() => _BarcodeSheetActionsState();
+}
+
+class _BarcodeSheetActionsState extends State<_BarcodeSheetActions> {
+  LabelStock _stock = LabelStock.materialSticker;
+  bool _busy = false;
+
+  /// Canonical codes, not the raw stored ids.
+  ///
+  /// The raw id still scans — the resolver falls back to the legacy columns —
+  /// but it resolves *unverified*, with no check character, and the inspector
+  /// then has to say so. A label being printed today should not be born legacy.
+  List<BarcodeLabel> get _labels {
+    final material = widget.material;
+    final descriptor = <String>[
+      material.grade,
+      material.thickness,
+    ].where((part) => part.trim().isNotEmpty).join(' · ');
+
+    return <BarcodeLabel>[
+      BarcodeLabel(
+        code: BarcodeCodec.canonicalOr('MAT', material.barcode),
+        title: material.name,
+        subtitle: descriptor,
+        lines: <BarcodeFact>[
+          if (material.unit.trim().isNotEmpty)
+            BarcodeFact(label: 'Unit', value: material.unit),
+          if (material.supplier.trim().isNotEmpty)
+            BarcodeFact(label: 'Supplier', value: material.supplier),
+          if (material.location.trim().isNotEmpty)
+            BarcodeFact(label: 'Location', value: material.location),
+        ],
+        footer: material.isParent ? 'Parent' : 'Material',
+      ),
+      for (final child in material.linkedChildBarcodes)
+        BarcodeLabel(
+          code: BarcodeCodec.canonicalOr('MAT', child),
+          title: material.name,
+          subtitle: descriptor,
+          footer: 'Child of ${material.barcode}',
+        ),
+    ];
+  }
+
+  Future<void> _print({required bool multiUp}) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await BarcodeLabelService.printLabels(
+        labels: _labels,
+        stock: _stock,
+        multiUp: multiUp,
+      );
+    } catch (error) {
+      // A printer that is off, out of paper or not installed is ordinary, and a
+      // button that just stays spinning tells nobody what went wrong.
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text('Could not print those labels: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = _labels.length;
+    return Row(
+      children: [
+        Flexible(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<LabelStock>(
+              value: _stock,
+              isDense: true,
+              isExpanded: true,
+              items: <DropdownMenuItem<LabelStock>>[
+                for (final stock in LabelStock.all)
+                  DropdownMenuItem<LabelStock>(
+                    value: stock,
+                    child: Text(
+                      stock.description,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (stock) {
+                      if (stock != null) setState(() => _stock = stock);
+                    },
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Two ways out, because a workshop on day one has a plain office
+        // printer and buys a thermal roll later.
+        AppButton(
+          label: count == 1 ? 'Print label' : 'Print $count labels',
+          icon: Icons.print_outlined,
+          variant: AppButtonVariant.secondary,
+          onPressed: _busy ? null : () => _print(multiUp: false),
+        ),
+        const SizedBox(width: 8),
+        AppButton(
+          label: 'Print on A4',
+          icon: Icons.grid_on_outlined,
+          onPressed: _busy ? null : () => _print(multiUp: true),
+        ),
+        const SizedBox(width: 8),
+        AppButton(
+          label: 'Close',
+          variant: AppButtonVariant.secondary,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
     );
   }
 }

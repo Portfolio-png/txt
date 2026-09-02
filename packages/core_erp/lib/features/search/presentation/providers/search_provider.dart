@@ -1,3 +1,4 @@
+import '../../domain/universal_barcode_entity.dart';
 import 'package:flutter/material.dart';
 import '../../domain/search_result.dart';
 import '../../data/repositories/search_repository.dart';
@@ -20,6 +21,36 @@ class SearchProvider extends ChangeNotifier {
   List<SearchResult> get results => _results;
   List<String> get history => _history;
 
+  bool _barcodeFocusRequested = false;
+
+  /// Whether the overlay should open with the barcode field ready rather than
+  /// the search field.
+  bool get barcodeFocusRequested => _barcodeFocusRequested;
+
+  /// Opens the overlay for someone holding a code rather than thinking of a
+  /// search. The scanner gun needs no entry point — it types wherever it is
+  /// pointed — but a code read off a smudged label by eye has to be typed
+  /// somewhere, and until now that meant opening search and knowing which of
+  /// the two fields was the right one.
+  void openBarcodeLookup() {
+    _barcodeFocusRequested = true;
+    if (!_isOverlayVisible) {
+      _isOverlayVisible = true;
+      if (_history.isEmpty) {
+        _loadHistory();
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Read once. Left standing it would drag focus back to the barcode field
+  /// every time the overlay rebuilt, which is most keystrokes of a search.
+  bool consumeBarcodeFocusRequest() {
+    if (!_barcodeFocusRequested) return false;
+    _barcodeFocusRequested = false;
+    return true;
+  }
+
   void toggleOverlay() {
     _isOverlayVisible = !_isOverlayVisible;
     if (_isOverlayVisible && _history.isEmpty) {
@@ -28,6 +59,7 @@ class SearchProvider extends ChangeNotifier {
     if (!_isOverlayVisible) {
       _query = '';
       _results = const [];
+      _barcodeFocusRequested = false;
     }
     notifyListeners();
   }
@@ -37,6 +69,7 @@ class SearchProvider extends ChangeNotifier {
       _isOverlayVisible = false;
       _query = '';
       _results = const [];
+      _barcodeFocusRequested = false;
       notifyListeners();
     }
   }
@@ -66,6 +99,28 @@ class SearchProvider extends ChangeNotifier {
       }
     } catch (_) {
       _results = const [];
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Resolves any barcode to what it names, with its chain of custody.
+  ///
+  /// Returns a result even when nothing matched — "not found" carries whether
+  /// the code was one of ours, which is the difference between a deleted record
+  /// and a supplier's own label, and the caller has to be able to say which.
+  Future<UniversalBarcodeEntity> scanBarcode(String code) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      return await _repository.scanBarcode(code);
+    } catch (_) {
+      return UniversalBarcodeEntity(
+        code: code,
+        found: false,
+        resolution: const BarcodeResolution(),
+      );
     } finally {
       _isLoading = false;
       notifyListeners();

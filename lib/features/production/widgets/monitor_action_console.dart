@@ -8,6 +8,9 @@ import '../../production_pipelines/data/repositories/pipeline_run_repository.dar
 import 'package:core_erp/features/orders/domain/order_inputs.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/shared/widgets/output_variation_prompt.dart';
+import '../../production_pipelines/domain/pipeline_template.dart';
 
 class RemoteActionConsole extends StatelessWidget {
   const RemoteActionConsole({super.key, required this.provider});
@@ -107,10 +110,29 @@ class RemoteActionConsole extends StatelessWidget {
       if (run.runId != null) {
         runId = run.runId!;
       } else {
+        // A run started here answers to no order line, so nothing downstream
+        // can say which variation it produced — and completing it would
+        // decline to mint rather than guess. The operator standing at the
+        // machine does know, so ask them, once, here.
+        //
+        // Only when there is something to ask: a base item, or an output this
+        // workspace does not carry as an item, has no variation to state and
+        // must not be interrupted with an empty dialog.
+        final target = template.linkedOrderId == null
+            ? await promptStandaloneRunOutputVariation(
+                context,
+                outputName: _finalOutputName(template),
+                items: context.read<ItemsProvider>().items,
+              )
+            : null;
+        if (!context.mounted) return;
+
         try {
           final newRun = await repo.createRun(
             template.id,
             name: '${template.name} Run',
+            outputVariationLeafNodeId: target?.variationLeafNodeId,
+            outputVariationPathLabel: target?.variationPathLabel,
           );
           runId = newRun.id;
         } catch (e) {
@@ -119,6 +141,8 @@ class RemoteActionConsole extends StatelessWidget {
           final newRun = await repo.createRun(
             template.id,
             name: '${template.name} Run',
+            outputVariationLeafNodeId: target?.variationLeafNodeId,
+            outputVariationPathLabel: target?.variationPathLabel,
           );
           runId = newRun.id;
         }
@@ -203,4 +227,15 @@ class _ConsoleAction extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What the template says it finally produces.
+///
+/// The last non-intermediate node is the one whose output leaves the factory;
+/// intermediate nodes name half-finished things nobody dispatches.
+String _finalOutputName(PipelineTemplate template) {
+  final finalNode =
+      template.nodes.where((node) => !node.isIntermediate).lastOrNull ??
+          (template.nodes.isEmpty ? null : template.nodes.last);
+  return finalNode?.outputs.firstOrNull?.trim() ?? '';
 }

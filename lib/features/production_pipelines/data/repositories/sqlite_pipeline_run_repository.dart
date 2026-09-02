@@ -167,7 +167,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting}) async {
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting, int? outputVariationLeafNodeId, String? outputVariationPathLabel}) async {
     final db = await _dbHelper.database;
     final template = await getTemplate(templateId);
     if (template == null) {

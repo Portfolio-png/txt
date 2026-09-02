@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../domain/universal_barcode_entity.dart';
 import '../../domain/search_result.dart';
 import 'search_repository.dart';
 
@@ -46,6 +47,29 @@ class ApiSearchRepository implements SearchRepository {
       return payload['result'] as Map<String, dynamic>;
     }
     throw Exception(payload['error'] ?? 'Failed to lookup barcode');
+  }
+
+  @override
+  Future<UniversalBarcodeEntity> scanBarcode(String code) async {
+    final uri = Uri.parse('$baseUrl/api/scan/${Uri.encodeComponent(code)}');
+    final response = await _client.get(uri);
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+
+    // A 404 is an answer, not a failure. It carries whether the code was one of
+    // ours — which is the difference between "this record is gone" and "this is
+    // not our sticker", and the caller needs to say which.
+    final scan = payload['scan'];
+    if (scan is Map) {
+      return UniversalBarcodeEntity.fromJson(scan.cast<String, dynamic>());
+    }
+    if (response.statusCode == 404) {
+      return UniversalBarcodeEntity(
+        code: code,
+        found: false,
+        resolution: const BarcodeResolution(),
+      );
+    }
+    throw Exception(payload['error'] ?? 'Failed to scan barcode');
   }
 
   @override

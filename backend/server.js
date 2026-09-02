@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const compression = require('compression');
 const { Server } = require('socket.io');
 const { Bonjour } = require('bonjour-service');
 const {
@@ -12,6 +13,9 @@ const {
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const cors = require('cors');
 const crypto = require('crypto');
+// The universal barcode codec: one code space over every entity, derived
+// from stable ids rather than minted, so nothing can be allocated twice.
+const barcodes = require('./kernel/barcodes');
 const fs = require('fs');
 const { EventEmitter } = require('events');
 const { imageSize } = require('image-size');
@@ -99,25 +103,165 @@ function parseBooleanEnv(value, fallback = false) {
 // ---------------------------------------------------------
 const changeEmitter = new EventEmitter();
 
-async function logChange(tableName, recordId, eventType) {
+/// Tables whose changelog rows are written by database triggers
+/// (migrations/040-changelog-triggers.sql) rather than by application code.
+///
+/// `logChange` must not insert for these or every change would be recorded
+/// twice — once by the trigger, once by the caller — and a replica would
+/// process each delta a second time for no reason.
+const TRIGGER_LOGGED_TABLES = new Set([
+  'materials', 'item_variation_nodes', 'order_items', 'order_headers',
+  'delivery_challan_items', 'delivery_challans', 'items', 'units',
+  'groups', 'pipeline_templates', 'pipeline_runs', 'machines',
+  'dies', 'clients', 'vendors', 'departments', 'inventory_stock_positions',
+]);
+
+/// The highest changelog row already pushed to connected clients.
+///
+/// Initialised to the current head at boot, so starting the server does not
+/// replay the whole history at everyone who happens to be connected.
+let lastEmittedChangeId = 0;
+
+/// Pushes changelog rows that no connected client has been told about yet.
+///
+/// Triggers can write the changelog but cannot notify Node, so the live stream
+/// tails the table instead of being emitted alongside each write. That is what
+/// keeps trigger-written changes — including ones made by a migration or by
+/// sqlite3 on the box — reaching a connected client, rather than only being
+/// found on the next reconnect.
+///
+/// Never throws: a business action must not fail because its notification could
+/// not be sent, and an undelivered event is recovered by the client's `since`
+/// cursor on reconnect.
+/// How many changelog rows to keep.
+///
+/// The table grows with every write and is never read except by a client
+/// catching up, so it needs a ceiling. The number has to exceed the largest gap
+/// any client could return from: below it, a client that was away too long
+/// finds its cursor pointing at pruned history and takes a full snapshot
+/// instead — correct, just expensive.
+const CHANGELOG_RETENTION = 50000;
+
+/// Drops changelog history no client could still be catching up from.
+///
+/// Never prunes above the live push cursor, so a row cannot be removed between
+/// being written and being delivered.
+/// Moves the live-push cursor to the current head without emitting anything.
+///
+/// Used after a wipe-and-reseed. Seeding writes through the triggers, so a
+/// reseeded workspace leaves thousands of changelog rows the cursor has never
+/// seen — and the next drain would push every one of them at every connected
+/// client, describing the construction of a workspace they should simply
+/// reload. A client whose own cursor is now meaningless takes a fresh snapshot,
+/// which is what an unrecognised `since` already does.
+async function resyncChangelogCursor() {
   try {
-    const result = await new Promise((resolve, reject) => {
-      db.run(
-        `INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES (?, ?, ?, datetime('now'))`,
-        [tableName, recordId, eventType],
-        function (err) {
-          if (err) reject(err);
-          else resolve(this);
-        }
-      );
-    });
-    // Emit event for SSE stream
-    changeEmitter.emit('table-change', {
-      id: result.lastID,
-      table: tableName,
-      recordId: recordId,
-      eventType: eventType
-    });
+    const head = await get('SELECT MAX(id) AS maxId FROM changelog');
+    lastEmittedChangeId = Number(head?.maxId || 0);
+  } catch (_) {
+    // Leaving the cursor where it is only risks re-sending, never losing.
+  }
+  return lastEmittedChangeId;
+}
+
+async function pruneChangelog() {
+  try {
+    const row = await get('SELECT COUNT(*) AS total, MAX(id) AS head FROM changelog');
+    const total = Number(row?.total || 0);
+    if (total <= CHANGELOG_RETENTION) return 0;
+    const cutoff = Math.min(
+      Number(row.head) - CHANGELOG_RETENTION,
+      lastEmittedChangeId,
+    );
+    if (cutoff <= 0) return 0;
+    const result = await run('DELETE FROM changelog WHERE id <= ?', [cutoff]);
+    return result?.changes || 0;
+  } catch (error) {
+    console.error('[Realtime] Could not prune the changelog:', error.message);
+    return 0;
+  }
+}
+
+async function drainChangelog() {
+  try {
+    const rows = await all(
+      `SELECT id, table_name, record_id, event_type
+       FROM changelog WHERE id > ? ORDER BY id ASC LIMIT 500`,
+      [lastEmittedChangeId],
+    );
+    for (const row of rows) {
+      lastEmittedChangeId = Math.max(lastEmittedChangeId, Number(row.id));
+      changeEmitter.emit('table-change', {
+        id: row.id,
+        table: row.table_name,
+        recordId: row.record_id,
+        eventType: row.event_type,
+      });
+    }
+    return rows.length;
+  } catch (error) {
+    console.error('[Realtime] Failed to drain the changelog:', error.message);
+    return 0;
+  }
+}
+
+/// Recreates the changelog triggers dropped around a workspace wipe.
+///
+/// Reads the migration rather than repeating 51 trigger definitions here: two
+/// copies of the same DDL is how one of them ends up a table short, and the
+/// symptom would be a table that silently stops replicating.
+async function restoreChangelogTriggers() {
+  try {
+    // Both families. 040 records that a row changed; 041 records which OTHER
+    // row that change is visible on. Restoring one without the other leaves
+    // derived values — an item's variation tree, an order line's status —
+    // silently stale after the first factory reset.
+    for (const file of [
+      '040-changelog-triggers.sql',
+      '041-derived-field-triggers.sql',
+      '042-challan-status-order-lines.sql',
+    ]) {
+      const sql = fs.readFileSync(path.join(__dirname, 'migrations', file), 'utf8');
+      for (const statement of sql.split('END;')) {
+        const trimmed = statement.trim();
+        if (!trimmed || !trimmed.includes('CREATE TRIGGER')) continue;
+        const body = trimmed.slice(trimmed.indexOf('CREATE TRIGGER'));
+        await run(`${body}\nEND;`).catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.error('[Realtime] Could not restore changelog triggers:', error.message);
+  }
+}
+
+/// Records that something changed, and pushes it.
+///
+/// For a table with triggers this only pushes: the row's own change was already
+/// written by the database, and inserting again would have a replica fetch the
+/// same record twice for nothing.
+///
+/// `force` is for the other kind of change — announcing that a *related* entity
+/// is now stale. Filing items into a combination group writes a link table, so
+/// the `items` rows never change and no trigger fires, but every one of those
+/// items now belongs somewhere new and the group sidebar reads them. Triggers
+/// record row changes; this records logical ones, and only a caller knows the
+/// difference.
+async function logChange(tableName, recordId, eventType, options = {}) {
+  try {
+    // A trigger already recorded it; only the push is still needed.
+    if (options.force || !TRIGGER_LOGGED_TABLES.has(tableName)) {
+      await new Promise((resolve, reject) => {
+        db.run(
+          `INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES (?, ?, ?, datetime('now'))`,
+          [tableName, recordId, eventType],
+          function (err) {
+            if (err) reject(err);
+            else resolve(this);
+          }
+        );
+      });
+    }
+    await drainChangelog();
   } catch (err) {
     console.error(`[Realtime] Failed to log change for ${tableName} ${recordId}:`, err);
     // Ignore error so we don't break transactions if the changelog insert fails
@@ -492,8 +636,14 @@ function buildCorsOptions() {
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(morgan('combined'));
+app.use(compression());
 app.use(cors(buildCorsOptions()));
 app.use(express.json());
+
+const cacheMasterData = (req, res, next) => {
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  next();
+};
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // What is actually running here.
@@ -2148,6 +2298,11 @@ function rowToMaterialDto(row) {
   return {
     id: row.id,
     barcode: row.barcode,
+    // Exposed because the list endpoint ORDERS BY it — `ORDER BY kind ASC,
+    // created_at DESC, barcode ASC` — and without it no client can reproduce
+    // the order it was given. A local replica reading these rows back would
+    // list them differently from the server for no visible reason.
+    kind: row.kind || '',
     name: row.name,
     type: row.type,
     grade: row.grade || '',
@@ -3083,6 +3238,10 @@ async function rowToRun(row) {
     overrides: parseJson(row.overrides_json, {}),
     nodeStatuses: parseJson(row.node_status_json, {}),
     scrapRouting: row.scrap_routing || 'inventory',
+    // What this run says it is making, when no order line says it for them.
+    // 0 means unstated, which is a different thing from a base item.
+    outputVariationLeafNodeId: Number(row.output_variation_leaf_node_id || 0) || 0,
+    outputVariationPathLabel: row.output_variation_path_label || '',
     nodeMetrics,
     batches: parseJson(row.batches_json, []),
     attachedBarcodeInputs,
@@ -5911,6 +6070,20 @@ async function initDb() {
   // this, which is why payroll and the client portal existed only on
   // databases where someone had applied them by hand.
   await runPendingMigrations({ db, run, all });
+
+  // Start the live push at the current head, so booting the server does not
+  // replay the entire changelog at whoever happens to connect. A client that
+  // was away catches up through its own `since` cursor instead, which is the
+  // mechanism built for exactly that.
+  try {
+    const head = await get('SELECT MAX(id) AS maxId FROM changelog');
+    lastEmittedChangeId = Number(head?.maxId || 0);
+    // Boot is the natural moment: nothing is mid-catch-up, and it keeps the
+    // table from growing without bound across a long-lived deployment.
+    await pruneChangelog();
+  } catch (_) {
+    lastEmittedChangeId = 0;
+  }
 
   dbReady = true;
 }
@@ -9280,6 +9453,40 @@ async function rowToChallanTemplateDto(row, { includeMappings = true } = {}) {
 
 async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
   const items = includeItems ? await getDeliveryChallanItems(row.id) : [];
+  
+  // Aggregates, so a list row can say something useful without carrying every
+  // line. The list previously shipped the whole `items` array for every challan
+  // — 26% of a 130 KB response, for challans nobody had opened.
+  //
+  // Pieces and weight are summed separately on purpose. These lines are mixed:
+  // some are counted (`quantity_pcs`), some are weighed (`weight`), and adding
+  // the two together would produce a number that is not a quantity of anything.
+  let lineCount = 0;
+  let totalQty = 0;
+  let totalWeight = 0;
+  if (includeItems) {
+    lineCount = items.length;
+    // Raw rows here, not DTOs — getDeliveryChallanItems is a SELECT *, so the
+    // columns are snake_case. Reading `quantityPcs` off them silently summed
+    // undefined to zero, which looks exactly like a challan of weighed goods.
+    totalQty = items.reduce(
+      (sum, item) => sum + Number(item.quantity_pcs ?? item.quantityPcs ?? 0),
+      0,
+    );
+    totalWeight = items.reduce((sum, item) => sum + Number(item.weight || 0), 0);
+  } else {
+    const agg = await get(
+      `SELECT COUNT(*) AS lineCount,
+              COALESCE(SUM(quantity_pcs), 0) AS totalQty,
+              COALESCE(SUM(weight), 0) AS totalWeight
+       FROM delivery_challan_items WHERE challan_id = ?`,
+      [row.id],
+    );
+    lineCount = Number(agg?.lineCount || 0);
+    totalQty = Number(agg?.totalQty || 0);
+    totalWeight = Number(agg?.totalWeight || 0);
+  }
+
   let orderIds = await getDeliveryChallanOrderIds(row.id);
   if (orderIds.length === 0 && Number(row.order_id || 0) > 0) {
     orderIds = [Number(row.order_id || 0)];
@@ -9304,7 +9511,7 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
   );
   const assets = await Promise.all(assetRows.map(rowToUploadedAssetDto));
 
-  return {
+  const dto = {
     id: row.id,
     type: normalizeChallanType(row.type),
     purpose: row.purpose || 'trading',
@@ -9351,11 +9558,54 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     updated_by: row.updated_by || null,
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
-    items: items.map(rowToDeliveryChallanItemDto),
+    lineCount,
+    // The name the client already parses (it falls back to `items.length`,
+    // which is 0 once the array is gone). Sending it keeps the list row's
+    // "3 items" label correct without a client change.
+    itemsCount: lineCount,
+    totalWeight,
+    totalQty,
+    ...(includeItems ? { items: items.map(rowToDeliveryChallanItemDto) } : {}),
     items_count: Number(row.items_count || items.length || 0),
     assets: assets,
   };
+
+  if (!includeItems) {
+    // Fields no list row renders, dropped from the summary only — the detail
+    // endpoint still carries every one of them, so the editor, the printable
+    // document and the report generator are unaffected.
+    //
+    // Verified by diffing the response's keys against every `json['...']` the
+    // Flutter model reads: these are never parsed, in either spelling. On a
+    // real workspace they were 19% of the list payload — a company profile
+    // snapshot and a reconciliation blob per challan, repeated a hundred times
+    // for rows nobody had opened.
+    for (const field of SUMMARY_OMITTED_CHALLAN_FIELDS) {
+      delete dto[field];
+    }
+  }
+  return dto;
 }
+
+/// Carried on a challan but never read by a list row.
+///
+/// Kept as a named list rather than by omitting them at construction, so the
+/// full shape stays visible in one place and a new field is opt-out rather than
+/// accidentally dropped.
+const SUMMARY_OMITTED_CHALLAN_FIELDS = Object.freeze([
+  'companyProfileSnapshot',
+  'company_profile_snapshot',
+  'reconciliationJson',
+  'reconciliation_json',
+  'materialOwnerClientId',
+  'material_owner_client_id',
+  'materialOwnerClientName',
+  'material_owner_client_name',
+  'materialOwnerGstin',
+  'material_owner_gstin',
+  'created_by',
+  'updated_by',
+]);
 
 async function generateChallanNumber(type = 'delivery') {
   const normalizedType = normalizeChallanType(type);
@@ -11006,7 +11256,7 @@ async function listDeliveryChallans({
     `,
     params,
   );
-  return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row)));
+  return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row, { includeItems: false })));
 }
 
 async function getOrderForDeliveryChallan(orderId) {
@@ -11971,7 +12221,15 @@ async function mintReceivedMaterial({
   return barcode;
 }
 
-async function issueDeliveryChallan(id, actor = null) {
+/// Issues a challan: moves stock, mints materials, and records custody.
+///
+/// `recordCustody` exists for the demo and scenario seeders. They call this to
+/// build a plausible-looking workspace, and every such call was writing real
+/// custody events for invented history into `barcode_ledger` — a table whose
+/// triggers forbid UPDATE and DELETE, so a reseed permanently mixed fiction into
+/// the one record that is supposed to be trustworthy. A trail you cannot trust
+/// is worse than no trail, because people act on it.
+async function issueDeliveryChallan(id, actor = null, { recordCustody = true } = {}) {
   const existing = await getDeliveryChallanRowById(id);
   if (!existing) {
     const error = new Error('Delivery challan not found.');
@@ -12146,6 +12404,55 @@ async function issueDeliveryChallan(id, actor = null) {
         ]
       );
 
+      // The custody event for this line.
+      //
+      // Written here rather than at the end of the transaction because this is
+      // the only place that knows all of it at once: the barcode just minted,
+      // the challan it came in on, the quantity, and who issued it. Reassembling
+      // that afterwards from the rows would be guesswork.
+      const challanCode = barcodes.encode(
+        isReception ? 'RC' : 'DC',
+        existing.challan_no,
+      );
+      if (recordCustody) {
+        if (isReception) {
+          // Per line, because each line mints its own material and the event is
+          // that material's own beginning.
+          await recordLedgerEvent({
+            subjectBarcode: barcodes.encode('MAT', receivedBarcode || ''),
+            eventType: 'INWARD_RECEIVED',
+            actorName: actor?.name || 'System',
+            // Built by hand before LOC was a real type, so it carried no check
+            // character and resolved to nothing.
+            locationBarcode: locationId ? barcodes.encode('LOC', locationId) : null,
+            documentBarcode: challanCode,
+            orderBarcode: existing.order_no
+              ? barcodes.encode('ORD', existing.order_no)
+              : null,
+            // Where it came from. Recorded here because this is the only moment
+            // that knows it; a vendor is not a second event at the same instant.
+            parents: existing.vendor_id
+              ? [barcodes.encode('VEN', existing.vendor_id)].filter(Boolean)
+              : [],
+            children: receivedBarcode ? [barcodes.encode('MAT', receivedBarcode)] : [],
+            metrics: {
+              qty: movementQty,
+              unit: movementUom,
+              itemId,
+              variationLeafNodeId: leafNodeId || null,
+              vendor: existing.vendor_name || '',
+            },
+            notes: String(item.particulars || ''),
+          });
+        }
+        // A delivery writes nothing here. Its subject is the challan — the same
+        // challan for every line — so a per-line emit wrote a twelve-line
+        // consignment into the ledger twelve times, each row identical but for
+        // its metrics. That is not twelve happenings, and an append-only table
+        // cannot be de-duplicated afterwards. One event is written after the
+        // loop instead.
+      }
+
       const delta = isReception ? movementQty : -movementQty;
       await applyVariationStockDelta({
         itemId,
@@ -12190,6 +12497,120 @@ async function issueDeliveryChallan(id, actor = null) {
           [now, id, sheet.id],
         );
       }
+    }
+    // The consignment leaving, as one event.
+    //
+    // Built from the challan's own lines rather than from the stock loop above,
+    // because a document-only challan (maintain_stocks off) still dispatches
+    // goods — it just does not track them. Custody is about who had the thing,
+    // not about whether inventory was adjusted.
+    const isDeliveryDispatch = normalizeChallanType(existing.type) !== 'reception';
+    if (recordCustody && isDeliveryDispatch && items.length) {
+
+      // What actually went out, named as things rather than as a class of goods.
+      //
+      // This is the hinge of the whole trail. Without it a dispatch records only
+      // an item id and a variation, so scanning a delivered piece reaches "some
+      // of this kind of thing" and stops — the run that made it, the material it
+      // was cut from and the vendor it came from are all unreachable from the
+      // customer end, which is the end complaints arrive at.
+      //
+      // `production_run_id` is already on the line, written at save and checked
+      // by validateProductionRunForChallanLine above, so this is a link that was
+      // sitting there unused. It is nullable, and a line without one is recorded
+      // as such rather than guessed at.
+      const dispatchParents = [];
+      for (const line of items) {
+        if (line.id) {
+          const lineCode = barcodes.encode('DCL', line.id);
+          if (lineCode) dispatchParents.push(lineCode);
+        }
+        if (!line.production_run_id) continue;
+        const producedBy = await get(
+          'SELECT run_code, source_metadata_json FROM production_runs WHERE id = ?',
+          [line.production_run_id],
+        );
+        const runCode = producedBy && barcodes.encode('MFG', producedBy.run_code);
+        if (runCode) dispatchParents.push(runCode);
+
+        // The specific lot, which is one hop further than the run.
+        //
+        // A run mints a lot every time it completes, so "made by run 42" does
+        // not identify the physical thing in the customer's hands — and a
+        // defect report starts by scanning that thing. Naming the lot is what
+        // turns the trail from "some of this kind of goods" into "this piece".
+        //
+        // Two hops to find it: production_runs.source_metadata_json remembers
+        // which pipeline run produced it, and minting the lot wrote an
+        // inventory movement against that pipeline run. Derived rather than
+        // chosen in the UI, so every challan line that already names a run gets
+        // its lot without anyone re-entering anything.
+        let lotCode = String(line.lot_code || '').trim();
+        if (!lotCode) {
+          const pipelineRunId = parseJsonOrArray(producedBy?.source_metadata_json, {})?.pipelineRunId;
+          if (pipelineRunId) {
+            const producedLot = await get(
+              `SELECT lot_code FROM inventory_movements
+               WHERE reference_type = 'pipeline_run' AND reference_id = ?
+                 AND reason_code = 'production_output'
+                 AND TRIM(COALESCE(lot_code, '')) != ''
+               ORDER BY created_at DESC, id DESC
+               LIMIT 1`,
+              [String(pipelineRunId)],
+            );
+            lotCode = String(producedLot?.lot_code || '').trim();
+            if (lotCode) {
+              // Written back, so which lot shipped is a recorded fact about this
+              // dispatch rather than something re-derived later against data
+              // that has moved on. The run may mint again tomorrow; this line
+              // shipped this lot.
+              await run(
+                'UPDATE delivery_challan_items SET lot_code = ?, material_barcode = ? WHERE id = ?',
+                [lotCode, lotCode, line.id],
+              );
+            }
+          }
+        }
+        if (lotCode) {
+          const lotBarcode = barcodes.encode('MAT', lotCode);
+          if (lotBarcode) dispatchParents.push(lotBarcode);
+          line.lot_code = lotCode;
+        }
+      }
+      // Built after the loop, so a lot derived above is on the line it describes.
+      const dispatchedLines = items.map((line) => ({
+        particulars: String(line.particulars || ''),
+        qty: Number(line.quantity_pcs || 0) || Number(line.weight || 0) || 0,
+        itemId: line.item_id || null,
+        variationLeafNodeId: line.variation_leaf_node_id || null,
+        productionRunId: line.production_run_id || null,
+        lotCode: String(line.lot_code || '') || null,
+      }));
+
+      const challanCode = barcodes.encode(
+        normalizeChallanType(existing.type) === 'reception' ? 'RC' : 'DC',
+        existing.challan_no,
+      );
+      await recordLedgerEvent({
+        subjectBarcode: challanCode,
+        eventType: 'DISPATCH_PACKED',
+        actorName: actor?.name || 'System',
+        documentBarcode: challanCode,
+        orderBarcode: existing.order_no
+          ? barcodes.encode('ORD', existing.order_no)
+          : null,
+        parents: dispatchParents,
+        metrics: {
+          lineCount: dispatchedLines.length,
+          totalQty: dispatchedLines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
+          // Stated rather than inferred from an empty list: "nothing was linked"
+          // and "every line was linked" must not look the same to a reader.
+          linesWithProductionRun: dispatchedLines.filter((line) => line.productionRunId).length,
+          linesWithLot: dispatchedLines.filter((line) => line.lotCode).length,
+          lines: dispatchedLines,
+        },
+        notes: existing.customer_name || '',
+      });
     }
     await run(
       `
@@ -13736,8 +14157,130 @@ async function getOrderRowById(id) {
   `, [id]);
 }
 
-async function getOrders() {
-  return all(`
+/// The order list, optionally narrowed and paged.
+///
+/// Called with no arguments it behaves exactly as it always did — every order,
+/// newest first — because several internal callers and the whole of the app's
+/// working set still depend on that. Narrowing and paging are opt-in, so
+/// nothing is silently truncated by a caller that has not been moved yet.
+///
+/// The search matches what the Flutter client used to do in memory across the
+/// same eight fields. `status` is computed per row (from the pipeline runs
+/// assigned to it, falling back to the stored column), so the filter has to be
+/// applied *after* that computation — hence the wrapping select rather than a
+/// WHERE on order_items.
+/// The WHERE for a narrowed order query, built once.
+///
+/// Shared by the page and its count so the two cannot drift — a count that
+/// disagrees with its own page is how "load more" ends up either looping
+/// forever or hiding rows.
+function buildOrderFilter({ search = '', clientId = null, statuses = null, ids = null } = {}) {
+  const conditions = [];
+  const params = [];
+
+  const term = String(search || '').trim().toLowerCase();
+  if (term) {
+    const like = `%${term}%`;
+    // The same eight fields the Flutter list used to filter in memory, so the
+    // two agree exactly. `status` is the computed one from the wrapping select.
+    conditions.push(`(
+      LOWER(COALESCE(order_no, '')) LIKE ?
+      OR LOWER(COALESCE(client_name, '')) LIKE ?
+      OR LOWER(COALESCE(po_number, '')) LIKE ?
+      OR LOWER(COALESCE(client_code, '')) LIKE ?
+      OR LOWER(COALESCE(item_name, '')) LIKE ?
+      OR LOWER(COALESCE(variation_path_label, '')) LIKE ?
+      OR LOWER(COALESCE(status, '')) LIKE ?
+      OR CAST(COALESCE(quantity, 0) AS TEXT) LIKE ?
+    )`);
+    params.push(like, like, like, like, like, like, like, like);
+  }
+
+  if (Number(clientId || 0) > 0) {
+    conditions.push('client_id = ?');
+    params.push(Number(clientId));
+  }
+
+  // What the production order picker and challan order-selection ask for:
+  // "the ones still open", rather than every order ever placed.
+  const statusList = Array.isArray(statuses)
+    ? statuses.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  if (statusList.length) {
+    conditions.push(`status IN (${statusList.map(() => '?').join(', ')})`);
+    params.push(...statusList);
+  }
+
+  // Asking for specific ids and matching none must return NOTHING.
+  //
+  // Parsing happens here rather than at the caller so the two cases stay
+  // distinguishable. When the caller filtered first, an id that failed to
+  // coerce — `ORD-2026-014`, say — arrived as an empty list, indistinguishable
+  // from "no ids requested", so the clause was dropped and the query returned
+  // the whole table. A caller asking for one record got all of them, which for
+  // a replica means "this record is now every record".
+  if (Array.isArray(ids) && ids.length) {
+    const idList = ids
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (idList.length) {
+      conditions.push(`id IN (${idList.map(() => '?').join(', ')})`);
+      params.push(...idList);
+    } else {
+      // Requested, none usable. An impossible condition is the honest answer.
+      conditions.push('1 = 0');
+    }
+  }
+
+  return {
+    where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+    params,
+  };
+}
+
+/// The order list, optionally narrowed and paged.
+///
+/// Called with no arguments it behaves exactly as it always did — every order,
+/// newest first — because callers that have not been moved still depend on
+/// that. Narrowing and paging are opt-in, so nothing is silently truncated.
+///
+/// `status` is computed per row (from the pipeline runs assigned to it, falling
+/// back to the stored column), so filters apply *after* that computation —
+/// hence the wrapping select rather than a WHERE on order_items.
+async function getOrders(options = {}) {
+  const { where, params } = buildOrderFilter(options);
+  const limit = Number(options.limit || 0);
+  const offset = Math.max(0, Number(options.offset) || 0);
+
+  let paging = '';
+  const pagingParams = [];
+  if (limit > 0) {
+    paging = 'LIMIT ? OFFSET ?';
+    pagingParams.push(limit, offset);
+  }
+
+  return all(
+    `
+    SELECT * FROM (${ORDER_LIST_SELECT}) ${where}
+    ORDER BY datetime(created_at) DESC, id DESC
+    ${paging}
+    `,
+    [...params, ...pagingParams],
+  );
+}
+
+/// How many orders a narrowing matches, so a paged caller can say what it is
+/// showing a page *of* rather than implying the page is everything.
+async function countOrders(options = {}) {
+  const { where, params } = buildOrderFilter(options);
+  const row = await get(
+    `SELECT COUNT(*) AS total FROM (${ORDER_LIST_SELECT}) ${where}`,
+    params,
+  );
+  return Number(row?.total || 0);
+}
+
+const ORDER_LIST_SELECT = `
     SELECT o.*,
       (SELECT SUM(dci.quantity_pcs) 
        FROM delivery_challan_items dci 
@@ -13756,10 +14299,9 @@ async function getOrders() {
          WHERE opa.order_item_id = o.id
         ), o.status
       ) AS status
-    FROM order_items o 
-    ORDER BY datetime(o.created_at) DESC, o.id DESC
-  `);
-}
+    FROM order_items o
+`;
+
 
 const ALLOWED_PO_CONTENT_TYPES = new Set([
   'application/pdf',
@@ -19054,6 +19596,39 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
       actor,
       createdAt: now,
     });
+
+    // Stock physically changed hands between two places. Only 'transfer' is a
+    // move: 'receive', 'consume' and 'issue' are already told by the events
+    // that cause them, and re-recording them here would say the same thing
+    // twice in a table that cannot be edited afterwards.
+    //
+    // Locations are strings ('MAIN', a bin id), not records — there is no
+    // location entity and so no LOC barcode type to point at. Rather than
+    // invent one, the two ends go into metrics as what they actually are. That
+    // is an honest amputation: the move is recorded and readable, and it
+    // becomes a real link the day locations become records.
+    // A transfer whose two ends are the same place moved nothing. The transfer
+    // composer only validates "From", so "To" can be left equal to it, and the
+    // resulting no-op would otherwise be recorded forever as a move.
+    if (movementType === 'transfer' && fromLocationId !== toLocationId) {
+      await recordLedgerEvent({
+        subjectBarcode: barcodes.encode('MAT', material.barcode),
+        eventType: 'LOCATION_MOVED',
+        actorName: actor || 'System',
+        // Where it now is. One column, two ends — the destination is the one
+        // that answers "what is on this rack", which is the question someone
+        // scanning a rack is asking. Both ends stay in metrics.
+        locationBarcode: toLocationId ? barcodes.encode('LOC', toLocationId) : null,
+        metrics: {
+          qty: primaryQty,
+          unit: uom || '',
+          from: fromLocationId || '',
+          to: toLocationId || '',
+          lotCode: lotCode || '',
+        },
+        notes: material.name || '',
+      });
+    }
     if (useTransaction) {
       await run('COMMIT');
     }
@@ -19697,7 +20272,19 @@ async function ensureDemoMaterialsPresent() {
   }
 }
 
-async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting = 'inventory', actor = null) {
+async function createRunFromTemplate(
+  templateId,
+  name,
+  orderNo,
+  orderItemId,
+  scrapRouting = 'inventory',
+  actor = null,
+  // What this run is making, when it is not being made for an order line.
+  // An operator starting a run to build stock usually knows; before this there
+  // was nowhere to write it down, so completing the run had to either guess a
+  // variation or decline to mint anything.
+  { outputVariationLeafNodeId = 0, outputVariationPathLabel = '' } = {},
+) {
   const templateRow = await get(
     'SELECT * FROM pipeline_templates WHERE id = ?',
     [templateId],
@@ -19716,8 +20303,9 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scr
     `
     INSERT INTO pipeline_runs (
       id, template_id, template_version, name, status, overrides_json,
-      node_status_json, scrap_routing, node_metrics_json, started_at, completed_at, created_at, created_by
-    ) VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, '{}', NULL, NULL, ?, ?)
+      node_status_json, scrap_routing, node_metrics_json, started_at, completed_at, created_at, created_by,
+      output_variation_leaf_node_id, output_variation_path_label
+    ) VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, '{}', NULL, NULL, ?, ?, ?, ?)
     `,
     [
       runId,
@@ -19733,6 +20321,8 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scr
       scrapRouting,
       now,
       actor?.name || null,
+      Number(outputVariationLeafNodeId || 0) || 0,
+      String(outputVariationPathLabel || ''),
     ],
   );
 
@@ -20118,6 +20708,44 @@ app.post('/api/auth/login', async (req, res) => {
 // {table_name, record_id, event_type} (ids, no row data); the actual fetch each
 // event triggers is separately permission-checked. Gating this behind
 // config.read wrongly starved non-admin users of live updates.
+/// The changelog from a position, as one plain response.
+///
+/// The SSE stream replays too, but a client catching up at launch wants a
+/// request that ends — not a connection it has to hold open and decide when to
+/// stop reading. This is the endpoint a local replica calls first.
+///
+/// `oldestAvailable` is the part that matters. The changelog is pruned, so a
+/// client that has been closed long enough can hold a cursor pointing at
+/// history that no longer exists. Replaying from the oldest surviving row would
+/// silently skip everything in between; saying what the floor is lets the
+/// client notice and take a fresh snapshot instead.
+app.get('/api/changes', requireAuth, async (req, res) => {
+  try {
+    const since = Math.max(0, Number(req.query.since) || 0);
+    const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 1000));
+    const rows = await all(
+      `SELECT id, table_name, record_id, event_type
+       FROM changelog WHERE id > ? ORDER BY id ASC LIMIT ?`,
+      [since, limit + 1],
+    );
+    const hasMore = rows.length > limit;
+    const changes = hasMore ? rows.slice(0, limit) : rows;
+    const floor = await get('SELECT MIN(id) AS oldest, MAX(id) AS head FROM changelog');
+    res.json({
+      success: true,
+      changes,
+      hasMore,
+      // Below this the client's position is meaningless and only a full
+      // snapshot is correct.
+      oldestAvailable: Number(floor?.oldest || 0),
+      head: Number(floor?.head || 0),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, changes: [], error: error.message });
+  }
+});
+
 app.get('/api/events', requireAuth, async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -21603,14 +22231,32 @@ function machineRowToDto(r) {
   };
 }
 
+/// Free text in a JSON column, read as the one value it plainly is.
+///
+/// `produced_part_numbers` is declared as JSON, but real rows in a live
+/// workspace hold things like `Penta faceplate pierce` — typed in before the
+/// column meant anything stricter. A bare JSON.parse threw on the first such
+/// row and, because the whole list is mapped in one pass, took the entire
+/// `/api/dies` response down with it: the Dies screen showed nothing at all,
+/// and the error said only "Unexpected token 'P'".
+///
+/// One unparseable row must cost that row's structure, not everybody's data.
+function dieJsonList(value) {
+  const parsed = parseJson(value, null);
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === 'object') return [parsed];
+  const text = String(value ?? '').trim();
+  return text ? [text] : [];
+}
+
 function dieRowToDto(r) {
   return {
     id: String(r.id),
     toolCode: r.tool_code,
-    producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
-    photoUrls: JSON.parse(r.photo_urls || '[]'),
+    producedPartNumbers: dieJsonList(r.produced_part_numbers),
+    photoUrls: dieJsonList(r.photo_urls),
     operationalNotes: r.operational_notes,
-    compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
+    compatibleMachineGroupIds: dieJsonList(r.compatible_machine_group_ids),
     storageLocation: r.storage_location,
     numberOfCavities: r.number_of_cavities,
     strokeCount: r.stroke_count,
@@ -21618,7 +22264,7 @@ function dieRowToDto(r) {
     strokesPerPiece: r.strokes_per_piece,
     setupMinutes: r.setup_minutes,
     reportNotes: r.report_notes || '',
-    physicalSpecs: JSON.parse(r.physical_specs || '{}'),
+    physicalSpecs: parseJson(r.physical_specs, {}) ?? {},
     status: r.status,
     ownership: r.ownership,
     createdAt: new Date(r.created_at).toISOString(),
@@ -21627,7 +22273,7 @@ function dieRowToDto(r) {
 }
 
 // Machines CRUD Endpoints
-app.get('/api/machines', requirePermission('config.read'), async (req, res) => {
+app.get('/api/machines', requirePermission('config.read'), cacheMasterData, async (req, res) => {
   try {
     const rows = await all('SELECT * FROM machines ORDER BY created_at DESC');
     const machines = rows.map(machineRowToDto);
@@ -21765,7 +22411,7 @@ app.post('/api/machines/:id/assets/upload-complete', requirePermission('config.w
 });
 
 // Dies CRUD Endpoints
-app.get('/api/dies', requirePermission('config.read'), async (req, res) => {
+app.get('/api/dies', requirePermission('config.read'), cacheMasterData, async (req, res) => {
   try {
     const rows = await all('SELECT * FROM dies ORDER BY created_at DESC');
     const dies = rows.map(dieRowToDto);
@@ -22238,7 +22884,7 @@ app.post('/api/search/clicks', requirePermission('inventory.read'), async (req, 
   }
 });
 
-app.get('/api/materials', requirePermission('inventory.read'), async (req, res) => {
+app.get('/api/materials', requirePermission('inventory.read'), cacheMasterData, async (req, res) => {
   try {
     const rows = await all(
       'SELECT * FROM materials ORDER BY kind ASC, created_at DESC, barcode ASC',
@@ -22315,7 +22961,7 @@ app.get('/api/materials/:barcode/detail', requirePermission('inventory.read'), a
   }
 });
 
-app.get('/api/units', requirePermission('config.read'), async (req, res) => {
+app.get('/api/units', requirePermission('config.read'), cacheMasterData, async (req, res) => {
   try {
     const rows = await getUnitsWithUsage();
     res.json({ success: true, units: rows.map(rowToUnitDto), error: null });
@@ -22870,8 +23516,8 @@ const handleListChallans = async (req, res) => {
   }
 };
 
-app.get('/api/challans', requirePermission('config.read'), handleListChallans);
-app.get('/api/delivery-challans', requirePermission('config.read'), handleListChallans);
+app.get('/api/challans', requirePermission('config.read'), cacheMasterData, handleListChallans);
+app.get('/api/delivery-challans', requirePermission('config.read'), cacheMasterData, handleListChallans);
 
 const handleCreateChallan = async (req, res) => {
   try {
@@ -23818,6 +24464,43 @@ app.delete('/api/invoices/:id', requirePermission('config.write'), async (req, r
 app.post('/api/invoices', requirePermission('config.write'), async (req, res) => {
   try {
     const invoice = await createInvoice(req.body || {});
+    // Billing closes the challan's story. The subject is the delivery challan
+    // rather than the invoice because an invoice is not a scannable thing —
+    // there is no invoice barcode type, and inventing one would put a code on
+    // something nobody ever holds. The challan is what a person has in hand
+    // when they ask "was this billed?".
+    //
+    // Once per DISTINCT challan, not once per line: a five-line invoice against
+    // one challan is one billing event, and the ledger cannot be de-duplicated
+    // after the fact. Only creation emits — editing an invoice is not a second
+    // billing.
+    const billedChallans = await all(
+      `
+      SELECT DISTINCT dc.challan_no, dc.type
+      FROM invoice_lines il
+      JOIN delivery_challans dc ON dc.id = il.challan_id
+      WHERE il.invoice_id = ? AND il.challan_id IS NOT NULL
+      `,
+      [invoice?.id || 0],
+    );
+    for (const challan of billedChallans) {
+      const subject = barcodes.encode(
+        String(challan.type || '').toLowerCase() === 'reception' ? 'RC' : 'DC',
+        challan.challan_no,
+      );
+      if (!subject) continue;
+      await recordLedgerEvent({
+        subjectBarcode: subject,
+        eventType: 'INVOICED',
+        actorName: actorFromRequest(req)?.name || 'Office',
+        metrics: {
+          invoiceNo: invoice?.invoiceNo || '',
+          invoiceId: invoice?.id || null,
+          clientId: invoice?.clientId || null,
+        },
+        notes: invoice?.invoiceNo ? `Invoice ${invoice.invoiceNo}` : '',
+      });
+    }
     res.status(201).json({ success: true, data: invoice, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -24652,12 +25335,75 @@ app.get('/api/challans/:id/print-template-preview', requirePermission('config.re
   }
 });
 
-app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
+app.get('/api/orders', requirePermission('config.read'), cacheMasterData, async (req, res) => {
   try {
-    const rows = await getOrders();
-    res.json({ success: true, orders: rows.map(rowToOrderDto), error: null });
+    // Narrowing and paging are opt-in. A request with no `limit` gets every
+    // order, exactly as before — several features legitimately need the whole
+    // set (the production order picker, challan order-selection, a client's
+    // history), and a default page size would silently truncate them.
+    const search = String(req.query.search || '').trim();
+    const clientId = Number(req.query.client_id || req.query.clientId || 0) || null;
+    const limit = Number(req.query.limit || 0) || null;
+    const offset = Number(req.query.offset || 0) || 0;
+    const csv = (value) =>
+      String(value || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    const statuses = csv(req.query.status);
+    // Passed through unparsed: buildOrderFilter has to be able to tell "no ids
+    // asked for" from "ids asked for that do not parse".
+    const ids = csv(req.query.ids);
+
+    const filter = { search, clientId, statuses, ids };
+    const rows = await getOrders({ ...filter, limit, offset });
+    // Counted only when paging, so the unpaged path costs exactly what it did.
+    const total = limit ? await countOrders(filter) : rows.length;
+
+    res.json({
+      success: true,
+      orders: rows.map(rowToOrderDto),
+      total,
+      limit,
+      offset,
+      // Stated rather than inferred from a short page: "this is everything" and
+      // "this is all that fits" must not look the same to a caller.
+      hasMore: limit ? offset + rows.length < total : false,
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, orders: [], error: error.message });
+  }
+});
+
+/// One order line, shaped exactly like a row of the list.
+///
+/// The delta engine knows only (table, record_id) when a change arrives, so it
+/// needs to fetch that single record — and there was no route to do it with.
+/// `getOrderRowById` has had the right projection all along, including the
+/// derived `status` and `total_delivered_qty`, and was never routed.
+///
+/// A single path segment, so it cannot shadow the `/api/orders/:id/activity`
+/// family registered around it.
+app.get('/api/orders/:id', requirePermission('config.read'), cacheMasterData, async (req, res, next) => {
+  // Numeric ids only, so this cannot swallow a sibling named path.
+  // `/api/orders/fulfilment` is one segment too, and a bare `:id` captured it
+  // and answered 404 — a wildcard registered before a literal wins, and the
+  // literal is easy to miss among thirty routes. Guarding on shape makes the
+  // route order-independent instead of order-dependent.
+  if (!/^\d+$/.test(String(req.params.id || ''))) {
+    next();
+    return;
+  }
+  try {
+    const row = await getOrderRowById(req.params.id);
+    if (!row) {
+      res.status(404).json({ success: false, order: null, error: 'Order not found.' });
+      return;
+    }
+    res.json({ success: true, order: rowToOrderDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, order: null, error: error.message });
   }
 });
 
@@ -24873,6 +25619,335 @@ app.post('/api/delivery-challans/:id/assets/upload-complete', requirePermission(
 
 
 
+// ---------------------------------------------------------------------------
+// The universal resolver: one code in, everything we know about it out.
+//
+// This is what makes a single code space worth having. A scanner gun does not
+// know whether it is pointed at a sheet, a challan, a machine or a person's
+// badge, and it should not have to — the code carries its own type, so this
+// dispatches on the code rather than searching every table in turn.
+//
+// The envelope is the same shape whatever resolved, so one screen renders all
+// of them:
+//
+//   resolution  how it was found, and whether the check character verified
+//   entity      what it is: type, id, title, subtitle
+//   facts       the summary rows worth reading at a glance
+//   custody     the ledger, oldest first — who touched it and when
+//
+// `resolution` is not decoration. A code found by falling back to a legacy
+// column is a weaker answer than one that decoded and verified, and a screen
+// that cannot tell them apart will present a guess as a fact.
+// ---------------------------------------------------------------------------
+
+const TITLES = {
+  MAT: (row) => ({ title: row.name || row.barcode, subtitle: [row.type, row.grade].filter(Boolean).join(' · ') }),
+  DC: (row) => ({ title: `Delivery ${row.challan_no}`, subtitle: row.customer_name || '' }),
+  RC: (row) => ({ title: `Reception ${row.challan_no}`, subtitle: row.vendor_name || '' }),
+  DCL: (row) => ({ title: row.particulars || `Line ${row.line_no}`, subtitle: `Challan line ${row.line_no}` }),
+  ORD: (row) => ({ title: `Order ${row.order_no}`, subtitle: '' }),
+  RUN: (row) => ({ title: row.name || row.id, subtitle: row.status || '' }),
+  MFG: (row) => ({ title: row.run_code, subtitle: row.status || '' }),
+  EMP: (row) => ({ title: row.name, subtitle: row.role || row.designation || '' }),
+  DEP: (row) => ({ title: row.name, subtitle: row.description || '' }),
+  PLN: (row) => ({ title: row.name, subtitle: row.description || '' }),
+  CLI: (row) => ({ title: row.name, subtitle: row.gstin || row.city || '' }),
+  VEN: (row) => ({ title: row.name, subtitle: row.gstin || row.city || '' }),
+  MCH: (row) => ({ title: row.name, subtitle: row.asset_id || '' }),
+  DIE: (row) => ({ title: row.name || row.tool_code, subtitle: row.tool_code || '' }),
+  ITM: (row) => ({ title: row.display_name || row.name, subtitle: row.short_code || '' }),
+  GRP: (row) => ({ title: row.name, subtitle: row.group_structure || '' }),
+  MOV: (row) => ({ title: `${row.movement_type} ${row.qty}`, subtitle: row.material_barcode || '' }),
+  LOC: (row) => ({ title: row.place || row.location_id, subtitle: 'Storage location' }),
+  FLR: (row) => ({ title: row.place || row.location, subtitle: 'Shop floor' }),
+};
+
+/// Reads the row a decoded code names, honouring the type's own scoping — a DC
+/// and an RC are the same table and are told apart by the challan's type, so
+/// scanning a reception challan with a DC prefix must not quietly resolve.
+async function loadSubject({ all }, type, id) {
+  const spec = barcodes.TYPES[type];
+  if (!spec) return null;
+
+  // Places are matched by normalised value, not by key. A location is a
+  // free-text string ('Cutting bay', 'Rack A1') and a code strips whitespace,
+  // so 'Cutting bay' arrives as CUTTINGBAY and no column compare would ever
+  // find it. Matching is done here rather than in SQL because SQLite's REPLACE
+  // handles one character at a time and `barcodes.normalize` is the same
+  // function that produced the code.
+  if (spec.place) {
+    const wanted = barcodes.normalize(id);
+    if (!wanted) return null;
+    const rows = await all(
+      `SELECT DISTINCT ${spec.idColumn} AS value FROM ${spec.table}
+       WHERE TRIM(COALESCE(${spec.idColumn}, '')) != ''`,
+    );
+    const match = rows.find((row) => barcodes.normalize(row.value) === wanted);
+    // A synthetic row: the place has no record of its own, so it is represented
+    // by the one thing that is true of it — its name, exactly as stored.
+    return match ? { [spec.idColumn]: match.value, place: match.value } : null;
+  }
+
+  const where = spec.where ? ` AND ${spec.where}` : '';
+  // Compared case-insensitively on purpose. Barcode symbologies are uppercase —
+  // Code 39 has no lowercase at all — so an emitted code is uppercased, but
+  // plenty of ids are not: a pipeline template is `sheet-metal-flow` and a run
+  // is `demo-dolly-run-active`. Matching case-sensitively meant those codes
+  // encoded and decoded perfectly and then resolved to nothing, which is the
+  // most confusing failure available: the code looks right and finds nothing.
+  const rows = await all(
+    `SELECT * FROM ${spec.table} WHERE ${spec.idColumn} = ? COLLATE NOCASE${where} LIMIT 1`,
+    [id],
+  );
+  return rows[0] || null;
+}
+
+/// The ledger for a subject, oldest first. This is the custody trail: what the
+/// business tables cannot say because they are rewritten in place.
+async function loadCustody({ all }, subjectBarcode) {
+  try {
+    return await all(
+      `SELECT event_id, event_type, actor_barcode, actor_name, location_barcode,
+              machine_barcode, die_barcode, parent_barcodes_json,
+              child_barcodes_json, order_barcode, document_barcode,
+              metrics_json, notes, created_at
+       FROM barcode_ledger
+       WHERE subject_barcode = ?
+          OR parent_barcodes_json LIKE '%' || ? || '%'
+          OR child_barcodes_json LIKE '%' || ? || '%'
+          -- Places are reachable too. A location is never a subject, a parent
+          -- or a child — a rack does not descend from anything — so without
+          -- this a scanned rack resolves and then shows an empty history,
+          -- which reads as "nothing ever happened here" rather than "this view
+          -- cannot see it".
+          OR location_barcode = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT 500`,
+      [subjectBarcode, subjectBarcode, subjectBarcode, subjectBarcode],
+    );
+  } catch (_) {
+    // A missing ledger is an empty history, not a failed scan.
+    return [];
+  }
+}
+
+/// Searches the codes that were already printed before this scheme existed.
+/// Ordered and first-match-wins, so the most specific source answers.
+async function resolveLegacy(ctx, code) {
+  for (const source of barcodes.LEGACY_SOURCES) {
+    const rows = await ctx.all(
+      `SELECT * FROM ${source.table} WHERE ${source.column} = ? COLLATE NOCASE LIMIT 1`,
+      [code],
+    );
+    if (rows[0]) {
+      return { type: source.type, row: rows[0], via: 'legacy-code', column: source.column };
+    }
+  }
+  return null;
+}
+
+async function resolveBarcode(ctx, rawCode) {
+  const code = barcodes.normalize(rawCode);
+  if (!code) {
+    const error = new Error('A code is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const decoded = barcodes.decode(code);
+  let type = null;
+  let row = null;
+  let via = null;
+  let checkValid = true;
+  let hasCheck = false;
+
+  if (decoded) {
+    hasCheck = decoded.hasCheck;
+    checkValid = decoded.checkValid;
+    // A failed check is reported, not obeyed. The record it *would* have named
+    // is still loaded so the screen can say "this scanned as X — is that what
+    // you are holding?", which is far more use than a bare rejection.
+    type = decoded.type;
+    row = await loadSubject(ctx, decoded.type, decoded.id);
+    via = row ? 'structured' : null;
+  }
+
+  if (!row) {
+    const legacy = await resolveLegacy(ctx, code);
+    if (legacy) {
+      type = legacy.type;
+      row = legacy.row;
+      via = legacy.via;
+    }
+  }
+
+  if (!row) {
+    return {
+      found: false,
+      code,
+      resolution: {
+        via: null,
+        // The distinction the old lookup could not make: a code shaped like
+        // ours that names nothing is a different problem from a code that was
+        // never ours, and they need different answers from the person holding
+        // the scanner.
+        looksLikeOurs: decoded != null,
+        hasCheck,
+        checkValid,
+      },
+      entity: null,
+      facts: [],
+      custody: [],
+    };
+  }
+
+  const spec = barcodes.TYPES[type];
+  const identity = (TITLES[type] || ((r) => ({ title: String(r.id ?? ''), subtitle: '' })))(row);
+  const canonicalId = String(row[spec.idColumn] ?? '');
+  const canonical = barcodes.encode(type, canonicalId);
+
+  const facts = [];
+  const push = (label, value) => {
+    if (value === null || value === undefined || value === '') return;
+    facts.push({ label, value: String(value) });
+  };
+  push('Type', spec.label);
+  push('Status', row.status);
+  push('Created', row.created_at);
+  push('Updated', row.updated_at);
+  if (row.is_archived != null) push('Archived', Number(row.is_archived) ? 'Yes' : 'No');
+
+  // A place has no row of its own, so the only useful thing to say about it is
+  // what is currently there. Scanning a rack to be told "this is a rack" would
+  // be worse than not resolving at all.
+  if (spec.place && type === 'LOC') {
+    const held = await ctx.all(
+      `SELECT COUNT(DISTINCT material_barcode) AS kinds,
+              COALESCE(SUM(on_hand_qty), 0) AS total
+       FROM inventory_stock_positions
+       WHERE location_id = ? COLLATE NOCASE AND COALESCE(on_hand_qty, 0) > 0`,
+      [canonicalId],
+    );
+    push('Distinct materials here', held[0]?.kinds ?? 0);
+    push('Total on hand', held[0]?.total ?? 0);
+    const recent = await ctx.all(
+      `SELECT m.name, p.on_hand_qty
+       FROM inventory_stock_positions p
+       LEFT JOIN materials m ON m.barcode = p.material_barcode
+       WHERE p.location_id = ? COLLATE NOCASE AND COALESCE(p.on_hand_qty, 0) > 0
+       ORDER BY p.on_hand_qty DESC LIMIT 5`,
+      [canonicalId],
+    );
+    for (const line of recent) {
+      push(line.name || 'Material', line.on_hand_qty);
+    }
+  }
+
+  if (spec.place && type === 'FLR') {
+    const machines = await ctx.all(
+      'SELECT name, status FROM machines WHERE location = ? COLLATE NOCASE ORDER BY name',
+      [canonicalId],
+    );
+    push('Machines here', machines.length);
+    for (const machine of machines.slice(0, 8)) {
+      push(machine.name || 'Machine', machine.status || 'idle');
+    }
+  }
+
+  return {
+    found: true,
+    code,
+    resolution: {
+      via,
+      looksLikeOurs: decoded != null,
+      hasCheck,
+      checkValid,
+      // What the label *should* say, so a screen can offer to reprint a legacy
+      // code in the scheme rather than leaving it outside forever.
+      canonical,
+    },
+    entity: {
+      type,
+      typeLabel: spec.label,
+      id: canonicalId,
+      title: identity.title || canonicalId,
+      subtitle: identity.subtitle || '',
+    },
+    facts,
+    custody: (await loadCustody(ctx, canonical || code)).map((event) => ({
+      eventId: event.event_id,
+      eventType: event.event_type,
+      actor: event.actor_name || event.actor_barcode || '',
+      actorBarcode: event.actor_barcode || null,
+      locationBarcode: event.location_barcode || null,
+      machineBarcode: event.machine_barcode || null,
+      dieBarcode: event.die_barcode || null,
+      parents: parseJsonOrArray(event.parent_barcodes_json, []),
+      children: parseJsonOrArray(event.child_barcodes_json, []),
+      orderBarcode: event.order_barcode || null,
+      documentBarcode: event.document_barcode || null,
+      metrics: parseJsonOrArray(event.metrics_json, {}),
+      notes: event.notes || '',
+      at: event.created_at,
+    })),
+  };
+}
+
+/// Appends one custody event. Never throws into the caller: a business action
+/// must not fail because its audit trail could not be written, and a lost event
+/// is recoverable where a refused dispatch is not.
+async function recordLedgerEvent(input = {}) {
+  try {
+    const eventId = `evt-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    await run(
+      `INSERT INTO barcode_ledger (
+         event_id, subject_barcode, event_type, actor_barcode, actor_name,
+         location_barcode, machine_barcode, die_barcode,
+         parent_barcodes_json, child_barcodes_json,
+         order_barcode, document_barcode, metrics_json, notes, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        eventId,
+        barcodes.normalize(input.subjectBarcode || ''),
+        String(input.eventType || 'UNKNOWN'),
+        input.actorBarcode || null,
+        String(input.actorName || ''),
+        input.locationBarcode || null,
+        input.machineBarcode || null,
+        input.dieBarcode || null,
+        JSON.stringify(input.parents || []),
+        JSON.stringify(input.children || []),
+        input.orderBarcode || null,
+        input.documentBarcode || null,
+        JSON.stringify(input.metrics || {}),
+        String(input.notes || ''),
+        new Date().toISOString(),
+      ],
+    );
+    return eventId;
+  } catch (_) {
+    return null;
+  }
+}
+
+// One code in, everything known about it out. What a scanner gun talks to.
+app.get('/api/scan/:code', requirePermission('config.read'), async (req, res) => {
+  try {
+    const scan = await resolveBarcode({ all, get }, req.params.code);
+    res.status(scan.found ? 200 : 404).json({
+      success: scan.found,
+      scan,
+      error: scan.found ? null : 'Nothing here carries that code.',
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      scan: null,
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res) => {
   try {
     const { code } = req.query;
@@ -24891,15 +25966,34 @@ app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res
       WHERE pb.parent_code = ? OR pb.child_code = ?
     `, [code, code]);
     
-    if (!row) {
-      return res.status(404).json({ success: false, error: 'Barcode not found in database.' });
+    if (row) {
+      const itemDesc = await itemsPorts.describe(row.item_id);
+      row.item_name = itemDesc?.name || 'Unknown Item';
+      row.short_code = itemDesc?.shortCode || '';
+      // The piece-barcode shape the existing client already reads, kept as it
+      // was, plus the universal envelope beside it.
+      const universal = await resolveBarcode({ all, get }, code);
+      return res.json({ success: true, result: row, scan: universal });
     }
 
-    const itemDesc = await itemsPorts.describe(row.item_id);
-    row.item_name = itemDesc?.name || 'Unknown Item';
-    row.short_code = itemDesc?.shortCode || '';
-    
-    res.json({ success: true, result: row });
+    // Everything that is not a piece barcode.
+    //
+    // This endpoint used to end here with a 404 — which is why scanning a sheet
+    // you were holding said "Barcode not found in database.", the identical
+    // answer it gave to a code that never existed. It searched `piece_barcodes`
+    // and nothing else, so a real `materials.barcode` was indistinguishable
+    // from nonsense.
+    const universal = await resolveBarcode({ all, get }, code);
+    if (!universal.found) {
+      return res.status(404).json({
+        success: false,
+        error: universal.resolution.looksLikeOurs
+          ? 'That is one of ours, but it names nothing here — it may belong to another workspace, or the record may have been deleted.'
+          : 'Barcode not found in database.',
+        scan: universal,
+      });
+    }
+    res.json({ success: true, result: null, scan: universal });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -25538,6 +26632,38 @@ app.post('/api/orders/:orderNo/returns', requirePermission('config.write'), asyn
         now,
       ],
     );
+    // Goods came back. This is the question the whole ledger exists to answer —
+    // `order_returns`' own schema comment calls itself the trigger for the
+    // backward QC lineage trace — and it recorded nothing.
+    //
+    // The subject is the returned piece when one was scanned, because that is
+    // what someone holds when they ask what happened to it. The order goes in
+    // `parents` and not only in `orderBarcode`: loadCustody matches on subject,
+    // parents and children, so a code that appears only in `orderBarcode` is
+    // invisible to a scan of the order — the return would be recorded and still
+    // unreachable from the order it belongs to.
+    const orderCode = barcodes.encode('ORD', orderNo);
+    const returnedPiece = barcodes.normalize(b.returnedBarcode ?? b.returned_barcode ?? '');
+    const returnSubject = returnedPiece || orderCode;
+    await recordLedgerEvent({
+      subjectBarcode: returnSubject,
+      eventType: 'CUSTOMER_RETURN',
+      actorName: actor?.name || 'Quality Control',
+      orderBarcode: orderCode,
+      parents: returnSubject === orderCode ? [] : [orderCode].filter(Boolean),
+      metrics: {
+        returnNo,
+        qty: Number(b.quantity || 0),
+        unit: b.unit || 'pcs',
+        reasonCode: b.reasonCode ?? b.reason_code ?? 'defect',
+        orderItemId: b.orderItemId ?? b.order_item_id ?? null,
+        // Stated, so a reader can tell "returned without a code" from "returned
+        // a piece we can trace" rather than inferring it from a subject shape.
+        pieceIdentified: Boolean(returnedPiece),
+      },
+      notes: b.defectDescription ?? b.defect_description ?? '',
+    });
+
     const row = await get('SELECT * FROM order_returns WHERE id = ?', [info.lastID]);
     res.status(201).json({ success: true, return: orderReturnRowToDto(row), error: null });
   } catch (error) {
@@ -26606,7 +27732,15 @@ app.get('/runs', requirePermission('config.read'), async (req, res) => {
 
 app.post('/runs', async (req, res) => {
   try {
-    const { templateId, name, orderNo, orderItemId, scrapRouting } = req.body || {};
+    const {
+      templateId,
+      name,
+      orderNo,
+      orderItemId,
+      scrapRouting,
+      outputVariationLeafNodeId,
+      outputVariationPathLabel,
+    } = req.body || {};
     if (!templateId) {
       res.status(400).json({
         success: false,
@@ -26615,7 +27749,15 @@ app.post('/runs', async (req, res) => {
       });
       return;
     }
-    const run = await createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting || 'inventory', actorFromRequest(req));
+    const run = await createRunFromTemplate(
+      templateId,
+      name,
+      orderNo,
+      orderItemId,
+      scrapRouting || 'inventory',
+      actorFromRequest(req),
+      { outputVariationLeafNodeId, outputVariationPathLabel },
+    );
     if (!run) {
       res.status(404).json({
         success: false,
@@ -26875,22 +28017,77 @@ app.put('/runs/:id/node-status', async (req, res) => {
           const matchedItem = await itemsPorts.lookupByName(finalOutput);
           if (matchedItem) {
             itemId = matchedItem.id;
-            const variationRow = await get(
-              "SELECT * FROM item_variation_nodes WHERE item_id = ? AND kind = 'leaf' LIMIT 1",
-              [itemId]
+            // Which variation was produced comes from the order line this run
+            // is assigned to. That is the only place that actually knows.
+            //
+            // What was here before asked for
+            //   item_variation_nodes WHERE kind = 'leaf' LIMIT 1
+            // and `kind` has only ever held 'property' or 'value' — there is no
+            // 'leaf' kind in this table. So it never matched, the leaf id stayed
+            // 0, and resolveOrderVariationSelection then threw "Client, item and
+            // variation values are required" for every output item that has
+            // variations, taking the whole completion request down with a 500.
+            // No run could finish and no output was ever minted.
+            //
+            // It was also a guess even when it did match: LIMIT 1 with no
+            // ordering picks an arbitrary variation, which would have labelled
+            // the finished goods with whichever one happened to come first.
+            const assignedLine = await get(
+              `
+              SELECT oi.item_id, oi.variation_leaf_node_id, oi.variation_path_label
+              FROM order_pipeline_assignments opa
+              JOIN order_items oi ON opa.order_item_id = oi.id
+              WHERE opa.pipeline_run_id = ?
+              LIMIT 1
+              `,
+              [req.params.id],
             );
-            if (variationRow) {
-              variationLeafNodeId = variationRow.id;
-              variationPathLabel = variationRow.display_name || variationRow.name || '';
+            // Only when the order line is for the same item the template says it
+            // outputs. Otherwise this would stamp one item's variation onto
+            // another item's goods.
+            if (
+              assignedLine
+              && Number(assignedLine.item_id) === Number(itemId)
+              && Number(assignedLine.variation_leaf_node_id) > 0
+            ) {
+              variationLeafNodeId = Number(assignedLine.variation_leaf_node_id);
+              variationPathLabel = assignedLine.variation_path_label || '';
+            } else if (Number(runRow.output_variation_leaf_node_id || 0) > 0) {
+              // No order line, but the operator said what they were making when
+              // they started the run. That is a statement of intent from the
+              // person at the machine, which is weaker than an order line and
+              // far stronger than picking a variation at random.
+              //
+              // Order matters: the order line wins when both exist, because it
+              // is what was actually promised to a customer.
+              variationLeafNodeId = Number(runRow.output_variation_leaf_node_id);
+              variationPathLabel = runRow.output_variation_path_label || '';
             }
+            // Neither? Then nothing here knows, and the snapshot below will
+            // decline rather than invent one.
           }
         }
 
         if (itemId) {
           const batchQuantity = (lastNode && overrides.batchQuantityByNode[lastNode.id]) || 1;
-          const runCode = `RUN-${req.params.id.substring(0, 8).toUpperCase()}`;
-          
-          // Check if this run code already exists in production_runs
+          // Derived from the WHOLE run id, not its first eight characters.
+          //
+          // Truncating collided catastrophically: on a real database 68 of 72
+          // runs had ids beginning `run-ord-`, so they all produced the same
+          // run_code. `production_runs.run_code` is UNIQUE, so the first run to
+          // complete took it and the `if (!exists)` below then silently swallowed
+          // the other 67 — real goods finished with no production_runs row, no
+          // lot, and no inventory movement.
+          //
+          // It also made the MFG barcode a lie: one code naming 68 different
+          // runs' output, in a ledger that cannot be corrected afterwards. A
+          // derived code is only safe when what it derives from is unique, and
+          // eight characters of a prefixed id is not.
+          const upperRunId = String(req.params.id).toUpperCase();
+          const runCode = upperRunId.startsWith('RUN-') ? upperRunId : `RUN-${upperRunId}`;
+
+          // Now genuinely "has this run already been booked as output?", which
+          // is the idempotency this check was always meant to express.
           const exists = await get('SELECT id FROM production_runs WHERE run_code = ?', [runCode]);
           if (!exists) {
             await run(
@@ -26924,7 +28121,28 @@ app.put('/runs/:id/node-status', async (req, res) => {
             
             // We use ensureMaterialForItemSelection, but we override barcode to force a fresh lot
             // First get the template/snapshot
-            const snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
+            // resolveOrderVariationSelection returns the base item cleanly when
+            // an item has no variation properties, and throws when it has them
+            // and none was chosen. That throw is correct — it is what stops a
+            // half-specified order line — but it must not take a completed
+            // production run down with it. The stage really did finish.
+            //
+            // So: complete the run either way, and mint only when the output is
+            // actually identifiable. Minting against a guessed variation would
+            // put a wrong fact into inventory and, worse, name it permanently in
+            // an append-only ledger. Not minting is recoverable; a mislabelled
+            // lot is not.
+            let snapshot = null;
+            try {
+              snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
+            } catch (snapshotError) {
+              console.warn(
+                `[run ${req.params.id}] completed but no output was minted: `
+                + `cannot tell which variation of item ${itemId} was produced `
+                + `(${snapshotError.message}). Assign the run to an order line `
+                + `so the variation is known.`,
+              );
+            }
             if (snapshot) {
               const uom = snapshot.item.unit || 'pcs';
               const uomId = snapshot.item.unit_id || null;
@@ -26937,7 +28155,11 @@ app.put('/runs/:id/node-status', async (req, res) => {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `, [
                 freshBarcode,
-                snapshot.fullName || 'Finished Good',
+                // `particulars` is what the snapshot actually returns; there is
+                // no `fullName` on it, so this read undefined every time and
+                // every finished lot in the system was literally called
+                // "Finished Good".
+                snapshot.particulars || 'Finished Good',
                 'material',
                 'lot',
                 'tracked',
@@ -26963,6 +28185,62 @@ app.put('/runs/:id/node-status', async (req, res) => {
                 actor: actor?.id || null,
                 lotCode: freshBarcode,
               }, { useTransaction: false });
+
+              // A new thing came into being, and this is the one event that
+              // makes backward traceability possible. Scanning a finished piece
+              // has to reach the raw material it was cut from in one hop —
+              // that is the question a warranty claim or a QC recall opens
+              // with, and every other event in the trail is downstream of being
+              // able to answer it.
+              //
+              // The MFG code is the subject because that is what gets printed
+              // on the piece and scanned off it later. This is the mirror of
+              // ISSUED_TO_PIPELINE, where the material is the subject and the
+              // run is a child: there custody left the shelf, here something
+              // new exists. The lot barcode is the child rather than the
+              // subject so that scanning either one surfaces this event —
+              // loadCustody matches on subject OR parents OR children.
+              const consumedInputs = await all(
+                'SELECT DISTINCT barcode FROM run_barcode_inputs WHERE run_id = ?',
+                [req.params.id],
+              );
+              // The order is read from order_pipeline_assignments, the way
+              // rowToRun does it. `pipeline_runs` has no order_item_id column,
+              // despite one place in this file reading it.
+              const outputOrderLink = await get(
+                `
+                SELECT h.order_no
+                FROM order_pipeline_assignments opa
+                JOIN order_items i ON opa.order_item_id = i.id
+                JOIN order_headers h ON i.order_no = h.order_no
+                WHERE opa.pipeline_run_id = ?
+                LIMIT 1
+                `,
+                [req.params.id],
+              );
+              await recordLedgerEvent({
+                subjectBarcode: barcodes.encode('MFG', runCode),
+                eventType: 'OUTPUT_MINTED',
+                actorName: actor?.name || 'Floor',
+                parents: [
+                  barcodes.encode('RUN', req.params.id),
+                  ...consumedInputs.map((row) => barcodes.encode('MAT', row.barcode)),
+                ].filter(Boolean),
+                children: [barcodes.encode('MAT', freshBarcode)].filter(Boolean),
+                orderBarcode: outputOrderLink?.order_no
+                  ? barcodes.encode('ORD', outputOrderLink.order_no)
+                  : null,
+                metrics: {
+                  qty: Number(batchQuantity),
+                  unit: uom || 'pcs',
+                  itemId,
+                  variationLeafNodeId,
+                  pipelineRunId: req.params.id,
+                  pipelineTemplateId: runRow.template_id,
+                  lotBarcode: freshBarcode,
+                },
+                notes: snapshot.particulars || 'Finished Good',
+              });
             }
           }
         }
@@ -27029,6 +28307,31 @@ app.post('/runs/:id/barcodes', async (req, res) => {
           quantityAmount,
         ],
       );
+      // Custody for stock issued by quantity rather than by piece.
+      //
+      // The subject is the ITEM, not the `#qty-…` sentinel written into
+      // run_barcode_inputs. That sentinel is a row id, not a thing: nothing
+      // carries it, nobody can scan it, and encoding it would put a code into
+      // the ledger that resolves to nothing forever. Issuing 40kg off a coil is
+      // a fact about the item, and that is what is recorded.
+      await recordLedgerEvent({
+        subjectBarcode: barcodes.encode('ITM', String(quantityItemId)),
+        eventType: 'ISSUED_TO_PIPELINE',
+        actorName: actorFromRequest(req)?.name || 'Floor',
+        children: [barcodes.encode('RUN', req.params.id)].filter(Boolean),
+        documentBarcode: Number(payload.challanItemId ?? payload.challan_item_id ?? 0)
+          ? barcodes.encode('DCL', String(payload.challanItemId ?? payload.challan_item_id))
+          : null,
+        metrics: {
+          qty: quantityAmount,
+          nodeId: payload.nodeId,
+          itemId: quantityItemId,
+          variationLeafNodeId: leafNodeId,
+          sourceKind: 'quantity',
+        },
+        notes: 'Issued by quantity',
+      });
+
       const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
         req.params.id,
       ]);
@@ -27096,6 +28399,48 @@ app.post('/runs/:id/barcodes', async (req, res) => {
         'UPDATE pipeline_runs SET weight_kg = COALESCE(weight_kg, 0) + ? WHERE id = ?',
         [Number(sheet.weight || 0), req.params.id],
       );
+
+      // The richest custody moment in the system, and it recorded nothing.
+      //
+      // This branch already holds the vendor, the reception challan and the
+      // exact physical sheet — everything needed to answer "where did this come
+      // from" — and it went straight into run_barcode_inputs without a word to
+      // the ledger. Only the SKU branch emitted, so consuming material the way
+      // a sheet-metal shop actually consumes it left a hole between the vendor
+      // and the run.
+      //
+      // The subject is the challan LINE (DCL), because that is the identity the
+      // sheet was received under and what a reception's trail already hangs off.
+      // The vendor is the parent, so the walk reaches the outside world.
+      await recordLedgerEvent({
+        subjectBarcode: sheet.challan_item_id
+          ? barcodes.encode('DCL', String(sheet.challan_item_id))
+          : barcodes.normalize(sheet.parent_code || ''),
+        eventType: 'ISSUED_TO_PIPELINE',
+        actorName: actorFromRequest(req)?.name || 'Floor',
+        parents: sheet.vendor_id
+          ? [barcodes.encode('VEN', String(sheet.vendor_id))].filter(Boolean)
+          : [],
+        children: [barcodes.encode('RUN', req.params.id)].filter(Boolean),
+        documentBarcode: sheet.reception_challan_no
+          ? barcodes.encode('RC', sheet.reception_challan_no)
+          : null,
+        metrics: {
+          weightKg: Number(sheet.weight || 0),
+          nodeId: payload.nodeId,
+          itemId: sheet.item_id || null,
+          sourceKind: 'sheet',
+          // Verbatim, because this is the code physically on the sheet and the
+          // one someone will read back off it.
+          pieceParentCode: sheet.parent_code || '',
+          pieceChildCode: sheet.child_code || '',
+          vendor: sheet.vendor_name || '',
+          receptionChallanNo: sheet.reception_challan_no || '',
+        },
+        notes: sheet.vendor_name
+          ? `Sheet from ${sheet.vendor_name}`
+          : 'Vendor sheet',
+      });
       const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
         req.params.id,
       ]);
@@ -27151,6 +28496,22 @@ app.post('/runs/:id/barcodes', async (req, res) => {
         Number.isFinite(consumedQty) && consumedQty > 0 ? consumedQty : null,
       ],
     );
+
+    // Custody moves from the shelf to the floor. The run is the child rather
+    // than the subject: what happened is that *this material* was issued, and
+    // the ledger reads as the material's story when you scan the material.
+    await recordLedgerEvent({
+      subjectBarcode: barcodes.encode('MAT', material.barcode),
+      eventType: 'ISSUED_TO_PIPELINE',
+      actorName: actorFromRequest(req)?.name || 'Floor',
+      children: [barcodes.encode('RUN', req.params.id)],
+      metrics: {
+        qty: consumedQty,
+        unit: material.unit || '',
+        nodeId: payload.nodeId,
+      },
+      notes: material.name || '',
+    });
 
     if (payload.quantity !== undefined && payload.quantity !== null) {
       const qty = Number(payload.quantity);
@@ -27333,7 +28694,91 @@ app.put('/runs/:id/node-metrics', async (req, res) => {
       return res.status(404).json({ success: false, run: null, error: 'Run not found.' });
     }
 
+    // Read before the upsert overwrites it, so the event can say whether this
+    // was the stage being reconciled or the numbers being corrected — and so a
+    // re-save that changes nothing writes nothing.
+    //
+    // This matters because stage_reconciliations is an UPSERT keyed on
+    // (run_id, node_id) and converges to one row, while the ledger is
+    // append-only. Without this, a supervisor who opens the dialog, looks, and
+    // closes it leaves a permanent event saying the stage was processed again.
+    // A genuine correction IS worth recording — it is a real thing that
+    // happened on the floor — so it is kept and marked, not suppressed.
+    const priorStage = await get(
+      'SELECT * FROM stage_reconciliations WHERE run_id = ? AND node_id = ?',
+      [req.params.id, nodeId],
+    );
+
     await upsertStageReconciliation(req.params.id, nodeId, metrics);
+
+    const stageChanged = !priorStage
+      || Object.entries(STAGE_RECON_COLUMNS).some(([key, column]) => {
+        if (metrics[key] === undefined) return false;
+        const before = priorStage[column];
+        const after = metrics[key];
+        // Loose comparison on purpose: the column may hold 5 where the payload
+        // sends '5', and a formatting difference is not a shop-floor event.
+        if (before === null || before === undefined) return after !== null && after !== undefined;
+        return String(before) !== String(after);
+      });
+
+    // Two different clients PUT to this route and they mean different things.
+    // The Stage Reconciliation dialog sends the whole booking — allotted, output,
+    // scrap, leftover, inputTime, outputTime — which IS the floor declaring the
+    // stage worked. The inline metric box sends a single key ({output: 4}) and
+    // never a timestamp; that is someone correcting a number.
+    //
+    // So a full booking is always the stage being processed, and a single-key
+    // edit only counts once the stage has actually been booked — otherwise
+    // typing one number into a stage nobody has run would write, permanently,
+    // that it was processed.
+    const isFullBooking = metrics.outputTime !== undefined;
+    if (stageChanged && (isFullBooking || priorStage)) {
+      const stageOrder = await get(
+        `
+        SELECT h.order_no
+        FROM order_pipeline_assignments opa
+        JOIN order_items i ON opa.order_item_id = i.id
+        JOIN order_headers h ON i.order_no = h.order_no
+        WHERE opa.pipeline_run_id = ?
+        LIMIT 1
+        `,
+        [req.params.id],
+      );
+      const stageInputs = await all(
+        'SELECT DISTINCT barcode FROM run_barcode_inputs WHERE run_id = ? AND node_id = ?',
+        [req.params.id, nodeId],
+      );
+      // The RUN is the subject, not the materials. The payload is a stage
+      // aggregate — 5.5kg allotted, 5 out, 0.2 scrap — and nothing splits those
+      // numbers per input. Copying one aggregate onto three scanned barcodes
+      // would write three rows each claiming the stage produced 5, into a table
+      // that cannot be corrected. The materials are named as parents instead,
+      // and loadCustody matches on parents, so scanning one still surfaces this.
+      await recordLedgerEvent({
+        subjectBarcode: barcodes.encode('RUN', req.params.id),
+        eventType: 'STAGE_PROCESSED',
+        actorName: actorFromRequest(req)?.name || 'Floor',
+        parents: stageInputs
+          .map((row) => barcodes.encode('MAT', row.barcode))
+          .filter(Boolean),
+        orderBarcode: stageOrder?.order_no
+          ? barcodes.encode('ORD', stageOrder.order_no)
+          : null,
+        metrics: {
+          nodeId,
+          allotted: metrics.allotted ?? null,
+          output: metrics.output ?? null,
+          scrap: metrics.scrap ?? null,
+          leftover: metrics.remaining ?? null,
+          actualHours: metrics.actualHours ?? null,
+          inputTime: metrics.inputTime || null,
+          outputTime: metrics.outputTime || null,
+          revised: Boolean(priorStage),
+        },
+        notes: priorStage ? `Stage ${nodeId} revised` : `Stage ${nodeId}`,
+      });
+    }
 
     // Auto-generate internal challan for leftover if remaining is specified
     if (metrics.remaining !== undefined) {
@@ -28067,11 +29512,60 @@ async function clearAllData() {
       // unable to weigh itself until someone retyped the periodic table.
       'material_types'
     ];
+    // The custody ledger is append-only, enforced by triggers, so an ordinary
+    // DELETE is refused — which is the point of it, and which stops this loop
+    // dead.
+    //
+    // A deliberate workspace reset is the one thing allowed past that, and the
+    // exemption is written out here rather than hidden in a trigger condition:
+    // wiping provenance takes explicitly removing its protection first, and
+    // anyone reading this can see that is what happened. Leaving the rows
+    // behind would be worse than removing them — provenance for records that no
+    // longer exist is not history, it is a set of dangling claims.
+    await run('DROP TRIGGER IF EXISTS barcode_ledger_no_update').catch(() => {});
+    await run('DROP TRIGGER IF EXISTS barcode_ledger_no_delete').catch(() => {});
+
+    // The changelog triggers come off too, for a different reason: they work.
+    // Deleting every row of seventeen tables would otherwise write a changelog
+    // entry per row — tens of thousands of them — describing the disappearance
+    // of a workspace that is about to be replaced wholesale. Both families, or
+    // the derived ones would keep firing against parents already gone.
+    const liveChangelogTriggers = await all(
+      `SELECT name FROM sqlite_master WHERE type = 'trigger'
+         AND (name LIKE 'trg_changelog_%' OR name LIKE 'trg_derived_%')`,
+    ).catch(() => []);
+    for (const trigger of liveChangelogTriggers) {
+      await run(`DROP TRIGGER IF EXISTS ${trigger.name}`).catch(() => {});
+    }
+
     for (const table of allTables) {
       if (!preserveTables.includes(table.name)) {
         await run("DELETE FROM " + table.name + "");
       }
     }
+
+    // Protection goes straight back on. A window where the ledger is writable
+    // must not outlive the reset that opened it.
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS barcode_ledger_no_update
+      BEFORE UPDATE ON barcode_ledger
+      BEGIN
+        SELECT RAISE(ABORT, 'barcode_ledger is append-only: a custody record cannot be edited after the fact');
+      END
+    `).catch(() => {});
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS barcode_ledger_no_delete
+      BEFORE DELETE ON barcode_ledger
+      BEGIN
+        SELECT RAISE(ABORT, 'barcode_ledger is append-only: a custody record cannot be deleted');
+      END
+    `).catch(() => {});
+
+    // Put the changelog triggers back. Protection that a reset removes and
+    // does not restore quietly stops existing after the first reset — the
+    // same reason the ledger's own triggers are recreated just above.
+    await restoreChangelogTriggers();
+
     await ensurePrimaryGroupAndUnit();
     await run('COMMIT');
   } catch (error) {
@@ -28492,7 +29986,7 @@ async function ensureSimulationScenario(scenarioId) {
       maintainStocks: true,
       items: [line(500)],
     }, actor, null);
-    await issueDeliveryChallan(rc.id, actor);
+    await issueDeliveryChallan(rc.id, actor, { recordCustody: false });
     for (const [no, qty] of [['SIM-A-USE-1', 50], ['SIM-A-USE-2', 100]]) {
       const uc = await saveDeliveryChallan({
         type: 'internal',
@@ -28503,7 +29997,7 @@ async function ensureSimulationScenario(scenarioId) {
         maintainStocks: true,
         items: [line(qty)],
       }, actor, null);
-      await issueDeliveryChallan(uc.id, actor);
+      await issueDeliveryChallan(uc.id, actor, { recordCustody: false });
     }
   } else {
     const order = await get('SELECT order_no FROM order_headers ORDER BY rowid ASC LIMIT 1');
@@ -28519,7 +30013,7 @@ async function ensureSimulationScenario(scenarioId) {
       maintainStocks: true,
       items: [line(120)],
     }, actor, null);
-    await issueDeliveryChallan(rc.id, actor);
+    await issueDeliveryChallan(rc.id, actor, { recordCustody: false });
   }
 }
 
@@ -28751,7 +30245,7 @@ async function ensureFulfilmentScenario(scenarioId) {
       note: '',
     }],
   }, actor, null);
-  await issueDeliveryChallan(stockIn.id, actor);
+  await issueDeliveryChallan(stockIn.id, actor, { recordCustody: false });
 
   const makeOrder = async ({ orderNo, quantity, daysAgo }) => {
     const saved = await saveOrder({
@@ -28851,7 +30345,7 @@ async function ensureFulfilmentScenario(scenarioId) {
         lineNo: 1,
       }],
     }, actor, null);
-    await issueDeliveryChallan(dc.id, actor);
+    await issueDeliveryChallan(dc.id, actor, { recordCustody: false });
   };
 
   // C1 — no pipeline, fresh.
@@ -29069,6 +30563,9 @@ async function resetAndSeedDemoData(scenarioId = 'default') {
   await initDb();
   await clearAllData();
   await reseedDemoData(scenarioId);
+  // Seeding wrote through the triggers. Skip past all of it rather than
+  // narrating a rebuild to everyone who happens to be connected.
+  await resyncChangelogCursor();
 }
 
 function rowToDepartmentDto(row) {
@@ -30021,6 +31518,7 @@ const registerItemsModuleRoutes = require('./modules/items/routes');
 registerItemsModuleRoutes({
   app,
   requirePermission,
+  cacheMasterData,
   guardContract,
   get,
   all,
@@ -30717,6 +32215,10 @@ app.use((error, req, res, _next) => {
 });
 
 module.exports = {
+  resyncChangelogCursor,
+  drainChangelog,
+  pruneChangelog,
+  changeEmitter,
   applyInventoryMovement,
   // Exported so the fleet snapshot can be asserted rather than trusted.
   computeTelemetrySnapshot,
@@ -30811,6 +32313,7 @@ module.exports = {
   resetAndSeedDemoData,
   getOrderActivity,
   getOrders,
+  countOrders,
   getUnitsWithUsage,
   getGroupsWithUsage,
   getClientsWithUsage,

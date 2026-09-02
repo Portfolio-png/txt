@@ -23,6 +23,7 @@ import '../../domain/sub_contractor_definition.dart';
 import '../../domain/sub_contractor_inputs.dart';
 import '../providers/clients_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
@@ -1165,18 +1166,41 @@ class _ClientWarningText extends StatelessWidget {
   }
 }
 
-class _ClientPurchasesSheet extends StatelessWidget {
+class _ClientPurchasesSheet extends StatefulWidget {
   const _ClientPurchasesSheet({required this.client});
 
   final ClientDefinition client;
 
   @override
-  Widget build(BuildContext context) {
-    final provider = context.watch<OrdersProvider>();
-    final purchases =
-        provider.orders.where((o) => o.clientId == client.id).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  State<_ClientPurchasesSheet> createState() => _ClientPurchasesSheetState();
+}
 
+class _ClientPurchasesSheetState extends State<_ClientPurchasesSheet> {
+  // Asked for rather than filtered out of a resident copy of every order in the
+  // workspace. On real data that is nine rows instead of ninety-three, and it
+  // keeps working when the workspace has five thousand.
+  late final Future<List<OrderEntry>> _purchases = context
+      .read<OrdersProvider>()
+      .ordersForClient(widget.client.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<OrderEntry>>(
+      future: _purchases,
+      builder: (context, snapshot) {
+        final purchases = List<OrderEntry>.from(snapshot.data ?? const <OrderEntry>[])
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return _buildSheet(context, purchases, snapshot.connectionState);
+      },
+    );
+  }
+
+  Widget _buildSheet(
+    BuildContext context,
+    List<OrderEntry> purchases,
+    ConnectionState state,
+  ) {
+    final client = widget.client;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,

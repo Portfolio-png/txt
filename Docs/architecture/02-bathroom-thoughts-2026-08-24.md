@@ -103,6 +103,56 @@ link into Lookup with the code pre-filled.
 
   A Lookup that unions these is a **read-only join**, not new bookkeeping.
 
+### Barcode probe (2026-08-26)
+
+Five barcode namespaces exist, minted by four different generators, and nothing
+resolves across them:
+
+| Namespace | Format | Minted by |
+|---|---|---|
+| `materials.barcode` (parent) | `PAR-{epochMs}-{rand4}` | `generateParentBarcode`, **and a duplicate of it in Dart** (`api_inventory_repository.dart:1576`) |
+| `materials.barcode` (child) | `CHD-{parent's rand4}-{NN}` | `generateChildBarcode` — **the timestamp is dropped** |
+| `materials.barcode` (received) | `REC-{challanNo}-L{n}` | `mintReceivedMaterial`, added 2026-08-26 |
+| `piece_barcodes` | per challan line | mobile purchase wizard |
+| `machines.barcode` / `employees.barcode_id` | `MCH-*` / `EMP-*` | seeds |
+| `run_barcode_inputs.barcode` | references the above, or `#qty-{id}` | assign-stock |
+
+**1. Child barcodes collide, and the rate is not marginal.** A child keeps only
+the parent's 4-digit random, so its uniqueness rests on 9,000 values. Measured
+over 400 simulated workspaces:
+
+| Parents with children | Workspaces hitting a collision |
+|---|---|
+| 50 | 14.8% |
+| 100 | 41.0% |
+| 150 | 75.5% |
+| 300 | 99.3% |
+| 1000 | 100% |
+
+Driving the real `createParentWithChildren` 200 times: **1 outright failure**,
+`SQLITE_CONSTRAINT: UNIQUE constraint failed: materials.barcode`, surfaced raw.
+There is no retry — the insert simply fails and the user loses the batch.
+
+**2. Parent barcodes collide too.** `PAR-{ms}-{rand4}` has only 9,000 values
+within a millisecond: **5,183 duplicates in 20,000 rapid mints**.
+
+**3. The lookup finds one namespace out of five.** `/api/barcode/lookup` joins
+`piece_barcodes` only. Asked for `CHD-3533-01` — a barcode that exists in
+`materials` — it answers *404, "Barcode not found in database."* The identical
+response it gives to `DOES-NOT-EXIST-123`.
+
+**That is §1, reproduced exactly.** Typing a barcode you are holding and being
+told it does not exist was never a typo and never a missing record: the lookup
+does not search the table the barcode is in, and cannot tell "not mine" from
+"not real".
+
+**The fix has a constraint worth naming:** barcodes are printed and stuck on
+material. Any change must be additive — new mints get a format that cannot
+collide (keep the timestamp in the child, and retry on constraint failure the
+way `mintReceivedMaterial` already does), while every code already on a label
+keeps resolving. And the Dart duplicate of the generator has to go, or the two
+will drift.
+
 ### Open
 
 - Is Product Lookup a **new sidebar destination**, or is it the Global Search

@@ -39,12 +39,32 @@ class ApiOrderRepository implements OrderRepository {
   Future<void> init() async {}
 
   @override
-  Future<List<OrderEntry>> getOrders() async {
+  Future<List<OrderEntry>> getOrders({
+    String search = '',
+    int? clientId,
+    List<String> statuses = const <String>[],
+    List<int> ids = const <int>[],
+    int? limit,
+    int offset = 0,
+  }) async {
     if (useMockResponses) {
       return List<OrderEntry>.from(_mockOrders);
     }
 
-    final uri = Uri.parse('$baseUrl/api/orders');
+    // Only sent when asked for, so an unnarrowed call is byte-for-byte the
+    // request it always was — and shares a cache entry with itself rather than
+    // fragmenting one per empty parameter.
+    final query = <String, String>{
+      if (search.trim().isNotEmpty) 'search': search.trim(),
+      if (clientId != null && clientId > 0) 'client_id': '$clientId',
+      if (statuses.isNotEmpty) 'status': statuses.join(','),
+      if (ids.isNotEmpty) 'ids': ids.join(','),
+      if (limit != null && limit > 0) 'limit': '$limit',
+      if (limit != null && limit > 0 && offset > 0) 'offset': '$offset',
+    };
+    final uri = Uri.parse(
+      '$baseUrl/api/orders',
+    ).replace(queryParameters: query.isEmpty ? null : query);
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = OrdersListResponse.fromJson(payload);

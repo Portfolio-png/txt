@@ -9,7 +9,23 @@ import '../models/order_api_models.dart';
 
 abstract class OrderRepository {
   Future<void> init();
-  Future<List<OrderEntry>> getOrders();
+  /// The order list, optionally narrowed and paged.
+  ///
+  /// Called with no arguments it returns every order, because several features
+  /// legitimately need the whole set resident — the production order picker,
+  /// challan order-selection, a client's history. A default page size would
+  /// silently truncate them.
+  ///
+  /// `search` is applied by the server across the same eight fields the list
+  /// used to filter in memory, so the two agree exactly.
+  Future<List<OrderEntry>> getOrders({
+    String search,
+    int? clientId,
+    List<String> statuses,
+    List<int> ids,
+    int? limit,
+    int offset,
+  });
   Future<OrderEntry> createOrder(CreateOrderInput input);
   Future<OrderEntry> updateOrder(int orderId, CreateOrderInput input);
   Future<List<OrderDeletionSummary>> deleteOrder(

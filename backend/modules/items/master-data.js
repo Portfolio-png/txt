@@ -417,7 +417,10 @@ function registerMasterDataRoutes(ctx) {
           origin: masterData.ORIGINS.manual,
         });
         if (typeof logChange === 'function') {
-          await logChange('item_master_data', String(itemId), 'update', {
+          // There is no `item_master_data` table, and 'update' is not one of
+          // the three event types the changelog allows — this was rejected and
+          // swallowed on every call. The record belongs to the item.
+          await logChange('items', String(itemId), 'UPDATE', {
             pipelineId,
           });
         }

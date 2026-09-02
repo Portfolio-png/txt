@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/widgets/universal_barcode_inspector_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../inventory/data/repositories/inventory_repository.dart';
 import '../../../inventory/domain/variation_stock_record.dart';
@@ -38,6 +39,7 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
   bool _isLeftPaneMinimized = false;
 
   final TextEditingController _barcodeController = TextEditingController();
+  final FocusNode _barcodeFocusNode = FocusNode();
   bool _isLookingUpBarcode = false;
 
   @override
@@ -74,6 +76,8 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
   @override
   void dispose() {
     _controller.dispose();
+    _barcodeFocusNode.dispose();
+    _barcodeController.dispose();
     super.dispose();
   }
 
@@ -138,17 +142,27 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
     if (code.trim().isEmpty) return;
     setState(() => _isLookingUpBarcode = true);
     try {
-      final result = await provider.lookupBarcode(code.trim());
-      if (result == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Barcode not found')));
-        }
-      } else {
-        if (mounted) {
-          _showBarcodeResultDialog(result);
-        }
+      // The universal resolver, not the piece-barcode lookup this used to call.
+      //
+      // That one searched `piece_barcodes` and nothing else, so scanning a
+      // sheet you were holding produced "Barcode not found" — the identical
+      // message it gave to a code that never existed. A snackbar cannot tell
+      // those apart either, which is why a failed scan now opens the inspector
+      // rather than a one-line dismissal: it is the only place that can say
+      // *which* kind of nothing this is.
+      final scan = await provider.scanBarcode(code.trim());
+      if (mounted) {
+        await showUniversalBarcodeInspector(
+          context,
+          scan: scan,
+          // Every barcode the trail mentions is a step you can take. Following
+          // one re-enters this same handler, so walking from a sheet to its
+          // challan to the vendor is the same gesture each time.
+          onFollowBarcode: (next) {
+            Navigator.of(context).pop();
+            _handleBarcodeSubmit(next, provider);
+          },
+        );
       }
     } finally {
       if (mounted) {
@@ -158,78 +172,18 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
     }
   }
 
-  void _showBarcodeResultDialog(Map<String, dynamic> result) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(
-          'Barcode Details',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _detailRow('Item', result['item_name']?.toString() ?? 'Unknown'),
-            _detailRow('Parent Code', result['parent_code']?.toString() ?? '-'),
-            _detailRow('Child Code', result['child_code']?.toString() ?? '-'),
-            _detailRow(
-              'Order Origin',
-              result['order_no']?.toString() ?? 'Unknown',
-            ),
-            _detailRow(
-              'Vendor',
-              result['vendor_name']?.toString() ?? 'Unknown',
-            ),
-            _detailRow(
-              'Challan Type',
-              result['challan_type']?.toString() ?? '-',
-            ),
-            _detailRow(
-              'Quantity / Weight',
-              '${result['quantity_pcs'] ?? '-'} / ${result['weight'] ?? '-'}',
-            ),
-            _detailRow('Notes', result['note']?.toString() ?? '-'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Consumer<SearchProvider>(
       builder: (context, provider, child) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
+          // Opened by the scan action rather than by search, so put the caret
+          // where the code is going to be typed. Consumed once — left standing
+          // it would steal focus back on every rebuild of a search.
+          if (provider.consumeBarcodeFocusRequest()) {
+            _barcodeFocusNode.requestFocus();
+          }
           if (provider.isOverlayVisible &&
               !_controller.isAnimating &&
               _controller.status != AnimationStatus.completed) {
@@ -390,6 +344,7 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                           const SizedBox(height: 8),
                                           TextField(
                                             controller: _barcodeController,
+                                            focusNode: _barcodeFocusNode,
                                             decoration: InputDecoration(
                                               hintText:
                                                   'Scan or type barcode...',

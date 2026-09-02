@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/app_performance.dart';
 import '../theme/soft_erp_theme.dart';
 
 class SoftSurface extends StatelessWidget {
@@ -401,6 +402,19 @@ class _SoftRowCardState extends State<SoftRowCard>
   void initState() {
     super.initState();
 
+    // Reduced effects is read here as well as in build: the controller and its
+    // timer are per-row allocations, and a list of rows that will never fade
+    // should not be paying for the machinery that would have faded them.
+    //
+    // Read from the notifier rather than the context because initState has no
+    // MediaQuery yet; build handles the platform's own reduce-motion setting.
+    if (AppPerformance.reducedEffects.value) {
+      _entranceController = AnimationController(vsync: this);
+      _fadeAnimation = const AlwaysStoppedAnimation<double>(1);
+      _slideAnimation = const AlwaysStoppedAnimation<Offset>(Offset.zero);
+      return;
+    }
+
     final myIndex = _staggerCounter++;
     if (!_resetScheduled) {
       _resetScheduled = true;
@@ -449,22 +463,38 @@ class _SoftRowCardState extends State<SoftRowCard>
 
   @override
   Widget build(BuildContext context) {
+    // On a machine without a GPU this row is the whole performance story: it is
+    // drawn once per visible list entry, on every scroll frame. The fade is a
+    // `saveLayer` and the hover shadow is a 12px blur — the two most expensive
+    // things a software rasteriser can be asked for. Reduced effects keeps the
+    // layout and the hover feedback and drops exactly those.
+    final reduced = AppPerformance.of(context);
     final lift = _pressed ? 0.9 : (_hovered ? -1.7 : 0.0);
     final selected = widget.isSelected;
     final defaultHoverShadow = const [
       BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 7)),
     ];
-    final shadow = _hovered
-        ? (widget.hoverShadow ?? defaultHoverShadow)
-        : (widget.baseShadow ?? SoftErpTheme.raisedShadow);
+    final shadow = reduced
+        ? null
+        : (_hovered
+              ? (widget.hoverShadow ?? defaultHoverShadow)
+              : (widget.baseShadow ?? SoftErpTheme.raisedShadow));
     final baseColor = widget.baseColor ?? SoftErpTheme.cardSurface;
     final hoverColor = widget.hoverColor ?? const Color(0xFFFDFDFF);
     final selectedColor = widget.selectedColor ?? const Color(0xFFF2EFFF);
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: MouseRegion(
+
+    Widget wrapEntrance(Widget child) {
+      // No fade and no slide when reduced — and no controller was started, so
+      // there is nothing driving them anyway.
+      if (reduced) return child;
+      return FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(position: _slideAnimation, child: child),
+      );
+    }
+
+    return wrapEntrance(
+        MouseRegion(
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() {
             _hovered = false;
@@ -501,7 +531,6 @@ class _SoftRowCardState extends State<SoftRowCard>
             ),
           ),
         ),
-      ),
     );
   }
 }

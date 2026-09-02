@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -12,6 +13,37 @@ class SocketService {
   http.Client? _client;
   bool _isConnected = false;
   int _lastEventId = 0;
+
+  /// Where to read and write the replay position.
+  ///
+  /// Held in memory alone the cursor resets to 0 on every launch, so the app
+  /// asks for the whole workspace again — which is exactly what it used to do.
+  /// Injected rather than reached for, so this stays testable and so the
+  /// service does not force a database open before anyone has signed in.
+  Future<int> Function()? loadCursor;
+  Future<void> Function(int id)? saveCursor;
+
+  /// Reads the persisted position. Call once before connecting.
+  Future<void> restoreCursor() async {
+    final load = loadCursor;
+    if (load == null) return;
+    try {
+      final stored = await load();
+      if (stored > _lastEventId) _lastEventId = stored;
+    } catch (_) {
+      // A cursor that cannot be read means starting from zero: a full sync,
+      // which is correct, just expensive.
+    }
+  }
+
+  void _rememberCursor(int id) {
+    if (id <= 0) return;
+    final save = saveCursor;
+    if (save == null) return;
+    // Deliberately not awaited: the stream must keep draining. A lost write
+    // only costs replaying a few events after a crash.
+    save(id).catchError((_) {});
+  }
   Timer? _reconnectTimer;
   String? _currentToken;
   bool _hasConnectedBefore = false;
@@ -125,6 +157,14 @@ class SocketService {
     }
   }
 
+  /// Feeds one raw SSE block through the dispatcher.
+  ///
+  /// Exposed for tests: what this does with a block is the delicate part —
+  /// twelve of seventeen tables used to be dropped here — and it should be
+  /// checkable without standing up a server and a live stream.
+  @visibleForTesting
+  void processEventForTest(String eventBlock) => _processEvent(eventBlock);
+
   void _processEvent(String eventBlock) {
     String eventType = '';
     String data = '';
@@ -133,6 +173,7 @@ class SocketService {
       if (line.startsWith('id:')) {
         final idStr = line.substring(3).trim();
         _lastEventId = int.tryParse(idStr) ?? _lastEventId;
+        _rememberCursor(_lastEventId);
       } else if (line.startsWith('event:')) {
         eventType = line.substring(6).trim();
       } else if (line.startsWith('data:')) {
@@ -148,36 +189,64 @@ class SocketService {
         final action = parsedData['event_type']; // INSERT, UPDATE, DELETE
 
         final payload = {'id': recordId};
-        String emitEvent = '';
 
-        if (tableName == 'clients') {
-          if (action == 'INSERT')
-            emitEvent = 'client_added';
-          else if (action == 'UPDATE')
-            emitEvent = 'client_updated';
-          else if (action == 'DELETE')
-            emitEvent = 'client_deleted';
-        } else if (tableName == 'vendors') {
-          if (action == 'INSERT')
-            emitEvent = 'vendor_added';
-          else if (action == 'UPDATE')
-            emitEvent = 'vendor_updated';
-          else if (action == 'DELETE')
-            emitEvent = 'vendor_deleted';
-        } else if (tableName == 'items') {
-          if (action == 'INSERT')
-            emitEvent = 'item_added';
-          else if (action == 'UPDATE')
-            emitEvent = 'item_updated';
-          else if (action == 'DELETE')
-            emitEvent = 'item_deleted';
-        } else if (tableName == 'groups') {
+        // Every replicated table, not the five that happened to be wired.
+        //
+        // Twelve of the seventeen tables the server logs had no branch here, so
+        // their events arrived and were dropped: a machine renamed, a unit
+        // added, a pipeline template edited, an order line's status moving —
+        // all invisible until someone reloaded. Two of the five that were wired
+        // named tables that do not exist.
+        //
+        // The generic event goes out for everything, so a delta engine can
+        // replicate a table without anyone adding a case. The named events stay
+        // for the providers that already listen for them.
+        _emit('table-change', {
+          'table': tableName,
+          'id': recordId,
+          'action': action,
+        });
+
+        String emitEvent = '';
+        const named = <String, String>{
+          'clients': 'client',
+          'vendors': 'vendor',
+          'items': 'item',
+        };
+        final prefix = named[tableName];
+        if (prefix != null) {
+          if (action == 'INSERT') {
+            emitEvent = '${prefix}_added';
+          } else if (action == 'UPDATE') {
+            emitEvent = '${prefix}_updated';
+          } else if (action == 'DELETE') {
+            emitEvent = '${prefix}_deleted';
+          }
+        } else if (tableName == 'groups' || tableName == 'item_variation_nodes') {
           // Coarse on purpose: the group list is small and a refresh is one
           // query, so created / renamed / deleted / filled all say the same
-          // thing — "the groups you are holding are out of date".
+          // thing — "the groups you are holding are out of date". A variation
+          // node changing means the same for whoever is rendering the tree.
           emitEvent = 'groups_changed';
-        } else if (tableName == 'delivery_challans') {
+        } else if (tableName == 'delivery_challans' ||
+            tableName == 'delivery_challan_items') {
           emitEvent = 'challan_updated';
+        } else if (tableName == 'order_items' || tableName == 'order_headers') {
+          emitEvent = 'orders_changed';
+        } else if (tableName == 'materials' ||
+            tableName == 'inventory_stock_positions') {
+          emitEvent = 'inventory_updated';
+        } else if (tableName == 'machines') {
+          emitEvent = 'machines_changed';
+        } else if (tableName == 'dies') {
+          emitEvent = 'dies_changed';
+        } else if (tableName == 'units') {
+          emitEvent = 'units_changed';
+        } else if (tableName == 'departments') {
+          emitEvent = 'departments_changed';
+        } else if (tableName == 'pipeline_templates' ||
+            tableName == 'pipeline_runs') {
+          emitEvent = 'production_changed';
         }
 
         if (emitEvent.isNotEmpty) {

@@ -161,6 +161,15 @@ class _ChallanScreenState extends State<ChallanScreen> {
   bool _showTemplates = false;
   String? _activeReportGroupCode;
   int? _focusedChallanId;
+  // The focused challan with its line items.
+  //
+  // The list endpoint no longer carries `items` — it ships aggregates instead,
+  // because sending every line of every challan cost 26% of a 130 KB response
+  // for challans nobody had opened. So the preview pane fetches the one it is
+  // showing. Held separately from `_focusedChallanId` so the pane can paint the
+  // list row's header immediately and fill the lines in when they arrive,
+  // rather than blocking on a request.
+  DeliveryChallan? _focusedChallanDetail;
   final Set<String> _selectedDeliveryChallanNos = <String>{};
   final Set<String> _selectedReceptionChallanNos = <String>{};
   bool _isGeneratingReport = false;
@@ -210,11 +219,16 @@ class _ChallanScreenState extends State<ChallanScreen> {
         .where((challan) => challan.isInternal)
         .toList(growable: false);
     final itemFilterActive = provider.itemFilterId != null;
+    // The hydrated copy when it has arrived, otherwise the list row — so the
+    // pane opens instantly with the header and fills in its lines a moment
+    // later, instead of showing a spinner over data we already have.
     final focusedChallan = _focusedChallanId == null
         ? null
-        : provider.challans
-              .where((challan) => challan.id == _focusedChallanId)
-              .firstOrNull;
+        : (_focusedChallanDetail?.id == _focusedChallanId
+              ? _focusedChallanDetail
+              : provider.challans
+                    .where((challan) => challan.id == _focusedChallanId)
+                    .firstOrNull);
     return PageContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,12 +318,17 @@ class _ChallanScreenState extends State<ChallanScreen> {
                       focusedChallan: focusedChallan,
                       // Tapping the focused card again closes the preview
                       // column; tapping any other card moves focus to it.
-                      onFocus: (challan) => setState(() {
-                        _focusedChallanId =
+                      onFocus: (challan) {
+                        final next =
                             challan != null && _focusedChallanId == challan.id
                             ? null
                             : challan?.id;
-                      }),
+                        setState(() {
+                          _focusedChallanId = next;
+                          _focusedChallanDetail = null;
+                        });
+                        if (next != null) _hydrateFocused(next);
+                      },
                       onToggleDelivery: _toggleDeliverySelection,
                       onToggleReception: _toggleReceptionSelection,
                       onOpen: (challan) =>
@@ -337,14 +356,28 @@ class _ChallanScreenState extends State<ChallanScreen> {
     );
   }
 
+  /// Fetches the focused challan's line items.
+  ///
+  /// Guarded on the id still being focused when the response lands: someone
+  /// clicking down a list faster than a slow link replies would otherwise see
+  /// an earlier challan's lines appear under a later one's header.
+  Future<void> _hydrateFocused(int id) async {
+    final full = await context.read<DeliveryChallanProvider>().loadChallan(id);
+    if (!mounted || full == null || _focusedChallanId != id) return;
+    setState(() => _focusedChallanDetail = full);
+  }
+
   Future<void> _openEditor(
     BuildContext context, {
     DeliveryChallan? challan,
     bool duplicate = false,
     ChallanType? initialType,
   }) async {
+    // Hydrated for duplicating too, not just for editing: a duplicate copies
+    // the source's lines, and the list row no longer carries them — so this
+    // would silently have produced an empty copy.
     DeliveryChallan? full = challan;
-    if (challan != null && !duplicate) {
+    if (challan != null) {
       full = await context.read<DeliveryChallanProvider>().loadChallan(
         challan.id,
       );
@@ -6739,14 +6772,23 @@ String _itemSummary(DeliveryChallan challan) {
 }
 
 String _qtyLabel(DeliveryChallan challan) {
-  final quantity = challan.items.fold<double>(
-    0,
-    (sum, item) => sum + (double.tryParse(item.quantityPcs) ?? 0),
-  );
-  final weight = challan.items.fold<double>(
-    0,
-    (sum, item) => sum + (double.tryParse(item.weight) ?? 0),
-  );
+  // Summed from the lines when they are loaded, and from the aggregates the
+  // list endpoint sends when they are not. Without the fallback a list row
+  // would drop from "Delivered 12 Pcs · 45 kg" to "Delivered 3 items" the
+  // moment the lines stopped being shipped with the list — which is the whole
+  // point of sending the aggregates.
+  final quantity = challan.items.isEmpty
+      ? challan.totalQuantity
+      : challan.items.fold<double>(
+          0,
+          (sum, item) => sum + (double.tryParse(item.quantityPcs) ?? 0),
+        );
+  final weight = challan.items.isEmpty
+      ? challan.totalWeight
+      : challan.items.fold<double>(
+          0,
+          (sum, item) => sum + (double.tryParse(item.weight) ?? 0),
+        );
   final qtyPrefix = challan.isReception ? 'Received' : 'Delivered';
   if (quantity == 0 && weight == 0) {
     return '$qtyPrefix ${challan.itemsCount} item${challan.itemsCount == 1 ? '' : 's'}';

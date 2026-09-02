@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:core_erp/core/services/app_performance.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
@@ -243,6 +245,8 @@ class AppTopBar extends StatelessWidget {
                   child: _TopStripActions(actions: config.actions),
                 ),
               ],
+              const SizedBox(width: 10),
+              const _ScanAction(),
               const SizedBox(width: 14),
               SizedBox(
                 width: profileWidth,
@@ -257,6 +261,33 @@ class AppTopBar extends StatelessWidget {
 }
 
 void _noopSearch(String _) {}
+
+/// Opens the barcode lookup, from anywhere.
+///
+/// The scanner gun needs no button — it types wherever it is pointed and the
+/// listener picks it up. This is for the other half: a code read by eye off a
+/// label that the gun refuses, which until now meant opening search and knowing
+/// which of its two fields was the right one.
+class _ScanAction extends StatelessWidget {
+  const _ScanAction();
+
+  @override
+  Widget build(BuildContext context) {
+    final isApple =
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    return Tooltip(
+      message: 'Scan or look up a barcode  (${isApple ? '⌘B' : 'Ctrl+B'})',
+      child: IconButton(
+        onPressed: () => context.read<SearchProvider>().openBarcodeLookup(),
+        icon: const Icon(Icons.qr_code_scanner_rounded, size: 21),
+        style: IconButton.styleFrom(
+          foregroundColor: SoftErpTheme.textSecondary,
+        ),
+      ),
+    );
+  }
+}
 
 class ShellTopStripSearchField extends StatefulWidget {
   const ShellTopStripSearchField({super.key, required this.search});
@@ -484,8 +515,37 @@ class TopStripProfileCard extends StatelessWidget {
             tooltip: 'Account',
             position: PopupMenuPosition.under,
             onSelected: (value) => _onAccountAction(context, value),
-            itemBuilder: (menuContext) => const [
+            itemBuilder: (menuContext) => [
+              // Reduced effects lives here, not in Settings & Preferences.
+              //
+              // That dialog is gated on `config.write` because it also holds
+              // Clear Data and Factory Reset — so a staff member never opens it,
+              // and could never turn this on. But whether the machine in front
+              // of someone can draw shadows at speed is a fact about *their*
+              // machine: it is stored locally, changes no data and no business
+              // rule, and every person on a slow PC needs it whatever their
+              // role. So it sits in the account menu, which everyone has.
               PopupMenuItem<String>(
+                value: 'reduced_effects',
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: AppPerformance.reducedEffects,
+                  builder: (context, reduced, _) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.speed_rounded),
+                    title: const Text('Reduced effects'),
+                    subtitle: const Text('Faster on a PC with no graphics card'),
+                    trailing: Switch.adaptive(
+                      value: reduced,
+                      onChanged: (value) {
+                        AppPerformance.setReducedEffects(value);
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem<String>(
                 value: 'company_profile',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -494,7 +554,7 @@ class TopStripProfileCard extends StatelessWidget {
                   subtitle: Text('Challan letterhead'),
                 ),
               ),
-              PopupMenuItem<String>(
+              const PopupMenuItem<String>(
                 value: 'clear_mine',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -502,7 +562,7 @@ class TopStripProfileCard extends StatelessWidget {
                   title: Text('Clear my data'),
                 ),
               ),
-              PopupMenuItem<String>(
+              const PopupMenuItem<String>(
                 value: 'sign_out',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -577,6 +637,13 @@ class TopStripProfileCard extends StatelessWidget {
   }
 
   Future<void> _onAccountAction(BuildContext context, String value) async {
+    if (value == 'reduced_effects') {
+      // Tapping the row, rather than the switch on it, means the same thing.
+      await AppPerformance.setReducedEffects(
+        !AppPerformance.reducedEffects.value,
+      );
+      return;
+    }
     if (value == 'company_profile') {
       await CompanyProfileDialog.open(context);
       return;

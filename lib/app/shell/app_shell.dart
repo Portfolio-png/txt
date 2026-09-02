@@ -310,6 +310,14 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
           context.read<SearchProvider>().toggleOverlay();
         },
+        // Scan. The gun needs no shortcut — it types wherever it is pointed —
+        // but a code read off a smudged label by eye has to be typed somewhere.
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+          context.read<SearchProvider>().openBarcodeLookup();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () {
+          context.read<SearchProvider>().openBarcodeLookup();
+        },
         const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
             navProvider.setTab(0),
         const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>

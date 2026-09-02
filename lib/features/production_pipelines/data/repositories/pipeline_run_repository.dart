@@ -16,7 +16,7 @@ abstract class PipelineRunRepository {
   Future<PipelineTemplate?> getTemplate(String id);
   Future<List<PipelineRun>> getRuns({String? templateId});
   Future<List<PipelineRun>> getRunsForOrder(String orderNo);
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting});
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting, int? outputVariationLeafNodeId, String? outputVariationPathLabel});
   Future<PipelineRun?> getRun(String id);
   Future<PipelineRun> updateNodeStatus({
     required String runId,
@@ -170,12 +170,23 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting}) async {
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting, int? outputVariationLeafNodeId, String? outputVariationPathLabel}) async {
     final uri = Uri.parse('$baseUrl/runs');
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'templateId': templateId, 'name': name, 'orderNo': orderNo, 'orderItemId': orderItemId, 'scrapRouting': scrapRouting}),
+      body: jsonEncode({
+        'templateId': templateId,
+        'name': name,
+        'orderNo': orderNo,
+        'orderItemId': orderItemId,
+        'scrapRouting': scrapRouting,
+        // What this run is making, when no order line says it for them. The
+        // server prefers the order line whenever there is one, so sending both
+        // is harmless.
+        'outputVariationLeafNodeId': outputVariationLeafNodeId,
+        'outputVariationPathLabel': outputVariationPathLabel,
+      }),
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>;
     _ensureSuccess(response.statusCode, payload, 'Failed to create run.');

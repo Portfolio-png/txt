@@ -78,6 +78,8 @@ class MockPipelineRunRepository implements PipelineRunRepository {
     String? orderNo,
     int? orderItemId,
     String? scrapRouting,
+    int? outputVariationLeafNodeId,
+    String? outputVariationPathLabel,
   }) async {
     _ensureSeeded();
     final template = _templates!

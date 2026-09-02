@@ -105,7 +105,11 @@ function registerMaterialTypeRoutes(ctx) {
         result.lastID,
       ]);
       if (typeof logChange === 'function') {
-        await logChange('material', String(result.lastID), 'create', {
+        // 'material' is not a table and 'create' is not one of the three event
+        // types the changelog's CHECK allows, so this insert was rejected and
+        // swallowed on every call. `materials` is trigger-logged now, so this
+        // only needs to be valid enough to push the notification.
+        await logChange('materials', String(result.lastID), 'INSERT', {
           name: parsed.name,
         });
       }
@@ -166,7 +170,7 @@ function registerMaterialTypeRoutes(ctx) {
           req.params.id,
         ]);
         if (typeof logChange === 'function') {
-          await logChange('material', String(req.params.id), 'update', {
+          await logChange('materials', String(req.params.id), 'UPDATE', {
             name: parsed.name,
           });
         }
@@ -194,7 +198,7 @@ function registerMaterialTypeRoutes(ctx) {
           return;
         }
         if (typeof logChange === 'function') {
-          await logChange('material', String(req.params.id), 'archive', {});
+          await logChange('materials', String(req.params.id), 'UPDATE', {});
         }
         res.json({ success: true });
       } catch (error) {

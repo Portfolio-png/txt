@@ -26,6 +26,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   const {
     app,
     requirePermission,
+    cacheMasterData,
     guardContract,
     get,
     all,
@@ -78,6 +79,13 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     if (!Array.isArray(itemIds)) return;
     for (const itemId of itemIds) {
       try {
+        // Not forced any more. Migration 041 puts a trigger on
+        // group_item_memberships that announces the item, so the row is already
+        // logged — this only needs to push it. Forcing as well announced every
+        // item twice.
+        //
+        // The trigger is the better home for it: it also covers a membership
+        // written by a migration or a script, which this never would.
         await logChange('items', itemId, 'UPDATE');
       } catch (_) {
         // As above.
@@ -85,7 +93,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     }
   }
 
-  app.get('/api/groups', requirePermission('config.read'), async (req, res) => {
+  app.get('/api/groups', requirePermission('config.read'), cacheMasterData, async (req, res) => {
     try {
       const rows = await getGroupsWithUsage();
       const groups = rows.map(rowToGroupDto);
@@ -202,7 +210,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     }
   });
 
-  app.get('/api/items', requirePermission('config.read'), async (req, res) => {
+  app.get('/api/items', requirePermission('config.read'), cacheMasterData, async (req, res) => {
     try {
       const rows = await getItemsWithUsage();
       const items = await Promise.all(rows.map(rowToItemDto));

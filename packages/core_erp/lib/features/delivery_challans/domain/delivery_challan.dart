@@ -380,6 +380,8 @@ class DeliveryChallan {
     required this.status,
     required this.items,
     required this.itemsCount,
+    this.totalQuantity = 0,
+    this.totalWeight = 0,
     required this.assets,
     required this.createdAt,
     required this.updatedAt,
@@ -421,6 +423,15 @@ class DeliveryChallan {
   final DeliveryChallanStatus status;
   final List<DeliveryChallanItem> items;
   final int itemsCount;
+
+  /// Totals for the lines, sent by the list endpoint so a row can say
+  /// "12 Pcs · 45 kg" without carrying every line.
+  ///
+  /// Pieces and weight stay separate because these lines are mixed — some are
+  /// counted, some are weighed — and one combined figure would claim a weight
+  /// was a piece count.
+  final double totalQuantity;
+  final double totalWeight;
   final List<UploadedAsset> assets;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -534,7 +545,13 @@ class DeliveryChallan {
       itemsCount:
           json['itemsCount'] as int? ??
           json['items_count'] as int? ??
+          json['lineCount'] as int? ??
           items.length,
+      totalQuantity:
+          (json['totalQty'] as num?)?.toDouble() ??
+          (json['totalQuantity'] as num?)?.toDouble() ??
+          0,
+      totalWeight: (json['totalWeight'] as num?)?.toDouble() ?? 0,
       assets: (json['assets'] as List<dynamic>? ?? const [])
           .map((a) => UploadedAsset.fromJson(a as Map<String, dynamic>))
           .toList(growable: false),

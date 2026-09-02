@@ -41,6 +41,29 @@ class OrdersProvider extends ChangeNotifier {
       _repository.getOrderTrace(orderNo);
 
   List<OrderEntry> get orders => List<OrderEntry>.unmodifiable(_orders);
+
+  /// Just this client's orders, fetched rather than filtered.
+  ///
+  /// The client screen and challan order-selection used to scan a resident copy
+  /// of every order in the workspace to find the handful belonging to one
+  /// client. Asking the server for them narrows a 93-row answer to nine, and
+  /// keeps working when the workspace has five thousand.
+  Future<List<OrderEntry>> ordersForClient(int clientId) =>
+      _repository.getOrders(clientId: clientId);
+
+  /// The orders still worth putting on a machine.
+  ///
+  /// What the production order picker actually wants — on real data this is 21
+  /// rows of 93, and 1.9 KB instead of 5.9 KB.
+  Future<List<OrderEntry>> openOrders() => _repository.getOrders(
+    statuses: const <String>['inProgress', 'notStarted', 'draft'],
+  );
+
+  /// Specific orders by id, for resolving a selection without holding the whole
+  /// list to look them up in.
+  Future<List<OrderEntry>> ordersByIds(List<int> ids) =>
+      ids.isEmpty ? Future<List<OrderEntry>>.value(const <OrderEntry>[])
+                  : _repository.getOrders(ids: ids);
   String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;

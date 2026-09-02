@@ -1,6 +1,9 @@
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/services/scan_buffer.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
+import 'package:core_erp/core/widgets/universal_barcode_inspector_dialog.dart';
+import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import 'package:core_erp/features/departments/domain/employee_definition.dart';
 import 'package:core_erp/features/departments/presentation/providers/departments_provider.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +13,18 @@ import 'package:provider/provider.dart';
 import '../../domain/freelancer_job.dart';
 import '../providers/jobs_provider.dart';
 
+/// Catches a barcode scanner gun anywhere in the app.
+///
+/// A scanner is a keyboard: it types the code and presses Enter. That makes it
+/// indistinguishable from a person, except for speed — no one types eight
+/// characters at under 50ms apart. That gap is the whole discrimination, and it
+/// matters because a listener that guesses wrong fights every text field in the
+/// app: type "hello", press Enter, and a dialog opens over what you were doing.
+///
+/// A freelancer badge keeps its own dialog — a job sheet is more use there than
+/// a generic record. Everything else goes to the universal inspector, which is
+/// the point: the gun does not know whether it is pointed at a sheet, a
+/// challan, a machine or a person, and now it does not have to.
 class FreelancerBarcodeListener extends StatefulWidget {
   const FreelancerBarcodeListener({super.key, required this.child});
 
@@ -21,8 +36,9 @@ class FreelancerBarcodeListener extends StatefulWidget {
 }
 
 class _FreelancerBarcodeListenerState extends State<FreelancerBarcodeListener> {
-  String _barcodeBuffer = '';
-  DateTime? _lastKeystrokeTime;
+  /// The speed discrimination lives in its own object so it can be tested
+  /// without faking a keyboard. Getting it wrong fights every text field.
+  final ScanBuffer _scan = ScanBuffer();
 
   @override
   void initState() {
@@ -39,28 +55,56 @@ class _FreelancerBarcodeListenerState extends State<FreelancerBarcodeListener> {
   bool _handleKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
 
-    final now = DateTime.now();
-    if (_lastKeystrokeTime != null &&
-        now.difference(_lastKeystrokeTime!).inMilliseconds > 50) {
-      _barcodeBuffer = '';
-    }
-    _lastKeystrokeTime = now;
-
     if (event.logicalKey == LogicalKeyboardKey.enter) {
-      final scanned = _barcodeBuffer.trim();
-      _barcodeBuffer = '';
-      if (scanned.startsWith('FR-')) {
-        _processBarcode(scanned);
+      // Read before completing: a freelancer badge is dispatched on its prefix
+      // whatever its timing, because those are also typed by hand at the bench.
+      final pending = _scan.value.trim();
+      final scanned = _scan.complete();
+
+      if (pending.startsWith('FR-')) {
+        // A freelancer badge has its own screen — a job sheet answers more
+        // there than a generic record would.
+        _processBarcode(pending);
         return true;
       }
+
+      if (scanned != null) {
+        // Consuming the Enter matters: otherwise the scan also submits
+        // whatever had focus behind the dialog that is about to open.
+        _inspect(scanned);
+        return true;
+      }
+
+      // Typed by a person. Let the app have the Enter it was expecting.
       return false;
     }
 
     final character = event.character;
     if (character != null && character.isNotEmpty) {
-      _barcodeBuffer += character;
+      _scan.add(character, DateTime.now());
     }
     return false;
+  }
+
+  /// Resolves a scanned code and shows what it is.
+  ///
+  /// A failed scan opens the inspector too rather than a snackbar: only the
+  /// inspector can say whether this was one of ours and its record is gone, or
+  /// a supplier's own label that was never ours. A one-line "not found" is the
+  /// message that made scanning a sheet you were holding indistinguishable from
+  /// scanning gibberish.
+  Future<void> _inspect(String code) async {
+    final search = context.read<SearchProvider>();
+    final scan = await search.scanBarcode(code);
+    if (!mounted) return;
+    await showUniversalBarcodeInspector(
+      context,
+      scan: scan,
+      onFollowBarcode: (next) {
+        Navigator.of(context).pop();
+        _inspect(next);
+      },
+    );
   }
 
   Future<void> _processBarcode(String barcode) async {

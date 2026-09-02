@@ -13,28 +13,41 @@ class OrderPickerDialog extends StatefulWidget {
 }
 
 class _OrderPickerDialogState extends State<OrderPickerDialog> {
+  // Asked for, not filtered out of every order ever placed.
+  //
+  // This dialog only ever wanted the orders still worth putting on a machine.
+  // Scanning a resident copy of the whole workspace to find them cost 5.9 KB
+  // where 1.9 KB would do, and got worse with every order the shop completed.
+  late Future<List<OrderEntry>> _openOrders;
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<OrdersProvider>().initialize();
+    _openOrders = context.read<OrdersProvider>().openOrders();
+    _openOrders.whenComplete(() {
+      if (mounted) setState(() => _isLoading = false);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<OrdersProvider>();
-    final activeOrders = provider.orders.where((o) =>
-        o.status == OrderStatus.inProgress ||
-        o.status == OrderStatus.notStarted ||
-        o.status == OrderStatus.draft).toList();
+    return FutureBuilder<List<OrderEntry>>(
+      future: _openOrders,
+      builder: (context, snapshot) => _buildDialog(
+        context,
+        snapshot.data ?? const <OrderEntry>[],
+      ),
+    );
+  }
 
+  Widget _buildDialog(BuildContext context, List<OrderEntry> activeOrders) {
     return AlertDialog(
       title: const Text('Link Order to Production Run'),
       content: SizedBox(
         width: 600,
         height: 400,
-        child: provider.isLoading && activeOrders.isEmpty
+        child: _isLoading && activeOrders.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : activeOrders.isEmpty
                 ? const Center(child: Text('No active orders found.', style: TextStyle(color: SoftErpTheme.textSecondary)))

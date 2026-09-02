@@ -4,7 +4,20 @@ import 'package:core_erp/core/services/config_service.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:http/http.dart' as http;
+
 import 'package:core_erp/core/network/authenticated_http_client.dart';
+import 'package:core_erp/core/network/conditional_cache_client.dart';
+import 'dart:async';
+
+import 'package:core_erp/core/database/local_database_helper.dart';
+import 'package:core_erp/core/sync/delta_sync_engine.dart';
+import 'package:core_erp/core/sync/replica_api.dart';
+import 'package:core_erp/core/sync/replica_sync_service.dart';
+import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
+import 'package:core_erp/features/delivery_challans/data/local_first_challan_repository.dart';
+import 'package:core_erp/features/inventory/data/repositories/local_first_inventory_repository.dart';
+import 'package:core_erp/features/orders/data/repositories/local_first_order_repository.dart';
 import 'package:core_erp/app/preferences/preferences_provider.dart';
 import 'app/shell/app_shell.dart';
 import 'app/shell/navigation_provider.dart';
@@ -77,6 +90,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/services/auto_updater_service.dart';
 import 'core/services/data_sync_service.dart';
 import 'core/services/session_replay_service.dart';
+import 'package:core_erp/core/services/app_performance.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 
 const _isDemoMode = bool.fromEnvironment(
@@ -104,6 +118,60 @@ const _skipActivation = bool.fromEnvironment(
   defaultValue: false,
 );
 
+/// One response cache for the whole app, shared by every repository.
+///
+/// Top-level so the client factory and the sign-in hook reach the same
+/// instance: a validator learned by one screen is then reused by the next, and
+/// the whole thing can be pointed at the right user in one place.
+/// Keeps the replica current for the signed-in user.
+///
+/// Top-level beside the response cache, and for the same reason: a replica
+/// belongs to a person, not to a launch, and the repository factory and the
+/// sign-in hook live in different widgets.
+ReplicaSyncService? _replicaSync;
+
+/// Opens this user's replica and starts following the changelog.
+///
+/// Failure is survivable on purpose. The local-first repository asks whether
+/// the replica is hydrated before trusting it, so a replica that never opened
+/// means the app behaves exactly as it did before Tier 3 — slower, and working.
+Future<void> startReplicaSync({
+  required http.Client client,
+  required String namespace,
+}) async {
+  try {
+    final api = ReplicaApi(client: client, baseUrl: _apiBaseUrl);
+    final service = _replicaSync ??= ReplicaSyncService(
+      fetchRecord: api.fetchRecord,
+      fetchList: api.fetchList,
+      fetchChangesSince: api.fetchChangesSince,
+    );
+    await service.start(namespace);
+    SocketService.instance.off('table-change', _onReplicaTableChange);
+    SocketService.instance.on('table-change', _onReplicaTableChange);
+    await service.catchUp();
+  } catch (error) {
+    debugPrint('Replica unavailable, staying on the network: $error');
+  }
+}
+
+void _onReplicaTableChange(dynamic data) {
+  if (data is! Map) return;
+  final table = '${data['table'] ?? ''}';
+  if (table.isEmpty) return;
+  _replicaSync?.onTableChange(
+    TableChange(
+      table: table,
+      recordId: data['id'] ?? 0,
+      action: '${data['action'] ?? 'UPDATE'}',
+    ),
+  );
+}
+
+final ConditionalCacheClient _httpCache = ConditionalCacheClient(
+  inner: http.Client(),
+);
+
 final _apiBaseUrl = _resolveApiBaseUrl();
 
 String _resolveApiBaseUrl() {
@@ -119,6 +187,11 @@ String _resolveApiBaseUrl() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Read before the first frame: every list row checks it, and a row built
+  // before the setting loaded would allocate an animation controller it will
+  // never use.
+  await AppPerformance.load();
 
   const clientId = String.fromEnvironment('CLIENT_ID', defaultValue: 'default');
   await ConfigService.instance.init(
@@ -695,14 +768,26 @@ class MyApp extends StatelessWidget {
           auth.logout();
         }
       },
+      // Conditional requests, so unchanged data costs a header instead of a
+      // payload. The server has issued ETags on its high-volume reads all
+      // along; nothing was sending them back.
+      inner: _httpCache,
     );
   }
 
   InventoryRepository _buildInventoryRepository(AuthProvider auth) {
-    return ApiInventoryRepository(
+    final remote = ApiInventoryRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // The largest of the four requests InventoryProvider re-issues on every
+    // challan write anywhere in the workspace.
+    return LocalFirstInventoryRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
     );
   }
 
@@ -757,26 +842,57 @@ class MyApp extends StatelessWidget {
   }
 
   ItemRepository _buildItemRepository(AuthProvider auth) {
-    return ApiItemRepository(
+    final remote = ApiItemRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
     );
+    // Demo mode serves canned responses with no server behind them, so there is
+    // nothing to replicate and nothing to sync from.
+    if (_effectiveDemoMode) return remote;
+
+    // Reads come off the local replica; everything else still goes over the
+    // wire. A decorator rather than a replacement, so removing this line puts
+    // the app back exactly as it was.
+    return LocalFirstItemRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
+    );
   }
 
+
+
   OrderRepository _buildOrderRepository(AuthProvider auth) {
-    return ApiOrderRepository(
+    final remote = ApiOrderRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // Only the unfiltered list is answered locally; a narrowed request goes to
+    // the server, whose search runs across eight columns and must not be
+    // reimplemented here.
+    return LocalFirstOrderRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
     );
   }
 
   ChallanRepository _buildDeliveryChallanRepository(AuthProvider auth) {
-    return ApiChallanRepository(
+    final remote = ApiChallanRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // The list only. The replica holds the summary shape — no nested lines —
+    // so detail always goes to the server.
+    return LocalFirstChallanRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
     );
   }
 
@@ -860,6 +976,24 @@ class _AuthGateState extends State<_AuthGate> {
       return;
     }
     _lastRefreshToken = token;
+    // Point the response cache at this user's own copies before anything is
+    // fetched. Namespaced rather than cleared, because a launch begins with a
+    // sign-in and clearing here would empty the cache at exactly the moment it
+    // is worth having.
+    final auth = context.read<AuthProvider>();
+    final identity = auth.user;
+    _httpCache.namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
+    // Opened before the providers load, so a warm replica answers their first
+    // read instead of the network.
+    if (!widget.isDemoMode) {
+      unawaited(startReplicaSync(
+        client: AuthenticatedHttpClient(
+          tokenResolver: () => auth.token,
+          inner: _httpCache,
+        ),
+        namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+      ));
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
