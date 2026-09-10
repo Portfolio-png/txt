@@ -2636,6 +2636,9 @@ function rowToOrderDto(row) {
     createdAt: row.created_at,
     startDate: row.start_date,
     endDate: row.end_date,
+    sourceSetId: row.source_set_id || null,
+    sourceSetName: row.source_set_name || '',
+    sourceSetMultiplier: Number(row.source_set_multiplier || 0),
     hsnCode: row.hsn_code || '',
     taxableValue: Number(row.taxable_value || 0),
     cgstRate: Number(row.cgst_rate || 0),
@@ -2775,7 +2778,7 @@ async function rowToItemDto(row) {
   );
   const machineLinkRows = await all(
     `
-    SELECT machines.id, machines.name, machines.asset_id
+    SELECT machines.id, machines.name, machines.asset_id, machines.primary_photo_url
     FROM item_machines
     INNER JOIN machines ON machines.id = item_machines.machine_id
     WHERE item_machines.item_id = ?
@@ -2788,7 +2791,7 @@ async function rowToItemDto(row) {
     : null;
   const dieLinkRows = await all(
     `
-    SELECT dies.id, dies.tool_code
+    SELECT dies.id, dies.tool_code, dies.photo_urls
     FROM item_dies
     INNER JOIN dies ON dies.id = item_dies.die_id
     WHERE item_dies.item_id = ?
@@ -2840,11 +2843,16 @@ async function rowToItemDto(row) {
       id: String(entry.id),
       name: entry.name || '',
       assetId: entry.asset_id || '',
+      photoUrl: entry.primary_photo_url || null,
     })),
-    dies: dieLinkRows.map((entry) => ({
-      id: String(entry.id),
-      toolCode: entry.tool_code || '',
-    })),
+    dies: dieLinkRows.map((entry) => {
+      const urls = parseJson(entry.photo_urls, []);
+      return {
+        id: String(entry.id),
+        toolCode: entry.tool_code || '',
+        photoUrl: urls.length > 0 ? urls[0] : null,
+      };
+    }),
     developedForClientId: row.developed_for_client_id || null,
     developedForClientName: developedForClientRow?.name || '',
     availableForPurchase: Boolean(row.available_for_purchase),
@@ -5364,6 +5372,12 @@ async function initDb() {
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_unit_conversion_points_unit_id ON unit_conversion_points(unit_id)');
   await ensureColumnExists('order_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
+  // Which set this line was expanded from, snapshotted at order time. Dead
+  // labels, never a live reference: editing the set must not reach back and
+  // change what was agreed. See saveOrder / _addLinesFromSet.
+  await ensureColumnExists('order_items', 'source_set_id', 'INTEGER');
+  await ensureColumnExists('order_items', 'source_set_name', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('order_items', 'source_set_multiplier', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('delivery_challan_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
   // Bootstrap parity with migrations/027-stock-leaf-guards.sql: synthetic
   // negative variation ids (typed Gauge/Numeric selections) must never persist
@@ -15408,6 +15422,9 @@ async function saveOrder({
   endDate = null,
   poDocumentIds = [],
   materialRequirements = [],
+  sourceSetId = null,
+  sourceSetName = '',
+  sourceSetMultiplier = 0,
   actor = null,
 } = {}, { returnMeta = false } = {}) {
   const trimmedOrderNo = String(orderNo || '').trim();
@@ -15418,6 +15435,10 @@ async function saveOrder({
   }
   const normalizedItemId = Number(itemId);
   const normalizedQuantity = Number(quantity || 0);
+  const normalizedSourceSetId = Number(sourceSetId) > 0 ? Number(sourceSetId) : null;
+  const normalizedSourceSetName = String(sourceSetName || '').trim();
+  const normalizedSourceSetMultiplier =
+    Number(sourceSetMultiplier) > 0 ? Math.trunc(Number(sourceSetMultiplier)) : 0;
   const normalizedUnitPrice = Number(unitPrice || 0);
   const hasInvoicedQtyInput =
     totalInvoicedQty !== undefined && totalInvoicedQty !== null;
@@ -15597,6 +15618,9 @@ async function saveOrder({
             custom_variation_values_json = ?,
             sub_contractor_id = ?,
             factor_to_primary_at_creation = ?,
+            source_set_id = ?,
+            source_set_name = ?,
+            source_set_multiplier = ?,
             updated_at = ?
         WHERE id = ?
         `,
@@ -15620,6 +15644,9 @@ async function saveOrder({
           normalizedCustomVariationValuesJson,
           normalizedSubContractorId,
           factorToPrimary,
+          existing.source_set_id || normalizedSourceSetId,
+          existing.source_set_name || normalizedSourceSetName,
+          existing.source_set_multiplier || normalizedSourceSetMultiplier,
           now,
           existing.id,
         ],
@@ -15661,9 +15688,10 @@ async function saveOrder({
           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
           unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
           custom_variation_values_json, sub_contractor_id,
-          created_at, updated_at, start_date, end_date, factor_to_primary_at_creation
+          created_at, updated_at, start_date, end_date, factor_to_primary_at_creation,
+          source_set_id, source_set_name, source_set_multiplier
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -15690,6 +15718,9 @@ async function saveOrder({
           normalizedStartDate,
           normalizedEndDate,
           factorToPrimary,
+          normalizedSourceSetId,
+          normalizedSourceSetName,
+          normalizedSourceSetMultiplier,
         ],
       );
       orderId = result.lastID;
@@ -15946,6 +15977,10 @@ async function saveGroup({
     ? requestedStructure
     : 'hierarchical';
   const isCombination = normalizedStructure === 'combination';
+  // A component holds items that each carry their own unit, so it needs none
+  // of its own. Everything else about it behaves like an item group, which is
+  // why this is checked separately rather than folded into isCombination.
+  const isComponent = normalizedStructure === 'component';
   const trimmedDescription = String(description || '').trim();
   const serializedFormSections =
     itemFormSections && typeof itemFormSections === 'object'
@@ -15975,7 +16010,7 @@ async function saveGroup({
   if (!trimmedName) {
     throw new Error('name is required.');
   }
-  if (!isCombination && groupType !== 'machine' && !normalizedUnitId) {
+  if (!isCombination && !isComponent && groupType !== 'machine' && !normalizedUnitId) {
     throw new Error('unitId is required for non-machine hierarchical groups.');
   }
 

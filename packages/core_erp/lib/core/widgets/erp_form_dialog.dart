@@ -103,16 +103,20 @@ Future<T?> showErpFormDialog<T>(
         shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(side: BorderSide.none),
-        child: SizedBox(
-          width: math.min(
-            maxWidth,
-            size.width - desktopInsetPadding.horizontal,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: math.min(
+              maxHeight,
+              size.height - desktopInsetPadding.vertical,
+            ),
           ),
-          height: math.min(
-            maxHeight,
-            size.height - desktopInsetPadding.vertical,
+          child: SizedBox(
+            width: math.min(
+              maxWidth,
+              size.width - desktopInsetPadding.horizontal,
+            ),
+            child: wrappedChild,
           ),
-          child: wrappedChild,
         ),
       );
     },
@@ -155,10 +159,12 @@ class ErpFormScaffold extends StatelessWidget {
     // form presenters (showErpFormDialog etc.) wrap around this scaffold.
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.vertical(top: Radius.circular(borderRadius)),
+      borderRadius: BorderRadius.circular(borderRadius),
+      clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: double.infinity,
@@ -230,7 +236,7 @@ class ErpFormScaffold extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
                 child: errorBanner,
               ),
-            Expanded(
+            Flexible(
               child: bodyScrollable
                   ? SingleChildScrollView(padding: bodyPadding, child: body)
                   : Padding(padding: bodyPadding, child: body),

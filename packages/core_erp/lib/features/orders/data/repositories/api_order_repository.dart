@@ -204,6 +204,9 @@ class ApiOrderRepository implements OrderRepository {
       startDate: input.startDate,
       endDate: input.endDate,
       poDocumentIds: input.poDocumentIds,
+      sourceSetId: input.sourceSetId,
+      sourceSetName: input.sourceSetName,
+      sourceSetMultiplier: input.sourceSetMultiplier,
     );
     final request = CreateOrderRequest.fromInput(requestInput);
     final response = await _client.post(
@@ -255,6 +258,9 @@ class ApiOrderRepository implements OrderRepository {
       startDate: input.startDate,
       endDate: input.endDate,
       poDocumentIds: input.poDocumentIds,
+      sourceSetId: input.sourceSetId,
+      sourceSetName: input.sourceSetName,
+      sourceSetMultiplier: input.sourceSetMultiplier,
     );
     final request = CreateOrderRequest.fromInput(requestInput);
     final response = await _client.put(

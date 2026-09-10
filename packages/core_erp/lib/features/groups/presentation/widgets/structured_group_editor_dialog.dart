@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/services/feature_flags.dart';
 import '../group_picker_field.dart';
-import '../group_type_style.dart';
+import 'group_type_icons.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import 'delete_group_dialog.dart';
@@ -20,9 +20,7 @@ import '../../../inventory/domain/material_inputs.dart';
 import '../../../inventory/domain/material_record.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
-import '../../../items/domain/item_form_sections.dart';
 import '../../../items/presentation/providers/items_provider.dart';
-import '../../../items/presentation/widgets/item_form_sections_dialog.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 
@@ -167,16 +165,12 @@ class _StructuredGroupEditorDialogState
 
   /// Component groups share every field and code path with item groups; only
   /// the stored structure and the labelling differ.
-  bool get _isComponent => _groupStructure == 'component';
 
   /// The section override this component group will carry. Seeded from the
   /// group being edited, or from the app defaults for a new one.
-  ItemFormSections _componentFormSections = const ItemFormSections();
 
   /// Only sent for components — switching back to Item or Combination must not
   /// leave a stale override behind.
-  ItemFormSections? get _formSectionsToSave =>
-      _isComponent ? _componentFormSections : null;
 
   @override
   void initState() {
@@ -184,8 +178,6 @@ class _StructuredGroupEditorDialogState
     _nameController.text = widget.group?.name ?? widget.initialName;
     _descriptionController.text = widget.group?.description ?? '';
     _groupStructure = widget.group?.groupStructure ?? 'hierarchical';
-    _componentFormSections =
-        widget.group?.itemFormSections ?? const ItemFormSections();
     _selectedParentGroupId = widget.group?.parentGroupId;
     _selectedUnitId = widget.group?.unitId;
   }
@@ -413,6 +405,16 @@ class _StructuredGroupEditorDialogState
                     final isCompact = constraints.maxWidth < 940;
                     final detailsCard = _CreateGroupSurfaceCard(
                       title: 'Group Details',
+                      headerActions: _combinationToggleVisible ? GroupTypeIcons(
+                        isCombination: _isCombination,
+                        isComponent: false,
+                        onTypeChanged: (isCombination, _) => setState(() {
+                          _groupStructure = isCombination ? 'combination' : 'hierarchical';
+                          if (isCombination) {
+                            _selectedParentGroupId = null;
+                          }
+                        }),
+                      ) : null,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -438,10 +440,7 @@ class _StructuredGroupEditorDialogState
                               onChanged: (_) => setState(() {}),
                             ),
                           ),
-                          if (_combinationToggleVisible) ...[
-                            const SizedBox(height: 16),
-                            _buildStructureToggle(),
-                          ],
+
                           if (_isCombination) ...[
                             const SizedBox(height: 16),
                             _CreateGroupField(
@@ -966,8 +965,7 @@ class _StructuredGroupEditorDialogState
                     // gets a structure/properties panel.
                     final compositionCard =
                         supportsStructuredGovernance &&
-                            !_isCombination &&
-                            !_isComponent
+                            !_isCombination
                         ? _CreateGroupSurfaceCard(
                             title: 'Structure & Properties',
                             child: compositionBody,
@@ -979,17 +977,7 @@ class _StructuredGroupEditorDialogState
                     // stack.
                     final sideCard =
                         compositionCard ??
-                        (_isComponent
-                            ? _CreateGroupSurfaceCard(
-                                title: 'Item Form Sections',
-                                child: _ComponentFormSectionsPanel(
-                                  sections: _componentFormSections,
-                                  onChanged: (updated) => setState(
-                                    () => _componentFormSections = updated,
-                                  ),
-                                ),
-                              )
-                            : null);
+                        null;
 
                     return SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
@@ -1123,34 +1111,7 @@ class _StructuredGroupEditorDialogState
       _ownSchema?.retiredPropertyDrafts ??
       const <governance.GroupPropertyDraft>[];
 
-  /// Radio toggle that selects the group structure (Enhancement 2.1).
-  Widget _buildStructureToggle() {
-    return _CreateGroupField(
-      label: 'Group Type',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _StructureOptionTile(
-            style: GroupTypeStyle.hierarchical,
-            selected: _groupStructure == 'hierarchical',
-            onTap: () => setState(() => _groupStructure = 'hierarchical'),
-          ),
-          const SizedBox(height: 8),
-          _StructureOptionTile(
-            style: GroupTypeStyle.component,
-            selected: _isComponent,
-            onTap: () => setState(() => _groupStructure = 'component'),
-          ),
-          const SizedBox(height: 8),
-          _StructureOptionTile(
-            style: GroupTypeStyle.combination,
-            selected: _isCombination,
-            onTap: () => setState(() => _groupStructure = 'combination'),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   /// Persists a combination group. Unit and structured properties do not apply,
   /// so this bypasses the inventory-backed material path — but the parent does
@@ -1252,7 +1213,7 @@ class _StructuredGroupEditorDialogState
             name: _nameController.text.trim(),
             groupType: widget.groupType,
             groupStructure: _groupStructure,
-            itemFormSections: _formSectionsToSave,
+            itemFormSections: null,
             parentGroupId: _selectedParentGroupId,
             unitId: _selectedUnitId,
           ),
@@ -1338,49 +1299,7 @@ class _StructuredGroupEditorDialogState
               .lastOrNull ??
           matchingGroups.lastOrNull;
 
-      // The inventory-backed create goes through the material route, which has
-      // no notion of group structure — stamp it afterwards so a component group
-      // created here doesn't come back as a plain item group.
-      if (_isComponent) {
-        if (savedGroup == null) {
-          // The name/parent/unit re-lookup above is the only handle we get on
-          // the row the material route created. Losing it used to drop the
-          // component structure and its section layout in silence.
-          showAppSnack(
-            const SnackBar(
-              content: Text(
-                'Group created, but it could not be marked as a component. '
-                'Open it and set the type again.',
-              ),
-            ),
-          );
-        } else if (!savedGroup.isComponent ||
-            savedGroup.itemFormSections == null) {
-          final restructured = await groupsProvider.updateGroup(
-            UpdateGroupInput(
-              id: savedGroup.id,
-              name: savedGroup.name,
-              groupType: savedGroup.groupType,
-              groupStructure: 'component',
-              itemFormSections: _componentFormSections,
-              parentGroupId: savedGroup.parentGroupId,
-              unitId: savedGroup.unitId,
-            ),
-          );
-          if (restructured != null && groupsProvider.errorMessage == null) {
-            savedGroup = restructured;
-          } else {
-            showAppSnack(
-              SnackBar(
-                content: Text(
-                  groupsProvider.errorMessage ??
-                      'Group created, but its component settings did not save.',
-                ),
-              ),
-            );
-          }
-        }
-      }
+
     } else {
       final group = widget.group!;
       savedGroup = await groupsProvider.updateGroup(
@@ -1391,7 +1310,7 @@ class _StructuredGroupEditorDialogState
           // Hydrated from the group in initState; without it an edit would
           // silently reset a component group back to a plain item group.
           groupStructure: _groupStructure,
-          itemFormSections: _formSectionsToSave,
+          itemFormSections: null,
           parentGroupId: _selectedParentGroupId,
           unitId: _selectedUnitId,
         ),
@@ -1746,41 +1665,16 @@ InputDecoration _selectDecoration({required String label, String? helper}) {
 ///
 /// Items created under this group use these sections instead of whatever the
 /// creating user's account-wide default happens to be.
-class _ComponentFormSectionsPanel extends StatelessWidget {
-  const _ComponentFormSectionsPanel({
-    required this.sections,
-    required this.onChanged,
-  });
-
-  final ItemFormSections sections;
-  final ValueChanged<ItemFormSections> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Items created under this component group use these sections, '
-          'overriding each user’s own default.',
-          style: _inventoryInterStyle(
-            color: const Color(0xFF6B7280),
-            size: 12,
-            weight: FontWeight.w400,
-          ),
-        ),
-        const SizedBox(height: 14),
-        ItemFormSectionsEditor(value: sections, onChanged: onChanged),
-      ],
-    );
-  }
-}
-
 class _CreateGroupSurfaceCard extends StatelessWidget {
-  const _CreateGroupSurfaceCard({required this.title, required this.child});
+  const _CreateGroupSurfaceCard({
+    required this.title,
+    required this.child,
+    this.headerActions,
+  });
 
   final String title;
   final Widget child;
+  final Widget? headerActions;
 
   @override
   Widget build(BuildContext context) {
@@ -1799,15 +1693,21 @@ class _CreateGroupSurfaceCard extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: _inventoryInterStyle(
-              color: const Color(0xFF111827),
-              size: 18,
-              weight: FontWeight.w700,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: _inventoryInterStyle(
+                  color: const Color(0xFF111827),
+                  size: 18,
+                  weight: FontWeight.w700,
+                ),
+              ),
+              if (headerActions != null) headerActions!,
+            ],
           ),
           const SizedBox(height: 16),
           child,
@@ -1858,85 +1758,6 @@ class _CreateGroupField extends StatelessWidget {
 }
 
 /// Selectable radio-style tile used by the group-structure toggle.
-/// One choice of group kind, drawn in that kind's own colour.
-///
-/// The folder here is the same glyph and the same colour the group will be
-/// given in every list once it exists. That is the point of showing it: the
-/// choice is where the colour is learned, so a sand folder in this dialog has
-/// to be the sand folder the user meets afterwards.
-class _StructureOptionTile extends StatelessWidget {
-  const _StructureOptionTile({
-    required this.style,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final GroupTypeStyle style;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          // Selected, the row takes a wash of its own colour rather than the
-          // app accent — otherwise every kind looks the same once chosen, which
-          // is exactly the association being taught.
-          color: selected ? style.background : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? style.folder : const Color(0xFFD8E0EA),
-            width: selected ? 1.4 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              selected
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              size: 20,
-              color: selected ? style.folder : const Color(0xFF9CA3AF),
-            ),
-            const SizedBox(width: 10),
-            Icon(style.icon, size: 20, color: style.folder),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    style.label,
-                    style: _inventoryInterStyle(
-                      color: const Color(0xFF111827),
-                      size: 14,
-                      weight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    style.description,
-                    style: _inventoryInterStyle(
-                      color: const Color(0xFF6B7280),
-                      size: 11.5,
-                      weight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 enum _PropertyChipTone { neutral, seed, manual }
 
 class _PropertyChip extends StatelessWidget {

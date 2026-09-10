@@ -79,6 +79,9 @@ class OrderDto {
     required this.totalDeliveredQty,
     required this.startDate,
     required this.endDate,
+    this.sourceSetId,
+    this.sourceSetName = '',
+    this.sourceSetMultiplier = 0,
   });
 
   final int id;
@@ -105,6 +108,9 @@ class OrderDto {
   final DateTime createdAt;
   final DateTime? startDate;
   final DateTime? endDate;
+  final int? sourceSetId;
+  final String sourceSetName;
+  final int sourceSetMultiplier;
 
   factory OrderDto.fromJson(Map<String, dynamic> json) {
     return OrderDto(
@@ -150,6 +156,10 @@ class OrderDto {
           DateTime.now(),
       startDate: DateTime.tryParse(json['startDate'] as String? ?? ''),
       endDate: DateTime.tryParse(json['endDate'] as String? ?? ''),
+      sourceSetId: (json['sourceSetId'] as num?)?.toInt(),
+      sourceSetName: json['sourceSetName'] as String? ?? '',
+      sourceSetMultiplier:
+          (json['sourceSetMultiplier'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -179,6 +189,9 @@ class OrderDto {
       createdAt: createdAt,
       startDate: startDate,
       endDate: endDate,
+      sourceSetId: sourceSetId,
+      sourceSetName: sourceSetName,
+      sourceSetMultiplier: sourceSetMultiplier,
     );
   }
 }
@@ -241,6 +254,9 @@ class CreateOrderRequest {
     this.startDate,
     this.endDate,
     this.poDocumentIds = const <int>[],
+    this.sourceSetId,
+    this.sourceSetName = '',
+    this.sourceSetMultiplier = 0,
   });
 
   final String orderNo;
@@ -265,6 +281,9 @@ class CreateOrderRequest {
   final DateTime? startDate;
   final DateTime? endDate;
   final List<int> poDocumentIds;
+  final int? sourceSetId;
+  final String sourceSetName;
+  final int sourceSetMultiplier;
 
   factory CreateOrderRequest.fromInput(CreateOrderInput input) {
     return CreateOrderRequest(
@@ -290,6 +309,9 @@ class CreateOrderRequest {
       startDate: input.startDate,
       endDate: input.endDate,
       poDocumentIds: input.poDocumentIds,
+      sourceSetId: input.sourceSetId,
+      sourceSetName: input.sourceSetName,
+      sourceSetMultiplier: input.sourceSetMultiplier,
     );
   }
 
@@ -317,6 +339,9 @@ class CreateOrderRequest {
       'startDate': startDate?.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
       'poDocumentIds': poDocumentIds,
+      'sourceSetId': sourceSetId,
+      'sourceSetName': sourceSetName,
+      'sourceSetMultiplier': sourceSetMultiplier,
     };
   }
 }

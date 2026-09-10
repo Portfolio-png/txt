@@ -35,6 +35,7 @@ import '../../machines/presentation/screens/machine_form_screen.dart';
 import '../../dies/data/die_repository.dart';
 import '../../dies/domain/die.dart';
 import '../../dies/presentation/providers/die_provider.dart';
+import '../../dies/presentation/screens/die_list_screen.dart';
 import '../widgets/graph_edges_painter.dart';
 
 class PipelineBuilderScreen extends StatefulWidget {
@@ -126,8 +127,7 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
         if (context.mounted) provider.loadTemplate(saved);
       }
       if (context.mounted) {
-        final isNew =
-            provider.template.status == PipelineTemplateStatus.draft;
+        final isNew = provider.template.status == PipelineTemplateStatus.draft;
         showAppToast(
           context,
           isNew ? 'Pipeline created' : 'Pipeline saved',
@@ -304,49 +304,51 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
 
             // Isolate Tab traversal within the stage-edit form so it cycles
             // its own fields instead of jumping into the quick-stages panel.
-            leftPropertiesPanel = FocusTraversalGroup(child: leftPropertiesPanel);
+            leftPropertiesPanel = FocusTraversalGroup(
+              child: leftPropertiesPanel,
+            );
 
             // Middle flowchart panel
             final middleFlowchartPanel = FocusTraversalGroup(
               child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Stack(
-                children: [
-                  _FlowchartSequencePanel(
-                    provider: provider,
-                    hintMode: _hintMode,
-                    onCanvasTap: () => _focusNode.requestFocus(),
-                  ),
-                  Positioned(
-                    bottom: 16,
-                    right: 16,
-                    child: Row(
-                      children: [
-                        IconButton.filledTonal(
-                          icon: const Icon(Icons.undo_rounded),
-                          onPressed: provider.canUndo
-                              ? () => provider.undo()
-                              : null,
-                          tooltip: 'Undo (Ctrl/Cmd + Z)',
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          icon: const Icon(Icons.redo_rounded),
-                          onPressed: provider.canRedo
-                              ? () => provider.redo()
-                              : null,
-                          tooltip: 'Redo (Shift + Ctrl/Cmd + Z)',
-                        ),
-                      ],
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Stack(
+                  children: [
+                    _FlowchartSequencePanel(
+                      provider: provider,
+                      hintMode: _hintMode,
+                      onCanvasTap: () => _focusNode.requestFocus(),
                     ),
-                  ),
-                ],
+                    Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: Row(
+                        children: [
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.undo_rounded),
+                            onPressed: provider.canUndo
+                                ? () => provider.undo()
+                                : null,
+                            tooltip: 'Undo (Ctrl/Cmd + Z)',
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.redo_rounded),
+                            onPressed: provider.canRedo
+                                ? () => provider.redo()
+                                : null,
+                            tooltip: 'Redo (Shift + Ctrl/Cmd + Z)',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
             );
 
             // Right quick add panel
@@ -600,18 +602,6 @@ List<UnitDefinition> _activeUnitsFromContext(BuildContext context) {
 List<UnitDefinition> _watchActiveUnitsFromContext(BuildContext context) {
   try {
     return context.watch<UnitsProvider>().activeUnits;
-  } catch (_) {
-    return const [];
-  }
-}
-
-List<ItemDefinition> _activeItemsFromContext(BuildContext context) {
-  try {
-    return context
-        .read<ItemsProvider>()
-        .items
-        .where((item) => !item.isArchived)
-        .toList(growable: false);
   } catch (_) {
     return const [];
   }
@@ -1248,13 +1238,16 @@ class _BuilderHeader extends StatelessWidget {
   }
 
   void _showPenPaperBaselineDialog(BuildContext context) {
-    final baseline = provider.template.penPaperBaseline ?? PenPaperBaseline.createDefault();
+    final baseline =
+        provider.template.penPaperBaseline ?? PenPaperBaseline.createDefault();
 
     showDialog<void>(
       context: context,
       builder: (ctx) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Container(
             width: 600,
             padding: const EdgeInsets.all(20),
@@ -1265,7 +1258,9 @@ class _BuilderHeader extends StatelessWidget {
                   PenPaperBaselineWidget(
                     baseline: baseline,
                     onChanged: (updated) {
-                      final updatedTpl = provider.template.copyWith(penPaperBaseline: updated);
+                      final updatedTpl = provider.template.copyWith(
+                        penPaperBaseline: updated,
+                      );
                       provider.loadTemplate(updatedTpl);
                     },
                   ),
@@ -1338,7 +1333,10 @@ class _BuilderHeader extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Pipeline', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Delete Pipeline',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: const Text(
           'Are you sure you want to delete this pipeline template? This action cannot be undone and will permanently delete it from this floor.',
           style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
@@ -1368,13 +1366,10 @@ class _BuilderHeader extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        showAppSnack(
-          SnackBar(content: Text('Failed to delete pipeline: $e')),
-        );
+        showAppSnack(SnackBar(content: Text('Failed to delete pipeline: $e')));
       }
     }
   }
-
 
   void _applyTemplateAction(BuildContext context, _TemplateAction action) {
     switch (action) {
@@ -1541,9 +1536,18 @@ class _BuilderHeader extends StatelessWidget {
                       value: 'delete',
                       child: Row(
                         children: [
-                          Icon(Icons.delete_forever_rounded, size: 18, color: Colors.redAccent),
+                          Icon(
+                            Icons.delete_forever_rounded,
+                            size: 18,
+                            color: Colors.redAccent,
+                          ),
                           SizedBox(width: 10),
-                          Expanded(child: Text('Delete Pipeline', style: TextStyle(color: Colors.redAccent))),
+                          Expanded(
+                            child: Text(
+                              'Delete Pipeline',
+                              style: TextStyle(color: Colors.redAccent),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1596,6 +1600,17 @@ class _PipelineDetailsDialogState extends State<_PipelineDetailsDialog> {
     _descriptionController = TextEditingController(
       text: widget.initialDescription,
     );
+    // The picker showed "No item masters found" on a populated database
+    // whenever this route had never loaded them. Idempotent.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        context.read<ItemsProvider>().initialize();
+      } catch (_) {}
+      try {
+        context.read<UnitsProvider>().initialize();
+      } catch (_) {}
+    });
     _inputMaterialController = TextEditingController(
       text: widget.initialInputMaterial,
     );
@@ -1615,8 +1630,11 @@ class _PipelineDetailsDialogState extends State<_PipelineDetailsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final items = _activeItemsFromContext(context);
-    final units = _activeUnitsFromContext(context);
+    // Watched, not read: a one-shot snapshot meant an item created from the
+    // "Create item" row never appeared in the field that created it — the
+    // list it was checked against stayed as it was when the dialog opened.
+    final items = _watchActiveItemsFromContext(context);
+    final units = _watchActiveUnitsFromContext(context);
 
     return AlertDialog(
       title: const Text('Pipeline Details'),
@@ -1850,9 +1868,7 @@ String _materialOptionSearchText(
 
 /// A picked endpoint: either a specific item or an abstract item group.
 class _EndpointPick {
-  const _EndpointPick.item(this.itemId)
-    : groupId = null,
-      groupName = null;
+  const _EndpointPick.item(this.itemId) : groupId = null, groupName = null;
   const _EndpointPick.group(this.groupId, this.groupName) : itemId = null;
 
   final int? itemId;
@@ -2066,7 +2082,8 @@ class _ScrapItemDropdown extends StatelessWidget {
               (item) => _itemName(item).trim().toLowerCase() != normalized,
             );
       },
-      onCreateOption: (query) => _createScrapItemOption(context, query, scrapGroupIds),
+      onCreateOption: (query) =>
+          _createScrapItemOption(context, query, scrapGroupIds),
       createOptionLabelBuilder: (query) => 'Create scrap "$query"',
       onChanged: (value) {
         ItemDefinition? selected;
@@ -2633,7 +2650,11 @@ class _HintBadge extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [
-          BoxShadow(color: Color(0x336049E3), blurRadius: 6, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Color(0x336049E3),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       child: Text(
@@ -3186,7 +3207,7 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
       return null;
     }
     final now = DateTime.now();
-    final die = Die(
+    final initialDie = Die(
       id: '',
       name: name,
       toolCode: _quickMasterCode('DIE'),
@@ -3199,6 +3220,11 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
       updatedAt: now,
     );
 
+    final savedDie = await DiesScreen.openDieEditor(context, die: initialDie);
+    if (!mounted || savedDie == null) {
+      return null;
+    }
+
     DiesProvider? provider;
     try {
       provider = context.read<DiesProvider>();
@@ -3210,12 +3236,8 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
 
     if (provider != null) {
       try {
-        final savedDie = await provider.createDie(die);
-        if (!mounted || savedDie == null) {
-          return null;
-        }
-        final dies = provider.dies;
-        setState(() => _dies = dies);
+        await provider.refresh();
+        setState(() => _dies = provider!.dies);
         return SearchableSelectOption<String>(
           value: savedDie.id,
           label: _dieOptionLabel(savedDie),
@@ -3228,7 +3250,6 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
       return null;
     }
     try {
-      final savedDie = await fallbackRepo.saveDie(die);
       final dies = await fallbackRepo.fetchDies();
       if (!mounted) {
         return null;
@@ -3436,9 +3457,9 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
       _outputLeafNodeId = widget.node.outputItem?.variationLeafNodeId ?? 0;
       _outputPathLabel = widget.node.outputItem?.variationPathLabel ?? '';
       _selectedMachineGroupId = widget.node.machineGroupId;
-      _customProcessCodeController.text = widget.node.outputItem?.itemName ?? '';
+      _customProcessCodeController.text =
+          widget.node.outputItem?.itemName ?? '';
     }
-
   }
 
   @override
@@ -3503,14 +3524,9 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
             // so none of that is asked for.
             if (_isAssemblyStep) ...[
               const SizedBox(height: 12),
-              _AssemblyStepToggle(
-                value: true,
-                onChanged: _setAssemblyStep,
-              ),
+              _AssemblyStepToggle(value: true, onChanged: _setAssemblyStep),
               const SizedBox(height: 12),
-              _AssemblySummary(
-                feederNames: _feederStepNames(),
-              ),
+              _AssemblySummary(feederNames: _feederStepNames()),
               const SizedBox(height: 12),
               // Nothing is machined here, so what comes off the line is not
               // scrap — it is a piece the assembler rejected. Same routing,
@@ -3646,30 +3662,31 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
 
             if (!_isAssemblyStep && !_isInputNode && !_isOutputNode) ...[
               const SizedBox(height: 12),
-              _AssemblyStepToggle(
-                value: false,
-                onChanged: _setAssemblyStep,
-              ),
+              _AssemblyStepToggle(value: false, onChanged: _setAssemblyStep),
               const SizedBox(height: 12),
               TextField(
                 controller: _customProcessCodeController,
                 decoration: const InputDecoration(
                   labelText: 'Custom Process Code (Override)',
                   hintText: 'e.g. MyCustomCode-1',
-                  helperText: 'Type here to override the generated process code for this specific stage.',
+                  helperText:
+                      'Type here to override the generated process code for this specific stage.',
                   helperMaxLines: 2,
                 ),
                 onChanged: (value) {
                   if (_debounce?.isActive ?? false) _debounce!.cancel();
                   _debounce = Timer(const Duration(milliseconds: 300), () {
                     if (mounted) {
-                      final currentItem = widget.node.outputItem ?? _getInheritedOutput();
+                      final currentItem =
+                          widget.node.outputItem ?? _getInheritedOutput();
                       if (currentItem != null) {
                         widget.provider.updateNodeItems(
                           nodeId: widget.node.id,
                           outputItem: PipelineItemEndpoint(
                             itemId: currentItem.itemId,
-                            itemName: value.trim().isEmpty ? 'P${widget.node.stageIndex + 1}' : value.trim(),
+                            itemName: value.trim().isEmpty
+                                ? 'P${widget.node.stageIndex + 1}'
+                                : value.trim(),
                             unitId: currentItem.unitId,
                             unitName: currentItem.unitName,
                             unitSymbol: currentItem.unitSymbol,
@@ -3740,7 +3757,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               // Process action & duration removed — production timing is
               // captured live during reconciliation, not at template design.
             ],
-
           ],
         ),
       ),
@@ -3800,9 +3816,9 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     if (itemId == null) return const SizedBox.shrink();
     final item = _itemById(itemId);
     if (item == null) return const SizedBox.shrink();
-    final refs = buildExactItemVariationReferences([item])
-        .where((ref) => ref.variationLeafNodeId != 0)
-        .toList(growable: false);
+    final refs = buildExactItemVariationReferences([
+      item,
+    ]).where((ref) => ref.variationLeafNodeId != 0).toList(growable: false);
     if (refs.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -3833,7 +3849,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
           final ref = refs
               .where((r) => r.variationLeafNodeId == value)
               .firstOrNull;
-          onChanged(ref?.variationLeafNodeId ?? 0, ref?.variationPathLabel ?? '');
+          onChanged(
+            ref?.variationLeafNodeId ?? 0,
+            ref?.variationPathLabel ?? '',
+          );
         },
       ),
     );
@@ -4492,13 +4511,13 @@ class _AssemblySummary extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.call_merge_rounded,
-                  size: 16, color: Color(0xFF64748B)),
-              const SizedBox(width: 7),
-              Text(
-                'Assembled from',
-                style: _panelLabelStyle,
+              const Icon(
+                Icons.call_merge_rounded,
+                size: 16,
+                color: Color(0xFF64748B),
               ),
+              const SizedBox(width: 7),
+              Text('Assembled from', style: _panelLabelStyle),
             ],
           ),
           const SizedBox(height: 10),
@@ -4516,7 +4535,9 @@ class _AssemblySummary extends StatelessWidget {
                 for (final name in feederNames)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(999),
@@ -4877,9 +4898,23 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.initialName);
+    // Seeded from the same list the picker offers, matched case-insensitively
+    // on either spelling. Seeding from a different list meant the preselected
+    // id could be absent from the options, so the field opened on whatever
+    // happened to be first — which is how every quick-created item ended up
+    // with the same unit.
+    final options = widget.units;
     _selectedUnitId =
-        widget.units.where((u) => u.symbol == 'Pcs').firstOrNull?.id ??
-        widget.units.firstOrNull?.id;
+        options
+            .where(
+              (u) =>
+                  u.symbol.trim().toLowerCase() == 'pcs' ||
+                  u.symbol.trim().toLowerCase() == 'pc' ||
+                  u.name.trim().toLowerCase() == 'pieces',
+            )
+            .firstOrNull
+            ?.id ??
+        options.firstOrNull?.id;
   }
 
   @override
@@ -4890,22 +4925,45 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
 
   Future<void> _create() async {
     final name = _nameController.text.trim();
-    if (name.isEmpty || _selectedUnitId == null) return;
+    if (name.isEmpty) return;
+    if (_selectedUnitId == null) {
+      // This used to return silently, so the button simply did nothing and
+      // there was no way to tell why.
+      showAppSnack(
+        const SnackBar(content: Text('Pick a primary unit first.')),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
       final itemsProvider = context.read<ItemsProvider>();
-      int groupId = 0;
-      if (widget.defaultGroupId != null) {
-        groupId = widget.defaultGroupId!;
-      } else {
+      int groupId = widget.defaultGroupId ?? 0;
+      if (groupId == 0) {
         try {
-          final groups = context.read<GroupsProvider>().groups;
-          if (groups.isNotEmpty) {
-            groupId = groups.first.id;
-          }
+          // An item group, not merely the first group of any kind — the list
+          // holds machine and die groups too, and filing an item under one of
+          // those is not a home for it.
+          final groups = context.read<GroupsProvider>();
+          groupId =
+              groups.itemGroups.firstOrNull?.id ??
+              groups.filableItemGroups.firstOrNull?.id ??
+              0;
         } catch (_) {}
+      }
+      if (groupId == 0) {
+        // The backend refuses a group of 0, and this used to pop as though it
+        // had worked — the dialog closed and nothing was created.
+        showAppSnack(
+          const SnackBar(
+            content: Text(
+              'No item group exists to file this under. Create one first.',
+            ),
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
       }
 
       final input = CreateItemInput(
@@ -4916,9 +4974,21 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
       );
 
       final created = await itemsProvider.createItem(input);
-      if (mounted) {
-        Navigator.pop(context, created);
+      if (!mounted) return;
+      if (created == null) {
+        // Same trap: a null result meant the save failed, and popping with it
+        // reported success. Say why instead.
+        showAppSnack(
+          SnackBar(
+            content: Text(
+              itemsProvider.errorMessage ?? 'Could not create that item.',
+            ),
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
       }
+      Navigator.pop(context, created);
     } catch (e) {
       if (mounted) {
         showAppSnack(SnackBar(content: Text('Failed to create item: $e')));
@@ -4941,37 +5011,58 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
             onSubmitted: (_) => _create(),
           ),
           const SizedBox(height: 16),
-          SearchableSelectField<int>(
-            value: _selectedUnitId,
-            decoration: const InputDecoration(labelText: 'Primary Unit'),
-            dialogTitle: 'Select Primary Unit',
-            searchHintText: 'Search units',
-            options: context
-                .watch<UnitsProvider>()
-                .activeUnits
-                .map((u) {
+          Builder(
+            builder: (context) {
+              final units = context.watch<UnitsProvider>().activeUnits;
+              // A value that is not among the options renders as nothing
+              // selected, and whatever the user then failed to notice got
+              // saved instead. Coerce it to something real.
+              final hasSelection = units.any(
+                (unit) => unit.id == _selectedUnitId,
+              );
+              final effectiveUnitId = hasSelection
+                  ? _selectedUnitId
+                  : units.firstOrNull?.id;
+              if (effectiveUnitId != _selectedUnitId) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => _selectedUnitId = effectiveUnitId);
+                  }
+                });
+              }
+              return SearchableSelectField<int>(
+                value: effectiveUnitId,
+                decoration: const InputDecoration(labelText: 'Primary Unit'),
+                dialogTitle: 'Select Primary Unit',
+                searchHintText: 'Search units',
+                options: units
+                    .map((u) {
+                      return SearchableSelectOption<int>(
+                        value: u.id,
+                        label: '${u.displayLabel} (${u.symbol})',
+                        searchText: '${u.displayLabel} ${u.symbol}',
+                      );
+                    })
+                    .toList(growable: false),
+                canCreateOption: (query, _) => query.trim().isNotEmpty,
+                onCreateOption: (query) async {
+                  final symbol = query.trim();
+                  final created = await context
+                      .read<UnitsProvider>()
+                      .createUnit(
+                        CreateUnitInput(name: symbol, symbol: symbol),
+                      );
+                  if (created == null) return null;
                   return SearchableSelectOption<int>(
-                    value: u.id,
-                    label: '${u.displayLabel} (${u.symbol})',
-                    searchText: '${u.displayLabel} ${u.symbol}',
+                    value: created.id,
+                    label: '${created.displayLabel} (${created.symbol})',
+                    searchText: '${created.displayLabel} ${created.symbol}',
                   );
-                })
-                .toList(growable: false),
-            canCreateOption: (query, _) => query.trim().isNotEmpty,
-            onCreateOption: (query) async {
-              final symbol = query.trim();
-              final created = await context.read<UnitsProvider>().createUnit(
-                CreateUnitInput(name: symbol, symbol: symbol),
+                },
+                onChanged: (val) {
+                  if (val != null) setState(() => _selectedUnitId = val);
+                },
               );
-              if (created == null) return null;
-              return SearchableSelectOption<int>(
-                value: created.id,
-                label: '${created.displayLabel} (${created.symbol})',
-                searchText: '${created.displayLabel} ${created.symbol}',
-              );
-            },
-            onChanged: (val) {
-              if (val != null) setState(() => _selectedUnitId = val);
             },
           ),
         ],

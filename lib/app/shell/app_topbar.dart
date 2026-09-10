@@ -181,6 +181,8 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
       return const ShellTopStripConfig(title: 'Configurator');
     case 'configurator_vendors':
       return const ShellTopStripConfig(title: 'Vendors');
+    case 'pm':
+      return const ShellTopStripConfig(title: 'PM');
     default:
       return const ShellTopStripConfig(title: 'Dashboard');
   }

@@ -20,6 +20,7 @@ import '../../../items/presentation/providers/items_provider.dart';
 import '../widgets/group_collage_card.dart';
 import '../widgets/group_view_dialog.dart';
 import '../widgets/structured_group_editor_dialog.dart';
+import '../widgets/component_group_editor_dialog.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
 class GroupsScreen extends StatefulWidget {
@@ -69,17 +70,27 @@ class GroupsScreen extends StatefulWidget {
     StructuredGroupEditorCreateMode createMode =
         StructuredGroupEditorCreateMode.groupsOnly,
   }) async {
-    final result = await StructuredGroupEditorDialog.open(
-      context,
-      group: group,
-      groupType: groupType,
-      initialName: initialName,
-      createMode: createMode,
-    );
+    GroupDefinition? result;
+    if (group?.isComponent == true) {
+      result = await ComponentGroupEditorDialog.open(
+        context,
+        group: group,
+        initialName: initialName,
+      );
+    } else {
+      result = await StructuredGroupEditorDialog.open(
+        context,
+        group: group,
+        groupType: groupType,
+        initialName: initialName,
+        createMode: createMode,
+      );
+    }
     if (result != null && context.mounted) {
       try {
         context.read<InventoryProvider>().refresh();
       } catch (_) {}
+      if (!context.mounted) return result;
       try {
         context.read<ItemsProvider>().refresh();
       } catch (_) {}
@@ -353,6 +364,13 @@ class _GroupsCardGrid extends StatelessWidget {
             try {
               context.read<AppNavigation>().select('configurator_items');
             } catch (_) {}
+          },
+          onEdit: () {
+            GroupsScreen.openEditor(
+              context,
+              group: group,
+              groupType: group.groupType,
+            );
           },
         );
       },

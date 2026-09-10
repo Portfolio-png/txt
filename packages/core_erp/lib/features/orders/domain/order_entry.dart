@@ -33,6 +33,9 @@ class OrderEntry {
     this.totalDeliveredQty = 0,
     this.startDate,
     this.endDate,
+    this.sourceSetId,
+    this.sourceSetName = '',
+    this.sourceSetMultiplier = 0,
   });
 
   final int id;
@@ -48,6 +51,12 @@ class OrderEntry {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final Map<String, String> customVariationValues;
+
+  /// The saved set this line was expanded from, as it read at order time.
+  /// A snapshot, not a live reference: editing the set never rewrites this.
+  final int? sourceSetId;
+  final String sourceSetName;
+  final int sourceSetMultiplier;
   final int quantity;
   final int? unitId;
   final String unitName;

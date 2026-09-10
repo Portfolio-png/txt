@@ -381,6 +381,7 @@ class ApiDieRepository implements DieRepository {
           (json['compatibleMachineGroupIds'] as List<dynamic>? ?? [])
               .map((e) => e as int)
               .toList(),
+      clientId: json['clientId'] as int?,
       storageLocation: json['storageLocation'] as String?,
       numberOfCavities: json['numberOfCavities'] as int?,
       strokeCount: json['strokeCount'] as int?,
@@ -430,6 +431,7 @@ class ApiDieRepository implements DieRepository {
       'photoUrls': d.photoUrls,
       'operationalNotes': d.operationalNotes,
       'compatibleMachineGroupIds': d.compatibleMachineGroupIds,
+      'clientId': d.clientId,
       'storageLocation': d.storageLocation,
       'numberOfCavities': d.numberOfCavities,
       'strokeCount': d.strokeCount,

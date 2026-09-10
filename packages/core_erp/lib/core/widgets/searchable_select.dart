@@ -43,6 +43,38 @@ typedef SearchableSelectCreateOption<T> =
     Future<SearchableSelectOption<T>?> Function(String query);
 typedef SearchableSelectCreateLabelBuilder = String Function(String query);
 
+/// What an inline panel is given to work with.
+///
+/// The panel is driven by the picker's own search field — it must not grow a
+/// second one. [setQuery] writes back into that field so the panel can offer
+/// completions without owning any text state of its own; keeping the text in
+/// one place is what stops the two drifting apart.
+class SearchableSelectInlinePanel<T> {
+  const SearchableSelectInlinePanel({
+    required this.query,
+    required this.select,
+    required this.setQuery,
+  });
+
+  /// The picker's search text, trimmed.
+  final String query;
+
+  /// Closes the picker with [option], as though it had been picked from the
+  /// list.
+  final void Function(SearchableSelectOption<T> option) select;
+
+  /// Replaces the picker's search text.
+  final void Function(String text) setQuery;
+}
+
+/// Renders something inside the picker itself, above the options, for the
+/// current query. Returning null keeps the picker as it was.
+///
+/// Exists so a selector can offer a richer way to answer than picking a row —
+/// without stacking a second dialog on top of this one.
+typedef SearchableSelectInlinePanelBuilder<T> =
+    Widget? Function(BuildContext context, SearchableSelectInlinePanel<T> panel);
+
 Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   required BuildContext context,
   required List<SearchableSelectOption<T>> options,
@@ -55,6 +87,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   SearchableSelectCreateLabelBuilder? createOptionLabelBuilder,
   SearchableSelectCreateOption<T>? onSecondaryCreateOption,
   SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder,
+  SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder,
   Rect? anchorRect,
   TextInputType? keyboardType,
 }) {
@@ -90,6 +123,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           createOptionLabelBuilder: createOptionLabelBuilder,
           onSecondaryCreateOption: onSecondaryCreateOption,
           secondaryCreateOptionLabelBuilder: secondaryCreateOptionLabelBuilder,
+          inlinePanelBuilder: inlinePanelBuilder,
           keyboardType: keyboardType,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
@@ -125,6 +159,7 @@ class SearchableSelectField<T> extends FormField<T> {
     this.createOptionLabelBuilder,
     this.onSecondaryCreateOption,
     this.secondaryCreateOptionLabelBuilder,
+    this.inlinePanelBuilder,
     this.keyboardType,
     super.validator,
   }) : super(
@@ -217,6 +252,7 @@ class SearchableSelectField<T> extends FormField<T> {
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
   final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
   final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
+  final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
   final TextInputType? keyboardType;
 
   @override
@@ -258,6 +294,7 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
       onSecondaryCreateOption: widget.onSecondaryCreateOption,
       secondaryCreateOptionLabelBuilder:
           widget.secondaryCreateOptionLabelBuilder,
+      inlinePanelBuilder: widget.inlinePanelBuilder,
       keyboardType: widget.keyboardType,
     );
     if (selected == null) {
@@ -280,10 +317,12 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     required this.createOptionLabelBuilder,
     this.onSecondaryCreateOption,
     this.secondaryCreateOptionLabelBuilder,
+    this.inlinePanelBuilder,
     this.title,
     this.keyboardType,
   });
 
+  final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
   final List<SearchableSelectOption<T>> options;
   final String? title;
   final String searchHintText;
@@ -343,6 +382,7 @@ class _SearchableSelectDialogState<T>
             onCreateOption: widget.onCreateOption,
             createOptionLabelBuilder: widget.createOptionLabelBuilder,
             onSecondaryCreateOption: widget.onSecondaryCreateOption,
+            inlinePanelBuilder: widget.inlinePanelBuilder,
             secondaryCreateOptionLabelBuilder:
                 widget.secondaryCreateOptionLabelBuilder,
             keyboardType: widget.keyboardType,
@@ -441,10 +481,12 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     required this.createOptionLabelBuilder,
     this.onSecondaryCreateOption,
     this.secondaryCreateOptionLabelBuilder,
+    this.inlinePanelBuilder,
     this.title,
     this.keyboardType,
   });
 
+  final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
   final List<SearchableSelectOption<T>> options;
   final T? selectedValue;
   final List<SearchableSelectOption<T>> allOptions;
@@ -473,6 +515,22 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
         query.isNotEmpty &&
         !exactMatchExists &&
         (canCreateOption?.call(query, allOptions) ?? true);
+    final inlinePanel = inlinePanelBuilder?.call(
+      context,
+      SearchableSelectInlinePanel<T>(
+        query: query,
+        select: (option) => Navigator.of(context).pop(option),
+        setQuery: (text) {
+          searchController.value = TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          );
+          // Setting .text does not fire the field's onChanged, so the dialog
+          // is told directly or the options would not re-filter.
+          onQueryChanged(text);
+        },
+      ),
+    );
     final showSecondaryCreateOption =
         onSecondaryCreateOption != null &&
         query.isNotEmpty &&
@@ -589,6 +647,15 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                   ),
                 ),
               ),
+              // Flexible has to be a direct child of the Column, so the panel
+              // is built above rather than inside a Builder here.
+              if (inlinePanel != null)
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: inlinePanel,
+                  ),
+                ),
               Flexible(
                 child: options.isEmpty && !showCreateOption
                     ? Center(

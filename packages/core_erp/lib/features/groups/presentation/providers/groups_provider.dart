@@ -40,6 +40,13 @@ class GroupsProvider extends ChangeNotifier {
   List<GroupDefinition> get itemGroups =>
       _groups.where((g) => g.groupType == 'item' && !g.isCombination).toList();
 
+  /// Component groups — sub-assemblies whose items each carry their own
+  /// pipeline, machines and dies. They are item groups structurally, so
+  /// [itemGroups] still contains them; this is for the places that list
+  /// components as their own kind.
+  List<GroupDefinition> get componentGroups =>
+      _groups.where((g) => g.groupType == 'item' && g.isComponent).toList();
+
   /// Active combination groups (flat variant sets).
   List<GroupDefinition> get combinationGroups =>
       _groups.where((g) => g.groupType == 'item' && g.isCombination).toList();

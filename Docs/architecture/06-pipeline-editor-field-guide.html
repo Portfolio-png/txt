@@ -1,0 +1,993 @@
+<title>Pipeline Editor Field Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+  :root {
+    --ground: #EDF0F0;
+    --surface: #FBFCFC;
+    --surface-2: #E4E9E9;
+    --ink: #101A19;
+    --ink-soft: #55666A;
+    --ink-faint: #7E8E90;
+    --rule: #CFD8D7;
+    --rule-soft: #DFE5E4;
+    --accent: #0A6E63;
+    --accent-ink: #075A51;
+    --accent-wash: #DFEDEA;
+    --warn: #9A5209;
+    --warn-wash: #F3E6D6;
+    --dead: #7B8688;
+
+    --display: "IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif;
+    --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1413;
+      --surface: #151E1D;
+      --surface-2: #1C2726;
+      --ink: #E7EDEC;
+      --ink-soft: #9AA9A7;
+      --ink-faint: #748482;
+      --rule: #263433;
+      --rule-soft: #1E2A29;
+      --accent: #4ECDBF;
+      --accent-ink: #7FDDD2;
+      --accent-wash: #12312C;
+      --warn: #D89A55;
+      --warn-wash: #2A2016;
+      --dead: #6B7877;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1413;
+    --surface: #151E1D;
+    --surface-2: #1C2726;
+    --ink: #E7EDEC;
+    --ink-soft: #9AA9A7;
+    --ink-faint: #748482;
+    --rule: #263433;
+    --rule-soft: #1E2A29;
+    --accent: #4ECDBF;
+    --accent-ink: #7FDDD2;
+    --accent-wash: #12312C;
+    --warn: #D89A55;
+    --warn-wash: #2A2016;
+    --dead: #6B7877;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    padding: 64px 0 34px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 6vw, 4rem);
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+
+  .standfirst {
+    font-size: 1.12rem;
+    line-height: 1.62;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- layout ---------- */
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  @media (min-width: 1000px) {
+    .layout {
+      grid-template-columns: 186px 1fr;
+      gap: 56px;
+      align-items: start;
+    }
+    .rail { display: block; }
+  }
+
+  .rail {
+    display: none;
+    position: sticky;
+    top: 28px;
+    padding-top: 52px;
+  }
+
+  .rail-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 14px;
+  }
+
+  .rail ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .rail a {
+    display: block;
+    font-family: var(--display);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--ink-soft);
+    text-decoration: none;
+    padding: 5px 0 5px 12px;
+    border-left: 2px solid var(--rule);
+  }
+
+  .rail a:hover, .rail a:focus-visible {
+    color: var(--accent-ink);
+    border-left-color: var(--accent);
+  }
+
+  /* ---------- sections ---------- */
+
+  section { padding-top: 52px; scroll-margin-top: 20px; }
+
+  h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.72rem;
+    letter-spacing: -0.008em;
+    text-wrap: balance;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  h2 .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    flex: none;
+  }
+
+  .lede {
+    color: var(--ink-soft);
+    max-width: 66ch;
+    margin: 0 0 26px;
+  }
+
+  h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 1.02rem;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 36px 0 14px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  p { margin: 0 0 14px; max-width: 68ch; }
+  a { color: var(--accent-ink); }
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ---------- the three-way split ---------- */
+
+  .split {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: 1fr;
+    margin: 0 0 8px;
+  }
+
+  @media (min-width: 720px) {
+    .split { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .facet {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent);
+    padding: 18px 18px 20px;
+  }
+
+  .facet .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 9px;
+  }
+
+  .facet h4 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.14rem;
+    margin: 0 0 8px;
+    line-height: 1.2;
+  }
+
+  .facet p {
+    margin: 0;
+    font-size: 0.93rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- vocabulary table ---------- */
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 660px;
+    font-size: 0.92rem;
+  }
+
+  thead th {
+    font-family: var(--display);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    text-align: left;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  tbody td {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  .term {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--ink);
+    letter-spacing: 0.005em;
+  }
+
+  .src {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+
+  /* ---------- filter chips ---------- */
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 0 0 22px;
+    align-items: center;
+  }
+
+  .filters .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-right: 4px;
+  }
+
+  .chip {
+    font-family: var(--display);
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 5px 12px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+
+  .chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .chip[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--ground);
+  }
+
+  /* ---------- repo entries ---------- */
+
+  .entries { display: flex; flex-direction: column; gap: 0; }
+
+  .entry {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px 20px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  @media (min-width: 760px) {
+    .entry { grid-template-columns: 260px 1fr; }
+  }
+
+  .entry-id { display: flex; flex-direction: column; gap: 5px; }
+
+  .repo {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    text-decoration: none;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+
+  .repo:hover, .repo:focus-visible { color: var(--accent-ink); text-decoration: underline; }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .steal { margin: 0; font-size: 0.95rem; line-height: 1.55; color: var(--ink-soft); }
+  .steal b { color: var(--ink); font-weight: 600; }
+
+  .flag {
+    display: inline-block;
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+  }
+
+  .flag.dead { background: var(--warn-wash); color: var(--warn); }
+  .flag.pick { background: var(--accent-wash); color: var(--accent-ink); }
+
+  /* ---------- callout ---------- */
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 20px 22px;
+    margin: 26px 0 0;
+  }
+
+  .callout h4 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin: 0 0 9px;
+  }
+
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---------- shortlist ---------- */
+
+  .shortlist { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+
+  .shortlist li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .shortlist li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    padding-top: 4px;
+  }
+
+  .shortlist h4 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin: 0 0 5px;
+  }
+
+  .shortlist p { margin: 0; font-size: 0.94rem; color: var(--ink-soft); }
+
+  .footnote {
+    margin-top: 44px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--ink-faint);
+  }
+
+  .footnote a { color: var(--ink-faint); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">Prior art survey · Paper · rework #2</p>
+    <h1>Pipeline Editor Field Guide</h1>
+    <p class="standfirst">
+      You asked what other people have built, because you can picture the fix but not name it.
+      The naming problem is real and it has a cause: <strong>“pipeline node panel clutter” is three
+      different solved problems wearing one coat.</strong> Separate them and each one already has
+      a mature reference implementation, a vocabulary, and in one case a Flutter package you
+      could adopt this week.
+    </p>
+  </header>
+
+  <div class="layout">
+
+    <nav class="rail" aria-label="Sections">
+      <p class="rail-title">Contents</p>
+      <ol>
+        <li><a href="#split">The three-way split</a></li>
+        <li><a href="#vocab">Vocabulary</a></li>
+        <li><a href="#template">The one big idea</a></li>
+        <li><a href="#art">Prior art</a></li>
+        <li><a href="#first">What to open first</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <section id="split">
+        <h2><span class="num">01</span> The three-way split</h2>
+        <p class="lede">
+          Your four complaints about the node panel — clutter, scrap-vs-rejection, no save signal,
+          no navigation on save — do not belong to one component. They belong to three, and the
+          reason no single search turned anything up is that no single project solves all three.
+        </p>
+
+        <div class="split">
+          <article class="facet">
+            <span class="tag">Problem A</span>
+            <h4>The canvas</h4>
+            <p>
+              Nodes, ports, links, pan and zoom, layout. Fully commoditised — dozens of libraries,
+              one of them native Flutter. You already have this working; it is not your complaint.
+            </p>
+          </article>
+          <article class="facet">
+            <span class="tag">Problem B</span>
+            <h4>The inspector</h4>
+            <p>
+              The panel that edits whichever node is selected. This is your actual complaint —
+              clutter and save state both live here. Solved thoroughly by the BPMN tooling world,
+              and almost nowhere else.
+            </p>
+          </article>
+          <article class="facet">
+            <span class="tag">Problem C</span>
+            <h4>The node taxonomy</h4>
+            <p>
+              What <em>kinds</em> of node exist, and what each kind is allowed to carry. Scrap
+              versus rejection is a taxonomy question, not a form-field question. Manufacturing
+              execution systems have settled vocabulary for it.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="vocab">
+        <h2><span class="num">02</span> The vocabulary you were missing</h2>
+        <p class="lede">
+          These are the terms that make the rest of the internet searchable on this topic. The
+          right-hand column is what each one buys you in Paper specifically.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Term</th>
+                <th scope="col">From</th>
+                <th scope="col">What it gives you</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="term">Element template</td>
+                <td class="src">Camunda Modeler</td>
+                <td>A named node <em>kind</em> that declares which fields it exposes and with what defaults. The panel renders the template, not every field that exists. This is the whole clutter fix.</td>
+              </tr>
+              <tr>
+                <td class="term">Conditional property</td>
+                <td class="src">Camunda Modeler</td>
+                <td>A field that appears only when another field has a given value. Pick “Scrap node” and the scrap group appears; pick “Rejection node” and it doesn’t.</td>
+              </tr>
+              <tr>
+                <td class="term">Group · Entry · ListGroup</td>
+                <td class="src">bpmn-io/properties-panel</td>
+                <td>The three structural units of an inspector. A panel is a list of declared Groups, each a list of Entries — not a hand-assembled column of widgets, which is what yours is now.</td>
+              </tr>
+              <tr>
+                <td class="term">Disposition</td>
+                <td class="src">MES routing</td>
+                <td>The industry’s answer to your exact question. A non-conforming unit gets a disposition of <b>scrap</b>, <b>rework</b>, or <b>use-as-is</b>. Your “rejection node” is rework; your “scrap node” is scrap. Three values, not two.</td>
+              </tr>
+              <tr>
+                <td class="term">Operation yield</td>
+                <td class="src">MES routing</td>
+                <td>Expected pass-through percentage on a step. Turns the scrap branch into a number that lives on the node and can be planned against, rather than a destination picked at reconcile time.</td>
+              </tr>
+              <tr>
+                <td class="term">Rework loop</td>
+                <td class="src">MES routing</td>
+                <td>A rejection route back into an earlier step, with declared entrance and exit criteria and a repeat limit. The limit is the part you don’t have — without it a part can cycle forever and be counted twice.</td>
+              </tr>
+              <tr>
+                <td class="term">Boundary error event</td>
+                <td class="src">BPMN 2.0</td>
+                <td>The graph-level notation for “what leaves the happy path here”. Draws scrap and rejection as edges off a step rather than as fields buried inside it.</td>
+              </tr>
+              <tr>
+                <td class="term">Sink node</td>
+                <td class="src">Dataflow graphs</td>
+                <td>A terminal node that consumes and never emits. Scrap destinations are sinks; naming them so makes it obvious why they carry no output item or machine.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="template">
+        <h2><span class="num">03</span> The one idea worth stealing</h2>
+        <p class="lede">
+          If you read nothing else here, read about element templates.
+        </p>
+        <p>
+          Your panel today asks every question of every node and then hides some of them with
+          <code>if (_isAssemblyStep)</code> and <code>if (!_isOutputNode)</code> branches written
+          by hand in the widget tree. Camunda hit the same wall and inverted it: a node points at
+          a <em>template</em>, and the template declares its fields — type, label, default, and
+          the condition under which it shows at all. The panel becomes a renderer.
+        </p>
+
+        <div class="callout">
+          <h4>Why this collapses two of your four complaints at once</h4>
+          <p>
+            “Is this a rejection node or a scrap node?” stops being a new dropdown you bolt on.
+            It becomes <em>which template this node uses</em> — and the template already knows
+            that a scrap node needs a destination group and a material, while a rejection node
+            needs a repeat limit and a return step. Ask the question once, at the top, and the
+            rest of the panel follows from the answer.
+          </p>
+          <p>
+            It also gives you somewhere to put the scrap-versus-rejection distinction that
+            survives to reconcile time, which the current single untyped <code>scrapItems</code>
+            list does not.
+          </p>
+        </div>
+      </section>
+
+      <section id="art">
+        <h2><span class="num">04</span> Prior art</h2>
+        <p class="lede">
+          Everything below is real, checked, and tagged with which of the three problems it
+          speaks to. Star counts and activity as of 3 September 2026.
+        </p>
+
+        <div class="filters">
+          <span class="label">Filter</span>
+          <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="chip" type="button" data-filter="a" aria-pressed="false">A · Canvas</button>
+          <button class="chip" type="button" data-filter="b" aria-pressed="false">B · Inspector</button>
+          <button class="chip" type="button" data-filter="c" aria-pressed="false">C · Taxonomy</button>
+        </div>
+
+        <h3>Flutter — things you could actually build on</h3>
+        <div class="entries">
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/vyuh-tech/vyuh_node_flow">vyuh-tech/vyuh_node_flow</a>
+              <div class="meta"><span>197★</span><span>Dart</span><span>MIT</span><span>active</span><span class="flag pick">Start here</span></div>
+            </div>
+            <p class="steal">
+              <b>The only live Flutter node editor of any maturity.</b> React Flow’s model ported
+              properly: typed node data via generics, ports, connection styles, minimap,
+              read-only viewer mode, JSON serialisation, and an extension architecture. Its own
+              demo ships a <b>manufacturing</b> example workflow. Level-of-detail rendering means
+              it stays usable at the size a real pipeline reaches.
+              <a href="https://flow.demo.vyuh.tech">Live demo</a>.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/WilliamKarolDiCioccio/fl_nodes">WilliamKarolDiCioccio/fl_nodes</a>
+              <div class="meta"><span>193★</span><span>Dart</span><span>MIT</span><span class="flag dead">Archived 31 Aug 2026</span></div>
+            </div>
+            <p class="steal">
+              Was the other Flutter option. <b>Archived four days ago and now read-only</b> — do
+              not build on it. Still worth reading for how it structured node definitions, but
+              treat it as a dead reference, not a dependency.
+            </p>
+          </article>
+        </div>
+
+        <h3>The inspector — your actual problem</h3>
+        <div class="entries">
+
+          <article class="entry" data-cat="b">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/bpmn-io/properties-panel">bpmn-io/properties-panel</a>
+              <div class="meta"><span>43★</span><span>JS</span><span>MIT</span><span class="flag pick">Read the source</span></div>
+            </div>
+            <p class="steal">
+              <b>The closest thing to a solved version of your panel.</b> Small enough to read in
+              an afternoon. The component vocabulary is the payload: <code>Group</code>,
+              <code>ListGroup</code>, <code>ListItem</code>, <code>Header</code>,
+              <code>Placeholder</code>, and entries for <code>TextField</code>,
+              <code>NumberField</code>, <code>Select</code>, <code>Checkbox</code>,
+              <code>ToggleSwitch</code>, <code>Collapsible</code>, <code>Description</code>,
+              <code>Tooltip</code>. That set covers every field in your Step Properties panel.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="b">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/bpmn-io/bpmn-js-properties-panel">bpmn-io/bpmn-js-properties-panel</a>
+              <div class="meta"><span>337★</span><span>JS</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              The reference implementation on top of that library — how a real domain maps its
+              element types onto declared groups. This is what “decluttered” looks like when a
+              team has been iterating on it for eight years.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="b">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/camunda/camunda-modeler">camunda/camunda-modeler</a>
+              <div class="meta"><span>1.7k★</span><span>JS</span><span>desktop app</span></div>
+            </div>
+            <p class="steal">
+              <b>Where element templates ship.</b> Download it, model a two-step process, and
+              watch the properties panel change shape as you switch element types. Twenty minutes
+              here will give you the words for what you want better than any amount of reading.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="b">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/bpmn-io/bpmn-js-example-react-properties-panel">bpmn-io/bpmn-js-example-react-properties-panel</a>
+              <div class="meta"><span>53★</span><span>JS</span><span>example</span></div>
+            </div>
+            <p class="steal">
+              A deliberately minimal “build your own panel” example. The clearest single file for
+              seeing the declared-groups pattern without the BPMN domain on top of it.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="b">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/n8n-io/n8n">n8n-io/n8n</a>
+              <div class="meta"><span>203k★</span><span>TypeScript</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              Node parameter panels at enormous scale — 400+ node types, each declaring its own
+              parameters with display conditions. <b>Look specifically at how it handles save
+              state:</b> the panel commits on change and the canvas node shows the dirty marker,
+              which is one of the two answers to your “no way to know it’s saved” complaint.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="b">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/node-red/node-red">node-red/node-red</a>
+              <div class="meta"><span>23.6k★</span><span>JS</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              The other answer to save state: an explicit modal edit dialog with Cancel and Done,
+              and a badge on the node for undeployed changes. Node-RED separates “edited” from
+              “deployed” visually — which is exactly the distinction you need between a node
+              edit and a pipeline save.
+            </p>
+          </article>
+        </div>
+
+        <h3>The canvas — the genre, for reference</h3>
+        <div class="entries">
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/xyflow/awesome-node-based-uis">xyflow/awesome-node-based-uis</a>
+              <div class="meta"><span>3.7k★</span><span>list</span><span class="flag pick">The list you wanted</span></div>
+            </div>
+            <p class="steal">
+              <b>This is the search result you were looking for and couldn’t phrase.</b> A curated
+              index of node-based UI libraries across every language, plus an Applications section
+              cataloguing roughly fifty shipped products built on them — Retool Workflows, Stately,
+              ComfyUI, Power Automate, customer.io. Browse the applications, not the libraries.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/xyflow/xyflow">xyflow/xyflow</a>
+              <div class="meta"><span>38.2k★</span><span>TypeScript</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              React Flow — the library that defined the current conventions, and the one
+              <code>vyuh_node_flow</code> is modelled on. Read its docs for the naming
+              (handles, edges, node types) that everyone else has since adopted.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/retejs/rete">retejs/rete</a>
+              <div class="meta"><span>12.2k★</span><span>TypeScript</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              Stronger opinions than React Flow about node <em>schemas</em> and validation —
+              closer to your case, where a node’s inputs and outputs must be type-checked
+              against the items flowing through them.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/comfyanonymous/ComfyUI">comfyanonymous/ComfyUI</a>
+              <div class="meta"><span>131k★</span><span>Python</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              The most-used node graph UI in the world right now, and instructive as a warning:
+              it puts every property <em>inside</em> the node body rather than in an inspector.
+              Try a large graph and you will feel precisely the clutter problem you are trying to
+              avoid — useful for arguing the opposite case.
+            </p>
+          </article>
+        </div>
+
+        <h3>The domain — manufacturing routing and MES</h3>
+        <div class="entries">
+
+          <article class="entry" data-cat="c">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/jukbot/smart-industry">jukbot/smart-industry</a>
+              <div class="meta"><span>441★</span><span>HTML</span><span>MES</span><span class="flag pick">Closest domain fit</span></div>
+            </div>
+            <p class="steal">
+              <b>An open MES for job-shop manufacturers</b> — which is what Sarvadnya is. Job shop
+              means routing varies per order rather than per product, the exact assumption behind
+              assigning a pipeline to an order. Read its routing and operation models.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="c">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/frappe/erpnext">frappe/erpnext</a>
+              <div class="meta"><span>38.8k★</span><span>Python</span><span>active</span></div>
+            </div>
+            <p class="steal">
+              The most complete open manufacturing data model available. Look at three doctypes
+              only: <b>Routing</b>, <b>Operation</b>, and <b>BOM</b>. Its scrap-item handling on a
+              BOM is a direct precedent for the split you want, and it already separates scrap
+              items from process loss.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="c">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/ricefishtech/industry4.0-mes">ricefishtech/industry4.0-mes</a>
+              <div class="meta"><span>508★</span><span>Java</span><span>MES</span></div>
+            </div>
+            <p class="steal">
+              A conventional MES schema, useful mainly as a second opinion on table naming for
+              operations, work orders and scrap records. Documentation is largely Chinese; the
+              schema reads fine regardless.
+            </p>
+          </article>
+        </div>
+
+        <h3>Factory games — for the interaction feel</h3>
+        <div class="entries">
+
+          <article class="entry" data-cat="a">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/tobspr-games/shapez.io">tobspr-games/shapez.io</a>
+              <div class="meta"><span>6.9k★</span><span>JS</span><span>MIT</span></div>
+            </div>
+            <p class="steal">
+              You mentioned factory simulators. This is the open one worth an hour. Its lesson for
+              you is about <b>legibility at a glance</b> — every building announces its function
+              through shape and colour alone, so a large graph stays readable without opening
+              anything. Your stage nodes currently do not.
+            </p>
+          </article>
+
+          <article class="entry" data-cat="c">
+            <div class="entry-id">
+              <a class="repo" href="https://github.com/satisfactory-factories/application">satisfactory-factories/application</a>
+              <div class="meta"><span>52★</span><span>TypeScript</span><span>planner</span></div>
+            </div>
+            <p class="steal">
+              A production-chain planner with dependency management and by-product handling. Small
+              and readable. Its treatment of <b>by-products</b> — outputs you didn’t ask for but
+              must route somewhere — is structurally the same problem as scrap.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="first">
+        <h2><span class="num">05</span> What to open first</h2>
+        <p class="lede">
+          In this order, and stop when you can describe what you want in your own words — that is
+          the whole purpose of this exercise.
+        </p>
+
+        <ol class="shortlist">
+          <li>
+            <div>
+              <h4>Camunda Modeler, twenty minutes, hands on</h4>
+              <p>Model any two-step process and switch element types while watching the right-hand panel. This is the fastest route from “I can picture it” to “I can name it”.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h4>The Applications section of awesome-node-based-uis</h4>
+              <p>Fifty shipped products. Skim for screenshots. You will find three or four whose inspector is what you had in mind, and then you can point at them instead of describing them.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h4>vyuh_node_flow’s live demo, on the manufacturing example</h4>
+              <p>The only one of these that is Flutter and could become a dependency rather than an inspiration. Judge whether its canvas beats what you already have.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h4>ERPNext’s Routing, Operation and BOM doctypes</h4>
+              <p>Read only these three. They will tell you whether scrap belongs on the operation, on the BOM, or on both — a question your current model answers by accident.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="callout">
+          <h4>One thing that needs no research</h4>
+          <p>
+            Your fourth complaint — that Save shows a toast but leaves you on the builder — is a
+            single missing call. <code>_deletePipeline</code> already returns you to the pipelines
+            screen; <code>_saveAndNotify</code> just never learned to. That one is not a design
+            question and shouldn’t wait for any of the above.
+          </p>
+        </div>
+
+        <p class="footnote">
+          Sources · GitHub Search API, 3 September 2026 ·
+          <a href="https://docs.camunda.io/docs/components/modeler/desktop-modeler/element-templates/about-templates/">Camunda element templates</a> ·
+          <a href="https://sgsystemsglobal.com/glossary/routing-and-operation-sequencing/">MES routing &amp; operation sequencing</a> ·
+          <a href="https://devblog.criticalmanufacturing.com/blog/20251028_rework_limit/">Rework limits in MES</a> ·
+          <a href="https://us.fitgap.com/stack-guides/handling-scrap-yield-loss-and-rework-so-variable-costs-reflect-true-throughput">Scrap, yield loss and rework</a>
+        </p>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+    var entries = Array.prototype.slice.call(document.querySelectorAll('.entry'));
+    var headings = Array.prototype.slice.call(document.querySelectorAll('#art h3'));
+
+    function apply(filter) {
+      entries.forEach(function (el) {
+        el.hidden = !(filter === 'all' || el.getAttribute('data-cat') === filter);
+      });
+      // A heading whose whole group is filtered out has nothing left to label.
+      headings.forEach(function (h) {
+        var group = h.nextElementSibling;
+        if (!group) return;
+        var visible = Array.prototype.slice
+          .call(group.querySelectorAll('.entry'))
+          .some(function (el) { return !el.hidden; });
+        h.hidden = !visible;
+        group.hidden = !visible;
+      });
+      chips.forEach(function (c) {
+        c.setAttribute('aria-pressed', String(c.getAttribute('data-filter') === filter));
+      });
+    }
+
+    chips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        apply(chip.getAttribute('data-filter'));
+      });
+    });
+  })();
+</script>

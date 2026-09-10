@@ -24,6 +24,9 @@ class CreateOrderInput {
     this.startDate,
     this.endDate,
     this.poDocumentIds = const <int>[],
+    this.sourceSetId,
+    this.sourceSetName = '',
+    this.sourceSetMultiplier = 0,
   });
 
   final String orderNo;
@@ -48,6 +51,12 @@ class CreateOrderInput {
   final DateTime? startDate;
   final DateTime? endDate;
   final List<int> poDocumentIds;
+
+  /// Which saved set this line was expanded from, as it read at order time.
+  /// A dead label, never a live reference — see the note on `_addLinesFromSet`.
+  final int? sourceSetId;
+  final String sourceSetName;
+  final int sourceSetMultiplier;
 }
 
 class UpdateOrderLifecycleInput {

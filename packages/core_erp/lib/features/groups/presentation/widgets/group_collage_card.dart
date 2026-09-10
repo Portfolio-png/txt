@@ -26,6 +26,7 @@ class GroupCollageCard extends StatefulWidget {
     this.structureLabel = '',
     this.onTap,
     this.onOpenItems,
+    this.onEdit,
   });
 
   final String name;
@@ -40,6 +41,9 @@ class GroupCollageCard extends StatefulWidget {
   /// Opening the group's items is the thing people actually want from a card,
   /// so it is its own affordance rather than hidden behind the editor.
   final VoidCallback? onOpenItems;
+
+  /// Quick-edit action.
+  final VoidCallback? onEdit;
 
   @override
   State<GroupCollageCard> createState() => _GroupCollageCardState();
@@ -80,9 +84,15 @@ class _GroupCollageCardState extends State<GroupCollageCard> {
                     fit: StackFit.expand,
                     children: <Widget>[
                       GroupCoverMosaic(covers: widget.covers),
-                      if (_hovered && widget.onOpenItems != null)
+                      if (_hovered && widget.onEdit != null)
                         Positioned(
                           right: 8,
+                          top: 8,
+                          child: _GroupMenuButton(onEdit: widget.onEdit!),
+                        ),
+                      if (_hovered && widget.onOpenItems != null)
+                        Positioned(
+                          right: widget.onEdit != null ? 40 : 8,
                           top: 8,
                           child: _OpenItemsButton(onTap: widget.onOpenItems!),
                         ),
@@ -397,6 +407,57 @@ class _OpenItemsButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _GroupMenuButton extends StatelessWidget {
+  const _GroupMenuButton({required this.onEdit});
+
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.94),
+      borderRadius: BorderRadius.circular(999),
+      child: PopupMenuButton<String>(
+        tooltip: 'Group options',
+        icon: const Icon(
+          Icons.more_vert,
+          size: 16,
+          color: SoftErpTheme.textPrimary,
+        ),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 140),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+        ),
+        position: PopupMenuPosition.under,
+        onSelected: (value) {
+          if (value == 'edit') onEdit();
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: 'edit',
+            height: 38,
+            child: Row(
+              children: [
+                Icon(Icons.edit_outlined, size: 16, color: SoftErpTheme.textPrimary),
+                SizedBox(width: 8),
+                Text(
+                  'Edit Group',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -35,6 +35,7 @@ import '../../../delivery_challans/presentation/providers/delivery_challan_provi
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../../delivery_challans/presentation/widgets/challan_excel_view.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/presentation/widgets/set_overview_dialog.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/utils/naming_format_helper.dart';
@@ -5180,6 +5181,19 @@ class _InventoryTableState extends State<_InventoryTable> {
                         final isSelectable = record.id != null;
                         final opensChallanSheet =
                             entry.opensDetails && record.linkedItemId != null;
+                        // A hand-defined set holds no stock, so it has no
+                        // materials detail view — it used to have nowhere to
+                        // open to at all. Its overview is that somewhere.
+                        final isDefinedSet =
+                            inventorySet != null && !inventorySet.isTemporary;
+                        final openAction = isDefinedSet
+                            ? () => SetOverviewDialog.open(
+                                context,
+                                set: inventorySet,
+                              )
+                            : opensChallanSheet
+                            ? () => widget.onOpenChallans(record)
+                            : () => widget.onOpenDetails(record);
                         final rowTap =
                             widget.viewMode == _InventoryViewMode.sets
                             ? (inventorySet == null
@@ -5205,9 +5219,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                             ? () => widget.onOpenChallans(record)
                             : () => widget.onOpenDetails(record);
                         return _InventoryMainDataRow(
-                          onOpenDetails: opensChallanSheet
-                              ? () => widget.onOpenChallans(record)
-                              : () => widget.onOpenDetails(record),
+                          onOpenDetails: openAction,
                           record: record,
                           entry: entry,
                           viewMode: widget.viewMode,
@@ -5221,9 +5233,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                           isStriped: index.isOdd,
                           isRequestDelete: widget.isRequestDelete,
                           onTap: rowTap,
-                          onDoubleTap: opensChallanSheet
-                              ? () => widget.onOpenChallans(record)
-                              : () => widget.onOpenDetails(record),
+                          onDoubleTap: openAction,
                           onLongPress: isSelectable
                               ? () => widget.onToggleSelection(record.barcode)
                               : null,
@@ -5233,7 +5243,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                               ? () => widget.onToggleExpanded(record.barcode)
                               : null,
                           onReceive: () => widget.onReceive(record),
-                          showOpenAction: entry.opensDetails,
+                          showOpenAction: entry.opensDetails || isDefinedSet,
                           onAddSubGroup: () => widget.onAddSubGroup(record),
                           onEdit: inventorySet == null
                               ? () => widget.onEdit(record)

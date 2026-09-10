@@ -14,6 +14,7 @@ class Die {
     required this.photoUrls,
     required this.operationalNotes,
     required this.compatibleMachineGroupIds,
+    this.clientId,
     this.storageLocation,
     this.numberOfCavities,
     this.strokeCount,
@@ -34,6 +35,7 @@ class Die {
   final List<String> photoUrls;
   final String operationalNotes;
   final List<int> compatibleMachineGroupIds;
+  final int? clientId;
   final String? storageLocation;
   final int? numberOfCavities;
   final int? strokeCount;
@@ -54,6 +56,7 @@ class Die {
     List<String>? photoUrls,
     String? operationalNotes,
     List<int>? compatibleMachineGroupIds,
+    int? clientId,
     Object? storageLocation = _dieAbsent,
     int? numberOfCavities,
     int? strokeCount,
@@ -75,6 +78,7 @@ class Die {
       operationalNotes: operationalNotes ?? this.operationalNotes,
       compatibleMachineGroupIds:
           compatibleMachineGroupIds ?? this.compatibleMachineGroupIds,
+      clientId: clientId ?? this.clientId,
       storageLocation: storageLocation == _dieAbsent
           ? this.storageLocation
           : storageLocation as String?,

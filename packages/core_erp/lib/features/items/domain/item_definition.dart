@@ -340,18 +340,25 @@ class ItemMachineLink {
     required this.id,
     required this.name,
     this.assetId = '',
+    this.photoUrl,
   });
 
   final String id;
   final String name;
   final String assetId;
+  final String? photoUrl;
 }
 
 class ItemDieLink {
-  const ItemDieLink({required this.id, required this.toolCode});
+  const ItemDieLink({
+    required this.id, 
+    required this.toolCode,
+    this.photoUrl,
+  });
 
   final String id;
   final String toolCode;
+  final String? photoUrl;
 }
 
 class ItemUnitConversionDefinition {

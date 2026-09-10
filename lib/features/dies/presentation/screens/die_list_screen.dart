@@ -16,8 +16,10 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 class DiesScreen extends StatefulWidget {
   const DiesScreen({super.key});
 
-  static void openDieEditor(BuildContext context, {Die? die}) {
-    showDieFormDialog(context, die: die);
+  /// Returns the die that was saved, so a caller that opened this to fill a
+  /// gap can carry on with it rather than guessing.
+  static Future<Die?> openDieEditor(BuildContext context, {Die? die}) {
+    return showDieFormDialog(context, die: die);
   }
 
   @override

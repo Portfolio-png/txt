@@ -14,12 +14,20 @@ class PipelineStageNode {
     required this.name,
     this.stageIndex = 0,
     this.laneIndex = 0,
+    this.machine = '',
+    this.machineGroupName = '',
+    this.dieCode = '',
   });
 
   factory PipelineStageNode.fromJson(Map<String, dynamic> json, int fallback) {
     final rawName = json['name']?.toString().trim() ?? '';
     final processType = json['processType']?.toString().trim() ?? '';
     return PipelineStageNode(
+      machine: json['machine']?.toString().trim() ?? '',
+      machineGroupName: json['machineGroupName']?.toString().trim() ?? '',
+      // `dieId` stores the die's tool_code, not a row id — see the dies lookup
+      // in the backend, which joins on tool_code. So it is already readable.
+      dieCode: json['dieId']?.toString().trim() ?? '',
       id: json['id']?.toString() ?? 'stage-${fallback + 1}',
       // A node with no name of its own still has to read as something, so its
       // process type stands in before the positional last resort.
@@ -35,6 +43,16 @@ class PipelineStageNode {
   final String name;
   final int stageIndex;
   final int laneIndex;
+
+  /// What runs this node. Kept so a set can roll up the machines and dies its
+  /// members touch without loading every full template.
+  final String machine;
+  final String machineGroupName;
+  final String dieCode;
+
+  /// Whichever of the two names the node actually carries.
+  String get machineLabel =>
+      machine.isNotEmpty ? machine : machineGroupName;
 
   /// Reading order: down the stages, then across the lanes within a stage.
   static int compare(PipelineStageNode a, PipelineStageNode b) {

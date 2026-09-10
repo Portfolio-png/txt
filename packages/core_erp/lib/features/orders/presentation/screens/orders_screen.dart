@@ -3148,6 +3148,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           (k, v) => MapEntry(int.parse(k), v),
         );
         draft.selectedUnitId = item.unitId;
+        draft.sourceSetId = item.sourceSetId;
+        draft.sourceSetName = item.sourceSetName;
+        draft.sourceSetMultiplier = item.sourceSetMultiplier;
         draft.quantityController.text = item.quantity.toString();
         draft.clientCodeController.text = item.clientCode;
         return draft;
@@ -4017,6 +4020,24 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       );
     }
 
+    // Once a set is expanded its members are ordinary rows, so without this
+    // nothing on the order says these lines were ever one thing. The badge is
+    // the snapshot talking, not a live lookup — it shows the set as it read
+    // when the order was placed.
+    if (line.sourceSetName.isNotEmpty) {
+      child = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          child,
+          const SizedBox(height: 6),
+          _SourceSetBadge(
+            name: line.sourceSetName,
+            multiplier: line.sourceSetMultiplier,
+          ),
+        ],
+      );
+    }
+
     if (!_groupScopedItemPickerEnabled) {
       return child;
     }
@@ -4740,13 +4761,24 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     final drafts = <_OrderLineDraft>[
       for (final entry in ready)
-        _draftFromSetLine(entry.item, entry.line, entry.qty, null),
+        _draftFromSetLine(
+          entry.item,
+          entry.line,
+          entry.qty,
+          null,
+          setId: choice.set.id,
+          setName: choice.set.name,
+          multiplier: choice.multiplier,
+        ),
       for (final request in requests)
         _draftFromSetLine(
           request.item,
           request.line,
           request.quantity,
           request.result,
+          setId: choice.set.id,
+          setName: choice.set.name,
+          multiplier: choice.multiplier,
         ),
     ];
 
@@ -4793,11 +4825,17 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     ItemDefinition item,
     InventorySetLineDefinition line,
     int quantity,
-    VariationPathSelectionResult? resolved,
-  ) {
+    VariationPathSelectionResult? resolved, {
+    required int? setId,
+    required String setName,
+    required int multiplier,
+  }) {
     final draft = _OrderLineDraft(
       id: DateTime.now().microsecondsSinceEpoch + line.itemId,
     );
+    draft.sourceSetId = setId;
+    draft.sourceSetName = setName;
+    draft.sourceSetMultiplier = multiplier;
     draft.selectedItemId = item.id;
     draft.selectedUnitId = item.unitId;
     draft.quantityController.text = quantity.toString();
@@ -4832,6 +4870,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       source.selectedVariationValueNodeIds,
     );
     newLine.selectedUnitId = source.selectedUnitId;
+    newLine.sourceSetId = source.sourceSetId;
+    newLine.sourceSetName = source.sourceSetName;
+    newLine.sourceSetMultiplier = source.sourceSetMultiplier;
     newLine.clientCodeController.text = source.clientCodeController.text;
     newLine.quantityController.text = source.quantityController.text;
     newLine.completionDate = source.completionDate;
@@ -5079,6 +5120,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                 ? line.completionDate ?? _endDate
                 : _endDate,
             poDocumentIds: const <int>[],
+            sourceSetId: line.sourceSetId,
+            sourceSetName: line.sourceSetName,
+            sourceSetMultiplier: line.sourceSetMultiplier,
           ),
         );
       }
@@ -5117,6 +5161,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               startDate: input.startDate,
               endDate: input.endDate,
               poDocumentIds: isHeader ? poDocumentIds : const <int>[],
+              sourceSetId: input.sourceSetId,
+              sourceSetName: input.sourceSetName,
+              sourceSetMultiplier: input.sourceSetMultiplier,
             );
           })
           .toList(growable: false);
@@ -8475,6 +8522,13 @@ class _OrderLineDraft {
   int? selectedVariationLeafId;
   Map<int, String> customVariationValues = const <int, String>{};
   int? selectedUnitId;
+
+  /// Set this line was expanded from, snapshotted when it was added. Dead
+  /// labels — editing the set later never reaches back into a placed order.
+  int? sourceSetId;
+  String sourceSetName = '';
+  int sourceSetMultiplier = 0;
+
   DateTime? completionDate;
   String? completionDateError;
   String? variationPathError;
@@ -8486,6 +8540,52 @@ class _OrderLineDraft {
     quantityController.dispose();
     clientCodeController.dispose();
     completionDateController.dispose();
+  }
+}
+
+/// Marks an order line that came from a saved set.
+///
+/// Deliberately not a link: the set may have been edited or deleted since, and
+/// the order records what was agreed that day, not what the set says now.
+class _SourceSetBadge extends StatelessWidget {
+  const _SourceSetBadge({required this.name, required this.multiplier});
+
+  final String name;
+  final int multiplier;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = multiplier > 1 ? '$name  ×$multiplier' : name;
+    return Tooltip(
+      message: 'Expanded from this set when the order was placed',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.accentSoft,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.widgets_outlined,
+              size: 12,
+              color: SoftErpTheme.accentDeeper,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: SoftErpTheme.accentDeeper,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

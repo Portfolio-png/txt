@@ -65,6 +65,7 @@ class _AppSidebarState extends State<AppSidebar> {
     ),
     _SidebarItemData('insights', 'Insights', Icons.insights_outlined),
     _SidebarItemData('jobs', 'Jobs', Icons.engineering_outlined),
+    _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
     _SidebarItemData(
       'action_center',
       'Action Center',

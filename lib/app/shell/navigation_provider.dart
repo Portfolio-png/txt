@@ -8,6 +8,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'inventory',
   'production',
   'insights',
+  'jobs',
   'telemetry',
   'pm',
   'configurator',
@@ -46,7 +47,9 @@ const List<String> kPrimaryTabNavigationKeys = <String>[
   'inventory',
   'production',
   'insights',
+  'jobs',
   'telemetry',
+  'pm',
   'configurator',
 ];
 
@@ -58,8 +61,10 @@ int primaryTabIndexForKey(String key) {
     'inventory' || 'inventory_scan' => 3,
     'production' => 4,
     'insights' => 5,
-    'telemetry' => 6,
-    _ when kConfiguratorNavigationKeys.contains(key) => 7,
+    'jobs' => 6,
+    'telemetry' => 7,
+    'pm' => 8,
+    _ when kConfiguratorNavigationKeys.contains(key) => 9,
     _ => -1,
   };
 }
@@ -72,8 +77,10 @@ String? primaryTabKeyForIndex(int index) {
     3 => 'inventory',
     4 => 'production',
     5 => 'insights',
-    6 => 'telemetry',
-    7 => 'configurator',
+    6 => 'jobs',
+    7 => 'telemetry',
+    8 => 'pm',
+    9 => 'configurator',
     _ => null,
   };
 }

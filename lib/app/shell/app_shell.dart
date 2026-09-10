@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:showcaseview/showcaseview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:flutter/services.dart';
@@ -286,6 +287,7 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
   @override
   void initState() {
     super.initState();
+    _registerAppFlowHooks();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _requestShellFocus();
     });
@@ -617,25 +619,26 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
   }
 }
 
+/// Lets shared dialogs in core_erp reach the pipeline builder, which lives
+/// here. Registered once, at the first shell build.
+void _registerAppFlowHooks() {
+  AppFlowHooks.createPipeline ??= _handleCreatePipeline;
+  AppFlowHooks.createMachine ??= (context) async =>
+      await MachinesScreen.openMachineEditor(context) != null;
+  AppFlowHooks.createDie ??= (context) async =>
+      await DiesScreen.openDieEditor(context) != null;
+}
+
 Future<String?> _handleCreatePipeline(BuildContext context) async {
   final template = await PipelinesScreen.openCreateDialog(context);
   if (template != null && context.mounted) {
-    final provider = PipelineEditorProvider(template: template);
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (builderContext) => ChangeNotifierProvider.value(
-          value: provider,
-          child: PipelineBuilderScreen(
-            factoryId: defaultProductionFactoryId,
-            shopFloorId: defaultProductionShopFloorId,
-            onBack: () => Navigator.of(builderContext).pop(),
-          ),
-        ),
-      ),
-    );
-    final savedId = provider.template.id.toString();
-    provider.dispose();
-    return savedId;
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      final saved = await repo.createTemplate(template);
+      return saved.id;
+    } catch (e) {
+      debugPrint('Failed to save pipeline on the fly: $e');
+    }
   }
   return null;
 }

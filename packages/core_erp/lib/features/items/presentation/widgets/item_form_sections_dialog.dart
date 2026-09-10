@@ -77,14 +77,23 @@ class ItemFormSectionsDialog extends StatelessWidget {
 ///   used by the group editor to author a per-group override. Nothing is
 ///   persisted here — the caller saves it with the group.
 class ItemFormSectionsEditor extends StatefulWidget {
-  const ItemFormSectionsEditor({super.key, this.value, this.onChanged})
-    : assert(
-        value == null || onChanged != null,
-        'A controlled editor needs an onChanged callback.',
-      );
+  const ItemFormSectionsEditor({
+    super.key,
+    this.value,
+    this.onChanged,
+    this.hiddenKeys = const <ItemFormSectionKey>{},
+  }) : assert(
+         value == null || onChanged != null,
+         'A controlled editor needs an onChanged callback.',
+       );
 
   final ItemFormSections? value;
   final ValueChanged<ItemFormSections>? onChanged;
+
+  /// Sections this caller has no business offering. A component group settles
+  /// the pipeline per item rather than for the whole group, so offering the
+  /// group-wide toggle there would promise something the group cannot keep.
+  final Set<ItemFormSectionKey> hiddenKeys;
 
   @override
   State<ItemFormSectionsEditor> createState() => _ItemFormSectionsEditorState();
@@ -170,15 +179,16 @@ class _ItemFormSectionsEditorState extends State<ItemFormSectionsEditor> {
           onToggle: (key, value) => _toggle(context, key, value),
         ),
         const SizedBox(height: 14),
-        for (final key in ItemFormSectionsEditor._otherKeys) ...[
-          _SectionToggleTile(
-            label: key.label,
-            description: key.description,
-            value: key.valueOf(sections),
-            onChanged: (value) => _toggle(context, key, value),
-          ),
-          const SizedBox(height: 8),
-        ],
+        for (final key in ItemFormSectionsEditor._otherKeys)
+          if (!widget.hiddenKeys.contains(key)) ...[
+            _SectionToggleTile(
+              label: key.label,
+              description: key.description,
+              value: key.valueOf(sections),
+              onChanged: (value) => _toggle(context, key, value),
+            ),
+            const SizedBox(height: 8),
+          ],
         const SizedBox(height: 2),
         Align(
           alignment: Alignment.centerRight,

@@ -15,6 +15,9 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 import 'package:paper/features/machines/domain/machine.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
+import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
+import 'package:core_erp/features/clients/domain/client_definition.dart';
+import 'package:core_erp/features/clients/presentation/screens/clients_screen.dart';
 
 class _MutableProperty {
   _MutableProperty({
@@ -64,6 +67,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   DieStatus _status = DieStatus.ready;
   DieOwnership _ownership = DieOwnership.inHouse;
   bool _isUploading = false;
+  int? _clientId;
 
   // Custom properties as a list of mutable objects for editing
   final List<_MutableProperty> _customProperties = [];
@@ -103,6 +107,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     if (widget.die != null) {
       _status = widget.die!.status;
       _ownership = widget.die!.ownership;
+      _clientId = widget.die!.clientId;
       _photoUrls.addAll(widget.die!.photoUrls);
       _compatibleMachineGroupIds.addAll(widget.die!.compatibleMachineGroupIds);
 
@@ -324,6 +329,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     final title = widget.die == null ? 'Create Die' : 'Edit Die';
     final isLoading = context.watch<DiesProvider>().isLoading;
     final groups = context.watch<GroupsProvider>().machineGroups;
+    final clients = context.watch<ClientsProvider>().clients;
 
     return Form(
       key: _formKey,
@@ -365,11 +371,66 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        _DieTextField(
-                          controller: _storageLocationController,
-                          label: 'Storage Rack / Location',
-                          helper: 'E.g. Rack A, Shelf 1',
-                          required: false,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DieTextField(
+                                controller: _storageLocationController,
+                                label: 'Storage Rack / Location',
+                                helper: 'E.g. Rack A, Shelf 1',
+                                required: false,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: SearchableSelectField<int>(
+                                tapTargetKey: const ValueKey('die-client-field'),
+                                value: _clientId,
+                                decoration: const InputDecoration(
+                                  labelText: 'Client (Optional)',
+                                  helperText: 'Associated customer',
+                                  filled: true,
+                                  fillColor: Color(0xFFF9FAFB),
+                                ),
+                                dialogTitle: 'Select Client',
+                                options: [
+                                  const SearchableSelectOption<int>(
+                                    value: 0,
+                                    label: 'None / In-House',
+                                  ),
+                                  ...clients.map((c) => SearchableSelectOption<int>(
+                                    value: c.id,
+                                    label: c.displayLabel,
+                                  )),
+                                ],
+                                canCreateOption: (query, allOptions) {
+                                  if (query.trim().isEmpty) return false;
+                                  return !allOptions.any((opt) => opt.label.toLowerCase() == query.trim().toLowerCase());
+                                },
+                                onCreateOption: (query) async {
+                                  final client = await ClientsScreen.openEditor(
+                                    context,
+                                    initialName: query,
+                                  );
+                                  if (client == null || !mounted) return null;
+                                  // Refresh provider manually or just let it react if it's already watching
+                                  try {
+                                    await context.read<ClientsProvider>().refresh();
+                                  } catch (_) {}
+                                  return SearchableSelectOption<int>(
+                                    value: client.id,
+                                    label: client.displayLabel,
+                                  );
+                                },
+                                createOptionLabelBuilder: (query) => 'Create new client "$query"',
+                                onChanged: (val) {
+                                  setState(() {
+                                    _clientId = (val == 0) ? null : val;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1012,6 +1073,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       physicalSpecs: customPropsList,
       status: _status,
       ownership: _ownership,
+      clientId: _clientId,
       createdAt: widget.die?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );

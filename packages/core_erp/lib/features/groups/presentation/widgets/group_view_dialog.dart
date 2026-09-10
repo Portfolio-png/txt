@@ -7,6 +7,8 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_overview.dart';
 import '../providers/groups_provider.dart';
+import '../../../items/presentation/providers/items_provider.dart';
+import '../../../items/domain/item_definition.dart';
 
 /// What a group is, rather than how to change it.
 ///
@@ -40,21 +42,18 @@ Future<void> showGroupViewDialog(
     pageBuilder: (context, animation, secondaryAnimation) {
       return SafeArea(
         child: Align(
-          alignment: Alignment.centerRight,
+          alignment: Alignment.topRight,
           child: Padding(
             padding: const EdgeInsets.only(top: 12, right: 12, bottom: 12),
-            child: SizedBox(
-              height: double.infinity,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 560,
-                  minWidth: 420,
-                ),
-                child: _GroupViewSheet(
-                  group: group,
-                  onEdit: onEdit,
-                  onOpenGroup: onOpenGroup,
-                ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 560,
+                minWidth: 420,
+              ),
+              child: _GroupViewSheet(
+                group: group,
+                onEdit: onEdit,
+                onOpenGroup: onOpenGroup,
               ),
             ),
           ),
@@ -198,9 +197,13 @@ class _Body extends StatelessWidget {
         const SizedBox(height: 16),
         // Items first: they are what someone opening a group came to see, and
         // the sections below are about the group rather than its contents.
-        _Items(overview: overview),
-        const SizedBox(height: 16),
-        _Properties(overview: overview),
+        if (overview.group.isComponent)
+          _ComponentWorkflowTable(overview: overview)
+        else ...[
+          _Items(overview: overview),
+          const SizedBox(height: 16),
+          _Properties(overview: overview),
+        ],
       ],
     );
   }
@@ -743,6 +746,189 @@ class _ErrorBanner extends StatelessWidget {
         message,
         style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13),
       ),
+    );
+  }
+}
+
+class _ComponentWorkflowTable extends StatelessWidget {
+  const _ComponentWorkflowTable({required this.overview});
+
+  final GroupOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = context
+        .watch<ItemsProvider>()
+        .items
+        .where((item) => item.groupId == overview.group.id && !item.isArchived)
+        .toList(growable: false);
+
+    return ErpDialogSectionCard(
+      title: 'Component Workflow',
+      subtitle: 'Pipelines and attachments assigned to these items.',
+      child: items.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'Nothing in this group yet.',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: items.map((item) => _WorkflowItemHierarchy(item: item)).toList(),
+              ),
+            ),
+    );
+  }
+}
+
+class _WorkflowItemHierarchy extends StatelessWidget {
+  const _WorkflowItemHierarchy({required this.item});
+  
+  final ItemDefinition item;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPipeline = (item.defaultPipelineName ?? '').trim().isNotEmpty;
+    final hasAttachments = item.machines.isNotEmpty || item.dies.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: SoftErpTheme.surfaceDecoration(
+        color: SoftErpTheme.cardSurface,
+        showBorder: true,
+        radius: SoftErpTheme.radiusSm,
+        elevated: false,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _WorkflowTimelineNode(
+            icon: Icons.inventory_2_outlined,
+            isLast: !hasPipeline && !hasAttachments,
+            content: Text(
+              item.name,
+              style: const TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          
+          if (hasPipeline || hasAttachments)
+            _WorkflowTimelineNode(
+              icon: Icons.route_outlined,
+              isLast: !hasAttachments,
+              content: Text(
+                hasPipeline ? item.defaultPipelineName!.trim() : 'Unrouted',
+                style: TextStyle(
+                  color: hasPipeline ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
+                  fontSize: 13,
+                  fontWeight: hasPipeline ? FontWeight.w600 : FontWeight.w400,
+                  fontStyle: hasPipeline ? FontStyle.normal : FontStyle.italic,
+                ),
+              ),
+            ),
+
+          if (item.machines.isNotEmpty)
+            _WorkflowTimelineNode(
+              icon: Icons.precision_manufacturing_outlined,
+              isLast: item.dies.isEmpty,
+              content: _AttachmentList(
+                items: item.machines.map((m) => m.name).toList(),
+              ),
+            ),
+
+          if (item.dies.isNotEmpty)
+            _WorkflowTimelineNode(
+              icon: Icons.hexagon_outlined,
+              isLast: true,
+              content: _AttachmentList(
+                items: item.dies.map((d) => d.toolCode).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkflowTimelineNode extends StatelessWidget {
+  const _WorkflowTimelineNode({
+    required this.icon,
+    required this.content,
+    this.isLast = false,
+  });
+
+  final IconData icon;
+  final Widget content;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 24,
+            child: Column(
+              children: [
+                Icon(icon, size: 18, color: SoftErpTheme.textSecondary),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 1.5,
+                      color: SoftErpTheme.borderStrong,
+                      margin: const EdgeInsets.only(top: 8, bottom: 4),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 20),
+              child: content,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttachmentList extends StatelessWidget {
+  const _AttachmentList({required this.items});
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items.map((name) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          name,
+          style: const TextStyle(
+            color: SoftErpTheme.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      )).toList(),
     );
   }
 }

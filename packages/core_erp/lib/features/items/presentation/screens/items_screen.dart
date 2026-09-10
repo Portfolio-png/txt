@@ -53,6 +53,10 @@ import '../providers/items_provider.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
 import '../../domain/item_asset.dart';
 import '../widgets/item_card.dart';
+import '../../../../core/app_flow_hooks.dart';
+import '../widgets/set_overview_dialog.dart';
+import '../../../inventory/presentation/widgets/inventory_set_editor_dialog.dart';
+import '../../../groups/presentation/widgets/component_group_editor_dialog.dart';
 import '../widgets/item_detail_panel.dart';
 
 import 'package:file_selector/file_selector.dart';
@@ -62,6 +66,10 @@ import 'package:http/http.dart' as http;
 import 'package:collection/collection.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
+
+/// The four things the item master lists. Groups is not here because it hands
+/// off to its own screen rather than rendering in this one.
+enum _ItemsMasterView { items, sets, components }
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({
@@ -180,7 +188,12 @@ class _ItemsScreenState extends State<ItemsScreen> {
   /// Sets view. Kept separate from [_isGridView] rather than folded into a
   /// three-way enum: the List/Card button is asserted as a strict two-cycle by
   /// the items widget tests, and a third state on it would break them.
-  late bool _isSetsView = widget.initialSetsView;
+  late _ItemsMasterView _view = widget.initialSetsView
+      ? _ItemsMasterView.sets
+      : _ItemsMasterView.items;
+
+  bool get _isSetsView => _view == _ItemsMasterView.sets;
+  bool get _isComponentsView => _view == _ItemsMasterView.components;
   double _cardWidth = 200;
   double _cardHeight = 250;
   // Boarding-pass card view: number of columns the resize slider requests
@@ -241,7 +254,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
       }
       _revealTimer?.cancel();
       setState(() {
-        _isSetsView = false;
+        _view = _ItemsMasterView.items;
         _revealedItemId = target.id;
       });
       await showItemDetailPanel(
@@ -310,26 +323,51 @@ class _ItemsScreenState extends State<ItemsScreen> {
             ),
           },
           child: SoftMasterDataPage(
-            title: 'Items',
-            subtitle:
+            title: switch (_view) {
+              _ItemsMasterView.sets => 'Sets',
+              _ItemsMasterView.components => 'Components',
+              _ItemsMasterView.items => 'Items',
+            },
+            subtitle: switch (_view) {
+              _ItemsMasterView.sets =>
+                'Named compositions of exact item variations and quantities.',
+              _ItemsMasterView.components =>
+                'Sub-assemblies whose items each carry their own pipeline, '
+                    'machines and dies.',
+              _ItemsMasterView.items =>
                 'Manage sellable catalog items with recursive property and value inheritance.',
-            action: AppButton(
-              label: 'Add Item',
-              icon: Icons.add,
-              isLoading: items.isSaving,
-              // Creating an item is the front of a workflow — define it, build
-              // its variants, file them, fill them in — so it opens the
-              // stepped window rather than the bare form.
-              onPressed: () => ItemsScreen.openWorkflow(
-                context,
-                onCreatePipeline: widget.onCreatePipeline,
-              ),
-            ),
+            },
+            action: _isComponentsView
+                ? AppButton(
+                    label: 'Add Component',
+                    icon: Icons.add,
+                    onPressed: () => ComponentGroupEditorDialog.open(
+                      context,
+                    ),
+                  )
+                : _isSetsView
+                ? AppButton(
+                    label: 'Add Set',
+                    icon: Icons.add,
+                    onPressed: () => InventorySetEditorDialog.open(context),
+                  )
+                : AppButton(
+                    label: 'Add Item',
+                    icon: Icons.add,
+                    isLoading: items.isSaving,
+                    // Creating an item is the front of a workflow — define it,
+                    // build its variants, file them, fill them in — so it opens
+                    // the stepped window rather than the bare form.
+                    onPressed: () => ItemsScreen.openWorkflow(
+                      context,
+                      onCreatePipeline: widget.onCreatePipeline,
+                    ),
+                  ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
-              isSetsView: _isSetsView,
-              onToggleSets: () {
-                setState(() => _isSetsView = !_isSetsView);
+              view: _view,
+              onSelectView: (next) {
+                setState(() => _view = next);
                 if (_isSetsView) {
                   // Sets belong to the inventory provider, which this screen
                   // otherwise never touches. Idempotent.
@@ -370,7 +408,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   isError: true,
                 ),
             ],
-            body: _isSetsView
+            body: _isComponentsView
+                ? const _ItemsComponentsView()
+                : _isSetsView
                 ? _ItemsSetsView(
                     isGridView: _isGridView,
                     cardWidth: _cardWidth,
@@ -427,6 +467,7 @@ class _SetCard extends StatelessWidget {
     final photoUrl = set.photoUrl;
     final baseCount = set.lines.length - variantCount;
     return AppCard(
+      onTap: () => SetOverviewDialog.open(context, set: set),
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
@@ -541,6 +582,102 @@ class _SetCardPlaceholder extends StatelessWidget {
   }
 }
 
+/// Every component group, with what each one holds.
+///
+/// Components are item groups structurally, so they would otherwise be buried
+/// in the Item Groups tree. Listing them on their own is what makes them a
+/// kind you can work with rather than a flag on a group.
+class _ItemsComponentsView extends StatelessWidget {
+  const _ItemsComponentsView();
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = context.watch<GroupsProvider>();
+    final items = context.watch<ItemsProvider>().items;
+    final components = groups.componentGroups;
+
+    if (groups.isLoading && components.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (components.isEmpty) {
+      return const AppEmptyState(
+        title: 'No components yet',
+        message:
+            'A component gathers the items a sub-assembly is made of. Each '
+            'item keeps its own pipeline, machines and dies.',
+        icon: Icons.account_tree_outlined,
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      itemCount: components.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final component = components[index];
+        final members = items
+            .where((item) => item.groupId == component.id && !item.isArchived)
+            .toList(growable: false);
+        final withPipeline = members
+            .where((item) => (item.defaultPipelineId ?? '').trim().isNotEmpty)
+            .length;
+
+        return SoftMasterRow(
+          onTap: () => GroupsScreen.openView(
+            context,
+            group: component,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.account_tree_outlined,
+                    size: 18,
+                    color: SoftErpTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      component.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                  _CountPill(
+                    count: members.length,
+                    label: members.length == 1 ? 'item' : 'items',
+                    color: SoftErpTheme.entityItem,
+                    background: SoftErpTheme.entityItemBg,
+                    border: SoftErpTheme.entityItemBorder,
+                  ),
+                  const SizedBox(width: 10),
+                  // Says at a glance which components are still unroutable.
+                  Text(
+                    members.isEmpty
+                        ? 'No items yet'
+                        : '$withPipeline of ${members.length} routed',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _ItemsSetsView extends StatefulWidget {
   const _ItemsSetsView({
     this.isGridView = false,
@@ -623,11 +760,9 @@ class _ItemsSetsViewState extends State<_ItemsSetsView> {
           return item?.isBasicItem ?? false;
         }).length;
         return SoftMasterRow(
-          onTap: () => setState(() {
-            if (!_expandedSetIds.remove(set.id)) {
-              _expandedSetIds.add(set.id);
-            }
-          }),
+          // Opening the set is the primary act now that there is something to
+          // open; the leading icon keeps the quick inline peek.
+          onTap: () => SetOverviewDialog.open(context, set: set),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           children: [
             Expanded(
@@ -636,14 +771,28 @@ class _ItemsSetsViewState extends State<_ItemsSetsView> {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        expanded
-                            ? Icons.folder_open_rounded
-                            : Icons.inventory_2_outlined,
-                        size: 18,
-                        color: expanded
-                            ? SoftErpTheme.accent
-                            : SoftErpTheme.textSecondary,
+                      InkWell(
+                        onTap: () => setState(() {
+                          if (!_expandedSetIds.remove(set.id)) {
+                            _expandedSetIds.add(set.id);
+                          }
+                        }),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Tooltip(
+                          message: expanded ? 'Collapse' : 'Peek inside',
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              expanded
+                                  ? Icons.folder_open_rounded
+                                  : Icons.inventory_2_outlined,
+                              size: 18,
+                              color: expanded
+                                  ? SoftErpTheme.accent
+                                  : SoftErpTheme.textSecondary,
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -732,8 +881,8 @@ class _ItemsSetsViewState extends State<_ItemsSetsView> {
 class _ItemsToolbar extends StatelessWidget {
   const _ItemsToolbar({
     required this.isGridView,
-    required this.isSetsView,
-    required this.onToggleSets,
+    required this.view,
+    required this.onSelectView,
     required this.boardingPass,
     required this.cardWidth,
     required this.cardHeight,
@@ -745,8 +894,11 @@ class _ItemsToolbar extends StatelessWidget {
   });
 
   final bool isGridView;
-  final bool isSetsView;
-  final VoidCallback onToggleSets;
+  final _ItemsMasterView view;
+  final ValueChanged<_ItemsMasterView> onSelectView;
+
+  bool get isSetsView => view == _ItemsMasterView.sets;
+  bool get isListOfItems => view == _ItemsMasterView.items;
   final bool boardingPass;
   final double cardWidth;
   final double cardHeight;
@@ -761,11 +913,15 @@ class _ItemsToolbar extends StatelessWidget {
     final provider = context.watch<ItemsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
 
-    // Items, Groups and Sets are the three things this master holds, so they
-    // sit in one switch rather than two controls that mean the same kind of
-    // thing. Groups still hands off to its own screen.
+    // Items, Groups, Sets and Components are the four things this master
+    // holds, so they sit in one switch rather than several controls that mean
+    // the same kind of thing. Groups still hands off to its own screen.
     final tabSegment = SoftSegmentedFilter<String>(
-      selected: isSetsView ? 'sets' : 'items',
+      selected: switch (view) {
+        _ItemsMasterView.sets => 'sets',
+        _ItemsMasterView.components => 'components',
+        _ItemsMasterView.items => 'items',
+      },
       onChanged: (value) {
         if (value == 'groups') {
           try {
@@ -773,13 +929,17 @@ class _ItemsToolbar extends StatelessWidget {
           } catch (_) {}
           return;
         }
-        final wantsSets = value == 'sets';
-        if (wantsSets != isSetsView) onToggleSets();
+        onSelectView(switch (value) {
+          'sets' => _ItemsMasterView.sets,
+          'components' => _ItemsMasterView.components,
+          _ => _ItemsMasterView.items,
+        });
       },
       options: const [
         SoftSegmentOption<String>(value: 'items', label: 'Items'),
         SoftSegmentOption<String>(value: 'groups', label: 'Item Groups'),
         SoftSegmentOption<String>(value: 'sets', label: 'Sets'),
+        SoftSegmentOption<String>(value: 'components', label: 'Components'),
       ],
     );
 
@@ -801,13 +961,13 @@ class _ItemsToolbar extends StatelessWidget {
 
         // Card/List applies to both the item list and the set list.
         _ItemsViewToggleButton(isGridView: isGridView, onTap: onToggleView),
-        if (!isSetsView && isGridView && boardingPass)
+        if (isListOfItems && isGridView && boardingPass)
           _ItemsColumnSlider(
             columnCount: columnCount,
             maxColumns: _maxColumnsForWidth(MediaQuery.of(context).size.width),
             onChanged: onColumnCountChanged,
           )
-        else if (!isSetsView && isGridView)
+        else if (isListOfItems && isGridView)
           _ItemsGridSizeControls(
             cardWidth: cardWidth,
             cardHeight: cardHeight,
@@ -3959,6 +4119,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         emptyMessage: 'No machines available to link.',
         hintText: 'Add a machine',
         searchHintText: 'Search machines',
+        createLabel: 'Create a machine',
+        onCreate: _createLinkTarget(AppFlowHooks.createMachineFor(context)),
         onChanged: (ids) {
           setState(() {
             _selectedMachineIds
@@ -3979,6 +4141,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         emptyMessage: 'No dies available to link.',
         hintText: 'Add a die',
         searchHintText: 'Search dies',
+        createLabel: 'Create a die',
+        onCreate: _createLinkTarget(AppFlowHooks.createDieFor(context)),
         onChanged: (ids) {
           setState(() {
             _selectedDieIds
@@ -6410,6 +6574,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   /// Loads the machine and die pickers' options. Failure is non-fatal — the
   /// pickers just show an empty list and the rest of the form still works.
+  /// Wraps a master-editor hook so the picker's options are reloaded after a
+  /// save — otherwise the thing just created would not be linkable yet.
+  Future<bool> Function()? _createLinkTarget(Future<bool> Function()? open) {
+    if (open == null) return null;
+    return () async {
+      final created = await open();
+      if (created && mounted) {
+        await _loadLinkOptions();
+      }
+      return created;
+    };
+  }
+
   Future<void> _loadLinkOptions() async {
     final sections = context.read<ItemFormSectionsProvider>().sections;
     if (!sections.machines && !sections.dies) {
@@ -8462,6 +8639,8 @@ class _LinkOptionPicker extends StatelessWidget {
     required this.hintText,
     required this.searchHintText,
     required this.onChanged,
+    this.onCreate,
+    this.createLabel = 'Create',
   });
 
   final List<ItemLinkOption> options;
@@ -8472,6 +8651,15 @@ class _LinkOptionPicker extends StatelessWidget {
   final String hintText;
   final String searchHintText;
   final ValueChanged<Set<String>> onChanged;
+
+  /// Opens the master's own editor. Resolves true when something was saved, at
+  /// which point the caller reloads the options so the new one is pickable.
+  ///
+  /// Without this, an item can only be linked to machines and dies that
+  /// already exist — and the person filing a factory's records is meeting most
+  /// of them for the first time.
+  final Future<bool> Function()? onCreate;
+  final String createLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -8508,6 +8696,24 @@ class _LinkOptionPicker extends StatelessWidget {
                 ),
             ],
           ),
+        if (!readOnly && onCreate != null) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => onCreate!(),
+              icon: const Icon(Icons.add, size: 16),
+              label: Text(createLabel),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accentDeeper,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
         if (!readOnly && addable.isNotEmpty) ...[
           const SizedBox(height: 12),
           SearchableSelectField<String>(

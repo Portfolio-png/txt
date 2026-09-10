@@ -9,6 +9,8 @@ import '../widgets/pm_button_library.dart';
 import '../widgets/pm_barcode_section.dart';
 import '../widgets/pm_entity_color_section.dart';
 import '../widgets/pm_pipeline_ux_exploration.dart';
+import '../widgets/pm_node_configurator_section.dart';
+import '../widgets/pm_item_expression_section.dart';
 
 class PMScreen extends StatefulWidget {
   const PMScreen({super.key});
@@ -59,6 +61,10 @@ class _PMScreenState extends State<PMScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const PMHero(),
+            const SizedBox(height: 24),
+            const PMNodeConfiguratorSection(),
+            const SizedBox(height: 24),
+            const PMItemExpressionSection(),
             const SizedBox(height: 24),
             FigmaSegmentSection(
               selectedValue: _selectedSegment,

@@ -22,8 +22,13 @@ class MachinesScreen extends StatefulWidget {
 
   final int initialTab;
 
-  static void openMachineEditor(BuildContext context, {Machine? machine}) {
-    showMachineFormDialog(context, machine: machine);
+  /// Returns the machine that was saved, so a caller that opened this to fill
+  /// a gap can carry on with it rather than guessing.
+  static Future<Machine?> openMachineEditor(
+    BuildContext context, {
+    Machine? machine,
+  }) {
+    return showMachineFormDialog(context, machine: machine);
   }
 
   @override

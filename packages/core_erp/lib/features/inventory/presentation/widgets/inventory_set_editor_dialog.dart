@@ -9,6 +9,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -16,6 +17,9 @@ import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../items/presentation/screens/items_screen.dart';
+import '../../../items/domain/item_expression.dart';
+import '../../../items/presentation/widgets/item_expression_field.dart';
 import '../../../items/presentation/utils/naming_format_helper.dart';
 import '../../domain/inventory_set_definition.dart';
 import '../providers/inventory_provider.dart';
@@ -63,6 +67,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   final GlobalKey _compositionViewportKey = GlobalKey();
   final ScrollController _compositionScrollController = ScrollController();
   late final TextEditingController _nameController;
+
   late final List<_EditableInventorySetLine> _lines;
 
   /// Rows that have finished the handoff and now live on the shelf, in shelf
@@ -788,6 +793,18 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
                         ),
                       )
                       .toList(growable: false),
+                  // Someone entering a factory's books hits items that do not
+                  // exist yet on nearly every row. Sending them out to the
+                  // items master and back loses the set they were halfway
+                  // through building, so the item is made from here.
+                  canCreateOption: (query, _) => query.trim().isNotEmpty,
+                  createOptionLabelBuilder: (query) =>
+                      'Create item "${query.trim()}"',
+                  onCreateOption: _createItemForLine,
+                  // The `+` line lives in the picker rather than behind it:
+                  // stacking a dialog on the dialog you are already in means
+                  // losing sight of the row you were filling.
+                  inlinePanelBuilder: _expressionPanel,
                   onChanged: (value) => _handleReferenceSelection(
                     index,
                     value,
@@ -974,6 +991,74 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     setState(() {});
   }
 
+  /// Opens the ordinary item editor with the typed name prefilled, then hands
+  /// the new item straight back to the row that asked for it.
+  ///
+  /// A fresh item has no variations, so it selects as its base reference. If
+  /// the editor did spawn some, the first leaf stands in and the picker can be
+  /// reopened to choose another.
+  /// The `+` line, shown inside the picker once the query has one.
+  ///
+  /// Only appears once a `+` is typed, so an ordinary search is untouched —
+  /// the expression is opt-in by the one character that means it.
+  Widget? _expressionPanel(
+    BuildContext panelContext,
+    SearchableSelectInlinePanel<String?> panel,
+  ) {
+    if (!panel.query.contains(ItemExpression.separator)) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: ItemExpressionField(
+        // Driven by the picker's own search box — the panel holds no text.
+        text: panel.query,
+        onTextChanged: panel.setQuery,
+        onApplied: (itemId) {
+          final item = panelContext
+              .read<ItemsProvider>()
+              .items
+              .where((candidate) => candidate.id == itemId)
+              .firstOrNull;
+          if (item == null) return;
+          // The value just added is the newest leaf, so that is what the row
+          // should end up pointing at.
+          final leaves = item.leafVariationNodes;
+          panel.select(
+            SearchableSelectOption<String?>(
+              value: '${item.id}::${leaves.isEmpty ? 0 : leaves.last.id}',
+              label: item.displayName.trim().isEmpty
+                  ? item.name
+                  : item.displayName,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<SearchableSelectOption<String?>?> _createItemForLine(
+    String query,
+  ) async {
+    final created = await ItemsScreen.openEditor(
+      context,
+      initialName: query.trim(),
+      // Carries the pipeline builder in with it, so the new item can be given
+      // a pipeline without leaving the set half-built.
+      onCreatePipeline: AppFlowHooks.createPipelineFor(context),
+    );
+    if (created == null || !mounted) {
+      return null;
+    }
+    final leaves = created.leafVariationNodes;
+    final leafId = leaves.isEmpty ? 0 : leaves.first.id;
+    final label = created.displayName.trim().isEmpty
+        ? created.name
+        : created.displayName;
+    return SearchableSelectOption<String?>(
+      value: '${created.id}::$leafId',
+      label: label,
+    );
+  }
+
   Future<void> _handleReferenceSelection(
     int index,
     String? selectionKey,
@@ -991,7 +1076,14 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       });
       return;
     }
-    final reference = selectableReferenceByKey[selectionKey];
+    // An item created from inside the picker is not in the map this build
+    // captured, so fall back to rebuilding against the provider as it stands
+    // now. Final, so the promotion survives into the setState closure.
+    final reference =
+        selectableReferenceByKey[selectionKey] ??
+        _buildSelectableReferences(
+          context.read<ItemsProvider>().items,
+        ).where((candidate) => candidate.key == selectionKey).firstOrNull;
     if (reference == null) {
       return;
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/api_item_repository.dart' show ItemApiException;
+import '../../data/models/item_api_models.dart';
 import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
@@ -52,6 +53,10 @@ class QuickCreateVariationPropertyResult {
   final ItemVariationNodeDefinition createdPropertyNode;
 }
 
+/// Distinguishes "leave this alone" from "set this to null" on a nullable
+/// field, which a plain null cannot do.
+const Object _keepField = Object();
+
 class ItemsProvider extends ChangeNotifier {
   ItemsProvider({required ItemRepository repository})
     : _repository = repository;
@@ -59,6 +64,20 @@ class ItemsProvider extends ChangeNotifier {
   final ItemRepository _repository;
 
   List<ItemDefinition> _items = const [];
+
+  /// Rows this session has written that a read may not have caught up with.
+  ///
+  /// Item reads come off the local replica, which the changelog brings up to
+  /// date a moment AFTER the write returns. So the refresh a save fires reads
+  /// the row as it was before the save, and stamps that over the response the
+  /// server just handed back. That is what made an edit take two goes to show:
+  /// the first click was undone by its own refresh, and the second click's
+  /// refresh finally read the first click's row.
+  ///
+  /// Each entry is dropped as soon as a read comes back at least as new, so
+  /// nothing is held past the point the replica can answer for it.
+  final Map<int, ItemDefinition> _writtenHere = <int, ItemDefinition>{};
+
   final Map<int, List<ItemAsset>> _assetsByItemId = <int, List<ItemAsset>>{};
   bool _isLoading = false;
   bool _isSaving = false;
@@ -98,6 +117,53 @@ class ItemsProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  /// Takes the server's answer to a write as the row of record.
+  ///
+  /// Applied straight away so the screen moves with the click, and held in
+  /// [_writtenHere] so the read that follows cannot put the old row back.
+  void _recordWrite(ItemDefinition item) {
+    _writtenHere[item.id] = item;
+    final index = _items.indexWhere((existing) => existing.id == item.id);
+    final next = List<ItemDefinition>.of(_items);
+    if (index >= 0) {
+      next[index] = item;
+    } else {
+      next.add(item);
+    }
+    _items = next;
+    _sortItems();
+  }
+
+  /// Lays what this session wrote over a list read, and forgets the ones the
+  /// read has caught up with.
+  ///
+  /// A row missing from [incoming] is kept too: a just-created item reaches
+  /// the replica no faster than an edit does, and dropping it would make the
+  /// new item vanish until the next read.
+  List<ItemDefinition> _withLocalWrites(List<ItemDefinition> incoming) {
+    if (_writtenHere.isEmpty) return incoming;
+    final merged = <ItemDefinition>[];
+    final seen = <int>{};
+    for (final item in incoming) {
+      seen.add(item.id);
+      final written = _writtenHere[item.id];
+      if (written == null) {
+        merged.add(item);
+        continue;
+      }
+      if (!item.updatedAt.isBefore(written.updatedAt)) {
+        _writtenHere.remove(item.id);
+        merged.add(item);
+      } else {
+        merged.add(written);
+      }
+    }
+    for (final entry in _writtenHere.entries) {
+      if (!seen.contains(entry.key)) merged.add(entry.value);
+    }
+    return merged;
+  }
+
   void _sortItems() {
     _items.sort((a, b) {
       final groupCompare = a.groupId.compareTo(b.groupId);
@@ -112,56 +178,60 @@ class ItemsProvider extends ChangeNotifier {
     });
   }
 
+  /// The row an item_added / item_updated event carries.
+  ///
+  /// The server builds that payload with the same helper the list endpoint
+  /// uses, so it is complete — machines, dies, variation tree and all. Reading
+  /// the row back instead, as this used to, went to the local replica, which
+  /// the changelog has not reached yet at the moment the event fires: the
+  /// event announcing a change was answering with the state before it.
+  ItemDefinition? _itemFromEvent(dynamic data) {
+    if (data is! Map || data['id'] == null) return null;
+    try {
+      return ItemDto.fromJson(Map<String, dynamic>.from(data)).toDomain();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Takes an announced row, unless the one already held is newer.
+  void _acceptAnnounced(ItemDefinition item) {
+    final held = _items.where((existing) => existing.id == item.id).firstOrNull;
+    if (held != null && held.updatedAt.isAfter(item.updatedAt)) return;
+    _writtenHere.remove(item.id);
+    final index = _items.indexWhere((existing) => existing.id == item.id);
+    final next = List<ItemDefinition>.of(_items);
+    if (index >= 0) {
+      next[index] = item;
+    } else {
+      next.add(item);
+    }
+    _items = next;
+    _sortItems();
+    notifyListeners();
+  }
+
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
     _initialized = true;
 
-    SocketService.instance.on('item_added', (data) async {
-      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
-        try {
-          final id = data['id'] as int;
-          final newItem = await _repository.getItem(id);
-          if (newItem != null) {
-            // Dedupe: the creator already refreshed the list, so this rail echo
-            // must replace-if-present (not blindly append) to avoid a duplicate.
-            final exists = _items.any((i) => i.id == newItem.id);
-            _items = exists
-                ? _items
-                      .map((i) => i.id == newItem.id ? newItem : i)
-                      .toList(growable: false)
-                : [..._items, newItem];
-            _sortItems();
-            notifyListeners();
-          } else {
-            refresh();
-          }
-        } catch (_) {
-          refresh();
-        }
+    SocketService.instance.on('item_added', (data) {
+      final announced = _itemFromEvent(data);
+      if (announced != null) {
+        // Dedupe: the creator already has this row, so a rail echo must
+        // replace-if-present rather than blindly append.
+        _acceptAnnounced(announced);
       } else {
         refresh();
       }
     });
 
-    SocketService.instance.on('item_updated', (data) async {
-      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
-        try {
-          final id = data['id'] as int;
-          final updatedItem = await _repository.getItem(id);
-          if (updatedItem != null) {
-            _items = _items
-                .map((i) => i.id == updatedItem.id ? updatedItem : i)
-                .toList(growable: false);
-            _sortItems();
-            notifyListeners();
-          } else {
-            refresh();
-          }
-        } catch (_) {
-          refresh();
-        }
+    SocketService.instance.on('item_updated', (data) {
+      final announced = _itemFromEvent(data);
+      if (announced != null) {
+        _acceptAnnounced(announced);
       } else {
         refresh();
       }
@@ -170,6 +240,7 @@ class ItemsProvider extends ChangeNotifier {
     SocketService.instance.on('item_deleted', (data) {
       if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         final id = data['id'] as int;
+        _writtenHere.remove(id);
         _items = _items.where((i) => i.id != id).toList();
         notifyListeners();
       } else {
@@ -194,7 +265,7 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _repository.init();
-      final items = await _repository.getItems();
+      final items = _withLocalWrites(await _repository.getItems());
       items.sort((a, b) {
         if (a.isArchived != b.isArchived) {
           return a.isArchived ? 1 : -1;
@@ -512,13 +583,8 @@ class ItemsProvider extends ChangeNotifier {
     }
 
     return updateItem(
-      UpdateItemInput(
-        id: current.id,
-        name: current.name,
-        alias: current.alias,
-        displayName: current.displayName,
-        groupId: current.groupId,
-        unitId: current.unitId,
+      _preservingInput(
+        current,
         unitConversions: <ItemUnitConversionInput>[
           ...current.unitConversions.map(
             (conversion) => ItemUnitConversionInput(
@@ -531,8 +597,6 @@ class ItemsProvider extends ChangeNotifier {
             factorToPrimary: 1 / unitsPerPrimary,
           ),
         ],
-        namingFormat: current.namingFormat,
-        availableForPurchase: current.availableForPurchase,
         variationTree: current.variationTree
             .map(_toInput)
             .toList(growable: false),
@@ -581,25 +645,65 @@ class ItemsProvider extends ChangeNotifier {
 
     return _saveQuickCreateVariationValue(
       () => _repository.updateItem(
-        UpdateItemInput(
-          id: current.id,
-          name: current.name,
-          alias: current.alias,
-          displayName: current.displayName,
-          groupId: current.groupId,
-          unitId: current.unitId,
-          // Preserve everything else — saveItem rewrites the whole item, so
-          // omitting these would wipe conversions / naming / pipeline.
-          unitConversions: _preservedConversions(current),
-          namingFormat: current.namingFormat,
-          defaultPipelineId: current.defaultPipelineId,
-          availableForPurchase: current.availableForPurchase,
-          variationTree: mutation.nodes,
-        ),
+        _preservingInput(current, variationTree: mutation.nodes),
       ),
       propertyNodeId: propertyNodeId,
       valueName: trimmedValueName,
       propertyPathSegments: propertyPathSegments,
+    );
+  }
+
+  /// Every field of [current], with only the variation tree replaced.
+  ///
+  /// `UpdateItemRequest.toJson` emits every field unconditionally, so a sparse
+  /// input is not a partial update — it is an update that blanks whatever it
+  /// leaves out. These quick-create writes used to omit the photo, CAD file,
+  /// attachments, machines and dies, and so silently stripped them from the
+  /// item every time someone added a variation value.
+  UpdateItemInput _preservingInput(
+    ItemDefinition current, {
+    required List<ItemVariationNodeInput> variationTree,
+    List<ItemUnitConversionInput>? unitConversions,
+    Object? defaultPipelineId = _keepField,
+    List<String>? machineIds,
+    List<String>? dieIds,
+  }) {
+    return UpdateItemInput(
+      id: current.id,
+      name: current.name,
+      alias: current.alias,
+      displayName: current.displayName,
+      groupId: current.groupId,
+      unitId: current.unitId,
+      unitConversions: unitConversions ?? _preservedConversions(current),
+      namingFormat: current.namingFormat,
+      defaultPipelineId: defaultPipelineId == _keepField
+          ? current.defaultPipelineId
+          : defaultPipelineId as String?,
+      availableForPurchase: current.availableForPurchase,
+      baseItemId: current.baseItemId,
+      photoUrl: current.photoUrl,
+      cadFileKey: current.cadFileKey,
+      cadFileName: current.cadFileName,
+      attachments: current.attachments
+          .map(
+            (attachment) => ItemAttachmentInput(
+              label: attachment.label,
+              objectKey: attachment.objectKey,
+              fileName: attachment.fileName,
+            ),
+          )
+          .toList(growable: false),
+      machineIds:
+          machineIds ??
+          current.machines.map((machine) => machine.id).toList(growable: false),
+      dieIds:
+          dieIds ?? current.dies.map((die) => die.id).toList(growable: false),
+      developedForClientId: current.developedForClientId,
+      penPaperBaseline: current.penPaperBaseline,
+      blankWidthMm: current.blankWidthMm,
+      blankHeightMm: current.blankHeightMm,
+      variationTree: variationTree,
     );
   }
 
@@ -613,9 +717,122 @@ class ItemsProvider extends ChangeNotifier {
           )
           .toList(growable: false);
 
+  /// Adds a top-level property and, where the type allows one, its first
+  /// value — in a single save.
+  ///
+  /// Doing it as two calls meant two whole-tree rewrites, with the new
+  /// property's node id read back between them. Anything that shifted in
+  /// between (ids reassigned on save, another edit landing) left the second
+  /// call looking for a node that had moved, which surfaced as "Created
+  /// variation value was not found after saving". One write, one lookup.
+  ///
+  /// [valueName] is ignored for Numeric and Gauge properties: those are typed
+  /// per use and hold no stored value nodes.
+  Future<QuickCreateVariationPropertyResult?> appendTopLevelPropertyWithValue({
+    required int itemId,
+    required String propertyName,
+    required String inputType,
+    required String valueName,
+  }) async {
+    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final trimmedPropertyName = propertyName.trim();
+    final trimmedValueName = valueName.trim();
+    if (current == null) {
+      _errorMessage = 'Item not found.';
+      notifyListeners();
+      return null;
+    }
+    if (trimmedPropertyName.isEmpty) {
+      _errorMessage = 'Variation property name is required.';
+      notifyListeners();
+      return null;
+    }
+    if (current.topLevelProperties.any(
+      (property) =>
+          _normalize(property.name) == _normalize(trimmedPropertyName),
+    )) {
+      _errorMessage = 'A top-level property with this name already exists.';
+      notifyListeners();
+      return null;
+    }
+
+    final storesValues = !isDataEntryInputType(inputType);
+    if (_isSaving) return null;
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await _repository.updateItem(
+        _preservingInput(
+          current,
+          variationTree: <ItemVariationNodeInput>[
+            ...current.variationTree.map(_toInput),
+            ItemVariationNodeInput(
+              kind: ItemVariationNodeKind.property,
+              name: trimmedPropertyName,
+              inputType: inputType,
+              children: storesValues && trimmedValueName.isNotEmpty
+                  ? <ItemVariationNodeInput>[
+                      ItemVariationNodeInput(
+                        kind: ItemVariationNodeKind.value,
+                        name: trimmedValueName,
+                      ),
+                    ]
+                  : const <ItemVariationNodeInput>[],
+            ),
+          ],
+        ),
+      );
+      _recordWrite(updated);
+      await refresh();
+      // Same rule as the value path: the response to this write outranks the
+      // list read that follows it, which can lag behind.
+      ItemDefinition? sourceItem;
+      ItemVariationNodeDefinition? createdProperty;
+      for (final candidate in <ItemDefinition>[
+        updated,
+        ..._items.where((item) => item.id == updated.id),
+      ]) {
+        final found = candidate.topLevelProperties
+            .where(
+              (property) =>
+                  _normalize(property.name) == _normalize(trimmedPropertyName),
+            )
+            .firstOrNull;
+        if (found != null) {
+          sourceItem = candidate;
+          createdProperty = found;
+          break;
+        }
+      }
+      if (sourceItem == null || createdProperty == null) {
+        throw StateError('Created variation property was not found.');
+      }
+      return QuickCreateVariationPropertyResult(
+        item: sourceItem,
+        createdPropertyNode: createdProperty,
+      );
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  /// Numeric and Gauge properties are answered per use rather than chosen from
+  /// stored values, so they carry no value nodes to append to.
+  static bool isDataEntryInputType(String inputType) =>
+      inputType == 'Numeric' || inputType == 'Gauge';
+
   Future<QuickCreateVariationPropertyResult?> appendTopLevelProperty({
     required int itemId,
     required String propertyName,
+    // A quick-created property used to be Text whatever the caller meant, so a
+    // property declared as a number or a material came out untyped.
+    String inputType = 'Text',
   }) async {
     final current = _items.where((item) => item.id == itemId).firstOrNull;
     final trimmedPropertyName = propertyName.trim();
@@ -645,40 +862,45 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final updated = await _repository.updateItem(
-        UpdateItemInput(
-          id: current.id,
-          name: current.name,
-          alias: current.alias,
-          displayName: current.displayName,
-          groupId: current.groupId,
-          unitId: current.unitId,
-          unitConversions: _preservedConversions(current),
-          namingFormat: current.namingFormat,
-          defaultPipelineId: current.defaultPipelineId,
-          availableForPurchase: current.availableForPurchase,
+        _preservingInput(
+          current,
           variationTree: <ItemVariationNodeInput>[
             ...current.variationTree.map(_toInput),
             ItemVariationNodeInput(
               kind: ItemVariationNodeKind.property,
               name: trimmedPropertyName,
+              inputType: inputType,
             ),
           ],
         ),
       );
+      _recordWrite(updated);
       await refresh();
-      final refreshed =
-          _items.where((item) => item.id == updated.id).firstOrNull ?? updated;
-      final createdProperty = refreshed.topLevelProperties
-          .where(
-            (property) =>
-                _normalize(property.name) == _normalize(trimmedPropertyName),
-          )
-          .firstOrNull;
-      if (createdProperty == null) {
+      // Same rule as the value path: the response to this write outranks the
+      // list read that follows it, which can lag behind.
+      ItemDefinition? sourceItem;
+      ItemVariationNodeDefinition? createdProperty;
+      for (final candidate in <ItemDefinition>[
+        updated,
+        ..._items.where((item) => item.id == updated.id),
+      ]) {
+        final found = candidate.topLevelProperties
+            .where(
+              (property) =>
+                  _normalize(property.name) == _normalize(trimmedPropertyName),
+            )
+            .firstOrNull;
+        if (found != null) {
+          sourceItem = candidate;
+          createdProperty = found;
+          break;
+        }
+      }
+      if (sourceItem == null || createdProperty == null) {
         throw StateError('Created variation property was not found.');
       }
       return QuickCreateVariationPropertyResult(
-        item: refreshed,
+        item: sourceItem,
         createdPropertyNode: createdProperty,
       );
     } catch (error) {
@@ -698,6 +920,7 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _repository.deleteItem(id);
+      _writtenHere.remove(id);
       await refresh();
       return true;
     } catch (error) {
@@ -708,6 +931,54 @@ class ItemsProvider extends ChangeNotifier {
       _isSaving = false;
       notifyListeners();
     }
+  }
+
+  /// Points an item at a pipeline (or clears it) without disturbing anything
+  /// else it carries.
+  Future<ItemDefinition?> setItemPipeline(int itemId, String? pipelineId) {
+    return _updateOneField(
+      itemId,
+      (current) => _preservingInput(
+        current,
+        defaultPipelineId: pipelineId,
+        variationTree: current.variationTree
+            .map(_toInput)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  /// Replaces the machines and/or dies an item is linked to. Attaching one here
+  /// is what assigns it to that item's work.
+  Future<ItemDefinition?> setItemLinks(
+    int itemId, {
+    List<String>? machineIds,
+    List<String>? dieIds,
+  }) {
+    return _updateOneField(
+      itemId,
+      (current) => _preservingInput(
+        current,
+        machineIds: machineIds,
+        dieIds: dieIds,
+        variationTree: current.variationTree
+            .map(_toInput)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  Future<ItemDefinition?> _updateOneField(
+    int itemId,
+    UpdateItemInput Function(ItemDefinition current) build,
+  ) async {
+    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    if (current == null) {
+      _errorMessage = 'Item not found.';
+      notifyListeners();
+      return null;
+    }
+    return updateItem(build(current));
   }
 
   Future<ItemDefinition?> reassignItemGroup(int id, int groupId) async {
@@ -833,9 +1104,11 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final updated = await action();
+      // The response is the same fully populated shape the list endpoint
+      // returns, so it stands as the row of record until a read overtakes it.
+      _recordWrite(updated);
       await refresh();
-      return _items.where((item) => item.id == updated.id).firstOrNull ??
-          updated;
+      return updated;
     } catch (error) {
       _errorMessage = error.toString();
       notifyListeners();
@@ -858,27 +1131,43 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final updated = await action();
+      _recordWrite(updated);
       await refresh();
-      final refreshed =
-          _items.where((item) => item.id == updated.id).firstOrNull ?? updated;
-      final propertyNode =
-          _findNodeById(refreshed.variationTree, propertyNodeId) ??
-          _findNodeByPathSegments(
-            refreshed.variationTree,
-            propertyPathSegments,
-          );
-      final createdValueNode = propertyNode?.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.value)
-          .where((node) => _normalize(node.name) == _normalize(valueName))
-          .firstOrNull;
-      if (createdValueNode == null) {
+
+      // The response to this very write is the best evidence of what was
+      // written; the refreshed list is a second read that can lag it. Looking
+      // in the list first meant a save that succeeded could still be reported
+      // as "Created variation value was not found after saving".
+      ItemDefinition? sourceItem;
+      ItemVariationNodeDefinition? createdValueNode;
+      for (final candidate in <ItemDefinition>[
+        updated,
+        ..._items.where((item) => item.id == updated.id),
+      ]) {
+        final propertyNode =
+            _findNodeById(candidate.variationTree, propertyNodeId) ??
+            _findNodeByPathSegments(
+              candidate.variationTree,
+              propertyPathSegments,
+            );
+        final found = propertyNode?.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => _normalize(node.name) == _normalize(valueName))
+            .firstOrNull;
+        if (found != null) {
+          sourceItem = candidate;
+          createdValueNode = found;
+          break;
+        }
+      }
+      if (sourceItem == null || createdValueNode == null) {
         throw StateError('Created variation value was not found after saving.');
       }
       return QuickCreateVariationValueResult(
-        item: refreshed,
+        item: sourceItem,
         createdValueNode: createdValueNode,
         selectedValueNodeIds: _valueNodePathIdsForNode(
-          refreshed.variationTree,
+          sourceItem.variationTree,
           createdValueNode.id,
         ),
       );
@@ -966,6 +1255,14 @@ class ItemsProvider extends ChangeNotifier {
             parentNodeId: node.parentNodeId,
             kind: node.kind,
             name: node.name,
+            // Carried through, or appending a value would retype the property
+            // to Text and drop its range and material link.
+            code: node.code,
+            inputType: node.inputType,
+            nameJoin: node.nameJoin,
+            numericMin: node.numericMin,
+            numericMax: node.numericMax,
+            materialTypeId: node.materialTypeId,
             displayName: '',
             children: <ItemVariationNodeInput>[
               ...node.children,
@@ -997,6 +1294,12 @@ class ItemsProvider extends ChangeNotifier {
           parentNodeId: node.parentNodeId,
           kind: node.kind,
           name: node.name,
+          code: node.code,
+          inputType: node.inputType,
+          nameJoin: node.nameJoin,
+          numericMin: node.numericMin,
+          numericMax: node.numericMax,
+          materialTypeId: node.materialTypeId,
           displayName: node.displayName,
           children: mutation.nodes,
         ),

@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Production + Pipeline Editor — prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* ───────────────────────────────────────────────────────────────────────────
+   Soft ERP tokens, lifted verbatim from
+   packages/core_erp/lib/core/theme/soft_erp_theme.dart.
+   Day mode only, matching the app; color-scheme keeps native controls light.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+  --canvas:#E8E8F0; --shell:#F8F9FD; --card:#FFFFFF; --card-alt:#F7F7FB;
+  --section:#F6F7FB; --border:#E6E8F4; --border-strong:#DDE0F0;
+  --ink:#303646; --ink-2:#6C7386; --ink-3:#949AAC;
+  --accent:#5E49E6; --accent-dark:#4F43E8; --accent-soft:#ECEBFF; --accent-surface:#F1EEFF;
+  --ok-bg:#EAF8EE; --ok-ink:#0F8B45;
+  --warn-bg:#FFF6E9; --warn-ink:#946200;
+  --danger-bg:#FDEDEE; --danger-ink:#C62828;
+  --info-bg:#EBF2FF; --info-ink:#2E57C7;
+
+  /* run-flow dots — _RunFlowPainter */
+  --run-done:#48C7A4; --run-active:#5E49E6; --run-skipped:#94A3B8;
+  --run-pending:#CBD5E1; --run-rail:#E2DFEA;
+
+  /* horizontal flow — MonitorPipelineFlow / _FlowNode */
+  --flow-border:#E2E8F0; --flow-rail:#CBD5E1; --flow-past:#10B981;
+  --flow-sel:#2563EB; --flow-ink:#0F172A; --flow-eyebrow:#64748B;
+  --flow-mc:#475569; --flow-rework:#EF4444; --flow-skip:#F59E0B;
+  --err:#FF9800;
+
+  --shadow:0 2px 6px rgba(0,0,0,.05);
+  --shadow-lift:0 6px 16px rgba(116,128,195,.14);
+
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --cond:"Barlow Condensed","IBM Plex Sans",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--canvas);color:var(--ink);
+  font-family:var(--sans);font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:var(--mono)}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ── prototype banner ─────────────────────────────────────────────────────── */
+.proto-bar{
+  background:var(--ink);color:#EEF0F6;padding:7px 20px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.03em;
+  display:flex;gap:16px;align-items:center;flex-wrap:wrap;
+}
+.proto-bar b{color:#B9AFFF;font-weight:500}
+.proto-bar .sp{flex:1}
+
+/* ── SoftMasterDataPage chrome ────────────────────────────────────────────── */
+.page{max-width:1240px;margin:0 auto;padding:26px 24px 60px}
+.page-head{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+.page-title{font-size:26px;font-weight:700;letter-spacing:-.01em;margin:0;flex:1}
+.btn{
+  border:1px solid transparent;border-radius:10px;padding:9px 16px;
+  font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;gap:7px;
+}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-dark)}
+.btn-secondary{background:var(--card);color:var(--ink);border-color:var(--border-strong)}
+.btn-secondary:hover{background:var(--card-alt)}
+.btn-danger{background:var(--danger-bg);color:var(--danger-ink);border-color:#F3C9CB}
+.btn-ghost{background:transparent;color:var(--ink-2);border-color:transparent}
+.btn-ghost:hover{background:var(--card-alt);color:var(--ink)}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn-sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+
+.toolbar{
+  background:var(--shell);border:1px solid var(--border);border-radius:14px;
+  padding:10px 12px;margin-bottom:16px;display:flex;gap:12px;align-items:center;
+}
+.seg{display:inline-flex;background:var(--card-alt);border:1px solid var(--border);
+  border-radius:10px;padding:3px;gap:3px}
+.seg button{border:none;background:transparent;color:var(--ink-2);
+  padding:6px 16px;border-radius:8px;font-weight:600;font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+
+/* ── run cards ────────────────────────────────────────────────────────────── */
+.runs{display:flex;flex-direction:column;gap:12px}
+.run-card{
+  background:var(--card);border:1px solid var(--border);border-radius:16px;
+  padding:16px;display:block;width:100%;text-align:left;color:inherit;
+}
+.run-card:hover{box-shadow:var(--shadow-lift);border-color:var(--border-strong)}
+.run-card.stalled{background:#FFFBEB;border-color:#FCD34D}
+.run-row{display:flex;align-items:center;gap:16px}
+.run-main{flex:4;min-width:0}
+.run-titleline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.run-order{font-size:16px;font-weight:700}
+.run-client{font-size:14px;color:var(--ink-2)}
+.run-pipeline{font-size:14px;font-weight:500;margin-top:6px}
+.badge{padding:4px 8px;border-radius:8px;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.02em}
+.badge.on{background:rgba(94,73,230,.1);color:var(--accent)}
+.badge.off{background:#E5E7EB;color:#4B5563}
+.field{flex:2;min-width:0}
+.field .k{font-size:11px;font-weight:700;color:#64748B;margin-bottom:6px}
+.field .v{font-size:13px;font-weight:500}
+.timeline{flex:4;min-width:0}
+.timeline .k{font-size:11px;font-weight:700;color:#64748B;display:flex;gap:6px}
+.timeline .k span{color:#94A3B8}
+.icon-btn{border:none;background:transparent;padding:8px;border-radius:8px;
+  display:inline-flex;color:#EF5350}
+.icon-btn:hover{background:var(--danger-bg)}
+.stall{margin-top:12px;background:#FEF3C7;border-radius:6px;padding:4px 8px;
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#F59E0B}
+.empty{text-align:center;padding:64px 20px;color:var(--ink-2)}
+.empty h3{font-size:17px;color:var(--ink);margin:0 0 6px}
+
+/* ── editor overlay ───────────────────────────────────────────────────────── */
+.scrim{position:fixed;inset:0;background:rgba(38,40,58,.42);
+  display:flex;align-items:stretch;justify-content:center;padding:18px;z-index:40}
+.editor{
+  background:#F8FAFC;border-radius:18px;width:100%;max-width:1420px;
+  display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 20px 60px rgba(28,30,48,.3);
+}
+.ed-head{display:flex;align-items:center;gap:10px;padding:14px 20px;
+  background:var(--card);border-bottom:1px solid var(--border)}
+.ed-title{font-size:17px;font-weight:700;margin:0}
+.ed-sub{font-size:12px;color:var(--ink-2)}
+
+/* action bar — the vertical rail from the builder, laid out horizontally */
+.ed-tools{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:11px 20px;background:var(--card);border-bottom:1px solid var(--border);
+}
+.ed-tools .sp{flex:1}
+.act{
+  border:none;border-radius:8px;padding:7px 12px;display:inline-flex;
+  align-items:center;gap:7px;font-size:12.5px;font-weight:600;
+}
+.act:disabled{opacity:.35;cursor:not-allowed}
+.act.add{background:rgba(59,130,246,.1);color:#3B82F6}
+.act.link{background:rgba(100,116,139,.1);color:#64748B}
+.act.dup{background:rgba(16,185,129,.1);color:#10B981}
+.act.del{background:rgba(244,67,54,.1);color:#F44336}
+.connect-hint{font-size:12px;font-weight:600;color:#F59E0B}
+
+/* ── horizontal flow — MonitorPipelineFlow ────────────────────────────────── */
+.flow-wrap{flex:1;min-height:0;overflow:auto;padding:22px 20px}
+.flow{
+  background:var(--card);border:1px solid var(--flow-border);border-radius:16px;
+  padding:20px 24px;display:flex;align-items:center;min-width:min-content;
+}
+.stage{display:flex;flex-direction:column;gap:8px;flex:none}
+/* Parallel nodes in one stage stack vertically inside the stage — the Column
+   inside MonitorPipelineFlow's horizontal ListView. */
+.rail{width:40px;height:2px;background:var(--flow-rail);flex:none}
+.rail.past{background:var(--flow-past)}
+
+.fnode{
+  width:220px;padding:12px;border-radius:12px;text-align:left;
+  background:var(--card);border:1px solid var(--flow-rail);
+  display:block;color:inherit;cursor:pointer;user-select:none;
+}
+.fnode:hover{border-color:#94A3B8}
+.fnode.done{border-color:var(--flow-past)}
+.fnode.sel{border-color:var(--flow-sel);border-width:2px;padding:11px}
+.fnode.active{background:rgba(37,99,235,.05);box-shadow:0 0 12px 2px rgba(37,99,235,.15)}
+/* _FlowStageBlock: isValid = machine && inputItem && outputItem, else orange. */
+.fnode.invalid{border-color:var(--err)}
+.fnode .eyebrow{
+  display:flex;align-items:center;justify-content:space-between;gap:6px;
+  font-size:10px;font-weight:900;letter-spacing:.05em;color:var(--flow-eyebrow);
+  text-transform:uppercase;
+}
+.fnode.done .eyebrow{color:var(--flow-past)}
+.fnode .eyebrow button{
+  border:none;background:transparent;padding:0;color:inherit;opacity:.65;display:inline-flex;
+}
+.fnode .eyebrow button:hover{opacity:1}
+.fnode .nm{font-size:14px;font-weight:700;color:var(--flow-ink);margin-top:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fnode .mc{font-size:10px;font-family:var(--mono);color:var(--flow-mc);margin-top:8px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fnode .warn{font-size:10px;font-weight:700;color:var(--err);margin-top:6px}
+.add-col{display:flex;align-items:center;padding-left:4px}
+
+/* ── docked properties terminal — FloorNodeTerminal ───────────────────────── */
+.terminal{
+  background:var(--card);border-top:1px solid var(--flow-border);
+  border-radius:20px 20px 0 0;margin:0 12px;flex:none;max-height:46vh;
+  display:flex;flex-direction:column;box-shadow:0 -6px 24px rgba(28,30,48,.07);
+}
+.t-head{display:flex;align-items:center;gap:10px;padding:12px 20px;flex:none}
+.t-dot{width:10px;height:10px;border-radius:50%;background:var(--flow-sel);flex:none}
+.t-name{font-size:15px;font-weight:700;color:#1E293B;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-meta{font-size:11px;font-family:var(--mono);color:#94A3B8}
+.t-close{border:none;background:transparent;color:#94A3B8;padding:4px;
+  border-radius:8px;display:inline-flex}
+.t-close:hover{background:var(--card-alt);color:var(--ink)}
+.t-body{
+  border-top:1px solid var(--flow-border);padding:16px 20px 20px;overflow:auto;
+  display:grid;gap:20px;
+  grid-template-columns:repeat(auto-fit,minmax(212px,1fr));
+  align-items:start;
+}
+.grp{min-width:0}
+.grp > h5{
+  margin:0 0 10px;font-size:10.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:#94A3B8;
+  padding-bottom:6px;border-bottom:1px solid var(--flow-border);
+}
+.f{margin-bottom:10px}
+.f label{display:block;font-size:11.5px;font-weight:600;color:var(--ink-2);margin-bottom:5px}
+.f input,.f select{
+  width:100%;padding:8px 10px;border:1px solid var(--border-strong);
+  border-radius:9px;background:var(--card);color:var(--ink);
+  font-family:inherit;font-size:13px;
+}
+.f .help{font-size:10.5px;color:var(--ink-3);margin-top:4px;line-height:1.4}
+.toggle{display:flex;align-items:center;gap:9px;padding:9px 11px;
+  background:var(--card-alt);border:1px solid var(--border);border-radius:9px}
+.toggle input{width:15px;height:15px;accent-color:var(--accent)}
+.toggle span{font-size:12.5px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--accent-soft);color:var(--accent-dark);border:1px solid #D9D3FF;
+  border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600}
+.no-sel{padding:22px 20px;text-align:center;color:var(--ink-2);font-size:13px}
+
+.ed-foot{padding:11px 20px;border-top:1px solid var(--border);background:var(--card);
+  display:flex;align-items:center;gap:10px}
+.ed-foot .sp{flex:1}
+.hint{font-size:12px;color:var(--ink-3)}
+
+/* toast — showAppToast */
+.toasts{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:80;
+  display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:#2E3350;color:#fff;padding:11px 18px;border-radius:11px;
+  font-size:13.5px;font-weight:600;box-shadow:0 8px 24px rgba(20,22,40,.32);
+  display:flex;align-items:center;gap:9px;animation:rise .18s ease-out}
+.toast.ok::before{content:"";width:8px;height:8px;border-radius:50%;background:#48C7A4}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}}
+
+dialog{border:none;border-radius:16px;padding:0;background:var(--card);color:var(--ink);
+  box-shadow:0 20px 60px rgba(28,30,48,.32);max-width:440px;width:calc(100% - 40px)}
+dialog::backdrop{background:rgba(38,40,58,.42)}
+.dlg{padding:20px}
+.dlg h3{margin:0 0 6px;font-size:17px;font-weight:700}
+.dlg p{margin:0 0 14px;font-size:13.5px;color:var(--ink-2)}
+.dlg .row{display:flex;gap:9px;justify-content:flex-end;margin-top:16px}
+.tpl-opt{display:block;width:100%;text-align:left;background:var(--card-alt);
+  border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-bottom:8px}
+.tpl-opt:hover{border-color:var(--accent);background:var(--accent-surface)}
+.tpl-opt b{display:block;font-size:14px}
+.tpl-opt span{font-size:12px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <span><b>PROTOTYPE</b> — production screen from <code>production_runs_screen.dart</code>;
+  horizontal flow from <code>monitor_flow.dart</code>; editing from <code>pipeline_builder_screen.dart</code></span>
+  <span class="sp"></span>
+  <span id="dirtyFlag"></span>
+</div>
+
+<div class="page">
+  <div class="page-head">
+    <h1 class="page-title">Production</h1>
+    <button class="btn btn-primary" id="startBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      Start Production
+    </button>
+  </div>
+
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="Production view">
+      <button id="tabRuns" aria-pressed="true">Runs</button>
+      <button id="tabInsights" aria-pressed="false">Insights</button>
+    </div>
+  </div>
+
+  <div id="body"></div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<dialog id="dlgTemplate"><div class="dlg">
+  <h3>Select a pipeline</h3>
+  <p>Choose the template this production run will follow.</p>
+  <div id="tplList"></div>
+  <div class="row"><button class="btn btn-secondary" data-close>Cancel</button></div>
+</div></dialog>
+
+<dialog id="dlgDelete"><div class="dlg">
+  <h3>Delete production run?</h3>
+  <p id="delText"></p>
+  <div class="row">
+    <button class="btn btn-secondary" data-close>Cancel</button>
+    <button class="btn btn-danger" id="delConfirm">Delete</button>
+  </div>
+</div></dialog>
+
+<dialog id="dlgStage"><div class="dlg">
+  <h3>Rename stage</h3>
+  <div class="f"><label for="stageName">Stage name</label><input id="stageName" type="text"></div>
+  <div class="row">
+    <button class="btn btn-secondary" data-close>Cancel</button>
+    <button class="btn btn-primary" id="stageSave">Save</button>
+  </div>
+</div></dialog>
+
+<script>
+"use strict";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Seed data. Shapes mirror PipelineTemplate / ProcessNode / PipelineRun.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const ITEMS = [
+  "MS Sheet 1.2mm", "MS Sheet 0.8mm", "Brass Strip 0.6mm",
+  "SE Blank", "SE Pierced", "SE Formed", "SE Plated",
+  "Socket Earthing / SE", "G-9 Holder Body", "G-9 Holder",
+];
+const SCRAP_ITEMS = ["MS Scrap", "Brass Scrap", "Aluminium Scrap"];
+const MACHINE_GROUPS = [
+  { id:1, name:"Power Press",  machines:["PP-40T-01","PP-40T-02","PP-63T-01"] },
+  { id:2, name:"Pierce Press", machines:["PR-20T-01","PR-20T-02"] },
+  { id:3, name:"Plating Line", machines:["PL-NI-01"] },
+  { id:4, name:"Assembly Bay", machines:["AB-01","AB-02"] },
+];
+const DIES = ["D-SE-BLANK-01","D-SE-PIERCE-01","D-SE-FORM-01","D-G9-BLANK-01"];
+const VARIATIONS = ["(all)", "6 Amp", "16 Amp"];
+
+let nodeSeq = 100;
+const nid = () => "n" + (++nodeSeq);
+
+function mkNode(o) {
+  return Object.assign({
+    id: nid(), name:"", processType:"Process", stageIndex:0,
+    machine:"", machineGroupId:null, machineGroupName:"", dieId:"",
+    isIntermediate:true, inputItem:null, outputItem:null,
+    inputVar:"(all)", outputVar:"(all)",
+    scrapItems:[], customProcessCode:"", isAssembly:false,
+  }, o);
+}
+
+function seedTemplates() {
+  const se = [
+    mkNode({ id:"se1", name:"Input", processType:"Input", stageIndex:0, isIntermediate:false,
+             inputItem:"MS Sheet 1.2mm", outputItem:"MS Sheet 1.2mm" }),
+    mkNode({ id:"se2", name:"Blanking", stageIndex:1, machineGroupId:1,
+             machineGroupName:"Power Press", machine:"PP-40T-01", dieId:"D-SE-BLANK-01",
+             inputItem:"MS Sheet 1.2mm", outputItem:"SE Blank", scrapItems:["MS Scrap"] }),
+    mkNode({ id:"se3", name:"Piercing", stageIndex:2, machineGroupId:2,
+             machineGroupName:"Pierce Press", machine:"PR-20T-01", dieId:"D-SE-PIERCE-01",
+             inputItem:"SE Blank", outputItem:"SE Pierced", scrapItems:["MS Scrap"] }),
+    mkNode({ id:"se4", name:"Forming", stageIndex:3, machineGroupId:1,
+             machineGroupName:"Power Press", machine:"PP-63T-01", dieId:"D-SE-FORM-01",
+             inputItem:"SE Pierced", outputItem:"SE Formed" }),
+    mkNode({ id:"se5", name:"Plating", stageIndex:4, machineGroupId:3,
+             machineGroupName:"Plating Line", machine:"PL-NI-01",
+             inputItem:"SE Formed", outputItem:"SE Plated" }),
+    mkNode({ id:"se6", name:"Assembly", stageIndex:5, isAssembly:true, machineGroupId:4,
+             machineGroupName:"Assembly Bay", machine:"AB-01",
+             inputItem:"SE Plated", outputItem:"Socket Earthing / SE",
+             scrapItems:["Brass Scrap"] }),
+    mkNode({ id:"se7", name:"Output", processType:"Output", stageIndex:6, isIntermediate:false,
+             inputItem:"Socket Earthing / SE", outputItem:"Socket Earthing / SE" }),
+  ];
+  const g9 = [
+    mkNode({ id:"g1", name:"Input", processType:"Input", stageIndex:0, isIntermediate:false,
+             inputItem:"Brass Strip 0.6mm", outputItem:"Brass Strip 0.6mm" }),
+    mkNode({ id:"g2", name:"Blanking", stageIndex:1, machineGroupId:1,
+             machineGroupName:"Power Press", machine:"PP-40T-02", dieId:"D-G9-BLANK-01",
+             inputItem:"Brass Strip 0.6mm", outputItem:"G-9 Holder Body",
+             scrapItems:["Brass Scrap"] }),
+    mkNode({ id:"g3", name:"Assembly", stageIndex:2, isAssembly:true, machineGroupId:4,
+             machineGroupName:"Assembly Bay", machine:"AB-02",
+             inputItem:"G-9 Holder Body", outputItem:"G-9 Holder" }),
+    mkNode({ id:"g4", name:"Output", processType:"Output", stageIndex:3, isIntermediate:false,
+             inputItem:"G-9 Holder", outputItem:"G-9 Holder" }),
+  ];
+  const chain = ns => ns.slice(0,-1).map((n,i)=>({ fromNodeId:n.id, toNodeId:ns[i+1].id }));
+  return {
+    "tpl-se": { id:"tpl-se", name:"Socket Earthing / SE — Sheet Metal", status:"active",
+      stageLabels:["Input","Blanking","Piercing","Forming","Plating","Assembly","Output"],
+      nodes:se, flows:chain(se) },
+    "tpl-g9": { id:"tpl-g9", name:"G-9 Holder — Brass Line", status:"active",
+      stageLabels:["Input","Blanking","Assembly","Output"],
+      nodes:g9, flows:chain(g9) },
+  };
+}
+
+const state = {
+  tab:"runs",
+  templates:seedTemplates(),
+  runs:[
+    { id:"r1", orderNo:"ORD-2451", clientName:"Kalpataru Electricals", status:"running",
+      templateId:"tpl-se", createdAt:"2026-08-28",
+      nodeStatuses:{ se1:"done", se2:"done", se3:"done", se4:"active",
+                     se5:"pending", se6:"pending", se7:"pending" } },
+    { id:"r2", orderNo:"ORD-2448", clientName:"Sharda Switchgear", status:"running",
+      templateId:"tpl-g9", createdAt:"2026-08-26", stalled:true,
+      nodeStatuses:{ g1:"active", g2:"pending", g3:"pending", g4:"pending" } },
+    { id:"r3", orderNo:"ORD-2440", clientName:"Vidyut Controls", status:"completed",
+      templateId:"tpl-se", createdAt:"2026-08-19",
+      nodeStatuses:{ se1:"done", se2:"done", se3:"done", se4:"done",
+                     se5:"done", se6:"done", se7:"done" } },
+    { id:"r4", orderNo:null, clientName:null, status:"planned",
+      templateId:"tpl-g9", createdAt:"2026-09-01",
+      nodeStatuses:{ g1:"pending", g2:"pending", g3:"pending", g4:"pending" } },
+  ],
+  editing:null, editingRunId:null, selectedNodeId:null,
+  connectingFrom:null, dirty:false, history:[], future:[],
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Helpers
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const $ = s => document.querySelector(s);
+const clone = o => JSON.parse(JSON.stringify(o));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+function toast(msg, ok = true) {
+  const el = document.createElement("div");
+  el.className = "toast" + (ok ? " ok" : "");
+  el.textContent = msg;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+const ICON = {
+  add:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  link:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
+  unlink:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.8 13.6 21 11.4a5 5 0 0 0-7-7l-2.2 2.2M5.2 10.4 3 12.6a5 5 0 0 0 7 7l2.2-2.2M4 4l16 16"/></svg>',
+  dup:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+  trash:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+  trashBig:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+  pencil:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 4 5 5L8 21H3v-5z"/></svg>',
+  check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.2 14.6-4-4 1.4-1.4 2.6 2.6 5.6-5.6L17.8 9z"/></svg>',
+  left:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+  right:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+  close:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  factory:'<svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18V10l-6 4V10l-6 4V7H3z"/></svg>',
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Production screen — _RunsTab / _RunCard / _RunFlowPainter
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* _RunFlowPainter: inset 8, gap 22, r5 dots, r9 halo on active, 3px rail. */
+function runFlowSvg(statuses) {
+  const INSET=8, GAP=22, W=INSET*2+Math.max(0,statuses.length-1)*GAP, H=26;
+  const y=H/2, x=i=>INSET+GAP*i;
+  const col = s => ({ done:"var(--run-done)", active:"var(--run-active)",
+                      skipped:"var(--run-skipped)" }[s] || "var(--run-pending)");
+  let p="";
+  for (let i=0;i<statuses.length-1;i++)
+    p += `<line x1="${x(i)}" y1="${y}" x2="${x(i+1)}" y2="${y}" stroke="${
+      statuses[i]==="done"?"var(--run-done)":"var(--run-rail)"
+    }" stroke-width="3" stroke-linecap="round"/>`;
+  statuses.forEach((s,i)=>{
+    if (s==="active") p += `<circle cx="${x(i)}" cy="${y}" r="9" fill="${col(s)}" opacity=".22"/>`;
+    p += `<circle cx="${x(i)}" cy="${y}" r="5" fill="${col(s)}" stroke="#fff" stroke-width="2"/>`;
+  });
+  return `<svg width="${W}" height="${H}" role="img" aria-label="Stage progress">${p}</svg>`;
+}
+
+function renderRuns() {
+  if (!state.runs.length) {
+    return `<div class="empty">${ICON.factory}
+      <h3>No production runs found</h3>
+      <div>Start a new pipeline to see it here.</div></div>`;
+  }
+  const runs = [...state.runs].sort((a,b)=>{
+    const aA=a.status!=="completed", bA=b.status!=="completed";
+    if (aA!==bA) return aA?-1:1;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+
+  return `<div class="runs">` + runs.map(run=>{
+    const tpl=state.templates[run.templateId];
+    const isActive=run.status!=="completed";
+    const nodes=tpl?[...tpl.nodes].sort((a,b)=>a.stageIndex-b.stageIndex):[];
+    const statuses=nodes.map(n=>run.nodeStatuses[n.id]||"pending");
+    const done=statuses.filter(s=>s==="done").length;
+    const stall = run.stalled && isActive
+      ? `${nodes[0]?.name||"Input"} stalled due to insufficient material` : null;
+
+    return `<div class="run-card${stall?" stalled":""}" data-run="${run.id}" role="button" tabindex="0">
+      <div class="run-row">
+        <div class="run-main">
+          <div class="run-titleline">
+            <span class="run-order">${run.orderNo?"Order: "+esc(run.orderNo):"Ad-hoc Run"}</span>
+            ${run.clientName?`<span class="run-client">• ${esc(run.clientName)}</span>`:""}
+            <span class="badge ${isActive?"on":"off"}">${esc(run.status)}</span>
+          </div>
+          <div class="run-pipeline">Pipeline: ${esc(tpl?tpl.name:"Unknown Pipeline")}</div>
+        </div>
+        <div class="field"><div class="k">Started</div><div class="v">${esc(run.createdAt)}</div></div>
+        <div class="timeline">
+          <div class="k">Pipeline Progress: <span>${done}/${statuses.length}</span></div>
+          <div style="margin-top:6px" title="${esc(nodes.map(n=>n.name).join("  ➔  "))}">
+            ${runFlowSvg(statuses)}</div>
+        </div>
+        <button class="icon-btn" data-del="${run.id}" title="Delete production run"
+          aria-label="Delete production run">${ICON.trashBig}</button>
+      </div>
+      ${stall?`<div class="stall">⚠ ${esc(stall)}</div>`:""}
+    </div>`;
+  }).join("") + `</div>`;
+}
+
+function renderInsights() {
+  const cards=[
+    ["Total runs", state.runs.length],
+    ["In production", state.runs.filter(r=>r.status!=="completed").length],
+    ["Completed", state.runs.filter(r=>r.status==="completed").length],
+    ["Stalled", state.runs.filter(r=>r.stalled).length],
+  ];
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+    ${cards.map(([k,v])=>`<div class="run-card">
+      <div style="font-size:11px;font-weight:700;color:#64748B">${k}</div>
+      <div style="font-size:30px;font-weight:700;margin-top:4px">${v}</div></div>`).join("")}
+  </div>
+  <p class="hint" style="margin-top:18px">Insights is stubbed — out of scope for the node-panel rework.</p>`;
+}
+
+function render() {
+  $("#body").innerHTML = state.tab==="runs" ? renderRuns() : renderInsights();
+  $("#tabRuns").setAttribute("aria-pressed", String(state.tab==="runs"));
+  $("#tabInsights").setAttribute("aria-pressed", String(state.tab==="insights"));
+  $("#dirtyFlag").textContent = state.dirty ? "unsaved pipeline changes" : "";
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pipeline editor — horizontal flow (MonitorPipelineFlow) + docked terminal
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function pushHistory() {
+  state.history.push(clone(state.editing));
+  if (state.history.length > 60) state.history.shift();
+  state.future.length = 0;
+  state.dirty = true;
+}
+
+function openEditor(runId) {
+  const run = state.runs.find(r=>r.id===runId); if (!run) return;
+  const tpl = state.templates[run.templateId]; if (!tpl) return;
+  state.editing = clone(tpl);
+  state.editingRunId = runId;
+  state.selectedNodeId = null;
+  state.connectingFrom = null;
+  state.history = []; state.future = []; state.dirty = false;
+  drawEditor();
+}
+
+function closeEditor() {
+  $("#scrim")?.remove();
+  state.editing = null; state.editingRunId = null; state.dirty = false;
+  render();
+}
+
+const selNode = () => state.editing?.nodes.find(n=>n.id===state.selectedNodeId) || null;
+
+/* _FlowStageBlock validity rule, reproduced exactly. */
+function nodeIsValid(n) {
+  const hasMachine = (n.machine||"").trim()!=="" || n.machineGroupId!=null;
+  return hasMachine && !!n.inputItem && !!n.outputItem;
+}
+
+function runStatusOf(nodeId) {
+  const run = state.runs.find(r=>r.id===state.editingRunId);
+  return run ? (run.nodeStatuses[nodeId] || "pending") : "pending";
+}
+
+function drawEditor() {
+  const t = state.editing; if (!t) return;
+  let scrim = $("#scrim");
+  if (!scrim) {
+    scrim = document.createElement("div");
+    scrim.className = "scrim"; scrim.id = "scrim";
+    document.body.appendChild(scrim);
+  }
+
+  const maxStage = Math.max(0, ...t.nodes.map(n=>n.stageIndex));
+  const selStage = selNode() ? selNode().stageIndex : -1;
+
+  /* Horizontal ListView.separated: one column per stage, 40px rail between. */
+  let flow = "";
+  for (let s=0; s<=maxStage; s++) {
+    const nodes = t.nodes.filter(n=>n.stageIndex===s);
+    if (!nodes.length) continue;
+    if (flow) flow += `<div class="rail${s<=selStage?" past":""}"></div>`;
+    const label = t.stageLabels[s] || `Stage ${s+1}`;
+    flow += `<div class="stage">` + nodes.map(n=>{
+      const st = runStatusOf(n.id);
+      const done = st==="done";
+      const active = st==="active";
+      const cls = ["fnode", done?"done":"", n.id===state.selectedNodeId?"sel":"",
+                   active?"active":"", nodeIsValid(n)?"":"invalid"].filter(Boolean).join(" ");
+      const machine = (n.machine||"").trim() || (n.machineGroupName||"").trim();
+      // A div, not a button: the stage-rename control nests inside it, and a
+      // button inside a button is invalid HTML that browsers silently unnest.
+      return `<div class="${cls}" data-node="${n.id}" role="button" tabindex="0">
+        <span class="eyebrow">
+          <span>${esc(label)}</span>
+          <span style="display:flex;align-items:center;gap:5px">
+            ${done?ICON.check:""}
+            <button data-stage="${s}" title="Rename stage" aria-label="Rename stage">${ICON.pencil}</button>
+          </span>
+        </span>
+        <span class="nm">${esc(n.name || n.processType)}</span>
+        <span class="mc">MC: ${esc(machine || "—")}</span>
+        ${nodeIsValid(n)?"":`<span class="warn">Incomplete</span>`}
+      </div>`;
+    }).join("") + `</div>`;
+  }
+  flow += `<div class="rail"></div><div class="add-col">
+    <button class="act add" id="addStage">${ICON.add} Add Next Stage</button></div>`;
+
+  const has = !!state.selectedNodeId, d = has ? "" : "disabled";
+
+  scrim.innerHTML = `<div class="editor" role="dialog" aria-label="Pipeline editor">
+    <div class="ed-head">
+      <div style="flex:1;min-width:0">
+        <h2 class="ed-title">${esc(t.name)}</h2>
+        <div class="ed-sub">${t.nodes.length} steps · ${maxStage+1} stages · template ${esc(t.id)}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="undoBtn" ${state.history.length?"":"disabled"}>Undo</button>
+      <button class="btn btn-ghost btn-sm" id="redoBtn" ${state.future.length?"":"disabled"}>Redo</button>
+      <button class="btn btn-secondary btn-sm" id="closeBtn">Close</button>
+    </div>
+
+    <div class="ed-tools">
+      <button class="act add"  id="aAdd"  ${d}>${ICON.add} Add step</button>
+      <button class="act link" id="aLink" ${d}>${ICON.link} Connect</button>
+      <button class="act dup"  id="aDup"  ${d}>${ICON.dup} Duplicate</button>
+      <button class="act link" id="aCut"  ${d}>${ICON.unlink} Disconnect</button>
+      <button class="act del"  id="aDel"  ${d}>${ICON.trash} Delete</button>
+      <span style="width:1px;height:22px;background:var(--border)"></span>
+      <button class="act link" id="aLeft"  ${d}>${ICON.left} Earlier</button>
+      <button class="act link" id="aRight" ${d}>Later ${ICON.right}</button>
+      <span class="sp"></span>
+      ${state.connectingFrom?`<span class="connect-hint">Pick a target block…</span>`:""}
+    </div>
+
+    <div class="flow-wrap"><div class="flow">${flow}</div></div>
+
+    ${has ? renderTerminal() : `<div class="terminal"><div class="no-sel">
+      Select a step in the flow to edit it.</div></div>`}
+
+    <div class="ed-foot">
+      <span class="hint" id="footHint">${state.dirty?"Unsaved changes.":"No changes since last save."}</span>
+      <span class="sp"></span>
+      <button class="btn btn-primary" id="saveBtn">Save Pipeline</button>
+    </div>
+  </div>`;
+
+  wireEditor();
+}
+
+function opts(list, current, blank) {
+  const head = blank ? `<option value="">${blank}</option>` : "";
+  return head + list.map(v =>
+    `<option value="${esc(v)}"${v===current?" selected":""}>${esc(v)}</option>`).join("");
+}
+
+/* Every field the Dart Step Properties panel renders, same visibility branches —
+   laid out as columns across the docked terminal instead of one tall scroll. */
+function renderTerminal() {
+  const n = selNode();
+  const isInput = n.processType==="Input";
+  const isOutput = n.processType==="Output";
+  const isAsm = !!n.isAssembly;
+  const group = MACHINE_GROUPS.find(g=>g.id===n.machineGroupId);
+  const stage = state.editing.stageLabels[n.stageIndex] || `Stage ${n.stageIndex+1}`;
+
+  const groups = [];
+
+  groups.push(`<div class="grp"><h5>Identity</h5>
+    <div class="f"><label for="pName">Name</label>
+      <input id="pName" type="text" value="${esc(n.name)}"></div>
+    ${(!isAsm && !isInput && !isOutput) ? `
+    <div class="f"><label for="pCode">Custom Process Code (Override)</label>
+      <input id="pCode" type="text" placeholder="e.g. MyCustomCode-1" value="${esc(n.customProcessCode)}">
+      <div class="help">Overrides the generated process code for this stage.</div></div>` : ""}
+    ${(!isInput && !isOutput) ? `
+    <div class="f"><div class="toggle">
+      <input type="checkbox" id="pAsm"${isAsm?" checked":""}><span>Assembly step</span></div></div>` : ""}
+  </div>`);
+
+  if (isAsm) {
+    const feeders = state.editing.flows.filter(fl=>fl.toNodeId===n.id)
+      .map(fl=>state.editing.nodes.find(x=>x.id===fl.fromNodeId))
+      .filter(Boolean).map(x=>x.name);
+    groups.push(`<div class="grp"><h5>Assembled from</h5>
+      <div class="f"><div class="chips">${
+        feeders.length ? feeders.map(x=>`<span class="chip">${esc(x)}</span>`).join("")
+                       : `<span class="hint">Nothing feeds in yet.</span>`}</div>
+        <div class="help">A merge point — what is assembled arrives on the flows that feed
+        into it, so there is no single input item to bind, and no machine or die to reserve.</div>
+      </div></div>`);
+  }
+
+  let items = "";
+  if (!isAsm && !isOutput) {
+    items += `<div class="f"><label for="pIn">${isInput?"Material":"Input Item"}</label>
+      <select id="pIn">${opts(ITEMS, n.inputItem||"", "— none —")}</select></div>
+      <div class="f"><label for="pInVar">Input variation</label>
+        <select id="pInVar">${opts(VARIATIONS, n.inputVar)}</select></div>`;
+  }
+  if (!isInput) {
+    items += `<div class="f"><label for="pOut">${isOutput?"Material":"Output Item"}</label>
+      <select id="pOut">${opts(ITEMS, n.outputItem||"", "— none —")}</select></div>
+      <div class="f"><label for="pOutVar">Output variation</label>
+        <select id="pOutVar">${opts(VARIATIONS, n.outputVar)}</select></div>`;
+  }
+  if (items) groups.push(`<div class="grp"><h5>Items</h5>${items}</div>`);
+
+  if (!isAsm && !isInput && !isOutput) {
+    groups.push(`<div class="grp"><h5>Machine &amp; die</h5>
+      <div class="f"><label for="pGroup">Machine group</label>
+        <select id="pGroup">${opts(MACHINE_GROUPS.map(g=>g.name), group?group.name:"", "— unassigned —")}</select></div>
+      <div class="f"><label for="pMachine">Machine</label>
+        <select id="pMachine"${group?"":" disabled"}>${
+          opts(group?group.machines:[], n.machine, "— any in group —")}</select></div>
+      <div class="f"><label for="pDie">Die</label>
+        <select id="pDie">${opts(DIES, n.dieId, "— none —")}</select></div>
+    </div>`);
+  }
+
+  if (!isInput && !isOutput) {
+    groups.push(`<div class="grp"><h5>${isAsm?"Rejections":"Scrap"}</h5>
+      <div class="f"><label for="pScrap">${isAsm?"Rejected parts":"Scrap destination"}</label>
+        <select id="pScrap">${opts(SCRAP_ITEMS, n.scrapItems[0]||"", "None")}</select>
+        ${isAsm?`<div class="help">Nothing is machined here, so what comes off the line is
+          not scrap — it is a piece the assembler rejected. Same routing.</div>`:""}
+      </div></div>`);
+  }
+
+  return `<div class="terminal">
+    <div class="t-head">
+      <span class="t-dot"></span>
+      <span class="t-name">${esc(n.name || n.processType)}</span>
+      <span class="t-meta">${esc(stage)} · step ${n.stageIndex+1}</span>
+      <button class="t-close" id="tClose" title="Close" aria-label="Close">${ICON.close}</button>
+    </div>
+    <div class="t-body">${groups.join("")}</div>
+  </div>`;
+}
+
+/* ── mutations ────────────────────────────────────────────────────────────── */
+
+function setField(fn) { pushHistory(); fn(); drawEditor(); }
+
+function addNextStep() {
+  const cur = selNode(); if (!cur) return;
+  pushHistory();
+  const t = state.editing, at = cur.stageIndex + 1;
+  t.nodes.forEach(n=>{ if (n.stageIndex>=at) n.stageIndex++; });
+  t.stageLabels.splice(at, 0, `Stage ${at+1}`);
+  const n = mkNode({ name:`Stage ${at+1}`, stageIndex:at, inputItem:cur.outputItem });
+  t.nodes.push(n);
+  const onward = t.flows.filter(fl=>fl.fromNodeId===cur.id).map(fl=>fl.toNodeId);
+  t.flows = t.flows.filter(fl=>fl.fromNodeId!==cur.id);
+  t.flows.push({ fromNodeId:cur.id, toNodeId:n.id });
+  onward.forEach(to=>t.flows.push({ fromNodeId:n.id, toNodeId:to }));
+  state.selectedNodeId = n.id;
+  drawEditor();
+}
+
+function duplicateNode() {
+  const cur = selNode(); if (!cur) return;
+  pushHistory();
+  const copy = Object.assign(clone(cur), { id:nid(), name:cur.name+" copy" });
+  state.editing.nodes.push(copy);
+  state.selectedNodeId = copy.id;
+  drawEditor();
+}
+
+function disconnectNode() {
+  const cur = selNode(); if (!cur) return;
+  pushHistory();
+  state.editing.flows = state.editing.flows
+    .filter(fl=>fl.fromNodeId!==cur.id && fl.toNodeId!==cur.id);
+  drawEditor(); toast("Block disconnected");
+}
+
+function deleteNode() {
+  const cur = selNode(); if (!cur) return;
+  pushHistory();
+  const t = state.editing;
+  t.nodes = t.nodes.filter(n=>n.id!==cur.id);
+  t.flows = t.flows.filter(fl=>fl.fromNodeId!==cur.id && fl.toNodeId!==cur.id);
+  state.selectedNodeId = null;
+  drawEditor(); toast("Block deleted");
+}
+
+function moveStep(delta) {
+  const cur = selNode(); if (!cur) return;
+  const target = cur.stageIndex + delta;
+  if (target < 0) return;
+  pushHistory();
+  cur.stageIndex = target;
+  drawEditor();
+}
+
+function addStage() {
+  pushHistory();
+  const t = state.editing;
+  const at = Math.max(0, ...t.nodes.map(n=>n.stageIndex)) + 1;
+  t.stageLabels[at] = `Stage ${at+1}`;
+  const last = t.nodes.find(n=>n.stageIndex===at-1);
+  const n = mkNode({ name:`Stage ${at+1}`, stageIndex:at,
+                     inputItem: last?last.outputItem:null });
+  t.nodes.push(n);
+  if (last) t.flows.push({ fromNodeId:last.id, toNodeId:n.id });
+  state.selectedNodeId = n.id;
+  drawEditor();
+}
+
+/* ── wiring ───────────────────────────────────────────────────────────────── */
+
+function wireEditor() {
+  const on = (id, fn) => { const el = $(id); if (el) fn(el); };
+
+  $("#closeBtn").onclick = () => {
+    if (state.dirty && !confirm("Discard unsaved pipeline changes?")) return;
+    closeEditor();
+  };
+  $("#undoBtn").onclick = () => {
+    if (!state.history.length) return;
+    state.future.push(clone(state.editing));
+    state.editing = state.history.pop();
+    drawEditor();
+  };
+  $("#redoBtn").onclick = () => {
+    if (!state.future.length) return;
+    state.history.push(clone(state.editing));
+    state.editing = state.future.pop();
+    drawEditor();
+  };
+
+  // Faithful to _saveAndNotify: toast fires, the editor stays open.
+  $("#saveBtn").onclick = () => {
+    state.templates[state.editing.id] = clone(state.editing);
+    state.dirty = false; state.history = []; state.future = [];
+    drawEditor(); render(); toast("Pipeline saved");
+  };
+
+  on("#addStage", el => el.onclick = addStage);
+  on("#tClose",   el => el.onclick = () => { state.selectedNodeId = null; drawEditor(); });
+
+  const pickNode = (el, e) => {
+    if (e.target.closest("[data-stage]")) return;   // the rename pencil
+    const id = el.getAttribute("data-node");
+    if (state.connectingFrom && state.connectingFrom !== id) {
+      pushHistory();
+      state.editing.flows.push({ fromNodeId:state.connectingFrom, toNodeId:id });
+      state.connectingFrom = null;
+      drawEditor(); toast("Blocks connected");
+      return;
+    }
+    state.selectedNodeId = id; state.connectingFrom = null;
+    drawEditor();
+  };
+
+  document.querySelectorAll("[data-node]").forEach(el=>{
+    el.onclick = e => pickNode(el, e);
+    el.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickNode(el, e); }
+    };
+  });
+
+  document.querySelectorAll("[data-stage]").forEach(el=>{
+    el.onclick = e => {
+      e.stopPropagation();
+      const s = Number(el.getAttribute("data-stage"));
+      const dlg = $("#dlgStage");
+      $("#stageName").value = state.editing.stageLabels[s] || "";
+      $("#stageSave").onclick = () => {
+        const v = $("#stageName").value.trim();
+        if (v) setField(()=>{ state.editing.stageLabels[s] = v; });
+        dlg.close();
+      };
+      dlg.showModal();
+    };
+  });
+
+  on("#aAdd",   el => el.onclick = addNextStep);
+  on("#aDup",   el => el.onclick = duplicateNode);
+  on("#aCut",   el => el.onclick = disconnectNode);
+  on("#aDel",   el => el.onclick = deleteNode);
+  on("#aLeft",  el => el.onclick = () => moveStep(-1));
+  on("#aRight", el => el.onclick = () => moveStep(1));
+  on("#aLink",  el => el.onclick = () => {
+    state.connectingFrom = state.selectedNodeId; drawEditor();
+  });
+
+  const n = selNode(); if (!n) return;
+
+  on("#pName", el => el.oninput = () => {
+    n.name = el.value; state.dirty = true;
+    // Live-update the block without a redraw, so the caret keeps its place.
+    const blk = document.querySelector(`[data-node="${n.id}"] .nm`);
+    if (blk) blk.textContent = n.name || n.processType;
+    const nm = document.querySelector(".t-name");
+    if (nm) nm.textContent = n.name || n.processType;
+    $("#footHint").textContent = "Unsaved changes.";
+    $("#dirtyFlag").textContent = "unsaved pipeline changes";
+  });
+  on("#pCode", el => el.oninput = () => { n.customProcessCode = el.value; state.dirty = true; });
+
+  on("#pIn",     el => el.onchange = () => setField(()=> n.inputItem  = el.value || null));
+  on("#pOut",    el => el.onchange = () => setField(()=> n.outputItem = el.value || null));
+  on("#pInVar",  el => el.onchange = () => setField(()=> n.inputVar  = el.value));
+  on("#pOutVar", el => el.onchange = () => setField(()=> n.outputVar = el.value));
+  on("#pDie",    el => el.onchange = () => setField(()=> n.dieId = el.value));
+  on("#pScrap",  el => el.onchange = () => setField(()=>
+    n.scrapItems = el.value ? [el.value] : []));
+  on("#pGroup",  el => el.onchange = () => setField(()=>{
+    const g = MACHINE_GROUPS.find(x=>x.name===el.value);
+    n.machineGroupId = g?g.id:null;
+    n.machineGroupName = g?g.name:"";
+    n.machine = "";
+  }));
+  on("#pMachine",el => el.onchange = () => setField(()=> n.machine = el.value));
+  on("#pAsm",    el => el.onchange = () => setField(()=>{
+    n.isAssembly = el.checked;
+    if (n.isAssembly) n.dieId = "";
+  }));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Production screen wiring
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+$("#tabRuns").onclick     = () => { state.tab="runs";     render(); };
+$("#tabInsights").onclick = () => { state.tab="insights"; render(); };
+
+$("#startBtn").onclick = () => {
+  const dlg = $("#dlgTemplate");
+  $("#tplList").innerHTML = Object.values(state.templates).map(t=>
+    `<button class="tpl-opt" data-tpl="${t.id}"><b>${esc(t.name)}</b>
+      <span>${t.nodes.length} steps · ${esc(t.status)}</span></button>`).join("");
+  $("#tplList").querySelectorAll("[data-tpl]").forEach(el=>{
+    el.onclick = () => {
+      const tplId = el.getAttribute("data-tpl");
+      const tpl = state.templates[tplId];
+      state.runs.unshift({
+        id:"r"+Date.now(), orderNo:null, clientName:null, status:"planned",
+        templateId:tplId, createdAt:new Date().toISOString().slice(0,10),
+        nodeStatuses:Object.fromEntries(tpl.nodes.map(x=>[x.id,"pending"])),
+      });
+      dlg.close(); render(); toast("Production run created");
+    };
+  });
+  dlg.showModal();
+};
+
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-close]")) e.target.closest("dialog")?.close();
+
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    e.stopPropagation();
+    const id = del.getAttribute("data-del");
+    const run = state.runs.find(r=>r.id===id);
+    $("#delText").textContent =
+      `${run.orderNo?"Order "+run.orderNo:"This ad-hoc run"} will be removed. This cannot be undone.`;
+    $("#delConfirm").onclick = () => {
+      state.runs = state.runs.filter(r=>r.id!==id);
+      $("#dlgDelete").close(); render(); toast("Run deleted");
+    };
+    $("#dlgDelete").showModal();
+    return;
+  }
+
+  const card = e.target.closest("[data-run]");
+  if (card) openEditor(card.getAttribute("data-run"));
+});
+
+document.addEventListener("keydown", e => {
+  const card = e.target.closest?.("[data-run]");
+  if (card && (e.key==="Enter" || e.key===" ")) {
+    e.preventDefault(); openEditor(card.getAttribute("data-run"));
+  }
+  if (e.key==="Escape" && state.editing && !document.querySelector("dialog[open]")) {
+    if (!state.dirty || confirm("Discard unsaved pipeline changes?")) closeEditor();
+  }
+});
+
+render();
+</script>
+</body>
+</html>

@@ -59,6 +59,17 @@ class PipelinesScreen extends StatefulWidget {
     } catch (_) {}
     await Future.wait(futures);
 
+    // `initialize()` returns immediately once it has run before, so a provider
+    // that ended up empty stays empty. If there is nothing to pick, insist on
+    // a real fetch rather than opening a picker that can only say "No item
+    // masters found".
+    try {
+      final itemsProvider = context.read<ItemsProvider>();
+      if (itemsProvider.items.isEmpty) {
+        await itemsProvider.refresh();
+      }
+    } catch (_) {}
+
     if (!context.mounted) {
       return null;
     }
@@ -79,8 +90,12 @@ class PipelinesScreen extends StatefulWidget {
     int? outputItemId = items.isNotEmpty ? items.last.id : null;
 
     final formKey = GlobalKey<FormState>();
-    var currentItems = items;
-    var currentUnits = units;
+    // Seeds only. The live lists are watched inside the builder below, so a
+    // snapshot taken before the masters finished loading cannot leave this
+    // dialog permanently empty — which is what "No item masters found" on a
+    // populated database was.
+    final seedItems = items;
+    final seedUnits = units;
 
     final result = await showErpFormDialog<PipelineTemplate>(
       context,
@@ -88,6 +103,15 @@ class PipelinesScreen extends StatefulWidget {
       maxHeight: 620,
       child: StatefulBuilder(
           builder: (context, setDialogState) {
+            final watchedItems = _watchActiveItemsFromContext(context);
+            final watchedUnits = _watchActiveUnitsFromContext(context);
+            final currentItems = watchedItems.isNotEmpty
+                ? watchedItems
+                : seedItems;
+            final currentUnits = watchedUnits.isNotEmpty
+                ? watchedUnits
+                : seedUnits;
+
             void submit() {
               if (formKey.currentState?.validate() == true) {
                 final name = nameCtrl.text.trim();
@@ -235,15 +259,12 @@ class PipelinesScreen extends StatefulWidget {
                             label: 'Input Material',
                             dialogTitle: 'Input Material',
                             selectedItemId: inputItemId,
-                            items: currentItems.where((item) {
-                              try {
-                                final groups = context.read<GroupsProvider>();
-                                final group = groups.findById(item.groupId);
-                                return group?.name.toLowerCase().contains('raw material') ?? false;
-                              } catch (_) {
-                                return false;
-                              }
-                            }).toList(),
+                            // Raw-material items first, but never *only* them.
+                            // This used to filter to groups named "raw
+                            // material" and silently showed nothing when none
+                            // existed — including the item just created from
+                            // this very field, which is never filed under one.
+                            items: _rawMaterialsFirst(context, currentItems),
                             units: currentUnits,
                             onChanged: (item) {
                               setDialogState(() {
@@ -264,11 +285,9 @@ class PipelinesScreen extends StatefulWidget {
                               });
                             },
                             onCreated: (item) {
-                              setDialogState(() {
-                                currentItems = _activeItemsFromContext(context);
-                                currentUnits = _activeUnitsFromContext(context);
-                                inputItemId = item.id;
-                              });
+                              // The lists refresh themselves; only the choice
+                              // needs recording.
+                              setDialogState(() => inputItemId = item.id);
                             },
                             validator: (value) => value == null
                                 ? 'Input material is required'
@@ -291,8 +310,6 @@ class PipelinesScreen extends StatefulWidget {
                             },
                             onCreated: (item) {
                               setDialogState(() {
-                                currentItems = _activeItemsFromContext(context);
-                                currentUnits = _activeUnitsFromContext(context);
                                 outputItemId = item.id;
                               });
                             },
@@ -688,6 +705,29 @@ InputDecoration _softInputDecoration({required String label, String? helper}) {
   );
 }
 
+/// Live variants of the readers below. A dialog that stays open while the
+/// masters load must watch them, or it shows whatever was there when it opened
+/// — forever.
+List<ItemDefinition> _watchActiveItemsFromContext(BuildContext context) {
+  try {
+    return context
+        .watch<ItemsProvider>()
+        .items
+        .where((item) => !item.isArchived)
+        .toList(growable: false);
+  } catch (_) {
+    return const [];
+  }
+}
+
+List<UnitDefinition> _watchActiveUnitsFromContext(BuildContext context) {
+  try {
+    return context.watch<UnitsProvider>().activeUnits;
+  } catch (_) {
+    return const [];
+  }
+}
+
 List<ItemDefinition> _activeItemsFromContext(BuildContext context) {
   try {
     return context
@@ -698,6 +738,31 @@ List<ItemDefinition> _activeItemsFromContext(BuildContext context) {
   } catch (_) {
     return const [];
   }
+}
+
+/// Items an input material could be, ordered so raw materials lead.
+///
+/// An ordering rather than a filter: a filter here could hide every item on a
+/// populated database, which is exactly what it did.
+List<ItemDefinition> _rawMaterialsFirst(
+  BuildContext context,
+  List<ItemDefinition> items,
+) {
+  bool isRaw(ItemDefinition item) {
+    try {
+      final group = context.read<GroupsProvider>().findById(item.groupId);
+      return group?.name.toLowerCase().contains('raw material') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  final raw = <ItemDefinition>[];
+  final rest = <ItemDefinition>[];
+  for (final item in items) {
+    (isRaw(item) ? raw : rest).add(item);
+  }
+  return <ItemDefinition>[...raw, ...rest];
 }
 
 List<UnitDefinition> _activeUnitsFromContext(BuildContext context) {
