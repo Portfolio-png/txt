@@ -44,9 +44,16 @@ Future<Die?> showDieFormDialog(BuildContext context, {Die? die}) {
 }
 
 class DieEditorSheet extends StatefulWidget {
-  const DieEditorSheet({super.key, this.die});
+  const DieEditorSheet({super.key, this.die, this.onSaved, this.onCancel});
 
   final Die? die;
+
+  /// Set when a host embeds the editor instead of opening it as a route: gets
+  /// the saved die in place of `Navigator.pop`.
+  final ValueChanged<Die>? onSaved;
+
+  /// Set alongside [onSaved]; replaces closing the route on Cancel / close.
+  final VoidCallback? onCancel;
 
   @override
   State<DieEditorSheet> createState() => _DieEditorSheetState();
@@ -334,9 +341,12 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     return Form(
       key: _formKey,
       child: ErpFormScaffold(
+        onClose: widget.onCancel,
         title: title,
-        subtitle:
-            'Manage die/tooling details, machine compatibilities, and photos.',
+        // Embedded in the creation wizard, the title is enough.
+        subtitle: widget.onSaved != null
+            ? null
+            : 'Manage die/tooling details, machine compatibilities, and photos.',
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -384,7 +394,9 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: SearchableSelectField<int>(
-                                tapTargetKey: const ValueKey('die-client-field'),
+                                tapTargetKey: const ValueKey(
+                                  'die-client-field',
+                                ),
                                 value: _clientId,
                                 decoration: const InputDecoration(
                                   labelText: 'Client (Optional)',
@@ -398,14 +410,20 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                     value: 0,
                                     label: 'None / In-House',
                                   ),
-                                  ...clients.map((c) => SearchableSelectOption<int>(
-                                    value: c.id,
-                                    label: c.displayLabel,
-                                  )),
+                                  ...clients.map(
+                                    (c) => SearchableSelectOption<int>(
+                                      value: c.id,
+                                      label: c.displayLabel,
+                                    ),
+                                  ),
                                 ],
                                 canCreateOption: (query, allOptions) {
                                   if (query.trim().isEmpty) return false;
-                                  return !allOptions.any((opt) => opt.label.toLowerCase() == query.trim().toLowerCase());
+                                  return !allOptions.any(
+                                    (opt) =>
+                                        opt.label.toLowerCase() ==
+                                        query.trim().toLowerCase(),
+                                  );
                                 },
                                 onCreateOption: (query) async {
                                   final client = await ClientsScreen.openEditor(
@@ -415,14 +433,17 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                   if (client == null || !mounted) return null;
                                   // Refresh provider manually or just let it react if it's already watching
                                   try {
-                                    await context.read<ClientsProvider>().refresh();
+                                    await context
+                                        .read<ClientsProvider>()
+                                        .refresh();
                                   } catch (_) {}
                                   return SearchableSelectOption<int>(
                                     value: client.id,
                                     label: client.displayLabel,
                                   );
                                 },
-                                createOptionLabelBuilder: (query) => 'Create new client "$query"',
+                                createOptionLabelBuilder: (query) =>
+                                    'Create new client "$query"',
                                 onChanged: (val) {
                                   setState(() {
                                     _clientId = (val == 0) ? null : val;
@@ -1020,7 +1041,8 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
             AppButton(
               label: 'Cancel',
               variant: AppButtonVariant.secondary,
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed:
+                  widget.onCancel ?? () => Navigator.of(context).maybePop(),
             ),
             AppButton(
               label: widget.die == null ? 'Create Die' : 'Save Changes',
@@ -1098,7 +1120,12 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
         widget.die == null ? 'Die created' : 'Die saved',
         kind: AppToastKind.success,
       );
-      Navigator.of(context).pop(savedDie);
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved(savedDie!);
+      } else {
+        Navigator.of(context).pop(savedDie);
+      }
     }
   }
 }

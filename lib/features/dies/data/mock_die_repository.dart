@@ -13,9 +13,10 @@ class MockDieRepository implements DieRepository {
       toolCode: 'TL-890-A',
       photoUrls: const [
         'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80'
+        'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80',
       ],
-      operationalNotes: 'Requires heavy lubrication on the guide pins. Watch out for scrap buildup on the left exit chute.',
+      operationalNotes:
+          'Requires heavy lubrication on the guide pins. Watch out for scrap buildup on the left exit chute.',
       compatibleMachineGroupIds: const [],
       storageLocation: 'Rack B, Shelf 3',
       numberOfCavities: 2,
@@ -36,17 +37,16 @@ class MockDieRepository implements DieRepository {
       name: 'Haas CNC Cutter Head',
       toolCode: 'TL-102-B',
       photoUrls: const [
-        'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80'
+        'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80',
       ],
-      operationalNotes: 'Customer owned. Handle with care. Clean thoroughly before returning to storage.',
+      operationalNotes:
+          'Customer owned. Handle with care. Clean thoroughly before returning to storage.',
       compatibleMachineGroupIds: const [],
       storageLocation: 'Rack A, Shelf 1',
       numberOfCavities: 1,
       strokeCount: 98000,
       maxStrokes: 100000,
-      physicalSpecs: const [
-        CustomProperty(key: 'Weight', value: '2100 kg'),
-      ],
+      physicalSpecs: const [CustomProperty(key: 'Weight', value: '2100 kg')],
       status: DieStatus.needsRepair,
       ownership: DieOwnership.customerOwned,
       createdAt: DateTime.now().subtract(const Duration(days: 800)),
@@ -75,7 +75,11 @@ class MockDieRepository implements DieRepository {
       _dies[index] = updated;
       return updated;
     } else {
-      final created = die.copyWith(id: DateTime.now().millisecondsSinceEpoch.toString(), createdAt: DateTime.now(), updatedAt: DateTime.now());
+      final created = die.copyWith(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
       _dies.add(created);
       return created;
     }
@@ -88,11 +92,14 @@ class MockDieRepository implements DieRepository {
   }
 
   @override
-  Future<DieAssetUploadIntent?> createAssetUploadIntent(DieAssetUploadIntentInput input) async {
+  Future<DieAssetUploadIntent?> createAssetUploadIntent(
+    DieAssetUploadIntentInput input,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return DieAssetUploadIntent(
       alreadyUploaded: true,
-      photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+      photoUrl:
+          'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
       upload: null,
     );
   }

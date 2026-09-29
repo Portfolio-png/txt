@@ -56,7 +56,7 @@ import '../widgets/item_card.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../widgets/set_overview_dialog.dart';
 import '../../../inventory/presentation/widgets/inventory_set_editor_dialog.dart';
-import '../../../groups/presentation/widgets/component_group_editor_dialog.dart';
+import '../../../groups/presentation/screens/component_creation_screen.dart';
 import '../widgets/item_detail_panel.dart';
 
 import 'package:file_selector/file_selector.dart';
@@ -69,7 +69,7 @@ import '../../../../core/widgets/export_preview_dialog.dart';
 
 /// The four things the item master lists. Groups is not here because it hands
 /// off to its own screen rather than rendering in this one.
-enum _ItemsMasterView { items, sets, components }
+enum _ItemsMasterView { items, sets }
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({
@@ -125,6 +125,30 @@ class ItemsScreen extends StatefulWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// The same workflow window as [openWorkflow], for a host that embeds it in
+  /// its own layout. [onClosed] fires with the saved item (or null) when the
+  /// flow finishes or is closed.
+  ///
+  /// With a [controller] the host carries the step navigation itself, so the
+  /// window drops its header (title, step chips, close) and footer hint.
+  static Widget workflowPanel({
+    Key? key,
+    int? initialGroupId,
+    Future<String?> Function()? onCreatePipeline,
+    required ValueChanged<ItemDefinition?> onClosed,
+    ItemWorkflowController? controller,
+  }) {
+    return SubmitFormShortcuts(
+      child: _ItemWorkflowWindow(
+        key: key,
+        initialGroupId: initialGroupId,
+        onCreatePipeline: onCreatePipeline,
+        onClosed: onClosed,
+        controller: controller,
       ),
     );
   }
@@ -193,7 +217,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
       : _ItemsMasterView.items;
 
   bool get _isSetsView => _view == _ItemsMasterView.sets;
-  bool get _isComponentsView => _view == _ItemsMasterView.components;
   double _cardWidth = 200;
   double _cardHeight = 250;
   // Boarding-pass card view: number of columns the resize slider requests
@@ -325,27 +348,15 @@ class _ItemsScreenState extends State<ItemsScreen> {
           child: SoftMasterDataPage(
             title: switch (_view) {
               _ItemsMasterView.sets => 'Sets',
-              _ItemsMasterView.components => 'Components',
               _ItemsMasterView.items => 'Items',
             },
             subtitle: switch (_view) {
               _ItemsMasterView.sets =>
                 'Named compositions of exact item variations and quantities.',
-              _ItemsMasterView.components =>
-                'Sub-assemblies whose items each carry their own pipeline, '
-                    'machines and dies.',
               _ItemsMasterView.items =>
                 'Manage sellable catalog items with recursive property and value inheritance.',
             },
-            action: _isComponentsView
-                ? AppButton(
-                    label: 'Add Component',
-                    icon: Icons.add,
-                    onPressed: () => ComponentGroupEditorDialog.open(
-                      context,
-                    ),
-                  )
-                : _isSetsView
+            action: _isSetsView
                 ? AppButton(
                     label: 'Add Set',
                     icon: Icons.add,
@@ -355,13 +366,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     label: 'Add Item',
                     icon: Icons.add,
                     isLoading: items.isSaving,
-                    // Creating an item is the front of a workflow — define it,
-                    // build its variants, file them, fill them in — so it opens
-                    // the stepped window rather than the bare form.
-                    onPressed: () => ItemsScreen.openWorkflow(
-                      context,
-                      onCreatePipeline: widget.onCreatePipeline,
-                    ),
+                    // The creation window: the item workflow in the middle, the
+                    // items added so far on the left, and dies and machines one
+                    // click away for each of them.
+                    onPressed: () =>
+                        ComponentCreationDialog.openForItems(context),
                   ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
@@ -408,9 +417,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   isError: true,
                 ),
             ],
-            body: _isComponentsView
-                ? const _ItemsComponentsView()
-                : _isSetsView
+            body: _isSetsView
                 ? _ItemsSetsView(
                     isGridView: _isGridView,
                     cardWidth: _cardWidth,
@@ -578,102 +585,6 @@ class _SetCardPlaceholder extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Every component group, with what each one holds.
-///
-/// Components are item groups structurally, so they would otherwise be buried
-/// in the Item Groups tree. Listing them on their own is what makes them a
-/// kind you can work with rather than a flag on a group.
-class _ItemsComponentsView extends StatelessWidget {
-  const _ItemsComponentsView();
-
-  @override
-  Widget build(BuildContext context) {
-    final groups = context.watch<GroupsProvider>();
-    final items = context.watch<ItemsProvider>().items;
-    final components = groups.componentGroups;
-
-    if (groups.isLoading && components.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (components.isEmpty) {
-      return const AppEmptyState(
-        title: 'No components yet',
-        message:
-            'A component gathers the items a sub-assembly is made of. Each '
-            'item keeps its own pipeline, machines and dies.',
-        icon: Icons.account_tree_outlined,
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      itemCount: components.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final component = components[index];
-        final members = items
-            .where((item) => item.groupId == component.id && !item.isArchived)
-            .toList(growable: false);
-        final withPipeline = members
-            .where((item) => (item.defaultPipelineId ?? '').trim().isNotEmpty)
-            .length;
-
-        return SoftMasterRow(
-          onTap: () => GroupsScreen.openView(
-            context,
-            group: component,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.account_tree_outlined,
-                    size: 18,
-                    color: SoftErpTheme.textSecondary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      component.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: SoftErpTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                  _CountPill(
-                    count: members.length,
-                    label: members.length == 1 ? 'item' : 'items',
-                    color: SoftErpTheme.entityItem,
-                    background: SoftErpTheme.entityItemBg,
-                    border: SoftErpTheme.entityItemBorder,
-                  ),
-                  const SizedBox(width: 10),
-                  // Says at a glance which components are still unroutable.
-                  Text(
-                    members.isEmpty
-                        ? 'No items yet'
-                        : '$withPipeline of ${members.length} routed',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: SoftErpTheme.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }
@@ -913,13 +824,12 @@ class _ItemsToolbar extends StatelessWidget {
     final provider = context.watch<ItemsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
 
-    // Items, Groups, Sets and Components are the four things this master
-    // holds, so they sit in one switch rather than several controls that mean
-    // the same kind of thing. Groups still hands off to its own screen.
+    // Items, Groups and Sets are the three things this master holds, so they
+    // sit in one switch rather than several controls that mean the same kind
+    // of thing. Groups still hands off to its own screen.
     final tabSegment = SoftSegmentedFilter<String>(
       selected: switch (view) {
         _ItemsMasterView.sets => 'sets',
-        _ItemsMasterView.components => 'components',
         _ItemsMasterView.items => 'items',
       },
       onChanged: (value) {
@@ -931,7 +841,6 @@ class _ItemsToolbar extends StatelessWidget {
         }
         onSelectView(switch (value) {
           'sets' => _ItemsMasterView.sets,
-          'components' => _ItemsMasterView.components,
           _ => _ItemsMasterView.items,
         });
       },
@@ -939,7 +848,6 @@ class _ItemsToolbar extends StatelessWidget {
         SoftSegmentOption<String>(value: 'items', label: 'Items'),
         SoftSegmentOption<String>(value: 'groups', label: 'Item Groups'),
         SoftSegmentOption<String>(value: 'sets', label: 'Sets'),
-        SoftSegmentOption<String>(value: 'components', label: 'Components'),
       ],
     );
 
@@ -2585,7 +2493,20 @@ class _ItemEditorSheet extends StatefulWidget {
     this.onSummaryChanged,
     this.onCreateVariant,
     this.keyScope = '',
+    this.paged = false,
+    this.page,
+    this.onPagesChanged,
   });
+
+  /// Shows one section at a time instead of the whole form: the host lists
+  /// the pages (via [onPagesChanged]) and picks one with [page]. The others
+  /// stay mounted offstage, so nothing typed is lost and validation still
+  /// covers every field.
+  final bool paged;
+
+  /// The page to show; null or unknown shows the first.
+  final String? page;
+  final ValueChanged<List<_FormPage>>? onPagesChanged;
 
   final ItemDefinition? item;
   final String initialName;
@@ -2654,6 +2575,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   List<ItemLinkOption> _machineOptions = const <ItemLinkOption>[];
   List<ItemLinkOption> _dieOptions = const <ItemLinkOption>[];
   bool _isLoadingLinkOptions = false;
+
+  /// Paged mode: whether any die or machine exists at all. A pipeline runs on
+  /// them, so with none registered its page is only noise. Null while unknown
+  /// (or when the host cannot say), which keeps the page.
+  bool? _hasRegisteredTooling;
   final List<_NodeDraft> _rootNodes = [];
   final ScrollController _variationTreeScrollController = ScrollController();
   int? _selectedGroupId;
@@ -2823,6 +2749,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       if (!mounted) return;
       context.read<ItemFormSectionsProvider>().ensureLoaded();
       _loadLinkOptions();
+      if (widget.paged) _checkRegisteredTooling();
     });
     for (final conversion in _item?.unitConversions ?? const []) {
       final unit = context.read<UnitsProvider>().findById(conversion.unitId);
@@ -3165,6 +3092,59 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// failed or the save errored — the host uses this to decide whether to
   /// advance a step.
   Future<ItemDefinition?> submitFromHost() => _submit(context, finish: false);
+
+  List<_FormPage> _publishedPages = const [];
+
+  /// The variation tree's page. It carries the naming format too, and the
+  /// workflow's spawn step shares its tab — properties and variations are one
+  /// idea, so they get one entry.
+  static const String _variationsPageId = 'variations';
+
+  Future<void> _checkRegisteredTooling() async {
+    ItemLinkOptionsService service;
+    try {
+      service = context.read<ItemLinkOptionsService>();
+    } catch (_) {
+      return;
+    }
+    try {
+      final results = await Future.wait([
+        service.fetchMachines(),
+        service.fetchDies(),
+      ]);
+      if (!mounted) return;
+      setState(
+        () => _hasRegisteredTooling = results.any((list) => list.isNotEmpty),
+      );
+    } catch (_) {
+      // Unknown stays unknown: the page is kept.
+    }
+  }
+
+  String _activePageId(List<_FormPage> pages) {
+    if (pages.isEmpty) return '';
+    return pages.any((page) => page.id == widget.page)
+        ? widget.page!
+        : pages.first.id;
+  }
+
+  /// Tells the host when the page list changes (sections toggled, the item
+  /// saved and gaining Track). After the frame: it arrives during build.
+  void _publishPages(List<_FormPage> pages) {
+    final changed =
+        pages.length != _publishedPages.length ||
+        [
+          for (var i = 0; i < pages.length; i++)
+            pages[i].id != _publishedPages[i].id,
+        ].any((different) => different);
+    if (!changed) return;
+    _publishedPages = pages;
+    final onPagesChanged = widget.onPagesChanged;
+    if (onPagesChanged == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) onPagesChanged(pages);
+    });
+  }
 
   List<int> get _orderedUnitIds => [
     ...?(_selectedUnitId == null ? null : <int>[_selectedUnitId!]),
@@ -4621,7 +4601,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               // layout, so the same choice applies everywhere the
               // editor opens.
               final showPipeline =
-                  sections.defaultPipeline && !isRawMaterialGroup;
+                  sections.defaultPipeline &&
+                  !isRawMaterialGroup &&
+                  !(widget.paged && _hasRegisteredTooling == false);
               // Sample data is not a pipeline setting — a raw material
               // has no pipeline but can still have a weighed sample.
               final showSampleData = sections.defaultPipeline;
@@ -4636,35 +4618,94 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   _isBasicItem
                       ? 4.5
                       : 5.5 + _secondaryUnitConversions.length * 0.6,
+                  id: 'details',
+                  label: 'Details',
                 ),
                 if (sections.variationTree)
                   _SectionEntry(
                     variationTreeSection,
                     3.0 + _rootNodes.length * 1.6,
+                    id: _variationsPageId,
+                    label: 'Variations',
                   ),
                 // A basic item's name comes from its base item and its
                 // variation values, so there is no format to arrange.
-                if (!_isBasicItem) _SectionEntry(namingFormatSection, 3.6),
-                if (sections.itemImage) _SectionEntry(photoSection, 2.2),
-                if (sections.cadFile) _SectionEntry(cadFileSection, 2.2),
+                // The naming format is built out of the variation values, so
+                // it belongs with them rather than on a page of its own.
+                if (!_isBasicItem)
+                  _SectionEntry(
+                    namingFormatSection,
+                    3.6,
+                    id: sections.variationTree ? _variationsPageId : 'naming',
+                    label: sections.variationTree ? 'Variations' : 'Naming',
+                  ),
+                if (sections.itemImage)
+                  _SectionEntry(photoSection, 2.2, id: 'files', label: 'Files'),
+                if (sections.cadFile)
+                  _SectionEntry(
+                    cadFileSection,
+                    2.2,
+                    id: 'files',
+                    label: 'Files',
+                  ),
                 if (sections.additionalFiles)
                   _SectionEntry(
                     additionalFilesSection,
                     1.8 + _attachments.length * 0.7,
+                    id: 'files',
+                    label: 'Files',
                   ),
-                if (sections.machines) _SectionEntry(machinesSection, 2.0),
-                if (sections.dies) _SectionEntry(diesSection, 2.0),
+                if (sections.machines)
+                  _SectionEntry(
+                    machinesSection,
+                    2.0,
+                    id: 'machines',
+                    label: 'Machines',
+                  ),
+                if (sections.dies)
+                  _SectionEntry(diesSection, 2.0, id: 'dies', label: 'Dies'),
                 if (showPipeline)
                   _SectionEntry(
                     defaultPipelineSection,
                     _hasSelectedPipeline ? 3.2 : 2.0,
+                    // A pipeline is what the sample figures are measured
+                    // against, so the two read as one page.
+                    id: 'master_data',
+                    label: 'Master data',
                   ),
                 if (showSampleData)
                   _SectionEntry(
                     sampleDataSection,
                     _hasPenPaperBaseline ? 7.0 : 2.0,
+                    id: 'master_data',
+                    label: 'Master data',
                   ),
               ];
+
+              if (widget.paged) {
+                // Sections that share an id are one page, shown together.
+                final pages = <_FormPage>[];
+                for (final entry in entries) {
+                  if (pages.any((page) => page.id == entry.id)) continue;
+                  pages.add((id: entry.id, label: entry.label));
+                }
+                if (_item != null) pages.add((id: 'track', label: 'Track'));
+                _publishPages(pages);
+                final active = _activePageId(pages);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final entry in entries)
+                      Offstage(
+                        offstage: entry.id != active,
+                        child: TickerMode(
+                          enabled: entry.id == active,
+                          child: entry.child,
+                        ),
+                      ),
+                  ],
+                );
+              }
 
               // A third column is only worth it when each one still
               // clears ~600px. The variation tree packs a name field
@@ -4696,7 +4737,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               );
             },
           ),
-          if (_item != null) ...[
+          if (_item != null &&
+              (!widget.paged || _activePageId(_publishedPages) == 'track')) ...[
             const SizedBox(height: 16),
             _SectionCard(
               title: 'Track',
@@ -8177,11 +8219,18 @@ class _EmptySampleDataPrompt extends StatelessWidget {
 }
 
 class _SectionEntry {
-  const _SectionEntry(this.child, this.weight);
+  const _SectionEntry(this.child, this.weight, {this.id = '', this.label = ''});
 
   final Widget child;
   final double weight;
+
+  /// Which page the section is in paged mode; see [_ItemEditorSheet.paged].
+  final String id;
+  final String label;
 }
+
+/// One page of the item form in paged mode.
+typedef _FormPage = ({String id, String label});
 
 /// Turns a failed S3 upload into a message that says what actually went wrong.
 ///
@@ -11700,6 +11749,136 @@ class _NumericRangePill extends StatelessWidget {
 /// describing what you picked were separated by a page turn.
 enum _WorkflowStep { details, variations, group }
 
+/// Lets a host show the item workflow's steps in its own navigation (the
+/// creation wizard puts them under the Item tile) and move between them.
+class ItemWorkflowController extends ChangeNotifier {
+  _ItemWorkflowWindowState? _window;
+
+  /// The tabs, flattened: the item form's pages stand in for its Details
+  /// step, then Variations and Group.
+  /// The form pages that lead, before Group; the rest (files, master data, …)
+  /// follow them.
+  static const _leadingPages = {
+    'details',
+    _ItemEditorSheetState._variationsPageId,
+  };
+
+  List<({String label, _WorkflowStep step, String? page})> get _tabs {
+    final window = _window;
+    if (window == null) return const [];
+    final pages = window._detailsPages;
+    ({String label, _WorkflowStep step, String? page}) pageTab(
+      _FormPage page,
+    ) => (label: page.label, step: _WorkflowStep.details, page: page.id);
+    // The spawn step and the variation page are the same idea, so they share
+    // one tab rather than appearing twice under the same name.
+    final variationsMerged = pages.any(
+      (page) => page.id == _ItemEditorSheetState._variationsPageId,
+    );
+    return [
+      if (pages.isEmpty)
+        (label: 'Details', step: _WorkflowStep.details, page: null)
+      else
+        for (final page in pages)
+          if (_leadingPages.contains(page.id)) pageTab(page),
+      for (final step in window._steps)
+        if (step != _WorkflowStep.details &&
+            !(variationsMerged && step == _WorkflowStep.variations) &&
+            // Filing into a group needs variants to file, so the tab appears
+            // with them rather than sitting there greyed out.
+            !(step == _WorkflowStep.group && !window._canFileGroup))
+          (label: step.label, step: step, page: null),
+      for (final page in pages)
+        if (!_leadingPages.contains(page.id)) pageTab(page),
+    ];
+  }
+
+  bool _isVariations(({String label, _WorkflowStep step, String? page}) tab) =>
+      tab.step == _WorkflowStep.variations ||
+      tab.page == _ItemEditorSheetState._variationsPageId;
+
+  /// The item being typed, for a host's live view; null until it has a name.
+  ({String name, String group, String unit, bool saved})? get draft {
+    final summary = _window?._summary;
+    if (summary == null || summary.displayName.trim().isEmpty) return null;
+    return (
+      name: summary.displayName.trim(),
+      group: summary.groupName,
+      unit: summary.unitLabel,
+      saved: summary.isSaved,
+    );
+  }
+
+  /// The item once the window has saved it (e.g. on the way to Variations).
+  int? get savedItemId => _window?._savedItem?.id;
+
+  /// Tab names; empty until a window is attached.
+  List<String> get steps => [for (final tab in _tabs) tab.label];
+
+  int get activeIndex {
+    final window = _window;
+    if (window == null) return 0;
+    final tabs = _tabs;
+    // Building variants lights the Variations tab, wherever it came from.
+    if (window._step == _WorkflowStep.variations) {
+      final merged = tabs.indexWhere(_isVariations);
+      if (merged >= 0) return merged;
+    }
+    final index = tabs.indexWhere(
+      (tab) =>
+          tab.step == window._step &&
+          (tab.page == null || tab.page == window._activeDetailsPage),
+    );
+    return index < 0 ? 0 : index;
+  }
+
+  /// Whether tab [index] can be opened now. The form's pages always can;
+  /// Variations too — opening it saves the item first, as Create Variant
+  /// does; Group once there is something spawned to file.
+  bool canOpen(int index) {
+    final window = _window;
+    final tabs = _tabs;
+    if (window == null || index < 0 || index >= tabs.length) return false;
+    final step = tabs[index].step;
+    if (step != _WorkflowStep.group) return true;
+    return window._canFileGroup;
+  }
+
+  Future<void> open(int index) async {
+    final window = _window;
+    if (window == null || !canOpen(index)) return;
+    final tab = _tabs[index];
+    // Variations opens the spawn step once variants are being built, and the
+    // tree (where Create Variant lives) before that.
+    if (_isVariations(tab) && window._variantFlowOpened) {
+      await window._goTo(_WorkflowStep.variations);
+      return;
+    }
+    if (tab.step == _WorkflowStep.details) {
+      if (tab.page != null) {
+        window.setState(() => window._detailsPage = tab.page);
+      }
+      await window._goTo(_WorkflowStep.details);
+    } else if (tab.step == _WorkflowStep.variations &&
+        !window._variantFlowOpened) {
+      await window._enterVariantFlow();
+    } else {
+      await window._goTo(tab.step);
+    }
+  }
+
+  void _attach(_ItemWorkflowWindowState window) {
+    _window = window;
+    WidgetsBinding.instance.addPostFrameCallback((_) => notifyListeners());
+  }
+
+  void _detach(_ItemWorkflowWindowState window) {
+    if (_window == window) _window = null;
+  }
+
+  void _changed() => notifyListeners();
+}
+
 extension _WorkflowStepX on _WorkflowStep {
   String get label => switch (this) {
     _WorkflowStep.details => 'Item',
@@ -11714,12 +11893,24 @@ extension _WorkflowStepX on _WorkflowStep {
 /// instead of being buried under a stack of popups.
 class _ItemWorkflowWindow extends StatefulWidget {
   const _ItemWorkflowWindow({
+    super.key,
     this.item,
     this.initialName = '',
     this.initialGroupId,
     this.onCreatePipeline,
     this.startAtVariations = false,
+    this.onClosed,
+    this.controller,
   });
+
+  /// Set when a host carries the step navigation; see
+  /// [ItemsScreen.workflowPanel].
+  final ItemWorkflowController? controller;
+
+  /// Set when a host embeds the window instead of opening it as a dialog:
+  /// gets the saved item (or null) in place of `Navigator.pop`, and the
+  /// window leaves back-navigation to the host.
+  final ValueChanged<ItemDefinition?>? onClosed;
 
   final ItemDefinition? item;
   final String initialName;
@@ -11750,6 +11941,23 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
   _WorkflowStep _step = _WorkflowStep.details;
   _ItemEditorSummary? _summary;
+
+  /// Paged mode (a host controller): the item form's pages, and which one is
+  /// open. See [_ItemEditorSheet.paged].
+  List<_FormPage> _detailsPages = const [];
+  String? _detailsPage;
+
+  String? get _activeDetailsPage =>
+      _detailsPages.any((page) => page.id == _detailsPage)
+      ? _detailsPage
+      : _detailsPages.firstOrNull?.id;
+
+  /// A failed save points back at the identity fields, which is where the
+  /// editor paints what is missing.
+  void _showDetailsFirstPage() {
+    if (_detailsPages.isEmpty) return;
+    setState(() => _detailsPage = _detailsPages.first.id);
+  }
 
   /// The base item once saved. Steps 2+ are unreachable until this exists,
   /// because a spawned variant needs a real baseItemId.
@@ -11822,6 +12030,11 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
   bool get _isDetails => _step == _WorkflowStep.details;
 
+  /// Whether the group step has anything to do: it files spawned variants
+  /// into a combination group, so it needs some.
+  bool get _canFileGroup =>
+      _groupStepEnabled && _variantFlowOpened && _spawnedItems.isNotEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -11837,10 +12050,19 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       _variantFlowOpened = true;
       _slide.value = 1;
     }
+    widget.controller?._attach(this);
+  }
+
+  /// Every change may move the step, so a host's navigation hears of it.
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    widget.controller?._changed();
   }
 
   @override
   void dispose() {
+    widget.controller?._detach(this);
     _valueChangeDebounce?.cancel();
     _slideCurve.dispose();
     _slide.dispose();
@@ -11889,6 +12111,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     if (saved == null) {
       // The editor painted its own inline error; make sure the user is looking
       // at the step that owns it.
+      _showDetailsFirstPage();
       _goTo(_WorkflowStep.details);
       return;
     }
@@ -11928,6 +12151,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     if (!mounted) return;
     setState(() => _isAdvancing = false);
     if (saved == null) {
+      _showDetailsFirstPage();
       _goTo(_WorkflowStep.details);
       return;
     }
@@ -12392,7 +12616,12 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       if (!leave || !mounted) return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(_savedItem);
+    final onClosed = widget.onClosed;
+    if (onClosed != null) {
+      onClosed(_savedItem);
+    } else {
+      Navigator.of(context).pop(_savedItem);
+    }
   }
 
   // --- build ---------------------------------------------------------------
@@ -12400,7 +12629,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: widget.onClosed != null,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _close();
       },
@@ -12412,7 +12641,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
           top: false,
           child: Column(
             children: [
-              _buildHeader(),
+              if (widget.controller == null) _buildHeader(),
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
@@ -12622,6 +12851,9 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
         onCreatePipeline: widget.onCreatePipeline,
         embedded: true,
         keyScope: '',
+        paged: widget.controller != null,
+        page: _detailsPage,
+        onPagesChanged: (pages) => setState(() => _detailsPages = pages),
         onCreateVariant: _isAdvancing ? null : _enterVariantFlow,
         onRequestClose: _close,
         onFinished: (result) {
@@ -13005,7 +13237,11 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       ),
       child: Row(
         children: [
-          Expanded(child: Text(_footerHint(), style: _footerHintStyle)),
+          Expanded(
+            child: widget.controller == null
+                ? Text(_footerHint(), style: _footerHintStyle)
+                : const SizedBox.shrink(),
+          ),
           if (!atFirst) ...[
             AppButton(
               label: 'Back',

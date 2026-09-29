@@ -32,9 +32,20 @@ const Duration _kArrivalDuration = Duration(milliseconds: 520);
 const Duration _kShelfMotionDuration = Duration(milliseconds: 460);
 
 class InventorySetEditorDialog extends StatefulWidget {
-  const InventorySetEditorDialog({super.key, this.setDefinition});
+  const InventorySetEditorDialog({
+    super.key,
+    this.setDefinition,
+    this.onSaved,
+    this.onCancel,
+  });
 
   final InventorySetDefinition? setDefinition;
+
+  /// Set when embedded: replaces closing with the saved set.
+  final ValueChanged<InventorySetDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   static Future<void> open(
     BuildContext context, {
@@ -473,7 +484,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
             ),
           ),
           IconButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: widget.onCancel ?? () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close_rounded),
           ),
         ],
@@ -495,7 +506,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
           AppButton(
             label: 'Cancel',
             variant: AppButtonVariant.secondary,
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: widget.onCancel ?? () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 12),
           AppButton(
@@ -1311,7 +1322,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       }
     }
 
-    await context.read<InventoryProvider>().saveSet(
+    final saved = await context.read<InventoryProvider>().saveSet(
       SaveInventorySetInput(
         id: widget.setDefinition?.id,
         name: name,
@@ -1334,7 +1345,12 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       widget.setDefinition == null ? 'Set created' : 'Set saved',
       kind: AppToastKind.success,
     );
-    Navigator.of(context).pop();
+    final onSaved = widget.onSaved;
+    if (onSaved == null) {
+      Navigator.of(context).pop();
+    } else if (saved != null) {
+      onSaved(saved);
+    }
   }
 
   InputDecoration _editorFieldDecoration({

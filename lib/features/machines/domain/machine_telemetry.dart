@@ -1,10 +1,4 @@
-enum TelemetryState {
-  running,
-  idle,
-  setup,
-  faulted,
-  offline
-}
+enum TelemetryState { running, idle, setup, faulted, offline }
 
 class MachineTelemetry {
   const MachineTelemetry({

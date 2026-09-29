@@ -44,8 +44,9 @@ class GroupsProvider extends ChangeNotifier {
   /// pipeline, machines and dies. They are item groups structurally, so
   /// [itemGroups] still contains them; this is for the places that list
   /// components as their own kind.
-  List<GroupDefinition> get componentGroups =>
-      _groups.where((g) => g.groupType == 'item' && g.isComponent).toList();
+  List<GroupDefinition> get componentGroups => _groups
+      .where((g) => g.groupType == 'item' && g.isComponent && !g.isArchived)
+      .toList();
 
   /// Active combination groups (flat variant sets).
   List<GroupDefinition> get combinationGroups =>

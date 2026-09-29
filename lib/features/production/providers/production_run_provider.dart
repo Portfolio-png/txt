@@ -90,17 +90,25 @@ class ProductionRunProvider extends ChangeNotifier {
     ProductionNow? now,
     Duration tickInterval = const Duration(seconds: 1),
     Duration offlinePollInterval = const Duration(seconds: 30),
+    bool persistActiveRun = true,
   }) : _bufferCommitter = bufferCommitter,
        _now = now ?? DateTime.now,
        _tickInterval = tickInterval,
-       _offlinePollInterval = offlinePollInterval {
+       _offlinePollInterval = offlinePollInterval,
+       _persistsActiveRun = persistActiveRun {
     _startOfflineSyncTimer();
-    _restoreActiveRun();
+    if (_persistsActiveRun) {
+      _restoreActiveRun();
+    }
   }
 
   static const String _activeRunKey = 'active_run_id';
 
   final ProductionBufferCommitter? _bufferCommitter;
+
+  /// A throwaway instance (the Produce preview) shares the prefs key with the
+  /// real one, so it opts out of remembering — and of adopting — an active run.
+  final bool _persistsActiveRun;
   final ProductionNow _now;
   final Duration _tickInterval;
   final Duration _offlinePollInterval;
@@ -255,6 +263,7 @@ class ProductionRunProvider extends ChangeNotifier {
   }
 
   Future<void> _persistActiveRun(String? runId) async {
+    if (!_persistsActiveRun) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       if (runId == null || runId.isEmpty) {

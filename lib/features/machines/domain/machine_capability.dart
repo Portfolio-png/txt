@@ -1,4 +1,3 @@
-
 class MachineCapability {
   const MachineCapability({
     required this.id,
@@ -98,7 +97,8 @@ class MachineCapability {
       inputMaterialName: inputMaterialName ?? this.inputMaterialName,
       inputUnitId: inputUnitId ?? this.inputUnitId,
       inputUnitLabel: inputUnitLabel ?? this.inputUnitLabel,
-      outputMaterialBarcode: outputMaterialBarcode ?? this.outputMaterialBarcode,
+      outputMaterialBarcode:
+          outputMaterialBarcode ?? this.outputMaterialBarcode,
       outputMaterialName: outputMaterialName ?? this.outputMaterialName,
       outputUnitId: outputUnitId ?? this.outputUnitId,
       outputUnitLabel: outputUnitLabel ?? this.outputUnitLabel,

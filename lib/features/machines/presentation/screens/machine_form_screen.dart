@@ -79,9 +79,21 @@ Future<Machine?> showMachineFormDialog(
 }
 
 class MachineEditorSheet extends StatefulWidget {
-  const MachineEditorSheet({super.key, this.machine});
+  const MachineEditorSheet({
+    super.key,
+    this.machine,
+    this.onSaved,
+    this.onCancel,
+  });
 
   final Machine? machine;
+
+  /// Set when a host embeds the editor instead of opening it as a route: gets
+  /// the saved machine in place of `Navigator.pop`.
+  final ValueChanged<Machine>? onSaved;
+
+  /// Set alongside [onSaved]; replaces closing the route on Cancel / close.
+  final VoidCallback? onCancel;
 
   @override
   State<MachineEditorSheet> createState() => _MachineEditorSheetState();
@@ -420,9 +432,12 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     return Form(
       key: _formKey,
       child: ErpFormScaffold(
+        onClose: widget.onCancel,
         title: title,
-        subtitle:
-            'Define machine identity, properties, and current operational status.',
+        // Embedded in the creation wizard, the title is enough.
+        subtitle: widget.onSaved != null
+            ? null
+            : 'Define machine identity, properties, and current operational status.',
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1007,7 +1022,8 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
             AppButton(
               label: 'Cancel',
               variant: AppButtonVariant.secondary,
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed:
+                  widget.onCancel ?? () => Navigator.of(context).maybePop(),
             ),
             AppButton(
               label: widget.machine == null ? 'Create Machine' : 'Save Changes',
@@ -1522,7 +1538,12 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
         widget.machine == null ? 'Machine created' : 'Machine saved',
         kind: AppToastKind.success,
       );
-      Navigator.of(context).pop(savedMachine);
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved(savedMachine!);
+      } else {
+        Navigator.of(context).pop(savedMachine);
+      }
     }
   }
 

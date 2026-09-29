@@ -43,7 +43,8 @@ class _MachineTelemetryScreenState extends State<MachineTelemetryScreen> {
     for (final t in telemetries.values) {
       if (t.state == TelemetryState.running) {
         runningCount++;
-      } else if (t.state == TelemetryState.faulted || t.state == TelemetryState.offline) {
+      } else if (t.state == TelemetryState.faulted ||
+          t.state == TelemetryState.offline) {
         downCount++;
       }
       totalOee += t.oee;
@@ -73,7 +74,10 @@ class _MachineTelemetryScreenState extends State<MachineTelemetryScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Live view of factory OEE and machine states.',
-                    style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 16),
+                    style: TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 16,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Row(
@@ -119,25 +123,22 @@ class _MachineTelemetryScreenState extends State<MachineTelemetryScreen> {
                 crossAxisSpacing: 16,
                 childAspectRatio: 1.25,
               ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final machine = machines[index];
-                  final telemetry = telemetries[machine.id];
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final machine = machines[index];
+                final telemetry = telemetries[machine.id];
 
-                  if (telemetry == null) {
-                    return const Card(
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-
-                  return _MachineCard(
-                    machineName: machine.name,
-                    makeModel: machine.makeModel,
-                    telemetry: telemetry,
+                if (telemetry == null) {
+                  return const Card(
+                    child: Center(child: CircularProgressIndicator()),
                   );
-                },
-                childCount: machines.length,
-              ),
+                }
+
+                return _MachineCard(
+                  machineName: machine.name,
+                  makeModel: machine.makeModel,
+                  telemetry: telemetry,
+                );
+              }, childCount: machines.length),
             ),
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
@@ -305,7 +306,10 @@ class _MachineCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: stateColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),

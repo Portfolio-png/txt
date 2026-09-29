@@ -4,10 +4,10 @@ import '../../data/machine_repository.dart';
 import '../../domain/machine.dart';
 
 class MachinesProvider extends ChangeNotifier {
-  MachinesProvider({required MachineRepository repository}) : _repository = repository;
+  MachinesProvider({required MachineRepository repository})
+    : _repository = repository;
 
   final MachineRepository _repository;
-
 
   List<Machine> _machines = const [];
   bool _isLoading = false;
@@ -30,13 +30,15 @@ class MachinesProvider extends ChangeNotifier {
     return _machines.where((m) {
       final groupName = m.groupId != null ? (groupNames[m.groupId!] ?? '') : '';
       final matchesCustom = m.customProperties.any(
-        (p) => p.key.toLowerCase().contains(query) || p.value.toLowerCase().contains(query),
+        (p) =>
+            p.key.toLowerCase().contains(query) ||
+            p.value.toLowerCase().contains(query),
       );
       return m.name.toLowerCase().contains(query) ||
-             m.assetId.toLowerCase().contains(query) ||
-             m.makeModel.toLowerCase().contains(query) ||
-             groupName.toLowerCase().contains(query) ||
-             matchesCustom;
+          m.assetId.toLowerCase().contains(query) ||
+          m.makeModel.toLowerCase().contains(query) ||
+          groupName.toLowerCase().contains(query) ||
+          matchesCustom;
     }).toList();
   }
 
@@ -45,12 +47,14 @@ class MachinesProvider extends ChangeNotifier {
     if (query.isEmpty) return _machines;
     return _machines.where((m) {
       final matchesCustom = m.customProperties.any(
-        (p) => p.key.toLowerCase().contains(query) || p.value.toLowerCase().contains(query),
+        (p) =>
+            p.key.toLowerCase().contains(query) ||
+            p.value.toLowerCase().contains(query),
       );
       return m.name.toLowerCase().contains(query) ||
-             m.assetId.toLowerCase().contains(query) ||
-             m.makeModel.toLowerCase().contains(query) ||
-             matchesCustom;
+          m.assetId.toLowerCase().contains(query) ||
+          m.makeModel.toLowerCase().contains(query) ||
+          matchesCustom;
     }).toList();
   }
 
@@ -131,7 +135,9 @@ class MachinesProvider extends ChangeNotifier {
     }
   }
 
-  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input) async {
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(
+    MachineAssetUploadIntentInput input,
+  ) async {
     _isAssetUploading = true;
     _errorMessage = null;
     notifyListeners();
@@ -146,7 +152,9 @@ class MachinesProvider extends ChangeNotifier {
     }
   }
 
-  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input) async {
+  Future<String?> completeAssetUpload(
+    CompleteMachineAssetUploadInput input,
+  ) async {
     _isAssetUploading = true;
     _errorMessage = null;
     notifyListeners();

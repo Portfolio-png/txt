@@ -73,7 +73,8 @@ class _DiesScreenState extends State<DiesScreen> {
 
         return SoftMasterDataPage(
           title: 'Dies & Tooling',
-          subtitle: 'Manage dies, lifecycle strokes, and machine compatibilities.',
+          subtitle:
+              'Manage dies, lifecycle strokes, and machine compatibilities.',
           action: AppButton(
             label: 'Add Die',
             icon: Icons.add,
@@ -92,8 +93,8 @@ class _DiesScreenState extends State<DiesScreen> {
                   icon: Icons.build_circle_outlined,
                 )
               : _isGridView
-                  ? _DiesGrid(dies: dies, scale: _cardScale)
-                  : _DiesTable(dies: dies),
+              ? _DiesGrid(dies: dies, scale: _cardScale)
+              : _DiesTable(dies: dies),
         );
       },
     );
@@ -127,7 +128,6 @@ class _DiesToolbar extends StatelessWidget {
   }
 }
 
-
 class _CardScaleControl extends StatelessWidget {
   const _CardScaleControl({required this.scale, required this.onChanged});
   final double scale;
@@ -147,8 +147,11 @@ class _CardScaleControl extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.photo_size_select_large_rounded,
-                size: 18, color: SoftErpTheme.textSecondary),
+            const Icon(
+              Icons.photo_size_select_large_rounded,
+              size: 18,
+              color: SoftErpTheme.textSecondary,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: SliderTheme(
@@ -239,7 +242,8 @@ class _DieCardState extends State<_DieCard> {
     DiesScreen.openDieEditor(context, die: cloned);
   }
 
-  void _edit(BuildContext context) => DiesScreen.openDieEditor(context, die: die);
+  void _edit(BuildContext context) =>
+      DiesScreen.openDieEditor(context, die: die);
 
   void _delete(BuildContext context) =>
       context.read<DiesProvider>().deleteDie(die.id);
@@ -371,8 +375,11 @@ class _DieCardState extends State<_DieCard> {
     return Container(
       color: const Color(0xFFF3F4F6),
       child: const Center(
-        child: Icon(Icons.build_circle_outlined,
-            color: Color(0xFF9CA3AF), size: 48),
+        child: Icon(
+          Icons.build_circle_outlined,
+          color: Color(0xFF9CA3AF),
+          size: 48,
+        ),
       ),
     );
   }
@@ -381,25 +388,25 @@ class _DieCardState extends State<_DieCard> {
 (Color, Color, Color) _dieStatusColors(DieStatus status) {
   return switch (status) {
     DieStatus.ready => (
-        const Color(0xFFECFDF5),
-        const Color(0xFF0F766E),
-        const Color(0xFFBFEAD8),
-      ),
+      const Color(0xFFECFDF5),
+      const Color(0xFF0F766E),
+      const Color(0xFFBFEAD8),
+    ),
     DieStatus.inProduction => (
-        const Color(0xFFEFF6FF),
-        const Color(0xFF1D4ED8),
-        const Color(0xFFBFDBFE),
-      ),
+      const Color(0xFFEFF6FF),
+      const Color(0xFF1D4ED8),
+      const Color(0xFFBFDBFE),
+    ),
     DieStatus.needsRepair => (
-        const Color(0xFFFEF2F2),
-        const Color(0xFF991B1B),
-        const Color(0xFFFECACA),
-      ),
+      const Color(0xFFFEF2F2),
+      const Color(0xFF991B1B),
+      const Color(0xFFFECACA),
+    ),
     DieStatus.obsolete => (
-        const Color(0xFFF3F4F6),
-        const Color(0xFF4B5563),
-        const Color(0xFFE5E7EB),
-      ),
+      const Color(0xFFF3F4F6),
+      const Color(0xFF4B5563),
+      const Color(0xFFE5E7EB),
+    ),
   };
 }
 
@@ -435,17 +442,19 @@ class _CardMoreButton extends StatelessWidget {
         const PopupMenuItem(
           value: _CardAction.duplicate,
           child: _MenuEntry(
-              icon: Icons.copy_outlined,
-              label: 'Duplicate',
-              hint: 'Ctrl+D'),
+            icon: Icons.copy_outlined,
+            label: 'Duplicate',
+            hint: 'Ctrl+D',
+          ),
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _CardAction.delete,
           child: _MenuEntry(
-              icon: Icons.delete_outline,
-              label: 'Delete',
-              destructive: true),
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            destructive: true,
+          ),
         ),
       ],
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -465,8 +474,11 @@ class _CardMoreButton extends StatelessWidget {
             ),
           ],
         ),
-        child: const Icon(Icons.more_horiz_rounded,
-            size: 16, color: SoftErpTheme.textPrimary),
+        child: const Icon(
+          Icons.more_horiz_rounded,
+          size: 16,
+          color: SoftErpTheme.textPrimary,
+        ),
       ),
     );
   }
@@ -489,23 +501,32 @@ class _MenuEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        destructive ? const Color(0xFFDC2626) : SoftErpTheme.textPrimary;
+    final color = destructive
+        ? const Color(0xFFDC2626)
+        : SoftErpTheme.textPrimary;
     return Row(
       children: [
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ),
         if (hint != null)
-          Text(hint!,
-              style: const TextStyle(
-                  fontSize: 11,
-                  color: SoftErpTheme.textSecondary,
-                  fontWeight: FontWeight.w500)),
+          Text(
+            hint!,
+            style: const TextStyle(
+              fontSize: 11,
+              color: SoftErpTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
       ],
     );
   }
@@ -565,7 +586,9 @@ class _DieRow extends StatelessWidget {
                   ),
                 )
               : Container(
-                  alignment: Alignment.centerLeft, child: _buildThumb()),
+                  alignment: Alignment.centerLeft,
+                  child: _buildThumb(),
+                ),
         ),
         Expanded(
           flex: 2,
@@ -576,20 +599,23 @@ class _DieRow extends StatelessWidget {
               SoftInlineText(die.name, weight: FontWeight.w700),
               if (die.ownership == DieOwnership.customerOwned) ...[
                 const SizedBox(height: 4),
-                const SoftInlineText('Customer Owned',
-                    color: Color(0xFF6B7280), weight: FontWeight.w600),
+                const SoftInlineText(
+                  'Customer Owned',
+                  color: Color(0xFF6B7280),
+                  weight: FontWeight.w600,
+                ),
               ],
             ],
           ),
         ),
-        Expanded(
-          flex: 2,
-          child: SoftInlineText(die.toolCode),
-        ),
+        Expanded(flex: 2, child: SoftInlineText(die.toolCode)),
         // Lifecycle / stroke progress bar
         Expanded(
           flex: 2,
-          child: _StrokeBar(strokeCount: die.strokeCount, maxStrokes: die.maxStrokes),
+          child: _StrokeBar(
+            strokeCount: die.strokeCount,
+            maxStrokes: die.maxStrokes,
+          ),
         ),
         Expanded(
           flex: 1,
@@ -618,8 +644,9 @@ class _DieRow extends StatelessWidget {
                     toolCode: '${die.toolCode} (Copy)',
                     photoUrls: List.from(die.photoUrls),
                     operationalNotes: die.operationalNotes,
-                    compatibleMachineGroupIds:
-                        List.from(die.compatibleMachineGroupIds),
+                    compatibleMachineGroupIds: List.from(
+                      die.compatibleMachineGroupIds,
+                    ),
                     storageLocation: die.storageLocation,
                     numberOfCavities: die.numberOfCavities,
                     strokeCount: 0,
@@ -657,8 +684,11 @@ class _DieRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
-      child: const Icon(Icons.build_circle_outlined,
-          color: Color(0xFF9CA3AF), size: 24),
+      child: const Icon(
+        Icons.build_circle_outlined,
+        color: Color(0xFF9CA3AF),
+        size: 24,
+      ),
     );
   }
 }
@@ -686,10 +716,10 @@ class _StrokeBar extends StatelessWidget {
     final barColor = fraction == null
         ? const Color(0xFF94A3B8)
         : fraction >= 0.9
-            ? const Color(0xFFDC2626)
-            : fraction >= 0.7
-                ? const Color(0xFFD97706)
-                : const Color(0xFF2563EB);
+        ? const Color(0xFFDC2626)
+        : fraction >= 0.7
+        ? const Color(0xFFD97706)
+        : const Color(0xFF2563EB);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -40,6 +40,12 @@ class UnitsScreen extends StatefulWidget {
     );
   }
 
+  /// The unit editor for a host to embed rather than open as a dialog.
+  static Widget editorPanel({
+    required ValueChanged<UnitDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _UnitEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
   @override
   State<UnitsScreen> createState() => _UnitsScreenState();
 }
@@ -473,12 +479,20 @@ class _UnitEditorSheet extends StatefulWidget {
     this.initialName = '',
     this.initialGroupName = '',
     this.initialConversionBaseUnitId,
+    this.onSaved,
+    this.onCancel,
   });
 
   final UnitDefinition? unit;
   final String initialName;
   final String initialGroupName;
   final int? initialConversionBaseUnitId;
+
+  /// Set when embedded: replaces popping with the saved unit.
+  final ValueChanged<UnitDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_UnitEditorSheet> createState() => _UnitEditorSheetState();
@@ -974,7 +988,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                       ),
                       const SizedBox(width: 12),
                       IconButton(
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        onPressed:
+                            widget.onCancel ??
+                            () => Navigator.of(context).maybePop(),
                         style: IconButton.styleFrom(
                           backgroundColor: const Color(0xFFF8FAFC),
                           foregroundColor: const Color(0xFF334155),
@@ -1228,7 +1244,12 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
         widget.unit == null ? 'Unit created' : 'Unit saved',
         kind: AppToastKind.success,
       );
-      Navigator.of(context).pop(result);
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved(result);
+      } else {
+        Navigator.of(context).pop(result);
+      }
     }
   }
 

@@ -9,7 +9,8 @@ class MockMachineRepository implements MachineRepository {
       id: 'm1',
       name: 'Amada CNC Press Brake',
       assetId: 'MAC-1001',
-      primaryPhotoUrl: 'https://images.unsplash.com/photo-1565439390237-db561c2ba24e?auto=format&fit=crop&q=80',
+      primaryPhotoUrl:
+          'https://images.unsplash.com/photo-1565439390237-db561c2ba24e?auto=format&fit=crop&q=80',
       groupId: null,
       makeModel: 'Amada HDS-8025NT',
       serialNumber: 'AMD-909283',
@@ -27,7 +28,8 @@ class MockMachineRepository implements MachineRepository {
       id: 'm2',
       name: 'Haas VF-2SS CNC Mill',
       assetId: 'MAC-1002',
-      primaryPhotoUrl: 'https://images.unsplash.com/photo-1610484557978-56961cf3d623?auto=format&fit=crop&q=80',
+      primaryPhotoUrl:
+          'https://images.unsplash.com/photo-1610484557978-56961cf3d623?auto=format&fit=crop&q=80',
       groupId: null,
       makeModel: 'Haas VF-2SS',
       serialNumber: 'HSS-10020',
@@ -66,7 +68,7 @@ class MockMachineRepository implements MachineRepository {
             updatedAt: DateTime.now(),
           )
         : machine.copyWith(updatedAt: DateTime.now());
-    
+
     if (isNew) {
       _machines.add(newMachine);
     } else {
@@ -85,17 +87,22 @@ class MockMachineRepository implements MachineRepository {
   }
 
   @override
-  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input) async {
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(
+    MachineAssetUploadIntentInput input,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return MachineAssetUploadIntent(
       alreadyUploaded: true,
-      photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+      photoUrl:
+          'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
       upload: null,
     );
   }
 
   @override
-  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input) async {
+  Future<String?> completeAssetUpload(
+    CompleteMachineAssetUploadInput input,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80';
   }

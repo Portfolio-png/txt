@@ -29,6 +29,12 @@ class DepartmentEditorDialog extends StatelessWidget {
     );
   }
 
+  /// The department editor for a host to embed rather than open as a dialog.
+  static Widget editorPanel({
+    required ValueChanged<DepartmentDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _DepartmentEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
   @override
   Widget build(BuildContext context) {
     return _DepartmentEditorSheet(department: department);
@@ -36,9 +42,15 @@ class DepartmentEditorDialog extends StatelessWidget {
 }
 
 class _DepartmentEditorSheet extends StatefulWidget {
-  const _DepartmentEditorSheet({this.department});
+  const _DepartmentEditorSheet({this.department, this.onSaved, this.onCancel});
 
   final DepartmentDefinition? department;
+
+  /// Set when embedded: replaces closing with the created department.
+  final ValueChanged<DepartmentDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_DepartmentEditorSheet> createState() => _DepartmentEditorSheetState();
@@ -86,8 +98,13 @@ class _DepartmentEditorSheetState extends State<_DepartmentEditorSheet> {
             _photoController.text,
           );
 
-    if (success && mounted) {
+    if (!success || !mounted) return;
+    final onSaved = widget.onSaved;
+    final created = provider.lastCreatedDepartment;
+    if (onSaved == null) {
       Navigator.of(context).pop();
+    } else if (created != null) {
+      onSaved(created);
     }
   }
 
@@ -96,6 +113,7 @@ class _DepartmentEditorSheetState extends State<_DepartmentEditorSheet> {
     final provider = context.watch<DepartmentsProvider>();
     return ErpFormScaffold(
       title: widget.department == null ? 'New Department' : 'Edit Department',
+      onClose: widget.onCancel,
       subtitle: 'Group employees under a department for easier management.',
       errorBanner: provider.errorMessage == null
           ? null
@@ -130,7 +148,8 @@ class _DepartmentEditorSheetState extends State<_DepartmentEditorSheet> {
           AppButton(
             label: 'Cancel',
             variant: AppButtonVariant.secondary,
-            onPressed: () => Navigator.of(context).maybePop(),
+            onPressed:
+                widget.onCancel ?? () => Navigator.of(context).maybePop(),
           ),
           const SizedBox(width: 12),
           AppButton(

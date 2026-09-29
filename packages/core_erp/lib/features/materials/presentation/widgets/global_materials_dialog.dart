@@ -56,7 +56,7 @@ class _GlobalMaterialsLibraryDialogState
     setState(() => _isSaving = true);
     try {
       final added = await provider.save(material.toDefinition());
-      if (!added && mounted) {
+      if (added == null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(

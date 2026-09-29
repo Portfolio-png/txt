@@ -10,6 +10,25 @@ import 'package:flutter/widgets.dart';
 ///
 /// The app registers these once at startup; anything unset is simply not
 /// offered, so a host that does not provide a flow degrades to hiding it.
+/// What an embedded editor hands back on save: enough to list the record in
+/// a host without the host knowing its type.
+class CreatedRecord {
+  const CreatedRecord({required this.id, required this.title, this.subtitle});
+
+  final String id;
+  final String title;
+  final String? subtitle;
+}
+
+/// Builds a full editor for a host to embed rather than open as a route.
+/// [onSaved] gets the saved record; [onCancel] replaces closing.
+typedef EmbeddedEditorBuilder =
+    Widget Function(
+      BuildContext context, {
+      required ValueChanged<CreatedRecord> onSaved,
+      required VoidCallback onCancel,
+    });
+
 class AppFlowHooks {
   const AppFlowHooks._();
 
@@ -22,13 +41,22 @@ class AppFlowHooks {
   static Future<bool> Function(BuildContext context)? createMachine;
 
   /// Deletes a machine permanently.
-  static Future<void> Function(BuildContext context, String machineId)? deleteMachine;
+  static Future<void> Function(BuildContext context, String machineId)?
+  deleteMachine;
 
   /// Opens the die editor; resolves true when one was saved.
   static Future<bool> Function(BuildContext context)? createDie;
 
   /// Deletes a die permanently.
   static Future<void> Function(BuildContext context, String dieId)? deleteDie;
+
+  /// Builds the full die editor for a host to embed rather than open as a
+  /// route.
+  static EmbeddedEditorBuilder? dieEditor;
+
+  /// Builds the full machine editor for embedding; same contract as
+  /// [dieEditor].
+  static EmbeddedEditorBuilder? machineEditor;
 
   static bool get canCreatePipeline => createPipeline != null;
 
@@ -38,7 +66,9 @@ class AppFlowHooks {
     return () => handler(context);
   }
 
-  static Future<void> Function(String machineId)? deleteMachineFor(BuildContext context) {
+  static Future<void> Function(String machineId)? deleteMachineFor(
+    BuildContext context,
+  ) {
     final handler = deleteMachine;
     if (handler == null) return null;
     return (id) => handler(context, id);
@@ -50,7 +80,9 @@ class AppFlowHooks {
     return () => handler(context);
   }
 
-  static Future<void> Function(String dieId)? deleteDieFor(BuildContext context) {
+  static Future<void> Function(String dieId)? deleteDieFor(
+    BuildContext context,
+  ) {
     final handler = deleteDie;
     if (handler == null) return null;
     return (id) => handler(context, id);

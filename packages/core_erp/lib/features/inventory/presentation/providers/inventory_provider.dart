@@ -479,19 +479,22 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> saveSet(SaveInventorySetInput input) async {
+  /// Resolves to the saved set, or null on failure ([errorMessage]).
+  Future<InventorySetDefinition?> saveSet(SaveInventorySetInput input) async {
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      await _repository.saveSet(input);
+      final saved = await _repository.saveSet(input);
       await _reloadSets();
+      return saved;
     } catch (error) {
       _errorMessage = _friendlyError(
         fallback: 'Failed to save set.',
         error: error,
       );
+      return null;
     } finally {
       _isSaving = false;
       notifyListeners();

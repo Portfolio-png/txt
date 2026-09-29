@@ -109,6 +109,11 @@ class DepartmentsProvider extends ChangeNotifier {
     return emps;
   }
 
+  DepartmentDefinition? _lastCreatedDepartment;
+
+  /// The department the last successful [createDepartment] made.
+  DepartmentDefinition? get lastCreatedDepartment => _lastCreatedDepartment;
+
   Future<bool> createDepartment(
     String name,
     String description,
@@ -123,6 +128,7 @@ class DepartmentsProvider extends ChangeNotifier {
         photoUrl,
       );
       _departments.add(dept);
+      _lastCreatedDepartment = dept;
       _sortLists();
       return true;
     } catch (e) {

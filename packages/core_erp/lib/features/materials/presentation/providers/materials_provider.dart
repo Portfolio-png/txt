@@ -72,7 +72,8 @@ class MaterialsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> save(MaterialDefinition material) async {
+  /// Resolves to the saved material, or null on failure ([errorMessage]).
+  Future<MaterialDefinition?> save(MaterialDefinition material) async {
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -83,10 +84,10 @@ class MaterialsProvider extends ChangeNotifier {
       final next = _materials.where((m) => m.id != saved.id).toList()
         ..add(saved);
       _materials = _sorted(next);
-      return true;
+      return saved;
     } catch (error) {
       _errorMessage = error.toString();
-      return false;
+      return null;
     } finally {
       _isSaving = false;
       notifyListeners();

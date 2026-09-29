@@ -6099,6 +6099,13 @@ async function initDb() {
     lastEmittedChangeId = 0;
   }
 
+  // The push otherwise only drains when this process writes, so rows written
+  // from outside it — a seed script, a hand edit in sqlite — sat in the
+  // changelog unseen until the next unrelated save. Locally, sweep for them.
+  if (!IS_PRODUCTION) {
+    setInterval(drainChangelog, 2000).unref();
+  }
+
   dbReady = true;
 }
 async function ensurePrimaryGroupAndUnit() {

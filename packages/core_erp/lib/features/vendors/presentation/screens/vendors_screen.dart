@@ -40,6 +40,12 @@ class VendorsScreen extends StatefulWidget {
     );
   }
 
+  /// The vendor editor for a host to embed rather than open as a dialog.
+  static Widget editorPanel({
+    required ValueChanged<VendorDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _VendorEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
   @override
   State<VendorsScreen> createState() => _VendorsScreenState();
 }
@@ -372,9 +378,15 @@ class _VendorRow extends StatelessWidget {
 }
 
 class _VendorEditorSheet extends StatefulWidget {
-  const _VendorEditorSheet({this.vendor});
+  const _VendorEditorSheet({this.vendor, this.onSaved, this.onCancel});
 
   final VendorDefinition? vendor;
+
+  /// Set when embedded: replaces popping with the saved vendor.
+  final ValueChanged<VendorDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_VendorEditorSheet> createState() => _VendorEditorSheetState();
@@ -468,6 +480,7 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
       key: _formKey,
       child: ErpFormScaffold(
         title: widget.vendor == null ? 'Create Vendor' : 'Edit Vendor',
+        onClose: widget.onCancel,
         subtitle:
             'Capture inbound supplier details once so reception challans and purchasing references stay consistent.',
         errorBanner: banner == null
@@ -613,7 +626,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
             AppButton(
               label: 'Cancel',
               variant: AppButtonVariant.secondary,
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed:
+                  widget.onCancel ?? () => Navigator.of(context).maybePop(),
             ),
             if (widget.vendor != null)
               AppButton(
@@ -741,7 +755,12 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
           widget.vendor == null ? 'Vendor created' : 'Vendor saved',
           kind: AppToastKind.success,
         );
-        Navigator.of(context).pop(saved);
+        final onSaved = widget.onSaved;
+        if (onSaved != null) {
+          onSaved(saved);
+        } else {
+          Navigator.of(context).pop(saved);
+        }
       }
     } finally {
       if (mounted) {

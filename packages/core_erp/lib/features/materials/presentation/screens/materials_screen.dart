@@ -37,6 +37,12 @@ class MaterialsScreen extends StatefulWidget {
     );
   }
 
+  /// The material editor for a host to embed rather than open as a dialog.
+  static Widget editorPanel({
+    required ValueChanged<MaterialDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _MaterialEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
   @override
   State<MaterialsScreen> createState() => _MaterialsScreenState();
 }
@@ -369,9 +375,15 @@ class _MaterialsBanner extends StatelessWidget {
 /// means, so a figure entered in the wrong unit is caught while it is being
 /// typed rather than after it has priced a job.
 class _MaterialEditorSheet extends StatefulWidget {
-  const _MaterialEditorSheet({this.material});
+  const _MaterialEditorSheet({this.material, this.onSaved, this.onCancel});
 
   final MaterialDefinition? material;
+
+  /// Set when embedded: replaces closing with the saved material.
+  final ValueChanged<MaterialDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_MaterialEditorSheet> createState() => _MaterialEditorSheetState();
@@ -458,8 +470,13 @@ class _MaterialEditorSheetState extends State<_MaterialEditorSheet> {
       ),
     );
     if (!mounted) return;
-    if (saved) {
-      Navigator.of(context).pop();
+    if (saved != null) {
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved(saved);
+      } else {
+        Navigator.of(context).pop();
+      }
       showAppToast(
         context,
         _isEditing ? 'Material saved' : 'Material added',
@@ -491,7 +508,7 @@ class _MaterialEditorSheetState extends State<_MaterialEditorSheet> {
     return ErpFormScaffold(
       title: _isEditing ? widget.material!.name : 'Add Material',
       subtitle: 'Density in grams per cubic centimetre',
-      onClose: () => Navigator.of(context).pop(),
+      onClose: widget.onCancel ?? () => Navigator.of(context).pop(),
       errorBanner: _error == null ? null : _MaterialsBanner(message: _error!),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,7 +602,7 @@ class _MaterialEditorSheetState extends State<_MaterialEditorSheet> {
           AppButton(
             label: 'Cancel',
             variant: AppButtonVariant.secondary,
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: widget.onCancel ?? () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 12),
           AppButton(

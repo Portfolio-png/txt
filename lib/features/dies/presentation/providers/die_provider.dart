@@ -8,7 +8,6 @@ class DiesProvider extends ChangeNotifier {
 
   final DieRepository _repository;
 
-
   List<Die> _dies = const [];
   bool _isLoading = false;
   bool _isSaving = false;
@@ -32,8 +31,8 @@ class DiesProvider extends ChangeNotifier {
           .map((id) => groupNames[id] ?? '')
           .join(' ');
       return d.toolCode.toLowerCase().contains(query) ||
-             d.name.toLowerCase().contains(query) ||
-             compatibleNames.toLowerCase().contains(query);
+          d.name.toLowerCase().contains(query) ||
+          compatibleNames.toLowerCase().contains(query);
     }).toList();
   }
 
@@ -42,7 +41,7 @@ class DiesProvider extends ChangeNotifier {
     if (query.isEmpty) return _dies;
     return _dies.where((d) {
       return d.toolCode.toLowerCase().contains(query) ||
-             d.name.toLowerCase().contains(query);
+          d.name.toLowerCase().contains(query);
     }).toList();
   }
 
@@ -123,7 +122,9 @@ class DiesProvider extends ChangeNotifier {
     }
   }
 
-  Future<DieAssetUploadIntent?> createAssetUploadIntent(DieAssetUploadIntentInput input) async {
+  Future<DieAssetUploadIntent?> createAssetUploadIntent(
+    DieAssetUploadIntentInput input,
+  ) async {
     _isAssetUploading = true;
     _errorMessage = null;
     notifyListeners();

@@ -48,6 +48,18 @@ class ClientsScreen extends StatefulWidget {
     );
   }
 
+  /// The client editor for a host to embed rather than open as a dialog.
+  static Widget editorPanel({
+    required ValueChanged<ClientDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _ClientEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
+  /// The sub-contractor editor for embedding; same contract as [editorPanel].
+  static Widget subContractorEditorPanel({
+    required ValueChanged<SubContractorDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _SubContractorEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
   @override
   State<ClientsScreen> createState() => _ClientsScreenState();
 }
@@ -467,10 +479,21 @@ class _ClientRow extends StatelessWidget {
 }
 
 class _ClientEditorSheet extends StatefulWidget {
-  const _ClientEditorSheet({this.client, this.initialName});
+  const _ClientEditorSheet({
+    this.client,
+    this.initialName,
+    this.onSaved,
+    this.onCancel,
+  });
 
   final ClientDefinition? client;
   final String? initialName;
+
+  /// Set when embedded: replaces popping with the saved client.
+  final ValueChanged<ClientDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_ClientEditorSheet> createState() => _ClientEditorSheetState();
@@ -548,6 +571,7 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
       key: _formKey,
       child: ErpFormScaffold(
         title: title,
+        onClose: widget.onCancel,
         subtitle:
             'Capture the billing identity your team will reuse across orders and transaction documents.',
         errorBanner: banner == null
@@ -666,7 +690,8 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
             AppButton(
               label: 'Cancel',
               variant: AppButtonVariant.secondary,
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed:
+                  widget.onCancel ?? () => Navigator.of(context).maybePop(),
             ),
 
             AppButton(
@@ -745,7 +770,12 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
           widget.client == null ? 'Client created' : 'Client saved',
           kind: AppToastKind.success,
         );
-        Navigator.of(context).pop(result);
+        final onSaved = widget.onSaved;
+        if (onSaved != null) {
+          onSaved(result);
+        } else {
+          Navigator.of(context).pop(result);
+        }
       }
     } finally {
       if (mounted) {
@@ -756,10 +786,21 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
 }
 
 class _SubContractorEditorSheet extends StatefulWidget {
-  const _SubContractorEditorSheet({this.subContractor, this.initialClientId});
+  const _SubContractorEditorSheet({
+    this.subContractor,
+    this.initialClientId,
+    this.onSaved,
+    this.onCancel,
+  });
 
   final SubContractorDefinition? subContractor;
   final int? initialClientId;
+
+  /// Set when embedded: replaces popping with the saved sub-contractor.
+  final ValueChanged<SubContractorDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_SubContractorEditorSheet> createState() =>
@@ -848,6 +889,7 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
       key: _formKey,
       child: ErpFormScaffold(
         title: title,
+        onClose: widget.onCancel,
         subtitle: 'Capture sub-contractor details for tracking assignments.',
         errorBanner: banner == null
             ? null
@@ -966,7 +1008,7 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
             AppButton(
               label: 'Cancel',
               variant: AppButtonVariant.secondary,
-              onPressed: () => Navigator.pop(context),
+              onPressed: widget.onCancel ?? () => Navigator.pop(context),
             ),
             AppButton(
               label: widget.subContractor == null
@@ -1015,7 +1057,12 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
           'Sub-contractor saved',
           kind: AppToastKind.success,
         );
-        Navigator.of(context).pop(result);
+        final onSaved = widget.onSaved;
+        if (onSaved != null) {
+          onSaved(result);
+        } else {
+          Navigator.of(context).pop(result);
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _localError = e.toString());

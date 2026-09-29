@@ -31,12 +31,20 @@ class StructuredGroupEditorDialog extends StatefulWidget {
     this.groupType = 'item',
     this.initialName = '',
     this.createMode = StructuredGroupEditorCreateMode.groupsOnly,
+    this.onSaved,
+    this.onCancel,
   });
 
   final GroupDefinition? group;
   final String groupType;
   final String initialName;
   final StructuredGroupEditorCreateMode createMode;
+
+  /// Set when embedded: replaces popping with the saved group.
+  final ValueChanged<GroupDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   static Future<GroupDefinition?> open(
     BuildContext context, {
@@ -374,7 +382,7 @@ class _StructuredGroupEditorDialogState
                       ),
                     ),
                     IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: _cancel,
                       icon: const Icon(Icons.close_rounded),
                     ),
                   ],
@@ -1042,7 +1050,7 @@ class _StructuredGroupEditorDialogState
                       const Spacer(),
                     ],
                     OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: _cancel,
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Color(0xFFDDDDDD)),
                         shape: RoundedRectangleBorder(
@@ -1156,7 +1164,7 @@ class _StructuredGroupEditorDialogState
       _isEditMode ? 'Combination group updated' : 'Combination group created',
       kind: AppToastKind.success,
     );
-    Navigator.of(context).pop(saved);
+    _finish(saved);
   }
 
   Future<void> _handleDelete(BuildContext context) async {
@@ -1234,7 +1242,7 @@ class _StructuredGroupEditorDialogState
           return;
         }
         showAppToast(context, 'Group created', kind: AppToastKind.success);
-        Navigator.of(context).pop(savedGroup);
+        _finish(savedGroup);
         return;
       }
 
@@ -1381,7 +1389,26 @@ class _StructuredGroupEditorDialogState
       _isEditMode ? 'Group saved' : 'Group created',
       kind: AppToastKind.success,
     );
-    Navigator.of(context).pop(savedGroup);
+    _finish(savedGroup);
+  }
+
+  void _cancel() {
+    final onCancel = widget.onCancel;
+    if (onCancel != null) {
+      onCancel();
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  /// Hands the saved group to the host when embedded, else closes with it.
+  void _finish(GroupDefinition? group) {
+    final onSaved = widget.onSaved;
+    if (onSaved == null) {
+      Navigator.of(context).pop(group);
+      return;
+    }
+    if (group != null) onSaved(group);
   }
 
   void _addPropertyChip() {

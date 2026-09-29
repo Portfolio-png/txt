@@ -102,12 +102,13 @@ class _MachinesScreenState extends State<MachinesScreen> {
           body: machines.isEmpty
               ? const AppEmptyState(
                   title: 'No machines found',
-                  message: 'Add your first machine to track equipment on the shop floor.',
+                  message:
+                      'Add your first machine to track equipment on the shop floor.',
                   icon: Icons.precision_manufacturing_outlined,
                 )
               : _isGridView
-                  ? _MachinesGrid(machines: machines, scale: _cardScale)
-                  : _MachinesTable(machines: machines),
+              ? _MachinesGrid(machines: machines, scale: _cardScale)
+              : _MachinesTable(machines: machines),
         );
       },
     );
@@ -141,14 +142,8 @@ class _MachinesToolbar extends StatelessWidget {
         }
       },
       options: const [
-        SoftSegmentOption<String>(
-          value: 'machines',
-          label: 'Machines Catalog',
-        ),
-        SoftSegmentOption<String>(
-          value: 'groups',
-          label: 'Machine Groups',
-        ),
+        SoftSegmentOption<String>(value: 'machines', label: 'Machines Catalog'),
+        SoftSegmentOption<String>(value: 'groups', label: 'Machine Groups'),
       ],
     );
 
@@ -170,7 +165,6 @@ class _MachinesToolbar extends StatelessWidget {
   }
 }
 
-
 class _CardScaleControl extends StatelessWidget {
   const _CardScaleControl({required this.scale, required this.onChanged});
 
@@ -191,8 +185,11 @@ class _CardScaleControl extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.photo_size_select_large_rounded,
-                size: 18, color: SoftErpTheme.textSecondary),
+            const Icon(
+              Icons.photo_size_select_large_rounded,
+              size: 18,
+              color: SoftErpTheme.textSecondary,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: SliderTheme(
@@ -243,7 +240,8 @@ class _MachinesGrid extends StatelessWidget {
             childAspectRatio: cardWidth / cardHeight,
           ),
           itemCount: machines.length,
-          itemBuilder: (context, index) => _MachineCard(machine: machines[index]),
+          itemBuilder: (context, index) =>
+              _MachineCard(machine: machines[index]),
         );
       },
     );
@@ -393,7 +391,11 @@ class _MachineCardState extends State<_MachineCard> {
                               if (machine.capabilities.isNotEmpty) ...[
                                 Row(
                                   children: [
-                                    const Icon(Icons.settings_suggest_outlined, size: 12, color: SoftErpTheme.textSecondary),
+                                    const Icon(
+                                      Icons.settings_suggest_outlined,
+                                      size: 12,
+                                      color: SoftErpTheme.textSecondary,
+                                    ),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
@@ -434,7 +436,9 @@ class _MachineCardState extends State<_MachineCard> {
                               Row(
                                 children: [
                                   Expanded(
-                                    child: _MachineBarcodeChip(machine: machine),
+                                    child: _MachineBarcodeChip(
+                                      machine: machine,
+                                    ),
                                   ),
                                   if (hasBarcodeRow)
                                     _HoverReveal(
@@ -479,8 +483,11 @@ class _MachineCardState extends State<_MachineCard> {
     return Container(
       color: const Color(0xFFF3F4F6),
       child: const Center(
-        child: Icon(Icons.precision_manufacturing_outlined,
-            color: Color(0xFF9CA3AF), size: 48),
+        child: Icon(
+          Icons.precision_manufacturing_outlined,
+          color: Color(0xFF9CA3AF),
+          size: 48,
+        ),
       ),
     );
   }
@@ -489,20 +496,20 @@ class _MachineCardState extends State<_MachineCard> {
 (Color, Color, Color) _statusColors(MachineStatus status) {
   return switch (status) {
     MachineStatus.active => (
-        const Color(0xFFECFDF5),
-        const Color(0xFF0F766E),
-        const Color(0xFFBFEAD8),
-      ),
+      const Color(0xFFECFDF5),
+      const Color(0xFF0F766E),
+      const Color(0xFFBFEAD8),
+    ),
     MachineStatus.maintenance => (
-        const Color(0xFFFFFBEB),
-        const Color(0xFFB45309),
-        const Color(0xFFFEF3C7),
-      ),
+      const Color(0xFFFFFBEB),
+      const Color(0xFFB45309),
+      const Color(0xFFFEF3C7),
+    ),
     MachineStatus.decommissioned => (
-        const Color(0xFFF3F4F6),
-        const Color(0xFF4B5563),
-        const Color(0xFFE5E7EB),
-      ),
+      const Color(0xFFF3F4F6),
+      const Color(0xFF4B5563),
+      const Color(0xFFE5E7EB),
+    ),
   };
 }
 
@@ -548,12 +555,18 @@ class _MachineBarcodeChip extends StatelessWidget {
             children: [
               Text(
                 machine.name,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 _code,
-                style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12),
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 12,
+                ),
               ),
               const SizedBox(height: 16),
               InlineBarcodePreview(value: _code),
@@ -610,7 +623,10 @@ class _MachineBarcodeChip extends StatelessWidget {
 /// (amber) = 1-2 queued, full (red) = 3+ queued (bottleneck). Tap opens the
 /// queue list. Loads its count lazily on first build.
 class _MachineQueueBattery extends StatefulWidget {
-  const _MachineQueueBattery({required this.machineId, required this.machineName});
+  const _MachineQueueBattery({
+    required this.machineId,
+    required this.machineName,
+  });
 
   final String machineId;
   final String machineName;
@@ -631,12 +647,20 @@ class _MachineQueueBatteryState extends State<_MachineQueueBattery> {
 
   Future<void> _load() async {
     try {
-      final q = await context
-          .read<MachinesProvider>()
-          .fetchMachineQueue(widget.machineId);
-      if (mounted) setState(() { _queue = q; _loading = false; });
+      final q = await context.read<MachinesProvider>().fetchMachineQueue(
+        widget.machineId,
+      );
+      if (mounted)
+        setState(() {
+          _queue = q;
+          _loading = false;
+        });
     } catch (_) {
-      if (mounted) setState(() { _queue = const []; _loading = false; });
+      if (mounted)
+        setState(() {
+          _queue = const [];
+          _loading = false;
+        });
     }
   }
 
@@ -671,26 +695,32 @@ class _MachineQueueBatteryState extends State<_MachineQueueBattery> {
     );
 
     if (_count == 0) {
-      return TextSpan(children: [
-        TextSpan(text: '${widget.machineName}\n', style: heading),
-        const TextSpan(text: 'Idle — nothing queued.', style: body),
-      ]);
+      return TextSpan(
+        children: [
+          TextSpan(text: '${widget.machineName}\n', style: heading),
+          const TextSpan(text: 'Idle — nothing queued.', style: body),
+        ],
+      );
     }
 
     final queue = _queue ?? const <MachineQueueItem>[];
     final shown = queue.take(4).toList(growable: false);
     final overflow = queue.length - shown.length;
-    return TextSpan(children: [
-      TextSpan(text: '${widget.machineName}\n', style: heading),
-      TextSpan(
-        text: '$_count run${_count == 1 ? '' : 's'} queued'
-            '${_count >= 3 ? ' · bottleneck' : ''}\n',
-        style: body.copyWith(fontWeight: FontWeight.w700),
-      ),
-      for (final run in shown) TextSpan(text: '• ${_runLine(run)}\n', style: body),
-      if (overflow > 0) TextSpan(text: '+$overflow more\n', style: muted),
-      const TextSpan(text: 'Tap to inspect pending batches.', style: muted),
-    ]);
+    return TextSpan(
+      children: [
+        TextSpan(text: '${widget.machineName}\n', style: heading),
+        TextSpan(
+          text:
+              '$_count run${_count == 1 ? '' : 's'} queued'
+              '${_count >= 3 ? ' · bottleneck' : ''}\n',
+          style: body.copyWith(fontWeight: FontWeight.w700),
+        ),
+        for (final run in shown)
+          TextSpan(text: '• ${_runLine(run)}\n', style: body),
+        if (overflow > 0) TextSpan(text: '+$overflow more\n', style: muted),
+        const TextSpan(text: 'Tap to inspect pending batches.', style: muted),
+      ],
+    );
   }
 
   String _runLine(MachineQueueItem run) {
@@ -744,9 +774,14 @@ class _MachineQueueBatteryState extends State<_MachineQueueBattery> {
           children: [
             Icon(icon, size: 20, color: color),
             const SizedBox(width: 2),
-            Text('$_count',
-                style: TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 12, color: color)),
+            Text(
+              '$_count',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+                color: color,
+              ),
+            ),
           ],
         ),
       ),
@@ -772,20 +807,29 @@ class _MachineQueueDialog extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$machineName · Queue',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w900, fontSize: 16)),
+              Text(
+                '$machineName · Queue',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
               const SizedBox(height: 2),
               Text(
-                  '${queue.length} pending run${queue.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                      color: SoftErpTheme.textSecondary, fontSize: 12)),
+                '${queue.length} pending run${queue.length == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 16),
               if (queue.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text('No pending runs.',
-                      style: TextStyle(color: SoftErpTheme.textSecondary)),
+                  child: Text(
+                    'No pending runs.',
+                    style: TextStyle(color: SoftErpTheme.textSecondary),
+                  ),
                 )
               else
                 Flexible(
@@ -822,10 +866,13 @@ class _MachineQueueDialog extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(q.runName,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: SoftErpTheme.textPrimary)),
+          Text(
+            q.runName,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 14,
@@ -833,9 +880,15 @@ class _MachineQueueDialog extends StatelessWidget {
             children: [
               if (q.orderNo.isNotEmpty) _meta('Order', q.orderNo),
               if (q.clientName.isNotEmpty) _meta('Client', q.clientName),
-              _meta('Created by', (q.createdBy ?? '').isEmpty ? '—' : q.createdBy!),
+              _meta(
+                'Created by',
+                (q.createdBy ?? '').isEmpty ? '—' : q.createdBy!,
+              ),
               if (q.weightKg > 0)
-                _meta('Weight', '${q.weightKg.toStringAsFixed(q.weightKg == q.weightKg.roundToDouble() ? 0 : 2)} kg'),
+                _meta(
+                  'Weight',
+                  '${q.weightKg.toStringAsFixed(q.weightKg == q.weightKg.roundToDouble() ? 0 : 2)} kg',
+                ),
             ],
           ),
         ],
@@ -849,11 +902,16 @@ class _MachineQueueDialog extends StatelessWidget {
         style: const TextStyle(fontSize: 12, color: SoftErpTheme.textPrimary),
         children: [
           TextSpan(
-              text: '$k: ',
-              style: const TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontWeight: FontWeight.w500)),
-          TextSpan(text: v, style: const TextStyle(fontWeight: FontWeight.w700)),
+            text: '$k: ',
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: v,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
         ],
       ),
     );
@@ -892,17 +950,19 @@ class _CardMoreButton extends StatelessWidget {
         const PopupMenuItem(
           value: _CardAction.duplicate,
           child: _MenuEntry(
-              icon: Icons.copy_outlined,
-              label: 'Duplicate',
-              hint: 'Ctrl+D'),
+            icon: Icons.copy_outlined,
+            label: 'Duplicate',
+            hint: 'Ctrl+D',
+          ),
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _CardAction.delete,
           child: _MenuEntry(
-              icon: Icons.delete_outline,
-              label: 'Delete',
-              destructive: true),
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            destructive: true,
+          ),
         ),
       ],
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -922,8 +982,11 @@ class _CardMoreButton extends StatelessWidget {
             ),
           ],
         ),
-        child: const Icon(Icons.more_horiz_rounded,
-            size: 16, color: SoftErpTheme.textPrimary),
+        child: const Icon(
+          Icons.more_horiz_rounded,
+          size: 16,
+          color: SoftErpTheme.textPrimary,
+        ),
       ),
     );
   }
@@ -946,22 +1009,32 @@ class _MenuEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive ? const Color(0xFFDC2626) : SoftErpTheme.textPrimary;
+    final color = destructive
+        ? const Color(0xFFDC2626)
+        : SoftErpTheme.textPrimary;
     return Row(
       children: [
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ),
         if (hint != null)
-          Text(hint!,
-              style: const TextStyle(
-                  fontSize: 11,
-                  color: SoftErpTheme.textSecondary,
-                  fontWeight: FontWeight.w500)),
+          Text(
+            hint!,
+            style: const TextStyle(
+              fontSize: 11,
+              color: SoftErpTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
       ],
     );
   }
@@ -1024,7 +1097,10 @@ class _MachineRow extends StatelessWidget {
                     ),
                   ),
                 )
-              : Container(alignment: Alignment.centerLeft, child: _buildThumb()),
+              : Container(
+                  alignment: Alignment.centerLeft,
+                  child: _buildThumb(),
+                ),
         ),
         Expanded(
           flex: 3,
@@ -1035,8 +1111,11 @@ class _MachineRow extends StatelessWidget {
               SoftInlineText(machine.name, weight: FontWeight.w700),
               if (machine.makeModel.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                SoftInlineText(machine.makeModel,
-                    color: const Color(0xFF6B7280), weight: FontWeight.w500),
+                SoftInlineText(
+                  machine.makeModel,
+                  color: const Color(0xFF6B7280),
+                  weight: FontWeight.w500,
+                ),
               ],
             ],
           ),
@@ -1047,20 +1126,30 @@ class _MachineRow extends StatelessWidget {
           child: machine.capabilities.isEmpty
               ? const SoftInlineText('—')
               : Wrap(
-                  children: machine.capabilities.map((c) => Container(
-                    margin: const EdgeInsets.only(bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '${c.processType}: ${c.inputMaterialName}→${c.outputMaterialName}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  )).toList(),
+                  children: machine.capabilities
+                      .map(
+                        (c) => Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${c.processType}: ${c.inputMaterialName}→${c.outputMaterialName}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF475569),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
                 ),
         ),
         Expanded(
@@ -1104,8 +1193,8 @@ class _MachineRow extends StatelessWidget {
               ),
               SoftActionLink(
                 label: 'Edit',
-                onTap: () => MachinesScreen.openMachineEditor(context,
-                    machine: machine),
+                onTap: () =>
+                    MachinesScreen.openMachineEditor(context, machine: machine),
               ),
               SoftActionLink(
                 label: 'Delete',
@@ -1127,8 +1216,11 @@ class _MachineRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
-      child: const Icon(Icons.precision_manufacturing_outlined,
-          color: Color(0xFF9CA3AF), size: 24),
+      child: const Icon(
+        Icons.precision_manufacturing_outlined,
+        color: Color(0xFF9CA3AF),
+        size: 24,
+      ),
     );
   }
 }

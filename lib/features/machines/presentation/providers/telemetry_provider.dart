@@ -30,18 +30,20 @@ class TelemetryProvider extends ChangeNotifier {
   void _simulateTick() {
     // If we have machines to simulate, randomly fluctuate their OEE slightly
     bool changed = false;
-    
+
     // We expect external code to register machines by calling registerMachine(machineId)
     // or we can just randomly jitter existing telemetries.
     final updated = <String, MachineTelemetry>{};
     for (final entry in _telemetries.entries) {
       final current = entry.value;
-      
+
       // 5% chance to change state
       TelemetryState nextState = current.state;
       if (_random.nextDouble() < 0.05) {
         if (current.state == TelemetryState.running) {
-          nextState = _random.nextBool() ? TelemetryState.idle : TelemetryState.faulted;
+          nextState = _random.nextBool()
+              ? TelemetryState.idle
+              : TelemetryState.faulted;
         } else if (current.state == TelemetryState.faulted) {
           nextState = TelemetryState.setup;
         } else {
@@ -57,7 +59,8 @@ class TelemetryProvider extends ChangeNotifier {
         perf = (perf + (_random.nextDouble() * 2 - 0.5)).clamp(70.0, 100.0);
         qual = (qual + (_random.nextDouble() * 0.5 - 0.1)).clamp(90.0, 100.0);
         avail = (avail + 0.1).clamp(0.0, 100.0);
-      } else if (nextState == TelemetryState.faulted || nextState == TelemetryState.idle) {
+      } else if (nextState == TelemetryState.faulted ||
+          nextState == TelemetryState.idle) {
         avail = (avail - 1.0).clamp(0.0, 100.0);
         perf = (perf - 2.0).clamp(0.0, 100.0);
       }
@@ -83,7 +86,7 @@ class TelemetryProvider extends ChangeNotifier {
 
   void registerMachine(String machineId, {String? activeJob}) {
     if (_telemetries.containsKey(machineId)) return;
-    
+
     // Initial random values
     final avail = 80.0 + _random.nextDouble() * 15;
     final perf = 75.0 + _random.nextDouble() * 20;
@@ -92,7 +95,9 @@ class TelemetryProvider extends ChangeNotifier {
 
     _telemetries[machineId] = MachineTelemetry(
       machineId: machineId,
-      state: _random.nextDouble() > 0.2 ? TelemetryState.running : TelemetryState.idle,
+      state: _random.nextDouble() > 0.2
+          ? TelemetryState.running
+          : TelemetryState.idle,
       availability: avail,
       performance: perf,
       quality: qual,

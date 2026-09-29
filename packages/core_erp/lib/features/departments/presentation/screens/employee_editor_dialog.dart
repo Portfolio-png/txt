@@ -51,6 +51,13 @@ class EmployeeEditorDialog extends StatelessWidget {
     );
   }
 
+  /// The employee editor for a host to embed rather than open as a dialog.
+  /// A person needs a department, so a picker sits above the form.
+  static Widget editorPanel({
+    required ValueChanged<EmployeeDefinition> onSaved,
+    required VoidCallback onCancel,
+  }) => _EmbeddedEmployeeEditor(onSaved: onSaved, onCancel: onCancel);
+
   @override
   Widget build(BuildContext context) {
     return _EmployeeEditorSheet(
@@ -61,16 +68,100 @@ class EmployeeEditorDialog extends StatelessWidget {
   }
 }
 
+class _EmbeddedEmployeeEditor extends StatefulWidget {
+  const _EmbeddedEmployeeEditor({required this.onSaved, required this.onCancel});
+
+  final ValueChanged<EmployeeDefinition> onSaved;
+  final VoidCallback onCancel;
+
+  @override
+  State<_EmbeddedEmployeeEditor> createState() =>
+      _EmbeddedEmployeeEditorState();
+}
+
+class _EmbeddedEmployeeEditorState extends State<_EmbeddedEmployeeEditor> {
+  int? _departmentId;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<DepartmentsProvider>();
+    if (provider.departments.isEmpty) {
+      Future<void>.microtask(provider.load);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final departments = context.watch<DepartmentsProvider>().departments;
+    if (departments.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Add a department first — every person belongs to one.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: SoftErpTheme.textSecondary),
+          ),
+        ),
+      );
+    }
+    final departmentId =
+        departments.any((department) => department.id == _departmentId)
+        ? _departmentId!
+        : departments.first.id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+          child: DropdownButtonFormField<int>(
+            initialValue: departmentId,
+            decoration: const InputDecoration(labelText: 'Department'),
+            style: const TextStyle(
+              fontSize: 15,
+              color: SoftErpTheme.textPrimary,
+            ),
+            items: [
+              for (final department in departments)
+                DropdownMenuItem(
+                  value: department.id,
+                  child: Text(department.name),
+                ),
+            ],
+            onChanged: (value) => setState(() => _departmentId = value),
+          ),
+        ),
+        Expanded(
+          child: _EmployeeEditorSheet(
+            departmentId: departmentId,
+            onSaved: widget.onSaved,
+            onCancel: widget.onCancel,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _EmployeeEditorSheet extends StatefulWidget {
   const _EmployeeEditorSheet({
     required this.departmentId,
     this.employee,
     this.openAccount = false,
+    this.onSaved,
+    this.onCancel,
   });
 
   final int departmentId;
   final EmployeeDefinition? employee;
   final bool openAccount;
+
+  /// Set when embedded: replaces closing with the saved person.
+  final ValueChanged<EmployeeDefinition>? onSaved;
+
+  /// Set when embedded: replaces closing.
+  final VoidCallback? onCancel;
 
   @override
   State<_EmployeeEditorSheet> createState() => _EmployeeEditorSheetState();
@@ -250,9 +341,24 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
     }
 
     if (success && close && mounted) {
-      Navigator.of(context).pop();
+      _close();
     }
     return success;
+  }
+
+  /// Closes the editor, or when embedded hands the saved person to the host.
+  void _close() {
+    final onSaved = widget.onSaved;
+    if (onSaved == null) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    final saved = context.read<DepartmentsProvider>().lastUpsertedEmployee;
+    if (saved != null) {
+      onSaved(saved);
+    } else {
+      widget.onCancel?.call();
+    }
   }
 
   /// The profile avatar's tap. On the details pane, persist first (so the
@@ -351,6 +457,7 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
     final name = _nameController.text.trim();
 
     return ErpFormScaffold(
+      onClose: widget.onCancel,
       leading: _buildAvatarToggle(),
       title: _pane == 1
           ? 'Account & Access'
@@ -650,10 +757,7 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                   variant: AppButtonVariant.secondary,
                   onPressed: () => setState(() => _pane = 0),
                 ),
-                AppButton(
-                  label: 'Done',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
+                AppButton(label: 'Done', onPressed: _close),
               ],
             )
           : Row(
@@ -662,7 +766,9 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                 AppButton(
                   label: 'Cancel',
                   variant: AppButtonVariant.secondary,
-                  onPressed: () => Navigator.of(context).maybePop(),
+                  onPressed:
+                      widget.onCancel ??
+                      () => Navigator.of(context).maybePop(),
                 ),
                 const SizedBox(width: 12),
                 AppButton(

@@ -39,6 +39,8 @@ import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
 import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
 import '../../features/machines/presentation/screens/machine_list_screen.dart';
 import '../../features/dies/presentation/screens/die_list_screen.dart';
+import '../../features/dies/presentation/screens/die_form_screen.dart';
+import '../../features/machines/presentation/screens/machine_form_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/machines/presentation/screens/machine_telemetry_screen.dart';
 import '../../features/production/widgets/start_production_dialog.dart';
@@ -627,6 +629,24 @@ void _registerAppFlowHooks() {
       await MachinesScreen.openMachineEditor(context) != null;
   AppFlowHooks.createDie ??= (context) async =>
       await DiesScreen.openDieEditor(context) != null;
+  AppFlowHooks.dieEditor ??= (context, {required onSaved, required onCancel}) =>
+      DieEditorSheet(
+        onSaved: (die) => onSaved(
+          CreatedRecord(id: die.id, title: die.name, subtitle: die.toolCode),
+        ),
+        onCancel: onCancel,
+      );
+  AppFlowHooks.machineEditor ??=
+      (context, {required onSaved, required onCancel}) => MachineEditorSheet(
+        onSaved: (machine) => onSaved(
+          CreatedRecord(
+            id: machine.id,
+            title: machine.name,
+            subtitle: machine.assetId,
+          ),
+        ),
+        onCancel: onCancel,
+      );
 }
 
 Future<String?> _handleCreatePipeline(BuildContext context) async {
