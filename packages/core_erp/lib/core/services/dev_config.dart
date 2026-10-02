@@ -63,4 +63,10 @@ const Map<String, dynamic> devConfig = {
     // browse-and-review flow.
     'flowV2': true,
   },
+  'masters': {
+    // Link columns: the creation window as Miller columns over the link graph
+    // (item → its dies → that die's machines, and the same read backwards).
+    // Set false to fall back to the three-tile bento, which stays live.
+    'linkColumns': true,
+  },
 };

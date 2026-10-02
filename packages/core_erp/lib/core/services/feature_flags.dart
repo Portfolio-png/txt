@@ -179,6 +179,21 @@ class FeatureKeys {
         'Show the "In-use" list on the Challan tab and settle internal-use challans (scrap/leftover/lost/rejection/finished goods) back into stock',
   )
   static const String challanReconciliation = 'challans.reconciliation';
+
+  /// Selects the shape of the creation window (Add Item / component creation).
+  /// ON lays it out as Miller columns over the link graph: a master's records
+  /// on the left, and each pick opening a column of what that record is linked
+  /// to — an item's dies and machines, then that die's own items and machines,
+  /// with a + per column that attaches an existing record or makes a new one.
+  /// OFF keeps the three-tile bento, which stays live in the same file so this
+  /// flag can switch back to a working v1.
+  @FeatureFlag(
+    category: 'Catalog & Inventory',
+    displayName: 'Link Columns',
+    desc:
+        'Lay the creation window out as Miller columns over the item/die/machine link graph',
+  )
+  static const String mastersLinkColumns = 'masters.linkColumns';
 }
 
 class FeatureFlags {

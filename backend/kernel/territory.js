@@ -38,6 +38,10 @@ const KERNEL_TABLES = new Set([
   'sandbox_activated_machines', 'sandbox_client_configs', 'sandbox_client_pins',
   'sandbox_client_users', 'sandbox_replays', 'sandbox_sync_states',
   'search_history', 'search_clicks', 'entity_activity_log',
+  // The generic link graph. Polymorphic and cross-module by construction, so
+  // no business module can own it — the same reasoning that puts
+  // uploaded_assets here.
+  'entity_links',
 ]);
 
 function collectExpressRoutes(app) {

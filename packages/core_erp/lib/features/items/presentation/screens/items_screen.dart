@@ -137,6 +137,7 @@ class ItemsScreen extends StatefulWidget {
   /// window drops its header (title, step chips, close) and footer hint.
   static Widget workflowPanel({
     Key? key,
+    ItemDefinition? item,
     int? initialGroupId,
     Future<String?> Function()? onCreatePipeline,
     required ValueChanged<ItemDefinition?> onClosed,
@@ -145,6 +146,7 @@ class ItemsScreen extends StatefulWidget {
     return SubmitFormShortcuts(
       child: _ItemWorkflowWindow(
         key: key,
+        item: item,
         initialGroupId: initialGroupId,
         onCreatePipeline: onCreatePipeline,
         onClosed: onClosed,
@@ -3043,6 +3045,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   /// Whether this form has edits that have not been written yet.
   bool get isDirty => _isDirty;
 
+  /// The live unsaved state: [isDirty] plus the identity edits that bypass
+  /// [_handleChange] and would otherwise only surface at the next publish.
+  /// A host's close guard must read this rather than the published summary,
+  /// which lags by a frame and so still says "dirty" right after a save.
+  bool get hasUnsavedChanges =>
+      _isDirty ||
+      (_savedSignature != null && _identitySignature() != _savedSignature);
+
   /// Adopts a rename applied to this item from outside the form — the host
   /// renaming the whole spawned set, for instance. The controllers are seeded
   /// once in initState and there is no didUpdateWidget, so without this the
@@ -3094,6 +3104,32 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   Future<ItemDefinition?> submitFromHost() => _submit(context, finish: false);
 
   List<_FormPage> _publishedPages = const [];
+
+  /// One key per page, so a refused save can say which page holds the field
+  /// that failed rather than leaving a dead button on the page in view.
+  final Map<String, GlobalKey> _pageKeys = <String, GlobalKey>{};
+
+  /// The first page holding a field that failed validation, if any.
+  String? invalidPageId() {
+    for (final page in _publishedPages) {
+      final context = _pageKeys[page.id]?.currentContext;
+      if (context == null) continue;
+      var found = false;
+      void visit(Element element) {
+        if (found) return;
+        final state = element is StatefulElement ? element.state : null;
+        if (state is FormFieldState && state.hasError) {
+          found = true;
+          return;
+        }
+        element.visitChildren(visit);
+      }
+
+      context.visitChildElements(visit);
+      if (found) return page.id;
+    }
+    return null;
+  }
 
   /// The variation tree's page. It carries the naming format too, and the
   /// workflow's spawn step shares its tab — properties and variations are one
@@ -4692,15 +4728,25 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 if (_item != null) pages.add((id: 'track', label: 'Track'));
                 _publishPages(pages);
                 final active = _activePageId(pages);
+                final byPage = <String, List<Widget>>{};
+                for (final entry in entries) {
+                  (byPage[entry.id] ??= <Widget>[]).add(entry.child);
+                }
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final entry in entries)
+                    for (final page in byPage.keys)
                       Offstage(
-                        offstage: entry.id != active,
-                        child: TickerMode(
-                          enabled: entry.id == active,
-                          child: entry.child,
+                        offstage: page != active,
+                        child: KeyedSubtree(
+                          key: _pageKeys.putIfAbsent(page, GlobalKey.new),
+                          child: TickerMode(
+                            enabled: page == active,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: _withSectionGaps(byPage[page]!),
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -11952,11 +11998,12 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       ? _detailsPage
       : _detailsPages.firstOrNull?.id;
 
-  /// A failed save points back at the identity fields, which is where the
-  /// editor paints what is missing.
+  /// A failed save opens the page holding the field that stopped it, so the
+  /// reason is on screen rather than hidden behind another tab.
   void _showDetailsFirstPage() {
     if (_detailsPages.isEmpty) return;
-    setState(() => _detailsPage = _detailsPages.first.id);
+    final invalid = _baseEditorKey.currentState?.invalidPageId();
+    setState(() => _detailsPage = invalid ?? _detailsPages.first.id);
   }
 
   /// The base item once saved. Steps 2+ are unreachable until this exists,
@@ -12602,7 +12649,13 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
   }
 
   Future<void> _close() async {
-    final dirty = _summary?.isDirty ?? false;
+    // Straight from the editor: the published summary lags a frame, so a save
+    // followed immediately by a close still read as dirty and raised "Leave
+    // without saving?" over a save that had just succeeded.
+    final dirty =
+        _baseEditorKey.currentState?.hasUnsavedChanges ??
+        _summary?.isDirty ??
+        false;
     if (dirty) {
       final leave = await showConfirmDialog(
         context,

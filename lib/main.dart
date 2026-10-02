@@ -53,6 +53,7 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/core/services/generic_asset_service.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/items/data/services/item_link_options_service.dart';
+import 'package:core_erp/features/links/data/entity_link_service.dart';
 import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
@@ -604,6 +605,15 @@ class MyApp extends StatelessWidget {
         ),
         Provider<ItemLinkOptionsService>(
           create: (context) => ItemLinkOptionsService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // The link graph between masters (/api/links): what the creation
+        // window's columns read, and what records a link from one of them.
+        Provider<EntityLinkService>(
+          create: (context) => EntityLinkService(
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: _apiBaseUrl,
             useMockResponses: _effectiveDemoMode,

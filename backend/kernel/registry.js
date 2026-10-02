@@ -180,11 +180,15 @@ const MODULES = {
 // Path segments the central CRUD gate deliberately skips — auth, account
 // management, Track, generic asset/upload, and infrastructure paths keep their
 // own guards (or the legacy write gate) instead of module CRUD enforcement.
+//
+// `links` joins them for the same reason `assets` is here: a link spans two
+// masters, so there is no single (module, op) to map the path to. Its guard
+// asks about both sides instead — see modules/links/routes.js.
 const MODULE_GATE_EXCLUDED_SEGMENTS = new Set([
   '', 'auth', 'me', 'users', 'admins', 'permissions', 'permission-templates',
   'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
   'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
-  'record-options',
+  'record-options', 'links',
 ]);
 
 // Capability keys — signed off individually, NOT part of the module CRUD grid.

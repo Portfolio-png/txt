@@ -1958,6 +1958,9 @@ function moduleOpForRequest(req) {
     'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
     'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
     'record-options',
+    // A link spans two masters, so there is no one module to gate it as. Its
+    // own guard asks about both sides — modules/links/routes.js.
+    'links',
   ]);
   if (EXCLUDED.has(seg)) return null;
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
@@ -2104,6 +2107,13 @@ function requireApiWritePermission(req, res, next) {
   // guards (requireAssetEntityPermission / requireGenericUploadPermission);
   // admin-gating them here would block first-time uploads by regular users.
   if (req.path.startsWith('/assets/') || req.path.startsWith('/upload/')) {
+    return next();
+  }
+  // Same for the link graph: modules/links/routes.js gates every write on
+  // `update` for BOTH masters the link spans, which is a stricter question
+  // than this gate can ask. Falling through to the admin check here would
+  // mean nobody but an admin could attach a die to an item.
+  if (req.path === '/links' || req.path.startsWith('/links/')) {
     return next();
   }
 
@@ -2432,6 +2442,12 @@ async function trashAndDelete(tableName, recordId, req) {
   await logChange(tableName, recordId, 'DELETE');
 }
 
+// Set when the links module mounts (far below). A deleted record's links in
+// the generic graph have no foreign key to cascade through — nothing can
+// declare one against a polymorphic pair — so the cascades call this by hand.
+// null before the mount, so a seeder deleting during boot does not throw.
+let purgeEntityLinks = null;
+
 async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_variation_nodes WHERE item_id = ?', [id]);
   await run('DELETE FROM item_unit_conversions WHERE item_id = ?', [id]);
@@ -2453,6 +2469,7 @@ async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_dies WHERE item_id = ?', [id]);
   await run('DELETE FROM item_property_schema WHERE item_id = ?', [id]);
   await run('DELETE FROM item_bom_lines WHERE item_id = ?', [id]);
+  if (purgeEntityLinks) await purgeEntityLinks('item', id);
   await trashAndDelete('items', id, req);
 }
 
@@ -5952,6 +5969,9 @@ async function initDb() {
     "update": {
       "channel": "stable",
       "latest_version": "1.0.0"
+    },
+    "masters": {
+      "linkColumns": true
     },
     "units": {
       "families": true
@@ -22412,6 +22432,7 @@ app.delete('/api/machines/:id', requirePermission('config.write'), async (req, r
     }
     const before = await get('SELECT * FROM machines WHERE id = ?', [id]);
     await run('DELETE FROM machines WHERE id = ?', [id]);
+    if (purgeEntityLinks) await purgeEntityLinks('machine', id);
     trackDelete('machines', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
@@ -22546,6 +22567,7 @@ app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) 
     }
     const before = await get('SELECT * FROM dies WHERE id = ?', [id]);
     await run('DELETE FROM dies WHERE id = ?', [id]);
+    if (purgeEntityLinks) await purgeEntityLinks('die', id);
     trackDelete('dies', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
@@ -29094,6 +29116,9 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
         "channel": "stable",
         "latest_version": "1.0.0"
       },
+      "masters": {
+        "linkColumns": true
+      },
       "units": {
         "families": true
       }
@@ -31589,6 +31614,22 @@ registerItemsModuleRoutes({
   itemsPorts,
   getIo: () => io,
 });
+
+// The link graph between masters: item <-> die <-> machine and any other pair
+// of declared masters, one row per link, readable from either end. Mounted
+// after the item routes because it answers for them too (an item's dies still
+// live in item_dies; see modules/links/catalog.js).
+const registerLinksModuleRoutes = require('./modules/links/routes');
+const linksModule = registerLinksModuleRoutes({
+  app,
+  get,
+  all,
+  run,
+  logChange,
+  hasPermission,
+  hasRecordPermission,
+});
+purgeEntityLinks = linksModule.purgeLinksFor;
 
 // Material types carry the one number that turns a sheet's volume into its
 // weight. Named apart from `materials`, which is barcoded physical stock.

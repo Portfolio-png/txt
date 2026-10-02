@@ -57,6 +57,7 @@ class ConfigService {
     "catalog": {"purchaseItems": true},
     "purchase": {"flowV2": true},
     "update": {"channel": "stable", "latest_version": "1.0.0"},
+    "masters": {"linkColumns": true},
     "units": {"families": true},
   };
 
