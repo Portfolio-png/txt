@@ -1,3 +1,5 @@
+import 'package:core_erp/features/variations/data/variation_tree_service.dart';
+import 'package:core_erp/features/variations/presentation/widgets/variation_tree_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:crypto/crypto.dart';
@@ -8,6 +10,9 @@ import 'package:mime/mime.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/erp_form_dialog.dart';
+import 'package:core_erp/core/utils/stamp_format.dart';
+import 'package:core_erp/core/widgets/length_unit_field.dart';
+import 'package:core_erp/features/dies/domain/die_code.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import '../../domain/die.dart';
 import '../providers/die_provider.dart';
@@ -60,12 +65,31 @@ class DieEditorSheet extends StatefulWidget {
 }
 
 class _DieEditorSheetState extends State<DieEditorSheet> {
+  /// The die's variation tree. Held here rather than saved as it is typed: a
+  /// die being created has no id to hang a tree off until its own save returns
+  /// one, so the tree goes up right after the die does.
+  VariationTreeController? _variations;
+
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _toolCodeController;
   late final TextEditingController _nameController;
   late final TextEditingController _operationalNotesController;
   late final TextEditingController _storageLocationController;
+
+  // The die sheet (migrations/048). The pair below REPLACES the free-text
+  // location for anything written from now on; the old field stays visible so
+  // a die that predates them still says where it is.
+  late final TextEditingController _storeAreaController;
+  late final TextEditingController _rackNoController;
+  late final TextEditingController _madeByController;
+  late final TextEditingController _noOfSetController;
+  late final TextEditingController _linerSizeController;
+  String _linerSizeUnit = 'mm';
+  String? _linerSizeError;
+  DieType? _dieType;
+  DateTime? _poAt;
+  DateTime? _dateInAt;
   late final TextEditingController _numberOfCavitiesController;
   late final TextEditingController _maxStrokesController;
   late final TextEditingController _setupMinutesController;
@@ -88,6 +112,19 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   @override
   void initState() {
     super.initState();
+    // Optional: a host that has not registered the service simply gets no
+    // Variations section, the way the rest of this form treats its hooks.
+    try {
+      final service = context.read<VariationTreeService>();
+      final controller = VariationTreeController(service: service, type: 'die');
+      _variations = controller;
+      final existing = widget.die?.id ?? '';
+      if (existing.isNotEmpty) {
+        Future<void>.microtask(() => controller.load(existing));
+      }
+    } catch (_) {
+      _variations = null;
+    }
     _toolCodeController = TextEditingController(
       text: widget.die?.toolCode ?? '',
     );
@@ -98,6 +135,21 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     _storageLocationController = TextEditingController(
       text: widget.die?.storageLocation ?? '',
     );
+    _storeAreaController = TextEditingController(
+      text: widget.die?.storeArea ?? '',
+    );
+    _rackNoController = TextEditingController(text: widget.die?.rackNo ?? '');
+    _madeByController = TextEditingController(text: widget.die?.madeBy ?? '');
+    _noOfSetController = TextEditingController(
+      text: widget.die?.noOfSet?.toString() ?? '',
+    );
+    _linerSizeUnit = widget.die?.linerSizeUnit ?? 'mm';
+    _linerSizeController = TextEditingController(
+      text: formatLengthFromNanometres(widget.die?.linerSizeNm, _linerSizeUnit),
+    );
+    _dieType = DieType.fromSlug(widget.die?.dieType);
+    _poAt = widget.die?.poAt;
+    _dateInAt = widget.die?.dateInAt;
     _numberOfCavitiesController = TextEditingController(
       text: widget.die?.numberOfCavities?.toString() ?? '',
     );
@@ -139,10 +191,16 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
 
   @override
   void dispose() {
+    _variations?.dispose();
     _toolCodeController.dispose();
     _nameController.dispose();
     _operationalNotesController.dispose();
     _storageLocationController.dispose();
+    _storeAreaController.dispose();
+    _rackNoController.dispose();
+    _madeByController.dispose();
+    _noOfSetController.dispose();
+    _linerSizeController.dispose();
     _numberOfCavitiesController.dispose();
     _maxStrokesController.dispose();
     _setupMinutesController.dispose();
@@ -381,13 +439,17 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        _dieSheetFields(),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
                               child: _DieTextField(
                                 controller: _storageLocationController,
-                                label: 'Storage Rack / Location',
-                                helper: 'E.g. Rack A, Shelf 1',
+                                label: 'Storage Rack / Location (old)',
+                                helper:
+                                    'Only for dies made before Store Area and '
+                                    'Rack No. existed',
                                 required: false,
                               ),
                             ),
@@ -1016,6 +1078,25 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                       ],
                     ),
                   ),
+                  if (_variations case final variations?) ...[
+                    const SizedBox(height: 16),
+                    ErpDialogSectionCard(
+                      title: 'Variations',
+                      subtitle:
+                          'What this die varies by, and what each one can be. '
+                          'Items derived from it are derived under the version '
+                          'shown.',
+                      child: VariationTreeEditor(
+                        controller: variations,
+                        // Only offered once the die exists: a version is
+                        // declared against a record, and a die being created
+                        // has nothing yet to declare against.
+                        onDeclareVersion: (widget.die?.id ?? '').isEmpty
+                            ? null
+                            : () => _declareVariationVersion(variations),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   ErpDialogSectionCard(
                     title: 'Operational Notes',
@@ -1052,6 +1133,205 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _declareVariationVersion(
+    VariationTreeController variations,
+  ) async {
+    final dieId = widget.die?.id ?? '';
+    if (dieId.isEmpty) return;
+    await showDeclareVersionDialog(
+      context,
+      controller: variations,
+      entityId: dieId,
+      nextVersion: variations.version + 1,
+    );
+  }
+
+
+  /// The die sheet the floor keeps: who made it, what kind, how big, how many,
+  /// and where it sits. Added with migration 048 — a die made from the Quick
+  /// entry wizard fills these in, and this is where they get corrected.
+  Widget _dieSheetFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const SizedBox(
+              width: 110,
+              child: Text(
+                'Type',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final type in DieType.values)
+                    ChoiceChip(
+                      label: Text(
+                        type.label,
+                        style: const TextStyle(fontSize: 13.5),
+                      ),
+                      selected: _dieType == type,
+                      onSelected: (selected) =>
+                          setState(() => _dieType = selected ? type : null),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _DieTextField(
+                controller: _madeByController,
+                label: 'Die Made By',
+                helper: 'A fitter here, or an outside toolroom',
+                required: false,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _DieTextField(
+                controller: _noOfSetController,
+                label: 'No. of Sets',
+                helper: 'How many sets were made',
+                required: false,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        LengthUnitField(
+          controller: _linerSizeController,
+          unitSymbol: _linerSizeUnit,
+          label: 'Liner Size',
+          helperText: 'Optional',
+          errorText: _linerSizeError,
+          onUnitChanged: (symbol) => setState(() {
+            _linerSizeUnit = symbol;
+            _linerSizeError = null;
+          }),
+          onChanged: () {
+            final parsed = parseLengthToNanometres(
+              _linerSizeController.text,
+              _linerSizeUnit,
+            );
+            if (parsed.error != _linerSizeError) {
+              setState(() => _linerSizeError = parsed.error);
+            }
+          },
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _DieTextField(
+                controller: _storeAreaController,
+                label: 'Store Area',
+                helper: 'E.g. F206',
+                required: false,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _DieTextField(
+                controller: _rackNoController,
+                label: 'Rack No.',
+                helper: 'E.g. 23-4',
+                required: false,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _dieMomentRow(
+          label: 'PO Date & Time',
+          value: _poAt,
+          onPicked: (value) => setState(() => _poAt = value),
+          onCleared: () => setState(() => _poAt = null),
+        ),
+        const SizedBox(height: 8),
+        _dieMomentRow(
+          label: 'Date In & Time',
+          value: _dateInAt,
+          onPicked: (value) => setState(() => _dateInAt = value),
+          onCleared: () => setState(() => _dateInAt = null),
+        ),
+      ],
+    );
+  }
+
+  Widget _dieMomentRow({
+    required String label,
+    required DateTime? value,
+    required ValueChanged<DateTime> onPicked,
+    required VoidCallback onCleared,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 110,
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final seed = value?.toLocal() ?? DateTime.now();
+                  final date = await showDatePicker(
+                    context: context,
+                    initialDate: seed,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(seed.year + 10),
+                  );
+                  if (date == null || !mounted) return;
+                  final time = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay.fromDateTime(seed),
+                  );
+                  if (!mounted) return;
+                  onPicked(
+                    DateTime(
+                      date.year,
+                      date.month,
+                      date.day,
+                      time?.hour ?? seed.hour,
+                      time?.minute ?? seed.minute,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.event_outlined, size: 18),
+                label: Text(
+                  // Through partStamp: the instant is UTC, and a shop at
+                  // +05:30 must not read 11.30 AM as 6.00 AM.
+                  value == null ? 'Pick' : partStamp(value),
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              if (value != null)
+                TextButton(
+                  onPressed: onCleared,
+                  child: const Text('Clear', style: TextStyle(fontSize: 13)),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1096,6 +1376,18 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       status: _status,
       ownership: _ownership,
       clientId: _clientId,
+      dieType: _dieType?.slug ?? '',
+      madeBy: _madeByController.text.trim(),
+      poAt: _poAt,
+      dateInAt: _dateInAt,
+      linerSizeNm: parseLengthToNanometres(
+        _linerSizeController.text,
+        _linerSizeUnit,
+      ).nanometres,
+      linerSizeUnit: _linerSizeUnit,
+      noOfSet: _optionalInt(_noOfSetController),
+      storeArea: _storeAreaController.text.trim(),
+      rackNo: _rackNoController.text.trim(),
       createdAt: widget.die?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -1112,6 +1404,18 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
           context.read<DiesProvider>().errorMessage ?? 'Failed to save die';
       showAppSnack(SnackBar(content: Text(error), backgroundColor: Colors.red));
       return;
+    }
+
+    // The tree goes up straight after the die, now that there is an id to
+    // hang it on. A refusal is reported and the die stays saved: the two are
+    // separate records, and losing the die because its tree was locked would
+    // be the wrong trade.
+    final variations = _variations;
+    if (variations != null && savedDie != null) {
+      final failure = await variations.save(savedDie.id);
+      if (failure != null && mounted) {
+        showAppToast(context, failure, kind: AppToastKind.error);
+      }
     }
 
     if (mounted) {

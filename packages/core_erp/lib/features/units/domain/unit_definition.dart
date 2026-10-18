@@ -13,6 +13,12 @@ class UnitDefinition {
     required this.precision,
     required this.unitGroupDimension,
     required this.unitGroupBaseUnitId,
+    this.factorToBase = 1,
+    this.isBase = false,
+    this.onLadder = true,
+    this.uqc,
+    this.unitGroupCode,
+    this.unitGroupIntegralOnly = false,
     this.conversionPoints = const [],
     required this.isArchived,
     required this.usageCount,
@@ -33,6 +39,12 @@ class UnitDefinition {
   final int? precision;
   final String? unitGroupDimension;
   final int? unitGroupBaseUnitId;
+  final int factorToBase;
+  final bool isBase;
+  final bool onLadder;
+  final String? uqc;
+  final String? unitGroupCode;
+  final bool unitGroupIntegralOnly;
   final List<ConversionPoint> conversionPoints;
   final bool isArchived;
   final int usageCount;

@@ -34,7 +34,24 @@ const {
 } = require('./catalog');
 
 module.exports = function registerLinksModuleRoutes(ctx) {
-  const { app, get, all, run, logChange, hasPermission, hasRecordPermission } = ctx;
+  const {
+    app, get, all, run, logChange, trackLink, hasPermission, hasRecordPermission,
+  } = ctx;
+
+  /// One side of a link, in the shape `trackLink` wants.
+  ///
+  /// `entityType` is the catalog's own table name, so a link row lands in the
+  /// same per-record feed as every other change to it. `ref` is a describe()
+  /// result and may be null when the record has since been deleted — the id
+  /// still identifies it, which is the point of snapshotting the label.
+  function trackSide(type, id, ref) {
+    return {
+      entityType: typeSpec(type)?.table || String(type),
+      id: String(id),
+      label: ref?.label || null,
+    };
+  }
+
 
   // -------------------------------------------------------------------------
   // Access
@@ -137,6 +154,7 @@ module.exports = function registerLinksModuleRoutes(ctx) {
     const where = [];
     const params = [];
     if (spec.archivedCol) where.push(`${spec.archivedCol} = 0`);
+    if (spec.browseFilterSql) where.push(`(${spec.browseFilterSql})`);
     if (query) {
       where.push(`(${spec.labelSql} LIKE ? OR ${spec.subtitleSql} LIKE ?)`);
       params.push(`%${query}%`, `%${query}%`);
@@ -440,16 +458,21 @@ module.exports = function registerLinksModuleRoutes(ctx) {
       const legacy = legacyPairFor(left.type, right.type);
       const now = new Date().toISOString();
 
+      // Whether the row is NEW, not just whether the request succeeded: both
+      // inserts are OR IGNORE, so re-answering with the same machine is a
+      // no-op and must log nothing.
+      let inserted = 0;
       if (legacy) {
         const byType = { [left.type]: left.id, [right.type]: right.id };
-        await run(
+        const result = await run(
           `INSERT OR IGNORE INTO ${legacy.table}
              (${legacy.columns[left.type]}, ${legacy.columns[right.type]}, created_at)
            VALUES (?, ?, ?)`,
           [byType[left.type], byType[right.type], now],
         );
+        inserted = result?.changes ?? 0;
       } else {
-        await run(
+        const result = await run(
           `INSERT OR IGNORE INTO entity_links
              (left_type, left_id, right_type, right_id, relation, metadata, created_at, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -463,6 +486,20 @@ module.exports = function registerLinksModuleRoutes(ctx) {
             now,
             req.user?.id || null,
           ],
+        );
+        inserted = result?.changes ?? 0;
+      }
+
+      if (inserted > 0) {
+        const byKey = {
+          [`${fromType}:${fromId}`]: fromEntity,
+          [`${toType}:${toId}`]: toEntity,
+        };
+        trackLink?.(
+          trackSide(left.type, left.id, byKey[`${left.type}:${left.id}`]),
+          trackSide(right.type, right.id, byKey[`${right.type}:${right.id}`]),
+          'linked',
+          req,
         );
       }
 
@@ -548,6 +585,19 @@ module.exports = function registerLinksModuleRoutes(ctx) {
       if (removed === 0) {
         return res.status(404).json({ success: false, error: 'No such link.' });
       }
+
+      // Described after the delete: the link is gone but both records are
+      // still there, and if one has since been deleted describe() returns null
+      // and the id carries the line on its own.
+      const leftRef = await describe(left.type, left.id);
+      const rightRef = await describe(right.type, right.id);
+      trackLink?.(
+        trackSide(left.type, left.id, leftRef),
+        trackSide(right.type, right.id, rightRef),
+        'unlinked',
+        req,
+      );
+
       res.json({ success: true, removed });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -566,5 +616,131 @@ module.exports = function registerLinksModuleRoutes(ctx) {
     );
   }
 
-  return { purgeLinksFor, neighboursOf };
+  // The one group a set is filed under, the one pipeline a machine runs: a pair
+  // the UI presents as single-valued, resolved for many records in one pass.
+  //
+  // Two single-table queries rather than a join, because the catalog's label
+  // expressions name bare columns (`name`, `created_at`) that a join with
+  // entity_links would make ambiguous.
+  //
+  // A record whose other end no longer exists resolves to nothing rather than
+  // to an id with no name behind it — no foreign key can guard a polymorphic
+  // pair, so a deleted group has to be absorbed on read. `ORDER BY id` makes
+  // the answer deterministic even where a second row exists: POST /api/links
+  // can always add one, because `relation` is part of the UNIQUE key.
+  async function soleNeighboursOf(type, ids, otherType) {
+    const spec = typeSpec(type);
+    const otherSpec = typeSpec(otherType);
+    const unique = [...new Set((ids || []).map(String))].filter(Boolean);
+    const resolved = new Map();
+    if (!spec || !otherSpec || unique.length === 0) return resolved;
+    if (legacyPairFor(...pairTypes(type, otherType))) {
+      throw new Error(
+        `soleNeighboursOf does not read the legacy store (${type} <-> ${otherType}).`,
+      );
+    }
+
+    const placeholders = unique.map(() => '?').join(', ');
+    const links = await all(
+      `SELECT CASE WHEN left_type = ? THEN left_id ELSE right_id END AS own_id,
+              CASE WHEN left_type = ? THEN right_id ELSE left_id END AS other_id
+         FROM entity_links
+        WHERE (left_type = ? AND right_type = ? AND left_id IN (${placeholders}))
+           OR (right_type = ? AND left_type = ? AND right_id IN (${placeholders}))
+        ORDER BY id ASC`,
+      [
+        String(type),
+        String(type),
+        String(type),
+        String(otherType),
+        ...unique,
+        String(type),
+        String(otherType),
+        ...unique,
+      ],
+    );
+    if (links.length === 0) return resolved;
+
+    // First wins per record, then one lookup for the names.
+    const firstOther = new Map();
+    for (const row of links) {
+      const key = String(row.own_id);
+      if (!firstOther.has(key)) firstOther.set(key, String(row.other_id));
+    }
+    const described = await describeMany(otherType, [...firstOther.values()]);
+    const archivedIds = otherSpec.archivedCol
+      ? await archivedSet(otherSpec, [...firstOther.values()])
+      : new Set();
+
+    for (const [ownId, otherId] of firstOther) {
+      const info = described.get(otherId);
+      if (!info) continue; // the other end is gone: reads as none
+      resolved.set(ownId, {
+        id: otherId,
+        label: info.label,
+        subtitle: info.subtitle,
+        archived: archivedIds.has(otherId),
+      });
+    }
+    return resolved;
+  }
+
+  // Which of these ids are archived. Separate from describeMany because that
+  // one deliberately knows nothing about archive flags.
+  async function archivedSet(spec, ids) {
+    const unique = [...new Set(ids.map(String))];
+    if (unique.length === 0) return new Set();
+    const placeholders = unique.map(() => '?').join(', ');
+    const rows = await all(
+      `SELECT ${spec.idCol} AS id FROM ${spec.table}
+        WHERE ${spec.idCol} IN (${placeholders}) AND ${spec.archivedCol} = 1`,
+      unique,
+    );
+    return new Set(rows.map((row) => String(row.id)));
+  }
+
+  // Makes (type, id)'s link to `otherType` be exactly `otherId`, or none when
+  // that is null. Every existing link to that type goes, whatever its relation
+  // — which is what "single-valued" has to mean on a store that can hold many.
+  //
+  // Runs on the caller's connection, so it joins an ambient transaction.
+  async function setSoleLink(type, id, otherType, otherId) {
+    const spec = typeSpec(type);
+    const otherSpec = typeSpec(otherType);
+    if (!spec || !otherSpec) {
+      throw new Error(`Cannot link '${type}' to '${otherType}'.`);
+    }
+    if (legacyPairFor(...pairTypes(type, otherType))) {
+      // item_dies / item_machines are rewritten wholesale by the item PUT. A
+      // second writer here would be a second claim on the same fact.
+      throw new Error(
+        `setSoleLink does not write the legacy store (${type} <-> ${otherType}).`,
+      );
+    }
+
+    await run(
+      `DELETE FROM entity_links
+        WHERE (left_type = ? AND left_id = ? AND right_type = ?)
+           OR (right_type = ? AND right_id = ? AND left_type = ?)`,
+      [String(type), String(id), String(otherType), String(type), String(id), String(otherType)],
+    );
+    if (otherId === null || otherId === undefined || otherId === '') return;
+
+    const { left, right } = canonicalPair(type, id, otherType, otherId);
+    await run(
+      `INSERT OR IGNORE INTO entity_links
+         (left_type, left_id, right_type, right_id, relation, metadata, created_at, created_by)
+       VALUES (?, ?, ?, ?, 'linked', '{}', ?, NULL)`,
+      [left.type, left.id, right.type, right.id, new Date().toISOString()],
+    );
+  }
+
+  return { purgeLinksFor, neighboursOf, soleNeighboursOf, setSoleLink };
 };
+
+// The canonical type pair, for asking legacyPairFor whether a pair is owned by
+// its own table. Ids do not matter to that question.
+function pairTypes(aType, bType) {
+  const { left, right } = canonicalPair(aType, '0', bType, '0');
+  return [left.type, right.type];
+}

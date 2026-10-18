@@ -305,8 +305,13 @@ class _StructuredGroupEditorDialogState
     final provider = context.watch<InventoryProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
-    final groups = groupsProvider
-        .filteredGroupsByType(widget.groupType)
+    // The whole list, not `filteredGroupsByType`: that one now answers to the
+    // Groups screen's status filter as well as its search box, and this form
+    // has to be able to see the parent a group already has even when it is
+    // archived — hiding it is how a save silently re-files the group. The same
+    // rule GroupPickerField states for itself.
+    final groups = groupsProvider.groups
+        .where((group) => group.groupType == widget.groupType)
         .toList(growable: false);
     final units = context.watch<UnitsProvider>().includedUnitsFor(
       null,
@@ -1291,8 +1296,8 @@ class _StructuredGroupEditorDialogState
       if (itemsProvider.errorMessage != null) {
         return;
       }
-      final matchingGroups = groupsProvider
-          .filteredGroupsByType(widget.groupType)
+      final matchingGroups = groupsProvider.groups
+          .where((group) => group.groupType == widget.groupType)
           .where(
             (group) =>
                 group.name.trim().toLowerCase() ==

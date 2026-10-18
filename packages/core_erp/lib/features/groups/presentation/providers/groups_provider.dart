@@ -6,6 +6,32 @@ import '../../domain/group_definition.dart';
 import '../../domain/group_overview.dart';
 import '../../domain/group_inputs.dart';
 
+/// Which groups the master is listing.
+///
+/// Archived groups came down with every fetch and were drawn among the live
+/// ones with a hardcoded "Active" pill, so the only way to tidy a group away
+/// was to delete it — which cascades through its items.
+enum GroupStatusFilter {
+  active('Active'),
+  archived('Archived'),
+  all('All');
+
+  const GroupStatusFilter(this.label);
+
+  final String label;
+
+  bool matches(GroupDefinition group) {
+    switch (this) {
+      case GroupStatusFilter.active:
+        return !group.isArchived;
+      case GroupStatusFilter.archived:
+        return group.isArchived;
+      case GroupStatusFilter.all:
+        return true;
+    }
+  }
+}
+
 enum GroupDuplicateWarning { none, sameParent }
 
 class GroupDuplicateCheck {
@@ -29,6 +55,7 @@ class GroupsProvider extends ChangeNotifier {
   bool _isSaving = false;
   String? _errorMessage;
   String _searchQuery = '';
+  GroupStatusFilter _statusFilter = GroupStatusFilter.active;
 
   bool _initialized = false;
 
@@ -71,11 +98,15 @@ class GroupsProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
+  GroupStatusFilter get statusFilter => _statusFilter;
 
   List<GroupDefinition> get filteredGroups {
     final query = _normalize(_searchQuery);
     return _groups
         .where((group) {
+          if (!_statusFilter.matches(group)) {
+            return false;
+          }
           if (query.isEmpty) {
             return true;
           }
@@ -291,6 +322,18 @@ class GroupsProvider extends ChangeNotifier {
     return _save(() => _repository.updateGroup(input));
   }
 
+  /// Takes a group out of use, keeping it and everything under it.
+  ///
+  /// Null with [errorMessage] set when the server refuses — which it does
+  /// while anything is still in the group, naming what.
+  Future<GroupDefinition?> archiveGroup(int id) async {
+    return _save(() => _repository.archiveGroup(id));
+  }
+
+  Future<GroupDefinition?> restoreGroup(int id) async {
+    return _save(() => _repository.restoreGroup(id));
+  }
+
   Future<bool> deleteGroup(int id) async {
     _isSaving = true;
     _errorMessage = null;
@@ -328,6 +371,14 @@ class GroupsProvider extends ChangeNotifier {
       _isSaving = false;
       notifyListeners();
     }
+  }
+
+  void setStatusFilter(GroupStatusFilter value) {
+    if (_statusFilter == value) {
+      return;
+    }
+    _statusFilter = value;
+    notifyListeners();
   }
 
   void clearError() {

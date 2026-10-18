@@ -1,3 +1,4 @@
+import '../../domain/part_code.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../../../core/sync/replica_reader.dart';
@@ -79,6 +80,29 @@ class LocalFirstItemRepository implements ItemRepository {
   @override
   Future<ItemDefinition> updateShortCode(int id, String shortCode) =>
       _remote.updateShortCode(id, shortCode);
+
+  // The replica holds no set tables at all, so this is remote like the sets
+  // list itself.
+  @override
+  Future<List<ItemSetMembership>> itemSets(int itemId) => _remote.itemSets(itemId);
+
+  // Not answerable from the replica: the number counts across items, sets and
+  // set membership, and a stale local copy would hand out a number already
+  // spent.
+  @override
+  Future<PartIdentitySuggestion> nextPartIdentity({
+    required int groupId,
+    int? setId,
+    bool setPending = false,
+    String setName = '',
+    String name = '',
+  }) => _remote.nextPartIdentity(
+    groupId: groupId,
+    setId: setId,
+    setPending: setPending,
+    setName: setName,
+    name: name,
+  );
 
   @override
   Future<void> deleteItem(int id) => _remote.deleteItem(id);

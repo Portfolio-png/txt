@@ -77,4 +77,58 @@ void main() {
     expect(duplicateName.blockingDuplicate, isTrue);
     expect(duplicateGst.blockingDuplicate, isTrue);
   });
+
+  group('archiving through the provider', () {
+    // The repository test above proves the two calls; this proves the thing a
+    // user sees — that an archived client leaves the view it was archived from
+    // and that Restore brings it back. The provider's default filter is
+    // `active`, so these two facts are the whole feature.
+
+    Future<ClientsProvider> ready() async {
+      final provider = ClientsProvider(
+        repository: ApiClientRepository(useMockResponses: true),
+      );
+      await provider.initialize();
+      return provider;
+    }
+
+    test('an archived client leaves the active list and comes back', () async {
+      final provider = await ready();
+      final target = provider.filteredClients.firstWhere(
+        (client) => client.name == 'Sunrise Retail LLP',
+      );
+
+      expect(await provider.archiveClient(target.id), isTrue);
+      expect(
+        provider.filteredClients.map((client) => client.name),
+        isNot(contains('Sunrise Retail LLP')),
+        reason: 'the default filter is active, so it must drop out of view',
+      );
+
+      provider.setStatusFilter(ClientStatusFilter.archived);
+      expect(
+        provider.filteredClients.map((client) => client.name),
+        contains('Sunrise Retail LLP'),
+        reason: 'archived is not deleted — it has to be findable',
+      );
+
+      expect(await provider.restoreClient(target.id), isTrue);
+      provider.setStatusFilter(ClientStatusFilter.active);
+      expect(
+        provider.filteredClients.map((client) => client.name),
+        contains('Sunrise Retail LLP'),
+      );
+    });
+
+    test('a client that is not there fails without throwing', () async {
+      // The screen leaves provider.errorMessage in a banner, so a refusal has
+      // to come back as false with a message rather than as an exception
+      // nobody catches.
+      final provider = await ready();
+
+      expect(await provider.archiveClient(999999), isFalse);
+      expect(provider.errorMessage, isNotNull);
+      expect(provider.isSaving, isFalse);
+    });
+  });
 }

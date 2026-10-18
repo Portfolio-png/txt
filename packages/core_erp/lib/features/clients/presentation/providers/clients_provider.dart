@@ -291,6 +291,39 @@ class ClientsProvider extends ChangeNotifier {
     }
   }
 
+  /// Takes a client out of use, or puts it back. Returns whether it worked, so
+  /// the caller can leave the error on screen rather than guessing.
+  ///
+  /// The list is refreshed rather than patched in place because the default
+  /// status filter is `active`: an archived client has to leave the view it was
+  /// archived from, and a restored one has to reappear.
+  Future<bool> archiveClient(int id) => _setArchived(id, true);
+
+  Future<bool> restoreClient(int id) => _setArchived(id, false);
+
+  Future<bool> _setArchived(int id, bool archived) async {
+    if (_isSaving) return false;
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      if (archived) {
+        await _repository.archiveClient(id);
+      } else {
+        await _repository.restoreClient(id);
+      }
+      await refresh();
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteClient(int id) async {
     if (_isSaving) return;
     _isSaving = true;

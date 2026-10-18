@@ -110,6 +110,7 @@ class ItemFormSectionsEditor extends StatefulWidget {
     ItemFormSectionKey.variationTree,
     ItemFormSectionKey.machines,
     ItemFormSectionKey.dies,
+    ItemFormSectionKey.sets,
   ];
 }
 

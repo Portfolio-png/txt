@@ -14,6 +14,11 @@ class MachinesProvider extends ChangeNotifier {
   bool _isSaving = false;
   bool _isAssetUploading = false;
   String? _errorMessage;
+
+  /// What KIND of refusal the last save was, when the server named one.
+  /// `machine_asset_id_duplicate` is the one callers act on.
+  String? _errorCode;
+  String? _suggestedAssetId;
   String _searchQuery = '';
   bool _initialized = false;
 
@@ -22,6 +27,10 @@ class MachinesProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
+  String? get errorCode => _errorCode;
+
+  /// The next free number in the series, when a save was refused for a clash.
+  String? get suggestedAssetId => _suggestedAssetId;
   String get searchQuery => _searchQuery;
 
   List<Machine> filteredMachinesWithGroups(Map<int, String> groupNames) {
@@ -86,11 +95,19 @@ class MachinesProvider extends ChangeNotifier {
   Future<Machine?> createMachine(Machine machine) async {
     _isSaving = true;
     _errorMessage = null;
+    _errorCode = null;
+    _suggestedAssetId = null;
     notifyListeners();
     try {
       final savedMachine = await _repository.saveMachine(machine);
       await refresh();
       return savedMachine;
+    } on MachineSaveException catch (e) {
+      _errorMessage = e.message;
+      _errorCode = e.code;
+      _suggestedAssetId = e.suggestedAssetId;
+      notifyListeners();
+      return null;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -104,11 +121,19 @@ class MachinesProvider extends ChangeNotifier {
   Future<Machine?> updateMachine(Machine machine) async {
     _isSaving = true;
     _errorMessage = null;
+    _errorCode = null;
+    _suggestedAssetId = null;
     notifyListeners();
     try {
       final savedMachine = await _repository.saveMachine(machine);
       await refresh();
       return savedMachine;
+    } on MachineSaveException catch (e) {
+      _errorMessage = e.message;
+      _errorCode = e.code;
+      _suggestedAssetId = e.suggestedAssetId;
+      notifyListeners();
+      return null;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();

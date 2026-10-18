@@ -156,6 +156,14 @@ class LocalInventoryRepository implements InventoryRepository {
             created_at TEXT NOT NULL
           )
         ''');
+        // Carries neither photo_url, nor the group a set is filed under, nor
+        // the version a save is checked against (migrations/046) — so this
+        // store cannot refuse a stale write the way the server now does. The
+        // group lives in the server's entity_links graph, and nothing
+        // constructs this repository today — the app runs on
+        // ApiInventoryRepository behind LocalFirstInventoryRepository, which
+        // keeps no local replica of sets at all. Reviving this class means
+        // teaching it both.
         await db.execute('''
           CREATE TABLE inventory_sets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

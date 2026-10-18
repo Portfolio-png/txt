@@ -3,7 +3,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  tearDown(() => AppFlowHooks.createPipeline = null);
+    tearDown(() {
+      AppFlowHooks.createPipeline = null;
+      AppFlowHooks.dieInspector = null;
+      AppFlowHooks.machineInspector = null;
+      AppFlowHooks.itemInspector = null;
+    });
 
   test('an unregistered flow is not offered rather than crashing', () {
     AppFlowHooks.createPipeline = null;
@@ -29,6 +34,26 @@ void main() {
     expect(bound, isNotNull);
     expect(await bound!(), 'pipeline-7');
     expect(identical(seen, context), isTrue);
+  });
+
+  test('canInspect and inspectorFor support die, machine, and item', () {
+    const context = _FakeContext();
+    expect(AppFlowHooks.canInspect('die'), isFalse);
+    expect(AppFlowHooks.canInspect('machine'), isFalse);
+    expect(AppFlowHooks.canInspect('item'), isFalse);
+
+    AppFlowHooks.dieInspector = (c, id) => const Text('die');
+    AppFlowHooks.machineInspector = (c, id) => const Text('machine');
+    AppFlowHooks.itemInspector = (c, id) => const Text('item');
+
+    expect(AppFlowHooks.canInspect('die'), isTrue);
+    expect(AppFlowHooks.canInspect('machine'), isTrue);
+    expect(AppFlowHooks.canInspect('item'), isTrue);
+
+    expect(AppFlowHooks.inspectorFor(context, 'die', '1'), isNotNull);
+    expect(AppFlowHooks.inspectorFor(context, 'machine', '2'), isNotNull);
+    expect(AppFlowHooks.inspectorFor(context, 'item', '3'), isNotNull);
+    expect(AppFlowHooks.inspectorFor(context, 'unknown', '4'), isNull);
   });
 }
 

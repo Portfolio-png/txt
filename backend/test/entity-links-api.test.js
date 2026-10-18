@@ -480,3 +480,116 @@ test('a link is gated on both masters it spans', async () => {
     await closeServer(server);
   }
 });
+
+test('a set is a linkable master, and run output stays out of the picker', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-entity-links-sets-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'links-sets@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsLink1234';
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  await backend.resetAndSeedDemoData();
+  const { server, port } = await listen(backend.app);
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'links-sets@paper.local',
+        password: 'SetsLink1234',
+      }),
+    });
+    const { token } = await loginResponse.json();
+    const authHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+    const getJson = async (p) => {
+      const r = await fetch(`${baseUrl}${p}`, { headers: authHeaders });
+      return { status: r.status, body: await r.json() };
+    };
+
+    const itemRow = (await backend.getItemsWithUsage()).find((entry) => !entry.is_archived);
+    const item = await backend.rowToItemDto(itemRow);
+    const groupRow = (await backend.getGroupsWithUsage()).find((entry) => !entry.is_archived);
+    // A set line needs a leaf of the item's variation tree, or 0 for an item
+    // that has none.
+    const firstLeaf = (function leafOf(nodes) {
+      for (const node of nodes || []) {
+        if (node.kind === 'value' && (node.children || []).length === 0) return node;
+        const nested = leafOf(node.children || []);
+        if (nested) return nested;
+      }
+      return null;
+    })(item.variationTree || []);
+
+    const createdSet = await fetch(`${baseUrl}/api/inventory/sets`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        name: 'Linkable Pack',
+        groupId: groupRow.id,
+        lines: [
+          {
+            itemId: item.id,
+            variationLeafNodeId: firstLeaf ? firstLeaf.id : 0,
+            quantity: 1,
+            position: 0,
+          },
+        ],
+      }),
+    });
+    assert.equal(createdSet.status, 201, await createdSet.clone().text());
+    const defined = (await createdSet.json()).set;
+    // Run output, which the picker must not offer even though it is a set.
+    await backend.run(
+      `INSERT INTO inventory_sets
+         (name, created_at, updated_at, origin_run_id, origin_node_id, produced_at, is_temporary)
+       VALUES ('Temporary · Linkable Pack · run-1', ?, ?, 'run-1', 'node-1', ?, 1)`,
+      [new Date().toISOString(), new Date().toISOString(), new Date().toISOString()],
+    );
+
+    const schema = await getJson('/api/links/schema');
+    const setEntry = schema.body.types.find((entry) => entry.type === 'set');
+    assert.ok(setEntry, 'the catalog offers sets');
+    assert.equal(setEntry.label, 'Set');
+    assert.equal(setEntry.plural, 'Sets');
+
+    // The link the set endpoint wrote answers from the set's side...
+    const fromSet = await getJson(`/api/links/set/${defined.id}`);
+    assert.equal(fromSet.status, 200);
+    const groupsGroup = fromSet.body.groups.find((entry) => entry.type === 'group');
+    assert.ok(groupsGroup, 'the set names its group');
+    assert.equal(groupsGroup.links[0].id, String(groupRow.id));
+
+    // ...and from the group's side, which is the whole point of one row.
+    const fromGroup = await getJson(`/api/links/group/${groupRow.id}`);
+    const setsGroup = fromGroup.body.groups.find((entry) => entry.type === 'set');
+    assert.ok(setsGroup, 'the group names its sets');
+    assert.ok(setsGroup.links.some((link) => link.id === String(defined.id)));
+
+    const browse = await getJson('/api/links/set?limit=50');
+    assert.equal(browse.status, 200);
+    assert.ok(
+      browse.body.records.some((record) => record.id === String(defined.id)),
+      'a defined set is pickable',
+    );
+    assert.ok(
+      browse.body.records.every((record) => !record.label.startsWith('Temporary · ')),
+      'a set minted by a production run is not pickable',
+    );
+
+    // A set already filed under this group is not offered again.
+    const candidates = await getJson(`/api/links/group/${groupRow.id}/candidates?type=set`);
+    assert.equal(candidates.status, 200);
+    assert.ok(
+      !candidates.body.candidates.some((record) => record.id === String(defined.id)),
+      'the candidate list leaves out what is already linked',
+    );
+  } finally {
+    await closeServer(server);
+  }
+});

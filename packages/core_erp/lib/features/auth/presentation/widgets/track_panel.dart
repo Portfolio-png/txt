@@ -10,30 +10,45 @@ import '../providers/auth_provider.dart';
 ///   TrackPanel.entity(entityType: 'items', entityId: '$id')
 /// or into a person's profile to show everything they changed:
 ///   TrackPanel.actor(userId: login.userId)
+/// or over a creation window to show what that one opening of it did:
+///   TrackPanel.sitting(sittingId: id)
 class TrackPanel extends StatefulWidget {
   const TrackPanel.entity({
     super.key,
     required this.entityType,
     required this.entityId,
     this.showHeader = true,
-  }) : actorUserId = null;
+  }) : actorUserId = null,
+       sittingId = null;
 
   const TrackPanel.actor({
     super.key,
     required this.actorUserId,
     this.showHeader = true,
   }) : entityType = null,
-       entityId = null;
+       entityId = null,
+       sittingId = null;
+
+  /// One opening of one window: everything done in it, across every master.
+  const TrackPanel.sitting({
+    super.key,
+    required this.sittingId,
+    this.showHeader = true,
+  }) : entityType = null,
+       entityId = null,
+       actorUserId = null;
 
   final String? entityType;
   final String? entityId;
   final int? actorUserId;
+  final String? sittingId;
 
   /// Whether to render the internal "Track" header + refresh row. Turn off when
   /// embedding inside a section card that already provides a title.
   final bool showHeader;
 
   bool get _isActor => actorUserId != null;
+  bool get _isSitting => sittingId != null;
 
   @override
   State<TrackPanel> createState() => _TrackPanelState();
@@ -50,6 +65,7 @@ class _TrackPanelState extends State<TrackPanel> {
 
   Future<List<TrackEvent>> _load() {
     final auth = context.read<AuthProvider>();
+    if (widget._isSitting) return auth.getSittingTrack(widget.sittingId!);
     if (widget._isActor) return auth.getActorTrack(widget.actorUserId!);
     return auth.getEntityTrack(widget.entityType!, widget.entityId!);
   }
@@ -105,6 +121,12 @@ class _TrackPanelState extends State<TrackPanel> {
                 ),
               );
             }
+            // Before this, a refusal arrived as an empty list and rendered as
+            // "No activity tracked yet" — telling somebody nothing happened
+            // when the truth was that they were not allowed to see it.
+            if (snapshot.hasError) {
+              return _TrackError(message: '${snapshot.error}');
+            }
             final events = snapshot.data ?? const <TrackEvent>[];
             if (events.isEmpty) {
               return const _TrackEmpty();
@@ -112,12 +134,57 @@ class _TrackPanelState extends State<TrackPanel> {
             return Column(
               children: [
                 for (final e in events)
-                  _TrackTile(event: e, showEntity: widget._isActor),
+                  _TrackTile(
+                    event: e,
+                    // A sitting spans masters, so each line has to name which
+                    // record it is about, exactly as the actor feed does.
+                    showEntity: widget._isActor || widget._isSitting,
+                  ),
               ],
             );
           },
         ),
       ],
+    );
+  }
+}
+
+class _TrackError extends StatelessWidget {
+  const _TrackError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.lock_outline,
+            size: 26,
+            color: SoftErpTheme.textSecondary,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'This history could not be loaded.',
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -149,7 +216,7 @@ class _TrackEmpty extends StatelessWidget {
           SizedBox(height: 2),
           Text(
             'Creates, edits and deletes will appear here.',
-            style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12),
+            style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 14),
           ),
         ],
       ),
@@ -177,6 +244,21 @@ class _TrackTile extends StatelessWidget {
           color: const Color(0xFFD64545),
           verb: 'Deleted',
         );
+      // Two rows are written for one link, one on each record, so this tile
+      // renders on both of their feeds. Without these cases they fell into
+      // `default` and read "Updated" with a pencil — true of nothing.
+      case 'linked':
+        return (
+          icon: Icons.link_outlined,
+          color: SoftErpTheme.accent,
+          verb: 'Linked',
+        );
+      case 'unlinked':
+        return (
+          icon: Icons.link_off_outlined,
+          color: SoftErpTheme.textSecondary,
+          verb: 'Unlinked',
+        );
       default:
         return (
           icon: Icons.edit_outlined,
@@ -188,8 +270,17 @@ class _TrackTile extends StatelessWidget {
 
   String get _title {
     final s = _style;
+    final label = event.label.isEmpty ? event.entityNoun : event.label;
+    // A link is about two records, so naming only one of them says half of
+    // what happened. The other side's label is snapshotted server-side, which
+    // is what lets this still read after that record is deleted.
+    if (event.isLink) {
+      final other = (event.otherLabel == null || event.otherLabel!.isEmpty)
+          ? event.otherNoun
+          : event.otherLabel!;
+      return '${s.verb} $label → $other';
+    }
     if (showEntity) {
-      final label = event.label.isEmpty ? event.entityNoun : event.label;
       return '${s.verb} $label · ${event.entityNoun}';
     }
     return event.actorName.isEmpty ? s.verb : '${s.verb} by ${event.actorName}';
@@ -219,7 +310,7 @@ class _TrackTile extends StatelessWidget {
                   _title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                    fontSize: 14.5,
                     color: SoftErpTheme.textPrimary,
                   ),
                 ),
@@ -228,7 +319,7 @@ class _TrackTile extends StatelessWidget {
                   _subtitle(),
                   style: const TextStyle(
                     color: SoftErpTheme.textSecondary,
-                    fontSize: 11.5,
+                    fontSize: 13,
                   ),
                 ),
                 if (event.changes.isNotEmpty) ...[
@@ -285,7 +376,7 @@ class _ChangeLine extends StatelessWidget {
       child: RichText(
         text: TextSpan(
           style: const TextStyle(
-            fontSize: 11.5,
+            fontSize: 13,
             color: SoftErpTheme.textSecondary,
           ),
           children: [
@@ -328,11 +419,48 @@ String _formatTime(DateTime? dt) {
 
 /// Opens the Track feed for a master record in a modal dialog. Lets any master
 /// screen surface Track in one line without restructuring its editor.
+/// The Track feed for one record, in a dialog.
 Future<void> showTrackDialog(
   BuildContext context, {
   required String entityType,
   required String entityId,
   String? title,
+}) {
+  return _showTrackShell(
+    context,
+    title: title ?? 'Track',
+    child: TrackPanel.entity(
+      entityType: entityType,
+      entityId: entityId,
+      showHeader: false,
+    ),
+  );
+}
+
+/// Everything done in one opening of one window, in a dialog.
+///
+/// 560 wide, which is where the feed reads without wrapping — the reason this
+/// does not live in the Express window's 356px column.
+Future<void> showSittingTrackDialog(
+  BuildContext context, {
+  required String sittingId,
+  String? title,
+}) {
+  return _showTrackShell(
+    context,
+    title: title ?? 'This sitting',
+    child: TrackPanel.sitting(sittingId: sittingId, showHeader: false),
+  );
+}
+
+/// The shell both share: a titled dialog with the feed scrolling inside it.
+///
+/// The scroll view is not optional — [TrackPanel] builds every event into a
+/// plain Column rather than a ListView, so its height is unbounded.
+Future<void> _showTrackShell(
+  BuildContext context, {
+  required String title,
+  required Widget child,
 }) {
   return showDialog<void>(
     context: context,
@@ -351,7 +479,7 @@ Future<void> showTrackDialog(
                 children: [
                   Expanded(
                     child: Text(
-                      title ?? 'Track',
+                      title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
@@ -367,14 +495,7 @@ Future<void> showTrackDialog(
                 ],
               ),
               const SizedBox(height: 8),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: TrackPanel.entity(
-                    entityType: entityType,
-                    entityId: entityId,
-                  ),
-                ),
-              ),
+              Flexible(child: SingleChildScrollView(child: child)),
             ],
           ),
         ),

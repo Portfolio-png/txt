@@ -1,9 +1,11 @@
+import '../../domain/part_code.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/api_item_repository.dart' show ItemApiException;
 import '../../data/models/item_api_models.dart';
 import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
+import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_master_data.dart';
@@ -83,6 +85,7 @@ class ItemsProvider extends ChangeNotifier {
   bool _isSaving = false;
   bool _isAssetUploading = false;
   String? _errorMessage;
+  String? _errorCode;
   String _searchQuery = '';
 
   bool _initialized = false;
@@ -99,6 +102,10 @@ class ItemsProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
+
+  /// The server's machine-readable reason for the last failed save, where it
+  /// sent one (e.g. 'part_code_duplicate'). Null for everything else.
+  String? get errorCode => _errorCode;
   String get searchQuery => _searchQuery;
 
   List<ItemDefinition> get filteredItems {
@@ -553,6 +560,45 @@ class ItemsProvider extends ChangeNotifier {
   String _messageFor(Object error) =>
       error is ItemApiException ? error.message : error.toString();
 
+  /// Which sets hold this part, one row per line.
+  ///
+  /// Not routed through [_save] — it writes nothing, and a lookup that failed
+  /// must not blank the error of a save that failed.
+  Future<List<ItemSetMembership>?> itemSets(int itemId) async {
+    try {
+      return await _repository.itemSets(itemId);
+    } catch (_) {
+      // Null is "could not ask", which a caller must tell apart from "in no
+      // sets" — the part code's re-derivation depends on knowing which.
+      return null;
+    }
+  }
+
+  /// What the next part in this scope should be called.
+  ///
+  /// Deliberately not routed through [_save]: it writes nothing, and a
+  /// suggestion that failed must not blank the error of a save that failed.
+  Future<PartIdentitySuggestion?> nextPartIdentity({
+    required int groupId,
+    int? setId,
+    bool setPending = false,
+    String setName = '',
+    String name = '',
+  }) async {
+    try {
+      return await _repository.nextPartIdentity(
+        groupId: groupId,
+        setId: setId,
+        setPending: setPending,
+        setName: setName,
+        name: name,
+      );
+    } catch (_) {
+      // A form that cannot pre-fill is still a usable form.
+      return null;
+    }
+  }
+
   Future<ItemDefinition?> updateShortCode(int id, String shortCode) async {
     return _save(() => _repository.updateShortCode(id, shortCode));
   }
@@ -667,6 +713,7 @@ class ItemsProvider extends ChangeNotifier {
     Object? defaultPipelineId = _keepField,
     List<String>? machineIds,
     List<String>? dieIds,
+    DevelopedFor? developedFor,
   }) {
     return UpdateItemInput(
       id: current.id,
@@ -700,9 +747,23 @@ class ItemsProvider extends ChangeNotifier {
       dieIds:
           dieIds ?? current.dies.map((die) => die.id).toList(growable: false),
       developedForClientId: current.developedForClientId,
+      // Carried for the same reason as partNo/partCode below: this input is
+      // rebuilt wholesale by every preserving save, and a block that fell out
+      // here would take who the part was made for with it.
+      //
+      // A plain `??` rather than the `_keepField` sentinel defaultPipelineId
+      // needs: clearing this one is `DevelopedFor.empty`, a value that is
+      // present, so null here can only ever mean "leave it alone".
+      developedFor: developedFor ?? current.developedFor,
       penPaperBaseline: current.penPaperBaseline,
       blankWidthMm: current.blankWidthMm,
       blankHeightMm: current.blankHeightMm,
+      // Carried, not defaulted. The request omits these when they are null, so
+      // this is belt and braces — but it is the layer that would notice if
+      // that omission ever regressed, and a wiped part code is a code already
+      // printed on a drawing that no longer matches the catalogue.
+      partNo: current.partNo,
+      partCode: current.partCode,
       variationTree: variationTree,
     );
   }
@@ -948,6 +1009,26 @@ class ItemsProvider extends ChangeNotifier {
     );
   }
 
+  /// Records who a part was developed for, leaving everything else as it is.
+  ///
+  /// [DevelopedFor.empty] is how it is cleared — the block is one fact and
+  /// arrives whole, which is why this takes no nullable "unset".
+  Future<ItemDefinition?> setItemDevelopedFor(
+    int itemId,
+    DevelopedFor developedFor,
+  ) {
+    return _updateOneField(
+      itemId,
+      (current) => _preservingInput(
+        current,
+        developedFor: developedFor,
+        variationTree: current.variationTree
+            .map(_toInput)
+            .toList(growable: false),
+      ),
+    );
+  }
+
   /// Replaces the machines and/or dies an item is linked to. Attaching one here
   /// is what assigns it to that item's work.
   Future<ItemDefinition?> setItemLinks(
@@ -1101,6 +1182,7 @@ class ItemsProvider extends ChangeNotifier {
     if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
+    _errorCode = null;
     notifyListeners();
     try {
       final updated = await action();
@@ -1111,6 +1193,10 @@ class ItemsProvider extends ChangeNotifier {
       return updated;
     } catch (error) {
       _errorMessage = error.toString();
+      // Kept beside the sentence so a caller can tell one refusal from
+      // another — a taken part code is worth recovering from, where a name
+      // clash is for the person to resolve.
+      _errorCode = error is ItemApiException ? error.code : null;
       notifyListeners();
       return null;
     } finally {

@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 const contracts = require('./contract');
+const { buildPartCode, nextPartNo } = require('./part-identity');
 const { buildGroupOverview } = require('./group-overview');
 const {
   coversByGroup,
@@ -39,6 +40,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     getItemsWithUsage,
     getGroupsWithUsage,
     getItemUsageDetails,
+    getItemSetMembership,
     getItemRowById,
     getGroupRowById,
     getEffectiveSchema,
@@ -201,6 +203,18 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     }
   });
 
+  // Which sets hold this part. Gated on config.read like the rest of
+  // /api/items/:id/*, rather than inventory.read: the people who live in the
+  // item editor are not necessarily the people who run inventory.
+  app.get('/api/items/:id/sets', requirePermission('config.read'), async (req, res) => {
+    try {
+      const sets = await getItemSetMembership(Number(req.params.id));
+      res.json({ success: true, sets, error: null });
+    } catch (error) {
+      res.status(500).json({ success: false, sets: [], error: error.message });
+    }
+  });
+
   app.get('/api/items/:id/usage', requirePermission('config.read'), async (req, res) => {
     try {
       const usage = await getItemUsageDetails(Number(req.params.id));
@@ -220,12 +234,71 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     }
   });
 
+  // What the next part in this scope should be called, for a form to pre-fill.
+  //
+  // Declared before /api/items/:id or Express reads the path as an id. The
+  // sequence lives here rather than in the dialog that shows it: a rule a
+  // screen owns is a rule the next screen skips.
+  app.get(
+    '/api/items/next-part-identity',
+    requirePermission('config.read'),
+    async (req, res) => {
+      try {
+        const groupId = Number(req.query.groupId || 0);
+        if (!groupId) {
+          return res
+            .status(400)
+            .json({ success: false, error: 'groupId is required.' });
+        }
+        const setId = Number(req.query.setId || 0) || null;
+        // A set that has only been named has no members, so its scope is
+        // empty. Nothing stored can tell us that — the caller says so.
+        const setPending =
+          req.query.setPending === '1' || req.query.setPending === 'true';
+
+        const groupRow = await get('SELECT name FROM groups WHERE id = ?', [groupId]);
+        if (!groupRow) {
+          return res.status(404).json({ success: false, error: 'Group not found.' });
+        }
+        const setRow = setId
+          ? await get('SELECT name FROM inventory_sets WHERE id = ?', [setId])
+          : null;
+
+        const partNo = await nextPartNo({ groupId, setId, setPending }, { get });
+        const partCode = buildPartCode({
+          groupName: groupRow.name,
+          setName: req.query.setName || setRow?.name || '',
+          itemName: req.query.name || '',
+          partNo,
+        });
+        res.json({
+          success: true,
+          partNo,
+          partCode,
+          scope: setPending ? 'pending-set' : setId ? 'set' : 'group-unfiled',
+          error: null,
+        });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    },
+  );
+
   app.get('/api/items/:id', requirePermission('config.read'), async (req, res) => {
     try {
       const row = await get(`
         SELECT
           items.*,
           pipeline_templates.name AS default_pipeline_name,
+          developed_for_client.name AS developed_for_client_name,
+          developed_for_client.contact_name AS developed_for_contact_name,
+          developed_for_client.designation AS developed_for_designation,
+          developed_for_client.phone AS developed_for_phone,
+          developed_for_client.email AS developed_for_email,
+          developed_for_contractor.name AS developed_for_sub_contractor_name,
+          developed_for_contractor.designation AS developed_for_sub_contractor_designation,
+          developed_for_contractor.phone AS developed_for_sub_contractor_phone,
+          developed_for_contractor.email AS developed_for_sub_contractor_email,
           (
             (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
             (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -235,6 +308,8 @@ module.exports = function registerItemsModuleRoutes(ctx) {
           ) AS usage_count
         FROM items
         LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
+        LEFT JOIN clients developed_for_client ON developed_for_client.id = items.developed_for_client_id
+        LEFT JOIN sub_contractors developed_for_contractor ON developed_for_contractor.id = items.developed_for_sub_contractor_id
         WHERE items.id = ?
       `, [req.params.id]);
       if (!row) {
@@ -345,6 +420,11 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       }
       await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
       await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [new Date().toISOString(), id]);
+      // Archiving is an update, not a removal, so it logs as one — but it
+      // logged as nothing at all before, which made a sitting that archived a
+      // part look like a sitting where nobody touched it.
+      const archived = await get('SELECT * FROM items WHERE id = ?', [id]);
+      trackUpdate('items', id, item, archived, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, error: error.message });
@@ -354,7 +434,9 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
+      const before = await get('SELECT * FROM items WHERE id = ?', [id]);
       await itemsPorts.delete('item', id, req);
+      trackDelete('items', id, before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -402,6 +484,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       const group = await saveGroup(req.body || {});
       const dto = rowToGroupDto(group);
       await emitGroupsChanged(dto.id, 'INSERT');
+      trackCreate('groups', dto.id, group, req);
       res.status(201).json({ success: true, group: dto, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
@@ -531,12 +614,17 @@ module.exports = function registerItemsModuleRoutes(ctx) {
 
   app.patch('/api/groups/:id', requirePermission('config.write'), guardContract(contracts.groupWrite), async (req, res) => {
     try {
+      const id = Number(req.params.id);
+      // saveGroup answers with the saved row, not the one it replaced, so the
+      // before state is read here or the diff is empty and nothing is logged.
+      const before = await get('SELECT * FROM groups WHERE id = ?', [id]);
       const group = await saveGroup({
         ...(req.body || {}),
-        id: Number(req.params.id),
+        id,
       });
       const dto = rowToGroupDto(group);
       await emitGroupsChanged(dto.id, 'UPDATE');
+      trackUpdate('groups', dto.id, before, group, req);
       res.json({ success: true, group: dto, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
@@ -547,6 +635,13 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     }
   });
 
+  // Archiving says "not in use any more" without destroying anything, which is
+  // what people actually want nine times out of ten — DELETE here cascades
+  // through the group's items.
+  //
+  // The refusal NAMES what is still inside. It counted child groups, items and
+  // linked materials separately all along and then threw away which, leaving
+  // the user to guess what to empty.
   app.patch('/api/groups/:id/archive', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -556,29 +651,92 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       }
       const usage = await get(`
         SELECT
-          (SELECT COUNT(*) FROM groups WHERE parent_group_id = ? AND is_archived = 0) +
-          (SELECT COUNT(*) FROM items WHERE group_id = ? AND is_archived = 0) +
-          (SELECT COUNT(*) FROM materials WHERE linked_group_id = ?) AS count
+          (SELECT COUNT(*) FROM groups WHERE parent_group_id = ? AND is_archived = 0) AS childGroups,
+          (SELECT COUNT(*) FROM items WHERE group_id = ? AND is_archived = 0) AS items,
+          (SELECT COUNT(*) FROM materials WHERE linked_group_id = ?) AS materials
       `, [id, id, id]);
-      if ((usage?.count || 0) > 0) {
-        const error = new Error('Group is in use');
+      const blockers = [];
+      const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+      if (Number(usage?.childGroups || 0) > 0) {
+        blockers.push(plural(Number(usage.childGroups), 'active child group'));
+      }
+      if (Number(usage?.items || 0) > 0) {
+        blockers.push(plural(Number(usage.items), 'active item'));
+      }
+      if (Number(usage?.materials || 0) > 0) {
+        blockers.push(plural(Number(usage.materials), 'linked material'));
+      }
+      if (blockers.length > 0) {
+        const error = new Error(
+          `"${group.name}" still holds ${blockers.join(' and ')}. `
+          + 'Move or archive them first.',
+        );
         error.statusCode = 409;
+        error.code = 'group_in_use';
         throw error;
       }
       await run('UPDATE groups SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
-      res.json({ success: true, error: null });
+      // Every other group write broadcasts; this one never did, so an archive
+      // stayed invisible to every other client until they reloaded.
+      await emitGroupsChanged(id, 'UPDATE');
+      // The updated row, so the caller knows the new state without refetching
+      // the whole list.
+      res.json({ success: true, group: rowToGroupDto(await getGroupRowById(id)), error: null });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, error: error.message });
+      res.status(error.statusCode || 500).json({
+        success: false,
+        group: null,
+        code: error.code || null,
+        error: error.message,
+      });
+    }
+  });
+
+  // Archive was a one-way door: there was no route back, so a group archived by
+  // mistake could only be fixed in the database.
+  app.patch('/api/groups/:id/unarchive', requirePermission('config.write'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const group = await get('SELECT * FROM groups WHERE id = ?', [id]);
+      if (!group) {
+        return res.status(404).json({ success: false, error: 'Not found' });
+      }
+      if (group.parent_group_id) {
+        const parent = await get('SELECT id, name, is_archived FROM groups WHERE id = ?', [group.parent_group_id]);
+        // A live group inside an archived one is a group nobody can reach from
+        // the tree: restore the parent first and the question answers itself.
+        if (parent && Number(parent.is_archived || 0) === 1) {
+          const error = new Error(
+            `"${group.name}" sits under "${parent.name}", which is archived. `
+            + 'Restore that one first.',
+          );
+          error.statusCode = 409;
+          error.code = 'parent_archived';
+          throw error;
+        }
+      }
+      await run('UPDATE groups SET is_archived = 0, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+      await emitGroupsChanged(id, 'UPDATE');
+      res.json({ success: true, group: rowToGroupDto(await getGroupRowById(id)), error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        group: null,
+        code: error.code || null,
+        error: error.message,
+      });
     }
   });
 
   app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
+      const before = await get('SELECT * FROM groups WHERE id = ?', [id]);
       // No emitGroupsChanged here: the delete port already writes its own
       // DELETE row to the changelog, and a second one would have every client
       // refresh twice for one deletion.
       await itemsPorts.delete('group', id, req);
+      trackDelete('groups', id, before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

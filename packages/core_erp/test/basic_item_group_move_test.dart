@@ -237,6 +237,10 @@ void main() {
     await tester.tap(find.text('Scrap').last);
     await tester.pumpAndSettle();
 
+    // The card column is taller than this view, so the footer is below the
+    // fold — scroll to it rather than tapping where it used to be.
+    await tester.ensureVisible(find.text('Save Changes'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Save Changes'));
     await tester.pumpAndSettle();
 
@@ -265,7 +269,9 @@ void main() {
 
     // Save is at the foot of a long form; closing from the header used to throw
     // the edit away without a word, which reads exactly like it did not save.
-    await tester.tap(find.byIcon(Icons.close));
+    // By tooltip, not by icon: the editor now wears the house dialog chrome,
+    // whose close is Icons.close_rounded.
+    await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
 
     expect(find.text('Discard changes?'), findsOneWidget);
@@ -276,6 +282,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Edit Basic Item'), findsOneWidget);
 
+    // The card column is taller than this view, so the footer is below the
+    // fold — scroll to it rather than tapping where it used to be.
+    await tester.ensureVisible(find.text('Save Changes'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Save Changes'));
     await tester.pumpAndSettle();
     expect(repo.lastUpdate?.groupId, _scrap.id);

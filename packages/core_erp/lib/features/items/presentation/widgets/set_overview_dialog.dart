@@ -97,10 +97,20 @@ class _SetOverviewDialogState extends State<SetOverviewDialog> {
     );
     final pipelineCount = groups.where((group) => group.id != null).length;
 
+    // The group the set is filed under, read off the set rather than the groups
+    // master: this dialog is pumped with the items provider alone.
+    final groupName = widget.set.groupName?.trim() ?? '';
+    final groupLabel = widget.set.groupId == null || groupName.isEmpty
+        ? ''
+        : (widget.set.groupIsArchived
+              ? '$groupName (archived) · '
+              : '$groupName · ');
+
     return ErpFormScaffold(
       leading: _SetAvatar(photoUrl: widget.set.photoUrl?.trim() ?? ''),
       title: widget.set.name,
       subtitle:
+          '$groupLabel'
           '${members.length} item${members.length == 1 ? '' : 's'} · '
           '$totalPieces piece${totalPieces == 1 ? '' : 's'} per set · '
           '$pipelineCount pipeline${pipelineCount == 1 ? '' : 's'}',

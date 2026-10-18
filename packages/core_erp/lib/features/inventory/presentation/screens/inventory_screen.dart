@@ -1379,7 +1379,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
   static String _setRowMetadata(InventorySetDefinition set) {
     final lineCount =
         '${set.lines.length} item${set.lines.length == 1 ? '' : 's'}';
-    if (!set.isTemporary) return lineCount;
+    // The group the set is filed under, from the set itself: a produced set is
+    // never filed, so this only ever shows on a defined one.
+    final groupName = set.groupName?.trim() ?? '';
+    final group = set.groupId == null || groupName.isEmpty
+        ? null
+        : (set.groupIsArchived ? '$groupName (archived)' : groupName);
+    if (!set.isTemporary) {
+      return group == null ? lineCount : '$group · $lineCount';
+    }
     final parts = <String>['From production'];
     if (set.originRunId != null) parts.add(set.originRunId!);
     final producedAt = set.producedAt;
@@ -1591,6 +1599,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               // counts its lines.
               displayMetadata: _setRowMetadata(setDefinition),
               directItemCount: setDefinition.totalItemCount,
+              itemGroupId: setDefinition.groupId,
               inventorySet: setDefinition,
               // Only a produced set has a detail view to open.
               opensDetails: setDefinition.isTemporary,

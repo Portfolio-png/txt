@@ -27,8 +27,10 @@ import 'package:core_erp/features/departments/presentation/screens/department_ed
 import 'package:core_erp/features/inventory/presentation/screens/inventory_screen.dart';
 import 'package:core_erp/features/inventory/presentation/screens/material_scan_screen.dart';
 import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
+import 'package:core_erp/features/items/presentation/widgets/item_inspector_panel.dart';
 import 'package:core_erp/features/clients/presentation/screens/clients_screen.dart';
 import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
+import 'package:core_erp/features/inventory/presentation/screens/sets_screen.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_create_command_provider.dart';
 import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart';
 import '../../features/jobs/presentation/screens/jobs_screen.dart';
@@ -38,7 +40,14 @@ import 'package:core_erp/features/materials/presentation/screens/materials_scree
 import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
 import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
 import '../../features/machines/presentation/screens/machine_list_screen.dart';
+import '../../features/dies/domain/die.dart';
+import '../../features/machines/domain/machine.dart';
+import '../../features/machines/domain/machine_capability.dart';
+import '../../features/machines/presentation/providers/machine_provider.dart';
+import '../../features/dies/presentation/providers/die_provider.dart';
 import '../../features/dies/presentation/screens/die_list_screen.dart';
+import '../../features/dies/presentation/widgets/die_inspector_panel.dart';
+import '../../features/machines/presentation/widgets/machine_inspector_panel.dart';
 import '../../features/dies/presentation/screens/die_form_screen.dart';
 import '../../features/machines/presentation/screens/machine_form_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
@@ -483,6 +492,8 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
         );
       case 'configurator_groups':
         _runModalShortcut(() => GroupsScreen.openEditor(context));
+      case 'configurator_sets':
+        _runModalShortcut(() => SetsScreen.openEditor(context));
       case 'configurator_units':
         _runModalShortcut(() async => UnitsScreen.openEditor(context));
       case 'configurator_materials':
@@ -629,6 +640,16 @@ void _registerAppFlowHooks() {
       await MachinesScreen.openMachineEditor(context) != null;
   AppFlowHooks.createDie ??= (context) async =>
       await DiesScreen.openDieEditor(context) != null;
+  // Read-only inspectors for the ecosystem ribbon. They live here because
+  // `Die` and `Machine` do — core_erp can name a die from the link graph but
+  // cannot describe one. Unregistered would mean a die chip simply does not
+  // open, which is this seam's degrade.
+  AppFlowHooks.dieInspector ??= (context, dieId) =>
+      DieInspectorPanel(dieId: dieId);
+  AppFlowHooks.machineInspector ??= (context, machineId) =>
+      MachineInspectorPanel(machineId: machineId);
+  AppFlowHooks.itemInspector ??= (context, itemId) =>
+      ItemInspectorPanel(itemId: itemId);
   AppFlowHooks.dieEditor ??= (context, {required onSaved, required onCancel}) =>
       DieEditorSheet(
         onSaved: (die) => onSaved(
@@ -636,6 +657,177 @@ void _registerAppFlowHooks() {
         ),
         onCancel: onCancel,
       );
+  // The wizard's die sheet. It writes through DiesProvider rather than
+  // posting itself, so a die made beside a part turns up on the Dies screen
+  // without a reload — and so the named 409 for a taken code is already
+  // parsed by the time core_erp sees it.
+  AppFlowHooks.createDieFromSheet ??= (context, draft) async {
+    final provider = context.read<DiesProvider>();
+    // The Dies screen may never have been opened in this session.
+    await provider.initialize();
+    final now = DateTime.now();
+    // One call for both: the route is an upsert, and a die being corrected
+    // from beside its part is the same write as one being made there.
+    final existing = draft.dieId == null
+        ? null
+        : provider.dies.where((die) => die.id == draft.dieId).firstOrNull;
+    final saved = await provider.createDie(
+      Die(
+        id: draft.dieId ?? '',
+        // Die.name is derived from producedPartNumbers on the way back, so a
+        // die with nothing there reads as blank throughout the master. This is
+        // naming, not a second link — which part a die makes is item_dies.
+        name: existing?.name ??
+            (draft.partCode.isEmpty ? draft.toolCode : draft.partCode),
+        toolCode: draft.toolCode,
+        // Carried, not defaulted: a die corrected from the wizard must not
+        // lose the photos, notes and machine list the Dies screen gave it.
+        photoUrls: existing?.photoUrls ?? const <String>[],
+        operationalNotes: existing?.operationalNotes ?? '',
+        compatibleMachineGroupIds:
+            existing?.compatibleMachineGroupIds ?? const <int>[],
+        numberOfCavities: existing?.numberOfCavities,
+        strokeCount: existing?.strokeCount,
+        maxStrokes: existing?.maxStrokes,
+        strokesPerPiece: existing?.strokesPerPiece,
+        setupMinutes: existing?.setupMinutes,
+        reportNotes: existing?.reportNotes ?? '',
+        physicalSpecs: existing?.physicalSpecs ?? const <CustomProperty>[],
+        clientId: existing?.clientId,
+        storageLocation: existing?.storageLocation,
+        dieType: draft.dieType,
+        madeBy: draft.madeBy,
+        poAt: draft.poAt,
+        dateInAt: draft.dateInAt,
+        linerSizeNm: draft.linerSizeNm,
+        linerSizeUnit: draft.linerSizeUnit,
+        noOfSet: draft.noOfSet,
+        storeArea: draft.storeArea,
+        rackNo: draft.rackNo,
+        status: existing?.status ?? DieStatus.ready,
+        ownership: existing?.ownership ?? DieOwnership.inHouse,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      ),
+    );
+    if (saved == null) {
+      return DieCreateOutcome.failed(
+        message: provider.errorMessage ?? 'The die could not be made.',
+        code: provider.errorCode,
+        suggestedToolCode: provider.suggestedToolCode,
+      );
+    }
+    return DieCreateOutcome.created(
+      CreatedRecord(
+        id: saved.id,
+        title: saved.toolCode,
+        subtitle: saved.madeBy,
+      ),
+    );
+  };
+  AppFlowHooks.dieMadeByNames ??= (context) async {
+    final provider = context.read<DiesProvider>();
+    await provider.initialize();
+    final seen = <String>{};
+    final names = <String>[];
+    // Newest first: the last person to cut a die is the likeliest next one.
+    for (final die in provider.dies.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt))) {
+      final name = die.madeBy.trim();
+      if (name.isEmpty || !seen.add(name.toLowerCase())) continue;
+      names.add(name);
+    }
+    return names;
+  };
+  // The wizard's machine sheet. It writes through MachinesProvider rather
+  // than posting itself, so a machine entered beside a part turns up on the
+  // Machines screen without a reload — and so the named 409 for a taken
+  // number is already parsed by the time core_erp sees it.
+  AppFlowHooks.createMachineFromSheet ??= (context, draft) async {
+    final provider = context.read<MachinesProvider>();
+    // The Machines screen may never have been opened in this session.
+    await provider.initialize();
+    final now = DateTime.now();
+    // One call for both: the route is an upsert, and a machine corrected from
+    // beside its part is the same write as one added there.
+    final existing = draft.machineId == null
+        ? null
+        : provider.machines
+              .where((machine) => machine.id == draft.machineId)
+              .firstOrNull;
+    final saved = await provider.createMachine(
+      Machine(
+        id: draft.machineId ?? '',
+        name: draft.name,
+        assetId: draft.assetId,
+        groupId: draft.groupId,
+        machineMake: draft.machineMake,
+        manufacturedYear: draft.manufacturedYear,
+        feederMake: draft.feederMake,
+        runningHours: draft.runningHours,
+        strokesPerMinute: draft.strokesPerMinute,
+        capacityKind: draft.capacityKind,
+        capacityKgf: draft.capacityKgf,
+        dieFeedType: draft.dieFeedType,
+        // Carried, not defaulted: a machine corrected from the wizard must not
+        // lose the photo, notes, capabilities and report figures the Machines
+        // screen gave it.
+        barcode: existing?.barcode ?? '',
+        primaryPhotoUrl: existing?.primaryPhotoUrl ?? '',
+        makeModel: existing?.makeModel ?? '',
+        serialNumber: existing?.serialNumber ?? '',
+        location: existing?.location,
+        installationDate: existing?.installationDate,
+        reportOutputPerHour: existing?.reportOutputPerHour,
+        setupMinutes: existing?.setupMinutes,
+        laborCount: existing?.laborCount,
+        powerKw: existing?.powerKw,
+        reportNotes: existing?.reportNotes ?? '',
+        customProperties: existing?.customProperties ?? const <CustomProperty>[],
+        capabilities: existing?.capabilities ?? const <MachineCapability>[],
+        status: existing?.status ?? MachineStatus.active,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      ),
+    );
+    if (saved == null) {
+      return MachineCreateOutcome.failed(
+        message: provider.errorMessage ?? 'The machine could not be saved.',
+        code: provider.errorCode,
+        suggestedAssetId: provider.suggestedAssetId,
+      );
+    }
+    return MachineCreateOutcome.created(
+      CreatedRecord(
+        id: saved.id,
+        title: saved.assetId,
+        subtitle: saved.machineMake,
+      ),
+    );
+  };
+  AppFlowHooks.machineSheetSuggestions ??= (context) async {
+    final provider = context.read<MachinesProvider>();
+    await provider.initialize();
+    // Newest first, so the answer someone gave most recently is offered first.
+    final machines = provider.machines.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    List<String> distinct(String Function(Machine) read) {
+      final seen = <String>{};
+      final names = <String>[];
+      for (final machine in machines) {
+        final value = read(machine).trim();
+        if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
+        names.add(value);
+      }
+      return names;
+    }
+
+    return MachineSheetSuggestions(
+      makes: distinct((machine) => machine.machineMake),
+      feederMakes: distinct((machine) => machine.feederMake),
+      dieFeedTypes: distinct((machine) => machine.dieFeedType),
+    );
+  };
   AppFlowHooks.machineEditor ??=
       (context, {required onSaved, required onCancel}) => MachineEditorSheet(
         onSaved: (machine) => onSaved(
@@ -973,21 +1165,11 @@ class _ShellContentSwitcher extends StatelessWidget {
                     'configurator_clients' => const ClientsScreen(),
                     'configurator_vendors' => const VendorsScreen(),
                     'configurator_items' => ItemsScreen(
-                      initialTab: 0,
                       onCreatePipeline: () =>
                           _handleCreatePipeline(outerContext),
                     ),
-                    'configurator_groups' => ItemsScreen(
-                      initialTab: 1,
-                      onCreatePipeline: () =>
-                          _handleCreatePipeline(outerContext),
-                    ),
-                    'configurator_sets' => ItemsScreen(
-                      initialTab: 0,
-                      initialSetsView: true,
-                      onCreatePipeline: () =>
-                          _handleCreatePipeline(outerContext),
-                    ),
+                    'configurator_groups' => const GroupsScreen(),
+                    'configurator_sets' => const SetsScreen(),
                     'configurator_units' => const UnitsScreen(),
                     'configurator_materials' => const MaterialsScreen(),
                     'configurator_machines' => const MachinesScreen(

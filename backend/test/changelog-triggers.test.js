@@ -63,6 +63,13 @@ async function cloneRow(backend, table, pk) {
   const unique = new Set();
   for (const index of await backend.all(`PRAGMA index_list(${table})`)) {
     if (!index.unique) continue;
+    // A PARTIAL unique index only constrains the rows its predicate selects,
+    // and the row being cloned is outside it (items.part_code is '' on every
+    // row this clones, and idx_items_part_code is WHERE part_code <> '').
+    // Perturbing its columns is not just unnecessary, it breaks the clone:
+    // that index is on (group_id, part_code), and bumping group_id by a
+    // million points the copy at a group that does not exist.
+    if (index.partial) continue;
     for (const part of await backend.all(`PRAGMA index_info(${index.name})`)) {
       if (part.name && part.name !== pk) unique.add(part.name);
     }

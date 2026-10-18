@@ -14,6 +14,10 @@ class ClientDto {
     required this.updatedAt,
     this.logoUrl = '',
     this.photoUrl = '',
+    this.contactName = '',
+    this.designation = '',
+    this.phone = '',
+    this.email = '',
   });
 
   final int id;
@@ -27,6 +31,10 @@ class ClientDto {
   final DateTime updatedAt;
   final String logoUrl;
   final String photoUrl;
+  final String contactName;
+  final String designation;
+  final String phone;
+  final String email;
 
   factory ClientDto.fromJson(Map<String, dynamic> json) {
     return ClientDto(
@@ -45,6 +53,10 @@ class ClientDto {
           DateTime.now(),
       logoUrl: json['logoUrl'] as String? ?? '',
       photoUrl: json['photoUrl'] as String? ?? '',
+      contactName: json['contactName'] as String? ?? '',
+      designation: json['designation'] as String? ?? '',
+      phone: json['phone'] as String? ?? '',
+      email: json['email'] as String? ?? '',
     );
   }
 
@@ -61,6 +73,10 @@ class ClientDto {
       updatedAt: updatedAt,
       logoUrl: logoUrl,
       photoUrl: photoUrl,
+      contactName: contactName,
+      designation: designation,
+      phone: phone,
+      email: email,
     );
   }
 }
@@ -107,6 +123,10 @@ class CreateClientRequest {
     required this.address,
     this.logoUrl = '',
     this.photoUrl = '',
+    this.contactName = '',
+    this.designation = '',
+    this.phone = '',
+    this.email = '',
   });
 
   final String name;
@@ -115,6 +135,10 @@ class CreateClientRequest {
   final String address;
   final String logoUrl;
   final String photoUrl;
+  final String contactName;
+  final String designation;
+  final String phone;
+  final String email;
 
   factory CreateClientRequest.fromInput(CreateClientInput input) {
     return CreateClientRequest(
@@ -124,6 +148,10 @@ class CreateClientRequest {
       address: input.address,
       logoUrl: input.logoUrl,
       photoUrl: input.photoUrl,
+      contactName: input.contactName,
+      designation: input.designation,
+      phone: input.phone,
+      email: input.email,
     );
   }
 
@@ -135,6 +163,10 @@ class CreateClientRequest {
       'address': address,
       'logoUrl': logoUrl,
       'photoUrl': photoUrl,
+      'contactName': contactName,
+      'designation': designation,
+      'phone': phone,
+      'email': email,
     };
   }
 }
@@ -147,6 +179,10 @@ class UpdateClientRequest {
     required this.address,
     this.logoUrl = '',
     this.photoUrl = '',
+    this.contactName = '',
+    this.designation = '',
+    this.phone = '',
+    this.email = '',
   });
 
   final String name;
@@ -155,6 +191,10 @@ class UpdateClientRequest {
   final String address;
   final String logoUrl;
   final String photoUrl;
+  final String contactName;
+  final String designation;
+  final String phone;
+  final String email;
 
   factory UpdateClientRequest.fromInput(UpdateClientInput input) {
     return UpdateClientRequest(
@@ -164,6 +204,10 @@ class UpdateClientRequest {
       address: input.address,
       logoUrl: input.logoUrl,
       photoUrl: input.photoUrl,
+      contactName: input.contactName,
+      designation: input.designation,
+      phone: input.phone,
+      email: input.email,
     );
   }
 
@@ -175,6 +219,10 @@ class UpdateClientRequest {
       'address': address,
       'logoUrl': logoUrl,
       'photoUrl': photoUrl,
+      'contactName': contactName,
+      'designation': designation,
+      'phone': phone,
+      'email': email,
     };
   }
 }

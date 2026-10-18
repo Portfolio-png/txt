@@ -8,6 +8,7 @@ import 'package:mime/mime.dart';
 
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
+import 'package:core_erp/core/widgets/force_capacity_field.dart';
 import 'package:core_erp/core/widgets/erp_form_dialog.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
@@ -111,6 +112,18 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   late final TextEditingController _powerKwController;
   late final TextEditingController _reportNotesController;
 
+  // The machine sheet (migrations/049).
+  late final TextEditingController _machineMakeController;
+  late final TextEditingController _manufacturedYearController;
+  late final TextEditingController _feederMakeController;
+  late final TextEditingController _runningHoursController;
+  late final TextEditingController _strokesPerMinuteController;
+  late final TextEditingController _capacityController;
+  late final TextEditingController _dieFeedTypeController;
+  String _capacityUnit = 'Ton';
+  CapacityKind _capacityKind = CapacityKind.unknown;
+  String? _capacityError;
+
   int? _groupId;
   MachineStatus _status = MachineStatus.active;
   bool _isUploading = false;
@@ -142,6 +155,28 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     );
     _powerKwController = TextEditingController(
       text: _formatOptionalNumber(widget.machine?.powerKw),
+    );
+    _machineMakeController = TextEditingController(
+      text: widget.machine?.machineMake ?? '',
+    );
+    _manufacturedYearController = TextEditingController(
+      text: widget.machine?.manufacturedYear?.toString() ?? '',
+    );
+    _feederMakeController = TextEditingController(
+      text: widget.machine?.feederMake ?? '',
+    );
+    _runningHoursController = TextEditingController(
+      text: widget.machine?.runningHours?.toString() ?? '',
+    );
+    _strokesPerMinuteController = TextEditingController(
+      text: widget.machine?.strokesPerMinute?.toString() ?? '',
+    );
+    _capacityKind = CapacityKind.fromWire(widget.machine?.capacityKind);
+    _capacityController = TextEditingController(
+      text: formatCapacityFromKgf(widget.machine?.capacityKgf, _capacityUnit),
+    );
+    _dieFeedTypeController = TextEditingController(
+      text: widget.machine?.dieFeedType ?? '',
     );
     _reportNotesController = TextEditingController(
       text: widget.machine?.reportNotes ?? '',
@@ -235,6 +270,13 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     _laborCountController.dispose();
     _powerKwController.dispose();
     _reportNotesController.dispose();
+    _machineMakeController.dispose();
+    _manufacturedYearController.dispose();
+    _feederMakeController.dispose();
+    _runningHoursController.dispose();
+    _strokesPerMinuteController.dispose();
+    _capacityController.dispose();
+    _dieFeedTypeController.dispose();
     super.dispose();
   }
 
@@ -248,6 +290,14 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     final value = controller.text.trim();
     if (value.isEmpty) return null;
     return double.tryParse(value);
+  }
+
+  /// A whole number, or null. Empty is not zero — a meter nobody has read and
+  /// a meter reading zero are different answers.
+  int? _optionalInt(TextEditingController controller) {
+    final value = controller.text.trim();
+    if (value.isEmpty) return null;
+    return int.tryParse(value);
   }
 
   void _addCustomProperty() {
@@ -562,6 +612,14 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  ErpDialogSectionCard(
+                    title: 'Machine in Plant',
+                    subtitle:
+                        'The sheet the floor keeps: who built it, what feeds '
+                        'it, and what it can press.',
+                    child: _machineSheetFields(),
                   ),
                   const SizedBox(height: 16),
                   ErpDialogSectionCard(
@@ -1428,6 +1486,115 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     );
   }
 
+
+  /// The "Machine in Plant" sheet the floor keeps: who built it, when, what
+  /// feeds it, how fast and how hard it presses, and what tooling it takes.
+  /// Added with migration 049 — a machine entered from the Quick entry wizard
+  /// fills these in, and this is where they get corrected.
+  Widget _machineSheetFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _MachineTextField(
+                controller: _machineMakeController,
+                label: 'Machine Make',
+                helper: 'Who built it',
+                required: false,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MachineTextField(
+                controller: _manufacturedYearController,
+                label: 'D.O.M.',
+                // A year, because that is all anyone knows about a machine
+                // this old — and not the same fact as when it was installed.
+                helper: 'Year it was built',
+                required: false,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _MachineTextField(
+                controller: _runningHoursController,
+                label: 'Running Hrs',
+                helper: 'The meter now',
+                required: false,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MachineTextField(
+                controller: _strokesPerMinuteController,
+                label: 'Stroke / Min',
+                helper: 'Rated strokes per minute',
+                required: false,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ForceCapacityField(
+          controller: _capacityController,
+          unitSymbol: _capacityUnit,
+          kind: _capacityKind,
+          errorText: _capacityError,
+          onUnitChanged: (symbol) => setState(() {
+            _capacityUnit = symbol;
+            _capacityError = null;
+          }),
+          onKindChanged: (kind) => setState(() {
+            _capacityKind = kind;
+            _capacityError = null;
+          }),
+          onChanged: () {
+            final parsed = parseCapacityToKgf(
+              _capacityController.text,
+              _capacityUnit,
+            );
+            if (parsed.error != _capacityError) {
+              setState(() => _capacityError = parsed.error);
+            }
+          },
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _MachineTextField(
+                controller: _feederMakeController,
+                label: 'Feeder make',
+                // "Make" because everywhere else here a feeder is an upstream
+                // node in a pipeline, and the sheet uses the word for both.
+                helper: 'The feeder on this machine, if it has one',
+                required: false,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MachineTextField(
+                controller: _dieFeedTypeController,
+                label: 'Die Type',
+                helper: 'Manual, Semi Prog, Progressive — what tooling it takes',
+                required: false,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -1507,6 +1674,24 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       laborCount: _optionalDouble(_laborCountController),
       powerKw: _optionalDouble(_powerKwController),
       reportNotes: _reportNotesController.text.trim(),
+      machineMake: _machineMakeController.text.trim(),
+      manufacturedYear: _optionalInt(_manufacturedYearController),
+      feederMake: _feederMakeController.text.trim(),
+      runningHours: _optionalInt(_runningHoursController),
+      strokesPerMinute: _optionalInt(_strokesPerMinuteController),
+      capacityKind: _capacityKind == CapacityKind.freeHand
+          ? CapacityKind.freeHand.wire
+          : (parseCapacityToKgf(
+                      _capacityController.text,
+                      _capacityUnit,
+                    ).kgf ==
+                    null
+                ? ''
+                : CapacityKind.rated.wire),
+      capacityKgf: _capacityKind == CapacityKind.freeHand
+          ? null
+          : parseCapacityToKgf(_capacityController.text, _capacityUnit).kgf,
+      dieFeedType: _dieFeedTypeController.text.trim(),
       customProperties: customPropsList,
       capabilities: capabilitiesList,
       createdAt: widget.machine?.createdAt ?? DateTime.now(),

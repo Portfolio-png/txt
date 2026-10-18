@@ -2,6 +2,11 @@ class SubContractorDefinition {
   final int id;
   final int clientId;
   final String name;
+
+  /// What they are at their firm — Proprietor, Director, and so on. Free text
+  /// with a suggestion list in the form, because the sketch this came from
+  /// ends its own list with "Others".
+  final String designation;
   final String phone;
   final String email;
   final String notes;
@@ -16,6 +21,7 @@ class SubContractorDefinition {
     required this.id,
     required this.clientId,
     required this.name,
+    this.designation = '',
     this.phone = '',
     this.email = '',
     this.notes = '',
@@ -32,6 +38,7 @@ class SubContractorDefinition {
       id: json['id'] as int? ?? 0,
       clientId: json['clientId'] as int? ?? 0,
       name: json['name'] as String? ?? '',
+      designation: json['designation'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       email: json['email'] as String? ?? '',
       notes: json['notes'] as String? ?? '',
@@ -53,6 +60,7 @@ class SubContractorDefinition {
       'id': id,
       'clientId': clientId,
       'name': name,
+      'designation': designation,
       'phone': phone,
       'email': email,
       'notes': notes,
@@ -69,6 +77,7 @@ class SubContractorDefinition {
     int? id,
     int? clientId,
     String? name,
+    String? designation,
     String? phone,
     String? email,
     String? notes,
@@ -83,6 +92,7 @@ class SubContractorDefinition {
       id: id ?? this.id,
       clientId: clientId ?? this.clientId,
       name: name ?? this.name,
+      designation: designation ?? this.designation,
       phone: phone ?? this.phone,
       email: email ?? this.email,
       notes: notes ?? this.notes,

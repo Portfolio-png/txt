@@ -164,7 +164,14 @@ class ApiMachineRepository implements MachineRepository {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to save machine');
+      // The code and the suggestion are carried, not flattened into a string:
+      // a taken machine number needs a different answer from a dead network,
+      // and the server already offered the next free one.
+      throw MachineSaveException(
+        payload['error'] as String? ?? 'Failed to save machine',
+        code: payload['code'] as String?,
+        suggestedAssetId: payload['suggestedAssetId'] as String?,
+      );
     }
 
     return _machineFromJson(payload['machine'] as Map<String, dynamic>);
@@ -393,6 +400,17 @@ class ApiMachineRepository implements MachineRepository {
       setupMinutes: _doubleFromJson(json['setupMinutes']),
       laborCount: _doubleFromJson(json['laborCount']),
       powerKw: _doubleFromJson(json['powerKw']),
+      // The machine sheet (migrations/049). Read back in full so the editor
+      // can correct what the wizard wrote — and so a save from the editor
+      // cannot blank it by leaving it out.
+      machineMake: json['machineMake'] as String? ?? '',
+      manufacturedYear: json['manufacturedYear'] as int?,
+      feederMake: json['feederMake'] as String? ?? '',
+      runningHours: json['runningHours'] as int?,
+      strokesPerMinute: json['strokesPerMinute'] as int?,
+      capacityKind: json['capacityKind'] as String? ?? '',
+      capacityKgf: json['capacityKgf'] as int?,
+      dieFeedType: json['dieFeedType'] as String? ?? '',
       reportNotes: json['reportNotes'] as String? ?? '',
       customProperties: ConfigService.instance.disableMachineCustomFields
           ? const []
@@ -428,6 +446,14 @@ class ApiMachineRepository implements MachineRepository {
       'setupMinutes': m.setupMinutes,
       'laborCount': m.laborCount,
       'powerKw': m.powerKw,
+      'machineMake': m.machineMake,
+      'manufacturedYear': m.manufacturedYear,
+      'feederMake': m.feederMake,
+      'runningHours': m.runningHours,
+      'strokesPerMinute': m.strokesPerMinute,
+      'capacityKind': m.capacityKind,
+      'capacityKgf': m.capacityKgf,
+      'dieFeedType': m.dieFeedType,
       'reportNotes': m.reportNotes,
       'customProperties': ConfigService.instance.disableMachineCustomFields
           ? const []

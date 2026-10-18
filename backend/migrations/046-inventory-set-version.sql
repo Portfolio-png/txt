@@ -1,0 +1,20 @@
+-- A set save replaces the whole line list, and until now it replaced whatever
+-- was there — so of two people with the set open, the one who saved last
+-- silently erased the other's lines. Nothing anywhere could tell: no version,
+-- no updated_at precondition, not even a changes === 0 check.
+--
+-- This is the token a save is allowed to carry. The server refuses a save whose
+-- expectedVersion no longer matches, with a 409 the editor turns into "this set
+-- changed while you had it open — reload it".
+--
+-- An integer rather than reusing updated_at, for two reasons. The client parses
+-- updated_at into a DateTime with a `?? DateTime.now()` fallback, so a payload
+-- missing the field fabricates a token that can never match and the set becomes
+-- permanently unsaveable. And a wall clock is not monotonic — NTP correction or
+-- a suspended VM can give two different states the same timestamp, which is the
+-- very lost update being paid for here.
+--
+-- DEFAULT 0 backfills every existing row to the same starting point, so no
+-- client begins out of step. Additive and idempotent; the runner absorbs
+-- "duplicate column name".
+ALTER TABLE inventory_sets ADD COLUMN version INTEGER NOT NULL DEFAULT 0;

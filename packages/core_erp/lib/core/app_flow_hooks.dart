@@ -29,8 +29,260 @@ typedef EmbeddedEditorBuilder =
       required VoidCallback onCancel,
     });
 
+/// A die as the sheet beside a part describes it.
+///
+/// Every field is what someone typed into the wizard; the host turns it into
+/// whatever its own Die type needs. This package cannot see that type — `Die`
+/// lives in the app, not here — which is the whole reason this seam exists.
+class DieSheetDraft {
+  const DieSheetDraft({
+    this.dieId,
+    required this.toolCode,
+    required this.dieType,
+    this.madeBy = '',
+    this.poAt,
+    this.dateInAt,
+    this.linerSizeNm,
+    this.linerSizeUnit = 'mm',
+    this.noOfSet,
+    this.storeArea = '',
+    this.rackNo = '',
+    this.partCode = '',
+    this.partName = '',
+  });
+
+  /// The die being corrected, or null to make a new one. A part holds several
+  /// dies, so editing one has to say WHICH — and the same seam does both
+  /// because the route behind it is an upsert.
+  final String? dieId;
+
+  /// Already derived or typed over, never empty.
+  final String toolCode;
+
+  /// `cutting` | `bending`.
+  final String dieType;
+  final String madeBy;
+
+  /// UTC instants: when the die was ordered, and when it came into store.
+  final DateTime? poAt;
+  final DateTime? dateInAt;
+
+  /// An integer count of nanometres — the base the units contract requires,
+  /// and small enough that thou and SWG land on it exactly.
+  final int? linerSizeNm;
+
+  /// How that size was read. Display only; it never enters arithmetic.
+  final String linerSizeUnit;
+  final int? noOfSet;
+  final String storeArea;
+  final String rackNo;
+
+  /// The part this die was made for. Sent so the server can derive the code
+  /// the same way, and so the host can name the die after the part — not as a
+  /// second link, which is `item_dies`.
+  final String partCode;
+  final String partName;
+
+  Map<String, dynamic> toJson() => {
+    if (dieId != null) 'id': dieId,
+    'toolCode': toolCode,
+    'dieType': dieType,
+    'madeBy': madeBy,
+    'poAt': poAt?.toUtc().toIso8601String(),
+    'dateInAt': dateInAt?.toUtc().toIso8601String(),
+    'linerSizeNm': linerSizeNm,
+    'linerSizeUnit': linerSizeUnit,
+    'noOfSet': noOfSet,
+    'storeArea': storeArea,
+    'rackNo': rackNo,
+    'partCode': partCode,
+  };
+}
+
+/// What came back from writing one.
+///
+/// A bare null could not tell a taken code from a dead network, and the two
+/// need different answers — the same reason `ItemsProvider` carries an
+/// `errorCode` beside its message.
+class DieCreateOutcome {
+  const DieCreateOutcome.created(CreatedRecord this.record)
+    : message = null,
+      code = null,
+      suggestedToolCode = null;
+
+  const DieCreateOutcome.failed({
+    required this.message,
+    this.code,
+    this.suggestedToolCode,
+  }) : record = null;
+
+  final CreatedRecord? record;
+  final String? message;
+
+  /// `die_tool_code_duplicate` when the code is taken.
+  final String? code;
+
+  /// The first free code in the series, when the server offered one.
+  final String? suggestedToolCode;
+
+  bool get isCreated => record != null;
+}
+
+/// A machine as the "Machine in Plant" sheet beside a part describes it.
+///
+/// Every field is what someone typed into the wizard; the host turns it into
+/// whatever its own Machine type needs. This package cannot see that type —
+/// `Machine` lives in the app, not here — which is why this seam exists.
+class MachineSheetDraft {
+  const MachineSheetDraft({
+    this.machineId,
+    required this.assetId,
+    required this.name,
+    this.groupId,
+    this.machineMake = '',
+    this.manufacturedYear,
+    this.feederMake = '',
+    this.runningHours,
+    this.strokesPerMinute,
+    this.capacityKind = '',
+    this.capacityKgf,
+    this.dieFeedType = '',
+  });
+
+  /// The machine being corrected, or null to add one. A part runs on several,
+  /// so editing one has to say WHICH — and the same seam does both because the
+  /// route behind it is an upsert.
+  final String? machineId;
+
+  /// The Machine No. Already suggested or typed over, never empty.
+  final String assetId;
+
+  /// What it is called. Falls back to the number when nobody named it, because
+  /// a machine with no name reads as blank throughout its own master.
+  final String name;
+
+  /// The machine group — Power Press, Punching M — which is the same list a
+  /// die declares itself compatible with.
+  final int? groupId;
+
+  final String machineMake;
+
+  /// A year, not a date: a press everyone knows was built in 2011 has one
+  /// fact, and a stored 2011-01-01 would print a day nobody recorded.
+  final int? manufacturedYear;
+
+  /// The make of the feeder attached to it. Not the pipeline sense of the
+  /// word, which is an upstream node in a graph.
+  final String feederMake;
+
+  final int? runningHours;
+  final int? strokesPerMinute;
+
+  /// `''` | `rated` | `free_hand`. Stored rather than inferred: a bench with
+  /// no rated tonnage is a fact, and a blank is the absence of one.
+  final String capacityKind;
+
+  /// An integer count of kilograms-force — the base the units contract
+  /// requires, and one that Ton and kgf both land on exactly.
+  final int? capacityKgf;
+
+  /// What tooling it takes. NOT a die's own type.
+  final String dieFeedType;
+
+  Map<String, dynamic> toJson() => {
+    if (machineId != null) 'id': machineId,
+    'assetId': assetId,
+    'name': name,
+    'groupId': groupId,
+    'machineMake': machineMake,
+    'manufacturedYear': manufacturedYear,
+    'feederMake': feederMake,
+    'runningHours': runningHours,
+    'strokesPerMinute': strokesPerMinute,
+    'capacityKind': capacityKind,
+    'capacityKgf': capacityKgf,
+    'dieFeedType': dieFeedType,
+  };
+}
+
+/// What came back from writing one.
+class MachineCreateOutcome {
+  const MachineCreateOutcome.created(CreatedRecord this.record)
+    : message = null,
+      code = null,
+      suggestedAssetId = null;
+
+  const MachineCreateOutcome.failed({
+    required this.message,
+    this.code,
+    this.suggestedAssetId,
+  }) : record = null;
+
+  final CreatedRecord? record;
+  final String? message;
+
+  /// `machine_asset_id_duplicate` when the number is taken.
+  final String? code;
+
+  /// The next free number in the series, when the server offered one.
+  final String? suggestedAssetId;
+
+  bool get isCreated => record != null;
+}
+
+/// The three free-text columns' existing answers, for their suggestion chips.
+///
+/// One hook rather than three: the host makes them in one pass over the
+/// machines it has already loaded, and three round trips to say the same thing
+/// would be three chances to forget one.
+class MachineSheetSuggestions {
+  const MachineSheetSuggestions({
+    this.makes = const <String>[],
+    this.feederMakes = const <String>[],
+    this.dieFeedTypes = const <String>[],
+  });
+
+  final List<String> makes;
+  final List<String> feederMakes;
+  final List<String> dieFeedTypes;
+}
+
 class AppFlowHooks {
   const AppFlowHooks._();
+
+  /// Writes one row in the machines master from a part's machine sheet — a new
+  /// one, or the one [MachineSheetDraft.machineId] names.
+  ///
+  /// Deliberately does NOT link it to anything: the item side of that lives in
+  /// this package, where ItemsProvider is.
+  static Future<MachineCreateOutcome> Function(
+    BuildContext context,
+    MachineSheetDraft draft,
+  )?
+  createMachineFromSheet;
+
+  /// What has been typed into the sheet's free-text columns before.
+  static Future<MachineSheetSuggestions> Function(BuildContext context)?
+  machineSheetSuggestions;
+
+  static bool get canCreateMachineFromSheet => createMachineFromSheet != null;
+
+  /// Writes one row in the dies master from a part's die sheet — a new one, or
+  /// the one [DieSheetDraft.dieId] names.
+  ///
+  /// Deliberately does NOT link it to anything: the item side of that lives in
+  /// this package, where ItemsProvider is.
+  static Future<DieCreateOutcome> Function(
+    BuildContext context,
+    DieSheetDraft draft,
+  )?
+  createDieFromSheet;
+
+  /// Names that have appeared in "made by" on a die before, newest first.
+  /// Unset means no suggestions — the field is free text either way.
+  static Future<List<String>> Function(BuildContext context)? dieMadeByNames;
+
+  static bool get canCreateDieFromSheet => createDieFromSheet != null;
 
   /// Opens the pipeline builder and resolves to the saved template id, or null
   /// if the user backed out.
@@ -57,6 +309,46 @@ class AppFlowHooks {
   /// Builds the full machine editor for embedding; same contract as
   /// [dieEditor].
   static EmbeddedEditorBuilder? machineEditor;
+
+  /// Builds a **read-only** inspector for one die, by id.
+  ///
+  /// Why a hook rather than a widget in this package: a die's specs — tool
+  /// code, rack, cavities, strokes — live on the host app's `Die` type, which
+  /// `core_erp` deliberately cannot see. The ecosystem ribbon can name a die
+  /// from the link graph alone, but it cannot show what the die IS.
+  ///
+  /// Read-only on purpose. Walking the graph to look at a neighbour must not
+  /// become a chance to change it by accident, which is what opening the editor
+  /// would make it; each inspector offers its own explicit Edit instead.
+  ///
+  /// Unregistered means not offered, as with every hook here, so a chip whose
+  /// inspector is missing simply does not open.
+  static Widget Function(BuildContext context, String dieId)? dieInspector;
+
+  /// The same, for one machine.
+  static Widget Function(BuildContext context, String machineId)?
+  machineInspector;
+
+  /// The same, for one item (part).
+  static Widget Function(BuildContext context, String itemId)?
+  itemInspector;
+
+  /// Whether a read-only inspector exists for this link type.
+  static bool canInspect(String type) => switch (type) {
+    'die' => dieInspector != null,
+    'machine' => machineInspector != null,
+    'item' => itemInspector != null,
+    _ => false,
+  };
+
+  /// The inspector for a link type, or null when the host provides none.
+  static Widget? inspectorFor(BuildContext context, String type, String id) =>
+      switch (type) {
+        'die' => dieInspector?.call(context, id),
+        'machine' => machineInspector?.call(context, id),
+        'item' => itemInspector?.call(context, id),
+        _ => null,
+      };
 
   static bool get canCreatePipeline => createPipeline != null;
 

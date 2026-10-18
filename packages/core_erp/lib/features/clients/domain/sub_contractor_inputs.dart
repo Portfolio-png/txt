@@ -1,5 +1,6 @@
 class CreateSubContractorInput {
   final String name;
+  final String designation;
   final String phone;
   final String email;
   final String notes;
@@ -9,6 +10,7 @@ class CreateSubContractorInput {
 
   const CreateSubContractorInput({
     required this.name,
+    this.designation = '',
     this.phone = '',
     this.email = '',
     this.notes = '',
@@ -20,6 +22,7 @@ class CreateSubContractorInput {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'designation': designation,
       'phone': phone,
       'email': email,
       'notes': notes,
@@ -32,6 +35,7 @@ class CreateSubContractorInput {
 
 class UpdateSubContractorInput {
   final String? name;
+  final String? designation;
   final String? phone;
   final String? email;
   final String? notes;
@@ -41,6 +45,7 @@ class UpdateSubContractorInput {
 
   const UpdateSubContractorInput({
     this.name,
+    this.designation,
     this.phone,
     this.email,
     this.notes,
@@ -52,6 +57,7 @@ class UpdateSubContractorInput {
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{};
     if (name != null) map['name'] = name;
+    if (designation != null) map['designation'] = designation;
     if (phone != null) map['phone'] = phone;
     if (email != null) map['email'] = email;
     if (notes != null) map['notes'] = notes;

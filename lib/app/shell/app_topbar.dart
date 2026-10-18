@@ -113,6 +113,17 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
           onChanged: provider.setSearchQuery,
         ),
       );
+    case 'configurator_sets':
+      final provider = context.watch<InventoryProvider>();
+      return ShellTopStripConfig(
+        search: ShellTopStripSearchConfig(
+          // Searching inside a set is the point: the question people arrive
+          // with is which set holds a part, not what the set is called.
+          placeholder: 'Search sets or the items in them',
+          initialValue: provider.setsQuery,
+          onChanged: provider.setSetsQuery,
+        ),
+      );
     case 'configurator_units':
       final provider = context.watch<UnitsProvider>();
       return ShellTopStripConfig(

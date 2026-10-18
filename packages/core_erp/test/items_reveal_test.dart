@@ -1,3 +1,6 @@
+import 'package:core_erp/features/items/domain/developed_for.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/features/items/presentation/widgets/catalog_quick_entry_dialog.dart';
 import 'package:core_erp/core/widgets/soft_master_data.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
@@ -63,7 +66,13 @@ GroupDefinition _group(int id, String name, {int itemCount = 0}) {
 final _sockets = _group(3, 'Sockets', itemCount: 1);
 final _plugs = _group(4, 'Plugs', itemCount: 1);
 
-ItemDefinition _item(int id, String name, {int? baseItemId, int? groupId}) {
+ItemDefinition _item(
+  int id,
+  String name, {
+  int? baseItemId,
+  int? groupId,
+  DevelopedFor developedFor = DevelopedFor.empty,
+}) {
   return ItemDefinition(
     id: id,
     name: name,
@@ -72,6 +81,7 @@ ItemDefinition _item(int id, String name, {int? baseItemId, int? groupId}) {
     groupId: groupId ?? _sockets.id,
     unitId: _unit.id,
     baseItemId: baseItemId,
+    developedFor: developedFor,
     quantity: 0,
     namingFormat: const <String>[],
     variationTree: const <ItemVariationNodeDefinition>[],
@@ -83,7 +93,31 @@ ItemDefinition _item(int id, String name, {int? baseItemId, int? groupId}) {
 }
 
 final _leafItem = _item(50, 'Socket Earthing');
-final _variantA = _item(51, 'Socket Earthing 6 Amp', baseItemId: 50);
+final _variantA = _item(
+  51,
+  'Socket Earthing 6 Amp',
+  baseItemId: 50,
+  developedFor: DevelopedFor(
+    kind: DevelopedForKind.client,
+    clientId: 7,
+    clientName: 'Gold Madel Industries',
+    companyName: 'Gold Madel Industries',
+    contactName: 'Kissan Jain',
+    designation: 'Director',
+    phone: '986565656',
+    email: 'kissan@goldmadel.example',
+    at: DateTime.utc(2026, 5, 15, 4, 35),
+    quotationAmount: 85000,
+  ),
+);
+// Developed in-house: a recorded answer, and a different one from the blank
+// the Plug Top carries.
+final _selfMade = _item(
+  52,
+  'Socket Earthing 16 Amp',
+  baseItemId: 50,
+  developedFor: const DevelopedFor(kind: DevelopedForKind.self),
+);
 final _plug = _item(60, 'Plug Top', groupId: _plugs.id);
 
 class _FakeGroupRepository implements GroupRepository {
@@ -110,6 +144,7 @@ class _FakeItemRepository implements ItemRepository {
   Future<List<ItemDefinition>> getItems() async => <ItemDefinition>[
     _leafItem,
     _variantA,
+    _selfMade,
     _plug,
   ];
 
@@ -136,39 +171,40 @@ class _FakeInventoryRepository implements InventoryRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// The items screen, with the providers its detail panel needs. Hoisted out
+/// of main so the Developed For group below can open the same screen.
+Future<ItemsProvider> _openItems(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(1700, 1300);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+
+  final groupsProvider = GroupsProvider(repository: _FakeGroupRepository());
+  final itemsProvider = ItemsProvider(repository: _FakeItemRepository());
+  final unitsProvider = UnitsProvider(repository: _FakeUnitRepository());
+  await groupsProvider.initialize();
+  await itemsProvider.initialize();
+  await unitsProvider.initialize();
+
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<GroupsProvider>.value(value: groupsProvider),
+        ChangeNotifierProvider<ItemsProvider>.value(value: itemsProvider),
+        ChangeNotifierProvider<UnitsProvider>.value(value: unitsProvider),
+        ChangeNotifierProvider<InventoryProvider>(
+          create: (_) =>
+              InventoryProvider(repository: _FakeInventoryRepository()),
+        ),
+      ],
+      child: const MaterialApp(home: ItemsScreen()),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return itemsProvider;
+}
+
 void main() {
-  Future<ItemsProvider> open(
-    WidgetTester tester, {
-    bool startOnSets = false,
-  }) async {
-    tester.view.physicalSize = const Size(1700, 1300);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    final groupsProvider = GroupsProvider(repository: _FakeGroupRepository());
-    final itemsProvider = ItemsProvider(repository: _FakeItemRepository());
-    final unitsProvider = UnitsProvider(repository: _FakeUnitRepository());
-    await groupsProvider.initialize();
-    await itemsProvider.initialize();
-    await unitsProvider.initialize();
-
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<GroupsProvider>.value(value: groupsProvider),
-          ChangeNotifierProvider<ItemsProvider>.value(value: itemsProvider),
-          ChangeNotifierProvider<UnitsProvider>.value(value: unitsProvider),
-          ChangeNotifierProvider<InventoryProvider>(
-            create: (_) =>
-                InventoryProvider(repository: _FakeInventoryRepository()),
-          ),
-        ],
-        child: MaterialApp(home: ItemsScreen(initialSetsView: startOnSets)),
-      ),
-    );
-    await tester.pumpAndSettle();
-    return itemsProvider;
-  }
+  _developedForPanelTests();
 
   Iterable<SoftMasterRow> highlightedRows(WidgetTester tester) => tester
       .widgetList<SoftMasterRow>(find.byType(SoftMasterRow))
@@ -177,7 +213,7 @@ void main() {
   testWidgets('a reveal unfolds to the item, lights it and opens its details', (
     tester,
   ) async {
-    final items = await open(tester);
+    final items = await _openItems(tester);
 
     // Collapsed: the groups are there, the items inside them are not.
     expect(find.text('Sockets'), findsOneWidget);
@@ -200,10 +236,13 @@ void main() {
     expect(find.byType(ItemDetailPanel), findsOneWidget);
   });
 
-  testWidgets('a reveal leaves Sets and drops a search that hides the item', (
+  testWidgets('a reveal drops a search that was hiding the item', (
     tester,
   ) async {
-    final items = await open(tester, startOnSets: true);
+    // Sets moved out to their own master, so there is no longer another view
+    // in this screen to be brought back from — but a search that hides the
+    // target still has to be dropped, which is the half that matters.
+    final items = await _openItems(tester);
     items.setSearchQuery('nothing matches this');
     await tester.pumpAndSettle();
     expect(find.text('Sockets'), findsNothing);
@@ -217,10 +256,51 @@ void main() {
     expect(find.byType(ItemDetailPanel), findsOneWidget);
   });
 
+  testWidgets('the Wizard button opens quick entry', (tester) async {
+    await _openItems(tester);
+
+    final wizard = find.widgetWithText(AppButton, 'Wizard');
+    expect(wizard, findsOneWidget);
+    expect(
+      tester.widget<AppButton>(wizard).onPressed,
+      isNotNull,
+      reason: 'the affordance was drawn disabled until it had somewhere to go',
+    );
+    expect(find.textContaining('not wired up yet'), findsNothing);
+
+    await tester.tap(wizard);
+    await tester.pumpAndSettle();
+    expect(find.byType(CatalogQuickEntryDialog), findsOneWidget);
+    // Group, set and part as three dropdowns, and the sections under them —
+    // where the part goes and everything about it, on one screen.
+    for (final slug in const ['group', 'set', 'part']) {
+      expect(
+        find.byKey(ValueKey<String>('quick-entry-$slug-field')),
+        findsOneWidget,
+      );
+    }
+    expect(find.text('Made just now'), findsOneWidget);
+    expect(find.textContaining('Developed For'), findsWidgets);
+
+    // It fills the screen bar the dialog's 24px gutter. Asserted because the
+    // height is only a CAP: ErpFormScaffold's Column is MainAxisSize.min, so
+    // the card shrink-wraps the moment the body stops having an Expanded in
+    // it, and nothing else would notice.
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final card = tester.getSize(
+      find.ancestor(
+        of: find.byType(CatalogQuickEntryDialog),
+        matching: find.byType(Material),
+      ).first,
+    );
+    expect(card.width, closeTo(screen.width - 48, 1));
+    expect(card.height, closeTo(screen.height - 48, 1));
+  });
+
   testWidgets('a reveal for an item that is gone says so and does nothing', (
     tester,
   ) async {
-    final items = await open(tester);
+    final items = await _openItems(tester);
 
     items.revealItem(999);
     await tester.pumpAndSettle();
@@ -229,5 +309,77 @@ void main() {
     expect(highlightedRows(tester), isEmpty);
     expect(find.byType(ItemDetailPanel), findsNothing);
     expect(find.text('That item is no longer in the list.'), findsOneWidget);
+  });
+}
+
+/// --- the Developed For reveal ----------------------------------------------
+///
+/// The panel is itself a dialog, so this is a card it toggles rather than
+/// another dialog on top. No fetch and no spinner either: unlike the usage
+/// row beside it, the item DTO carries the block already.
+void _developedForPanelTests() {
+  Future<void> openPanelFor(WidgetTester tester, ItemsProvider items, int id) async {
+    items.revealItem(id);
+    await tester.pumpAndSettle();
+    expect(find.byType(ItemDetailPanel), findsOneWidget);
+  }
+
+  Finder revealButton() => find.widgetWithText(OutlinedButton, 'Developed for');
+
+  testWidgets('the button toggles the card, and nothing is fetched', (
+    tester,
+  ) async {
+    final items = await _openItems(tester);
+    await openPanelFor(tester, items, _variantA.id);
+
+    // Closed to begin with: most parts were made for nobody in particular.
+    expect(find.text('Developed For'), findsNothing);
+    expect(revealButton(), findsOneWidget);
+
+    await tester.tap(revealButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Developed For'), findsOneWidget);
+    expect(find.text('Gold Madel Industries'), findsOneWidget);
+    expect(find.text('Kissan Jain'), findsOneWidget);
+    expect(find.text('Director'), findsOneWidget);
+    expect(find.text('986565656'), findsOneWidget);
+    expect(find.text('₹85,000/-'), findsOneWidget);
+    // Never a spinner: there is nothing to wait for.
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.tap(revealButton());
+    await tester.pumpAndSettle();
+    expect(find.text('Developed For'), findsNothing);
+  });
+
+  testWidgets('self reads as in-house, with nobody to name', (tester) async {
+    final items = await _openItems(tester);
+    await openPanelFor(tester, items, _selfMade.id);
+
+    await tester.tap(revealButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Self (in-house)'), findsOneWidget);
+    // No person, because there is no party — and no empty rows pretending
+    // there might be.
+    expect(find.text('Client Name'), findsNothing);
+    expect(find.text('Company Name'), findsNothing);
+  });
+
+  testWidgets('a part developed for nobody says so on the button itself', (
+    tester,
+  ) async {
+    final items = await _openItems(tester);
+    await openPanelFor(tester, items, _plug.id);
+
+    // Drawn disabled with a reason rather than hidden: a control that appears
+    // only once its precondition holds is a control nobody knows about.
+    expect(revealButton(), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(revealButton()).onPressed, isNull);
+    final tooltip = tester.widget<Tooltip>(
+      find.ancestor(of: revealButton(), matching: find.byType(Tooltip)).first,
+    );
+    expect(tooltip.message, contains('Nobody has recorded'));
   });
 }

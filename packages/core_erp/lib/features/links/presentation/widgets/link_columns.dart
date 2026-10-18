@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/miller_column.dart';
 import '../../data/entity_link_service.dart';
 import '../../domain/entity_link.dart';
+import 'link_type_icon.dart';
 
 /// Opens an editor for a new record of [type] and resolves to it once saved,
 /// or null if nothing was saved. The host supplies this; the columns stay out
@@ -98,7 +100,7 @@ Future<LinkRef?> showLinkAttach(
           value: type.type,
           child: Row(
             children: [
-              Icon(_iconFor(type.type), size: 20, color: SoftErpTheme.accent),
+              Icon(linkTypeIcon(type.type), size: 20, color: SoftErpTheme.accent),
               const SizedBox(width: 10),
               Text(type.label, style: const TextStyle(fontSize: 15)),
             ],
@@ -537,7 +539,7 @@ class _LinkColumnsState extends State<LinkColumns> {
       header: _ColumnHeader(
         title: spec?.plural ?? _rootType,
         count: _roots.length,
-        icon: _iconFor(_rootType),
+        icon: linkTypeIcon(_rootType),
         // The first column's master is a choice, not a given: switching it is
         // what turns "this item's dies" into "this die's items".
         trailing: _types.length > 1
@@ -552,7 +554,7 @@ class _LinkColumnsState extends State<LinkColumns> {
                       child: Row(
                         children: [
                           Icon(
-                            _iconFor(type.type),
+                            linkTypeIcon(type.type),
                             size: 20,
                             color: type.type == _rootType
                                 ? SoftErpTheme.accent
@@ -604,7 +606,7 @@ class _LinkColumnsState extends State<LinkColumns> {
                 final ref = _roots[index];
                 return _LinkRow(
                   ref: ref,
-                  icon: _iconFor(ref.type),
+                  icon: linkTypeIcon(ref.type),
                   selected: ref == selected,
                   onTap: () => _select(0, ref),
                 );
@@ -668,7 +670,7 @@ class _LinkColumnsState extends State<LinkColumns> {
         title: subject.label,
         subtitle: _typeFor(subject.type)?.label ?? subject.type,
         count: links?.total,
-        icon: _iconFor(subject.type),
+        icon: linkTypeIcon(subject.type),
         trailing: widget.addAtBottom
             ? null
             : Builder(
@@ -711,12 +713,12 @@ class _LinkColumnsState extends State<LinkColumns> {
                         ? group.label
                         : group.plural,
                     count: group.links.length,
-                    icon: _iconFor(group.type),
+                    icon: linkTypeIcon(group.type),
                   ),
                   for (final ref in group.links) ...[
                     _LinkRow(
                       ref: ref,
-                      icon: _iconFor(ref.type),
+                      icon: linkTypeIcon(ref.type),
                       selected: ref == selected,
                       onTap: () => _select(depth, ref),
                       onUnlink: () => _unlink(subject, ref),
@@ -734,20 +736,6 @@ class _LinkColumnsState extends State<LinkColumns> {
 /// The icon for a master. Keyed by the catalog's `icon` hint, which is a plain
 /// word rather than a Flutter codepoint so the server stays free of the app's
 /// icon set; an unknown one falls back to a neutral shape rather than nothing.
-IconData _iconFor(String type) => switch (type) {
-  'item' => Icons.inventory_2_outlined,
-  'die' => Icons.build_circle_outlined,
-  'machine' => Icons.precision_manufacturing_outlined,
-  'group' => Icons.account_tree_outlined,
-  'pipeline' => Icons.timeline_outlined,
-  'material' => Icons.layers_outlined,
-  'unit' => Icons.straighten_outlined,
-  'client' => Icons.groups_outlined,
-  'vendor' => Icons.storefront_outlined,
-  'employee' => Icons.badge_outlined,
-  'department' => Icons.apartment_outlined,
-  _ => Icons.link_outlined,
-};
 
 InputDecoration _searchDecoration(String hint) => InputDecoration(
   hintText: hint,
@@ -795,6 +783,9 @@ class _WaitingColumn extends StatelessWidget {
   }
 }
 
+// The column chrome now lives in core/widgets/miller_column.dart, so the
+// quick-entry wizard draws the same column rather than a lookalike. These stay
+// as the names this file already reads by.
 class _ColumnShell extends StatelessWidget {
   const _ColumnShell({
     required this.header,
@@ -806,42 +797,15 @@ class _ColumnShell extends StatelessWidget {
   final Widget header;
   final Widget body;
   final Widget? search;
-
-  /// Sits below the list, outside its scroll, so it stays reachable however
-  /// long the column gets.
   final Widget? footer;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusLg),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          header,
-          if (search != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: search!,
-            ),
-          const Divider(height: 1, color: SoftErpTheme.border),
-          Expanded(child: body),
-          if (footer != null) ...[
-            const Divider(height: 1, color: SoftErpTheme.border),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-              child: footer!,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ErpMillerColumn(
+    header: header,
+    body: body,
+    search: search,
+    footer: footer,
+  );
 }
 
 class _ColumnHeader extends StatelessWidget {
@@ -860,48 +824,13 @@ class _ColumnHeader extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 22, color: SoftErpTheme.accent),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: SoftErpTheme.textPrimary,
-                  ),
-                ),
-                if (subtitle != null && subtitle!.isNotEmpty)
-                  Text(
-                    subtitle!,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: SoftErpTheme.textSecondary,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (count != null) ...[
-            const SizedBox(width: 6),
-            _Badge(label: '$count'),
-          ],
-          ?trailing,
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ErpMillerColumnHeader(
+    title: title,
+    icon: icon,
+    subtitle: subtitle,
+    count: count,
+    trailing: trailing,
+  );
 }
 
 class _GroupHeading extends StatelessWidget {
@@ -1033,23 +962,7 @@ class _Badge extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.accentSoft,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w800,
-          color: SoftErpTheme.accentDeeper,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ErpMillerColumnBadge(label: label);
 }
 
 class _ColumnSpinner extends StatelessWidget {
@@ -1071,16 +984,7 @@ class _ColumnEmpty extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(22),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 14.5, color: SoftErpTheme.textSecondary),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => ErpMillerColumnEmpty(text: text);
 }
 
 class _LinkColumnsMessage extends StatelessWidget {
@@ -1313,7 +1217,7 @@ class _AttachDialogState extends State<_AttachDialog> {
                         final ref = _candidates[index];
                         return _LinkRow(
                           ref: ref,
-                          icon: _iconFor(ref.type),
+                          icon: linkTypeIcon(ref.type),
                           selected: false,
                           onTap: () => Navigator.of(context).pop(ref),
                         );

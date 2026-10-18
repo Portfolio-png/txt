@@ -383,6 +383,16 @@ test('reconciling an assembly stage mints a temporary set into inventory', async
     const after = await sets();
     assert.equal(after.length, 1, 'still one set for this stage');
     assert.equal(after[0].id, made.id, 'and it is the same set');
+
+    // Re-reconciling moves the version on. A produced set is editable like any
+    // other, so somebody may have it open; bumping is what makes their save
+    // bounce off instead of replacing what the run just recorded. The run
+    // itself stays unconditional — it never carries a version and can never be
+    // refused.
+    assert.ok(
+      after[0].version > made.version,
+      'a re-reconciliation invalidates any copy a user is holding',
+    );
   } finally {
     await closeServer(server);
   }

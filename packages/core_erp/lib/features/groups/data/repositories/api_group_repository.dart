@@ -211,6 +211,75 @@ class ApiGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<GroupDefinition> archiveGroup(int id) =>
+      _setArchived(id, archived: true);
+
+  @override
+  Future<GroupDefinition> restoreGroup(int id) =>
+      _setArchived(id, archived: false);
+
+  /// Both directions of the same switch. The server owns the rules — what is
+  /// still in the group on the way out, and whether the parent is archived on
+  /// the way back — and its sentence is passed through verbatim, because it
+  /// names what to fix and a generic "failed" does not.
+  Future<GroupDefinition> _setArchived(int id, {required bool archived}) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockGroups.indexWhere((group) => group.id == id);
+      if (index == -1) {
+        throw GroupApiException('Group not found.');
+      }
+      if (archived &&
+          _mockGroups.any(
+            (group) => group.parentGroupId == id && !group.isArchived,
+          )) {
+        throw GroupApiException(
+          'This group has active child groups. Reassign or archive them first.',
+        );
+      }
+      final current = _mockGroups[index];
+      final updated = GroupDefinition(
+        id: current.id,
+        name: current.name,
+        groupType: current.groupType,
+        groupStructure: current.groupStructure,
+        description: current.description,
+        parentGroupId: current.parentGroupId,
+        unitId: current.unitId,
+        itemFormSections: current.itemFormSections,
+        isArchived: archived,
+        usageCount: current.usageCount,
+        itemCount: current.itemCount,
+        coverItems: current.coverItems,
+        coverBasis: current.coverBasis,
+        createdAt: current.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      _mockGroups[index] = updated;
+      return updated;
+    }
+
+    final uri = Uri.parse(
+      '$baseUrl/api/groups/$id/${archived ? 'archive' : 'unarchive'}',
+    );
+    final response = await _client.patch(uri);
+    final payload = _decodeJsonObject(response.body);
+    final parsed = GroupResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.group == null) {
+      throw GroupApiException(
+        parsed.error ??
+            (archived
+                ? 'Failed to archive group.'
+                : 'Failed to restore group.'),
+      );
+    }
+    return parsed.group!.toDomain();
+  }
+
+  @override
   Future<int> assignItemsToGroup(int groupId, List<int> itemIds) async {
     final uniqueIds = itemIds.toSet().toList(growable: false);
     if (uniqueIds.isEmpty) {

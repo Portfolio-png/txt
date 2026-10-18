@@ -261,6 +261,427 @@ test('inventory sets allow base items with no variation leaf', async () => {
   }
 });
 
+test('a set can be filed under a group, re-filed, and cleared', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-group-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-group@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsGroup1234';
+
+  const backend = loadFreshBackend();
+
+  try {
+    await backend.resetAndSeedDemoData();
+    const itemRows = await backend.getItemsWithUsage();
+    const itemRow = itemRows.find((entry) => !entry.is_archived);
+    assert.ok(itemRow, 'expected an active item');
+    const item = await backend.rowToItemDto(itemRow);
+    const leaf = findFirstLeafVariation(item.variationTree || []);
+    assert.ok(leaf, 'expected a leaf variation');
+
+    const groupRows = await backend.getGroupsWithUsage();
+    const activeGroups = groupRows.filter((entry) => !entry.is_archived);
+    const homeGroup = activeGroups[0];
+    const otherGroup = activeGroups[1];
+    assert.ok(homeGroup && otherGroup, 'expected two active groups');
+
+    const { server, port } = await listen(backend.app);
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const owner = await login(baseUrl, 'sets-group@paper.local', 'SetsGroup1234');
+      const lines = [
+        { itemId: item.id, variationLeafNodeId: leaf.id, quantity: 1, position: 0 },
+      ];
+
+      const created = await postJson(baseUrl, '/api/inventory/sets', owner.token, {
+        name: 'Filed Pack',
+        groupId: homeGroup.id,
+        lines,
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const setId = created.body.set.id;
+      assert.equal(created.body.set.groupId, homeGroup.id);
+      assert.equal(created.body.set.groupName, homeGroup.name);
+      assert.equal(created.body.set.groupIsArchived, false);
+
+      // The list read resolves the group too, not just the detail read.
+      const listed = await getJson(baseUrl, '/api/inventory/sets', owner.token);
+      const fromList = listed.body.sets.find((entry) => entry.id === setId);
+      assert.equal(fromList.groupId, homeGroup.id);
+      assert.equal(fromList.groupName, homeGroup.name);
+
+      // Stored as the canonical pair, which is what the CHECK enforces: a
+      // flipped insert would abort the whole save.
+      const linkRows = await backend.all(
+        `SELECT left_type, left_id, right_type, right_id FROM entity_links
+          WHERE (left_type = 'set' AND left_id = ?) OR (right_type = 'set' AND right_id = ?)`,
+        [String(setId), String(setId)],
+      );
+      assert.equal(linkRows.length, 1);
+      assert.equal(linkRows[0].left_type, 'group');
+      assert.equal(linkRows[0].left_id, String(homeGroup.id));
+      assert.equal(linkRows[0].right_type, 'set');
+
+      // Re-filing replaces the link; it does not accumulate a second one.
+      const refiled = await requestJson(
+        baseUrl,
+        `/api/inventory/sets/${setId}`,
+        'PATCH',
+        owner.token,
+        JSON.stringify({ name: 'Filed Pack', groupId: otherGroup.id, lines }),
+      );
+      assert.equal(refiled.status, 200, JSON.stringify(refiled.body));
+      assert.equal(refiled.body.set.groupId, otherGroup.id);
+      assert.equal(await setLinkCount(backend, setId), 1);
+
+      // The key absent means "leave the group alone". This is the shape the
+      // "add spawned items to a set" path sends, and reading it as a clear
+      // would silently unfile the set.
+      const untouched = await requestJson(
+        baseUrl,
+        `/api/inventory/sets/${setId}`,
+        'PATCH',
+        owner.token,
+        JSON.stringify({ name: 'Filed Pack', lines }),
+      );
+      assert.equal(untouched.status, 200, JSON.stringify(untouched.body));
+      assert.equal(untouched.body.set.groupId, otherGroup.id);
+      assert.equal(await setLinkCount(backend, setId), 1);
+
+      // Present and null means clear.
+      const cleared = await requestJson(
+        baseUrl,
+        `/api/inventory/sets/${setId}`,
+        'PATCH',
+        owner.token,
+        JSON.stringify({ name: 'Filed Pack', groupId: null, lines }),
+      );
+      assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+      assert.equal(cleared.body.set.groupId, null);
+      assert.equal(cleared.body.set.groupName, null);
+      assert.equal(await setLinkCount(backend, setId), 0);
+
+      // Deleting the set takes its links with it.
+      const refiledAgain = await requestJson(
+        baseUrl,
+        `/api/inventory/sets/${setId}`,
+        'PATCH',
+        owner.token,
+        JSON.stringify({ name: 'Filed Pack', groupId: homeGroup.id, lines }),
+      );
+      assert.equal(refiledAgain.status, 200);
+      assert.equal(await setLinkCount(backend, setId), 1);
+      const deleted = await requestJson(
+        baseUrl,
+        `/api/inventory/sets/${setId}`,
+        'DELETE',
+        owner.token,
+        null,
+      );
+      assert.equal(deleted.status, 200);
+      assert.equal(await setLinkCount(backend, setId), 0);
+    } finally {
+      await closeServer(server);
+    }
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('a set rejects a missing or archived group and survives its group being deleted', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-group-edge-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-edge@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsEdge1234';
+
+  const backend = loadFreshBackend();
+
+  try {
+    await backend.resetAndSeedDemoData();
+    const itemRows = await backend.getItemsWithUsage();
+    const itemRow = itemRows.find((entry) => !entry.is_archived);
+    const item = await backend.rowToItemDto(itemRow);
+    const leaf = findFirstLeafVariation(item.variationTree || []);
+    const unitRows = await backend.getUnitsWithUsage();
+    const unitRow = unitRows.find((entry) => !entry.is_archived);
+
+    // Two groups of this test's own, so deleting and archiving them cannot
+    // disturb the demo data the other assertions lean on.
+    const doomedGroup = await backend.saveGroup({
+      name: 'Doomed Set Group',
+      unitId: unitRow.id,
+    });
+    const archivedGroup = await backend.saveGroup({
+      name: 'Retired Set Group',
+      unitId: unitRow.id,
+    });
+    await backend.run('UPDATE groups SET is_archived = 1 WHERE id = ?', [archivedGroup.id]);
+
+    const { server, port } = await listen(backend.app);
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const owner = await login(baseUrl, 'sets-edge@paper.local', 'SetsEdge1234');
+      const lines = [
+        { itemId: item.id, variationLeafNodeId: leaf.id, quantity: 1, position: 0 },
+      ];
+
+      for (const badGroupId of [999999, archivedGroup.id]) {
+        const rejected = await postJson(baseUrl, '/api/inventory/sets', owner.token, {
+          name: `Bad Group Pack ${badGroupId}`,
+          groupId: badGroupId,
+          lines,
+        });
+        assert.equal(rejected.status, 400, JSON.stringify(rejected.body));
+        assert.equal(
+          rejected.body.error,
+          'Selected group does not exist or is archived.',
+        );
+        // Rejected before anything was written.
+        const rows = await backend.all(
+          'SELECT id FROM inventory_sets WHERE name = ?',
+          [`Bad Group Pack ${badGroupId}`],
+        );
+        assert.equal(rows.length, 0);
+      }
+
+      const created = await postJson(baseUrl, '/api/inventory/sets', owner.token, {
+        name: 'Orphan Pack',
+        groupId: doomedGroup.id,
+        lines,
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const setId = created.body.set.id;
+
+      const groupDeleted = await requestJson(
+        baseUrl,
+        `/api/groups/${doomedGroup.id}`,
+        'DELETE',
+        owner.token,
+        null,
+      );
+      assert.equal(groupDeleted.status, 200, JSON.stringify(groupDeleted.body));
+
+      // The set still reads, as ungrouped rather than as an id with no name
+      // behind it, and the link row is gone rather than orphaned.
+      const after = await getJson(baseUrl, `/api/inventory/sets`, owner.token);
+      const stillThere = after.body.sets.find((entry) => entry.id === setId);
+      assert.ok(stillThere, 'expected the set to survive its group');
+      assert.equal(stillThere.groupId, null);
+      assert.equal(stillThere.groupName, null);
+      assert.equal(await setLinkCount(backend, setId), 0);
+    } finally {
+      await closeServer(server);
+    }
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('filing a set needs inventory.update alone, not items.update', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-perm-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-perm@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsPerm1234';
+
+  const backend = loadFreshBackend();
+
+  try {
+    await backend.resetAndSeedDemoData();
+    const itemRows = await backend.getItemsWithUsage();
+    const itemRow = itemRows.find((entry) => !entry.is_archived);
+    const item = await backend.rowToItemDto(itemRow);
+    const leaf = findFirstLeafVariation(item.variationTree || []);
+    const groupRow = (await backend.getGroupsWithUsage()).find((entry) => !entry.is_archived);
+
+    const { server, port } = await listen(backend.app);
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const owner = await login(baseUrl, 'sets-perm@paper.local', 'SetsPerm1234');
+
+      // A storekeeper who runs inventory and may not touch the items master.
+      // Filing a set through POST /api/links would need items.update as well,
+      // because the link catalog maps a group to the items module; through the
+      // set endpoint it must not.
+      const created = await postJson(baseUrl, '/api/users', owner.token, {
+        name: 'Store Keeper',
+        email: 'store-keeper@paper.local',
+        password: 'KeeperPass1234',
+        role: 'user',
+        permissions: ['inventory.read', 'inventory.create', 'login.desktop'],
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const keeperId = created.body.user.id;
+      const grid = await requestJson(
+        baseUrl,
+        `/api/users/${keeperId}/permissions`,
+        'PATCH',
+        owner.token,
+        JSON.stringify({
+          overrides: [
+            { key: 'inventory.create', allowed: true },
+            { key: 'inventory.update', allowed: true },
+            { key: 'items.update', allowed: false },
+          ],
+        }),
+      );
+      assert.equal(grid.status, 200, JSON.stringify(grid.body));
+
+      const keeper = await login(baseUrl, 'store-keeper@paper.local', 'KeeperPass1234');
+      const filed = await postJson(baseUrl, '/api/inventory/sets', keeper.token, {
+        name: 'Keeper Pack',
+        groupId: groupRow.id,
+        lines: [
+          { itemId: item.id, variationLeafNodeId: leaf.id, quantity: 1, position: 0 },
+        ],
+      });
+      assert.equal(filed.status, 201, JSON.stringify(filed.body));
+      assert.equal(filed.body.set.groupId, groupRow.id);
+    } finally {
+      await closeServer(server);
+    }
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+async function setLinkCount(backend, setId) {
+  const rows = await backend.all(
+    `SELECT id FROM entity_links
+      WHERE (left_type = 'set' AND left_id = ?) OR (right_type = 'set' AND right_id = ?)`,
+    [String(setId), String(setId)],
+  );
+  return rows.length;
+}
+
+test('a set save carries the version it was opened at', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-version-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-version@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsVersion1234';
+
+  const backend = loadFreshBackend();
+
+  try {
+    await backend.resetAndSeedDemoData();
+    const itemRows = await backend.getItemsWithUsage();
+    const first = itemRows.find((entry) => !entry.is_archived);
+    const second = itemRows.find(
+      (entry) => !entry.is_archived && entry.id !== first.id,
+    );
+    const firstItem = await backend.rowToItemDto(first);
+    const secondItem = await backend.rowToItemDto(second);
+    const firstLeaf = findFirstLeafVariation(firstItem.variationTree || []);
+    const secondLeaf = findFirstLeafVariation(secondItem.variationTree || []);
+
+    const { server, port } = await listen(backend.app);
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const owner = await login(
+        baseUrl,
+        'sets-version@paper.local',
+        'SetsVersion1234',
+      );
+      const line = (item, leaf, quantity, position) => ({
+        itemId: item.id,
+        variationLeafNodeId: leaf.id,
+        quantity,
+        position,
+      });
+
+      const created = await postJson(baseUrl, '/api/inventory/sets', owner.token, {
+        name: 'Contested Kit',
+        lines: [line(firstItem, firstLeaf, 1, 0)],
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const setId = created.body.set.id;
+      // A set every client has seen starts at the same number.
+      assert.equal(created.body.set.version, 0);
+
+      const patch = (body) =>
+        requestJson(
+          baseUrl,
+          `/api/inventory/sets/${setId}`,
+          'PATCH',
+          owner.token,
+          JSON.stringify(body),
+        );
+
+      // Two people open it. The first saves.
+      const firstSave = await patch({
+        name: 'Contested Kit',
+        expectedVersion: 0,
+        lines: [line(firstItem, firstLeaf, 9, 0)],
+      });
+      assert.equal(firstSave.status, 200, JSON.stringify(firstSave.body));
+      assert.equal(firstSave.body.set.version, 1, 'a save moves the version on');
+
+      // The second still holds version 0 and would replace what just landed.
+      const stale = await patch({
+        name: 'Contested Kit',
+        expectedVersion: 0,
+        lines: [line(secondItem, secondLeaf, 3, 0)],
+      });
+      assert.equal(stale.status, 409, JSON.stringify(stale.body));
+      assert.equal(stale.body.code, 'set_changed');
+      assert.match(stale.body.error, /Contested Kit/);
+
+      // The assertion that actually proves the hole is closed: the first
+      // writer's lines are still there.
+      const after = await getJson(baseUrl, '/api/inventory/sets', owner.token);
+      const row = after.body.sets.find((entry) => entry.id === setId);
+      assert.equal(row.lines.length, 1);
+      assert.equal(row.lines[0].itemId, firstItem.id);
+      assert.equal(row.lines[0].quantity, 9);
+      assert.equal(row.version, 1);
+
+      // Reloading and trying again goes through.
+      const retry = await patch({
+        name: 'Contested Kit',
+        expectedVersion: 1,
+        lines: [line(secondItem, secondLeaf, 3, 0)],
+      });
+      assert.equal(retry.status, 200, JSON.stringify(retry.body));
+      assert.equal(retry.body.set.version, 2);
+
+      // A caller that says nothing about the version still replaces, which is
+      // what every pre-version client and the seeders rely on.
+      const unversioned = await patch({
+        name: 'Contested Kit',
+        lines: [line(firstItem, firstLeaf, 4, 0)],
+      });
+      assert.equal(unversioned.status, 200, JSON.stringify(unversioned.body));
+      assert.equal(unversioned.body.set.version, 3);
+
+      // A rename and a re-file each move it on too, leaving the group
+      // tri-state alone.
+      const groupRows = await backend.getGroupsWithUsage();
+      const group = groupRows.find((entry) => !entry.is_archived);
+      const renamed = await patch({
+        name: 'Contested Kit Mk2',
+        expectedVersion: 3,
+        lines: [line(firstItem, firstLeaf, 4, 0)],
+      });
+      assert.equal(renamed.body.set.version, 4);
+      assert.equal(renamed.body.set.groupId, null, 'no groupId key, no re-file');
+      const filed = await patch({
+        name: 'Contested Kit Mk2',
+        groupId: group.id,
+        expectedVersion: 4,
+        lines: [line(firstItem, firstLeaf, 4, 0)],
+      });
+      assert.equal(filed.body.set.version, 5);
+      assert.equal(filed.body.set.groupId, group.id);
+    } finally {
+      await closeServer(server);
+    }
+  } finally {
+    await backend.closeDb();
+  }
+});
+
 function findFirstLeafVariation(nodes, currentPath = []) {
   for (const node of nodes || []) {
     const nextPath =

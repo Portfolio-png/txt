@@ -1,3 +1,4 @@
+import '../../data/repositories/api_inventory_repository.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/services/socket_service.dart';
@@ -14,6 +15,16 @@ import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 
 import '../../domain/variation_stock_record.dart';
+
+/// What a set save did.
+enum SetSaveOutcome {
+  saved,
+
+  /// The set changed since it was opened, so the server refused rather than
+  /// replacing the newer line list. Offer a reload; never retry.
+  conflict,
+  failed,
+}
 
 class InventoryProvider extends ChangeNotifier {
   InventoryProvider({required InventoryRepository repository})
@@ -37,10 +48,39 @@ class InventoryProvider extends ChangeNotifier {
   final Map<String, MaterialControlTowerDetail> _detailByBarcode = {};
   InventoryHealthSnapshot _healthSnapshot = const InventoryHealthSnapshot();
   List<InventorySetDefinition> _sets = const [];
+  String _setsQuery = '';
 
   List<MaterialRecord> get materials => _materials;
   List<VariationStockRecord> get variationStock => _variationStock;
   List<InventorySetDefinition> get sets => _sets;
+
+  /// What the sets master is searching for. Its own query, not [searchQuery]:
+  /// that one filters materials, and the two screens are searched separately.
+  String get setsQuery => _setsQuery;
+
+  /// Sets matching [setsQuery], by their own name **or by a member's name**.
+  ///
+  /// Searching by member is the point: "which set has the angle patti in it"
+  /// is the question people actually arrive with, and the line DTOs already
+  /// carry the item names, so no extra read is needed to answer it.
+  List<InventorySetDefinition> get filteredSets {
+    final needle = _setsQuery.trim().toLowerCase();
+    if (needle.isEmpty) return _sets;
+    return _sets.where((set) {
+      if (set.name.toLowerCase().contains(needle)) return true;
+      return set.lines.any((line) {
+        return line.itemDisplayName.toLowerCase().contains(needle) ||
+            line.itemName.toLowerCase().contains(needle) ||
+            line.variationPathLabel.toLowerCase().contains(needle);
+      });
+    }).toList(growable: false);
+  }
+
+  void setSetsQuery(String value) {
+    if (_setsQuery == value) return;
+    _setsQuery = value;
+    notifyListeners();
+  }
   MaterialRecord? get selectedMaterial => _selectedMaterial;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
@@ -481,6 +521,18 @@ class InventoryProvider extends ChangeNotifier {
 
   /// Resolves to the saved set, or null on failure ([errorMessage]).
   Future<InventorySetDefinition?> saveSet(SaveInventorySetInput input) async {
+    return (await trySaveSet(input)).set;
+  }
+
+  /// Saves a set and says what happened, rather than only whether it worked.
+  ///
+  /// [SetSaveOutcome.conflict] means the set changed since the caller opened
+  /// it and the server refused rather than replacing someone else's edit — a
+  /// caller should offer to reload, never retry. [saveSet] keeps the older
+  /// null-on-failure contract for everything that does not care which it was.
+  Future<({InventorySetDefinition? set, SetSaveOutcome outcome})> trySaveSet(
+    SaveInventorySetInput input,
+  ) async {
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -488,17 +540,83 @@ class InventoryProvider extends ChangeNotifier {
     try {
       final saved = await _repository.saveSet(input);
       await _reloadSets();
-      return saved;
+      return (set: saved, outcome: SetSaveOutcome.saved);
     } catch (error) {
+      if (error is InventoryApiException && error.code == 'set_changed') {
+        // Verbatim: the server's sentence names the set and says what saving
+        // would have done, and _friendlyError would bury it behind "Failed to
+        // save set."
+        _errorMessage = error.message;
+        return (set: null, outcome: SetSaveOutcome.conflict);
+      }
       _errorMessage = _friendlyError(
         fallback: 'Failed to save set.',
         error: error,
       );
-      return null;
+      return (set: null, outcome: SetSaveOutcome.failed);
     } finally {
       _isSaving = false;
       notifyListeners();
     }
+  }
+
+  /// Writes a set's line list back, keeping everything else about the set.
+  ///
+  /// The two things a merge write has to get right, in one place: the photo is
+  /// carried (the server writes `photo_url` on every update, so omitting it
+  /// clears the picture) and the group is **not** mentioned (an absent key
+  /// means "leave the link alone"; sending it would re-file the set).
+  ///
+  /// And the third: the write carries [expectedVersion], so a set that moved on
+  /// since the caller read it refuses the save instead of losing the other
+  /// edit. Required, so a new caller cannot forget it.
+  ///
+  /// Name, photo and version come from the caller rather than from [sets], so
+  /// this works on a screen that never loaded the set list.
+  Future<({InventorySetDefinition? set, SetSaveOutcome outcome})>
+  replaceSetLines({
+    required int setId,
+    required String name,
+    required String photoUrl,
+    required int expectedVersion,
+    required List<SaveInventorySetLineInput> lines,
+  }) {
+    return trySaveSet(
+      SaveInventorySetInput(
+        id: setId,
+        name: name,
+        photoUrl: photoUrl,
+        expectedVersion: expectedVersion,
+        lines: lines,
+      ),
+    );
+  }
+
+  /// Files a set under [groupId], or unfiles it when that is null.
+  ///
+  /// The mirror image of [replaceSetLines]: this is the one write that *means*
+  /// to speak about the group, so it sets `groupIdSpecified`. Everything else a
+  /// set is made of still has to be carried — the save is a full replace, so
+  /// the lines and the photo travel even though only the group is changing.
+  Future<({InventorySetDefinition? set, SetSaveOutcome outcome})> regroupSet({
+    required int setId,
+    required String name,
+    required String photoUrl,
+    required int expectedVersion,
+    required List<SaveInventorySetLineInput> lines,
+    required int? groupId,
+  }) {
+    return trySaveSet(
+      SaveInventorySetInput(
+        id: setId,
+        name: name,
+        photoUrl: photoUrl,
+        expectedVersion: expectedVersion,
+        lines: lines,
+        groupId: groupId,
+        groupIdSpecified: true,
+      ),
+    );
   }
 
   Future<void> deleteSet(int setId) async {
@@ -518,6 +636,23 @@ class InventoryProvider extends ChangeNotifier {
       _isSaving = false;
       notifyListeners();
     }
+  }
+
+  /// Re-reads just the sets.
+  ///
+  /// Not [refresh], which also refetches materials, variation stock and the
+  /// health snapshot — far too much for a caller that only needs a set's
+  /// current lines before writing them back.
+  Future<void> reloadSets() async {
+    try {
+      await _reloadSets();
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to load sets.',
+        error: error,
+      );
+    }
+    notifyListeners();
   }
 
   void clearError() {

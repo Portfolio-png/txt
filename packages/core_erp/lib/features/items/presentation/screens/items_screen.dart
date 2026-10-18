@@ -9,7 +9,6 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
-import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -18,24 +17,31 @@ import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../../core/services/feature_flags.dart';
-import '../../../clients/domain/client_definition.dart';
-import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../inventory/domain/group_property_draft.dart' as governance;
+import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../units/domain/starter_units.dart';
 import '../../../inventory/domain/inventory_set_definition.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
+import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
 import '../../data/services/item_link_options_service.dart';
+import '../../../../core/utils/stamp_format.dart';
 import '../../domain/item_form_sections.dart';
+import '../../../../shared/widgets/exact_item_variation_select_field.dart';
+import '../../../inventory/domain/set_membership.dart';
+import '../../domain/part_code.dart';
 import '../providers/item_form_sections_provider.dart';
+import '../../../variations/data/variation_tree_service.dart';
+import '../../../variations/domain/variation_node.dart';
 
 import 'package:core_erp/features/groups/presentation/group_picker_field.dart';
 import 'package:core_erp/features/groups/presentation/group_type_style.dart';
@@ -52,10 +58,10 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/pen_
 import '../providers/items_provider.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
 import '../../domain/item_asset.dart';
+import '../widgets/developed_for_form.dart';
 import '../widgets/item_card.dart';
 import '../../../../core/app_flow_hooks.dart';
-import '../widgets/set_overview_dialog.dart';
-import '../../../inventory/presentation/widgets/inventory_set_editor_dialog.dart';
+import '../widgets/catalog_quick_entry_dialog.dart';
 import '../../../groups/presentation/screens/component_creation_screen.dart';
 import '../widgets/item_detail_panel.dart';
 
@@ -66,25 +72,11 @@ import 'package:http/http.dart' as http;
 import 'package:collection/collection.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
-
-/// The four things the item master lists. Groups is not here because it hands
-/// off to its own screen rather than rendering in this one.
-enum _ItemsMasterView { items, sets }
+import '../widgets/membership_chrome.dart';
 
 class ItemsScreen extends StatefulWidget {
-  const ItemsScreen({
-    super.key,
-    this.initialTab = 0,
-    this.initialSetsView = false,
-    this.onCreatePipeline,
-  });
+  const ItemsScreen({super.key, this.onCreatePipeline});
 
-  final int initialTab;
-
-  /// Open straight into the Sets view. The Sets tab is reachable from the
-  /// Groups screen as well, and it has no sets list of its own to show — it
-  /// hands over to this screen already switched.
-  final bool initialSetsView;
   final Future<String?> Function()? onCreatePipeline;
 
   /// The whole item-creation flow in one window: define the item, build and
@@ -142,6 +134,8 @@ class ItemsScreen extends StatefulWidget {
     Future<String?> Function()? onCreatePipeline,
     required ValueChanged<ItemDefinition?> onClosed,
     ItemWorkflowController? controller,
+    ItemFormSections? overrideSections,
+    bool identityOnly = false,
   }) {
     return SubmitFormShortcuts(
       child: _ItemWorkflowWindow(
@@ -151,6 +145,8 @@ class ItemsScreen extends StatefulWidget {
         onCreatePipeline: onCreatePipeline,
         onClosed: onClosed,
         controller: controller,
+        overrideSections: overrideSections,
+        identityOnly: identityOnly,
       ),
     );
   }
@@ -193,6 +189,14 @@ class ItemsScreen extends StatefulWidget {
         final available = MediaQuery.of(context).size.width - 64;
         return Dialog(
           insetPadding: const EdgeInsets.all(32),
+          // Transparent, because the form now paints its own surface with an
+          // 18px radius on all four corners — the Dialog's own white would
+          // otherwise show through at the bottom two.
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          shape: const RoundedRectangleBorder(side: BorderSide.none),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: available >= 1700 ? 1680 : 1380,
@@ -210,33 +214,11 @@ class ItemsScreen extends StatefulWidget {
 
 class _ItemsScreenState extends State<ItemsScreen> {
   bool _isGridView = false;
-
-  /// Sets view. Kept separate from [_isGridView] rather than folded into a
-  /// three-way enum: the List/Card button is asserted as a strict two-cycle by
-  /// the items widget tests, and a third state on it would break them.
-  late _ItemsMasterView _view = widget.initialSetsView
-      ? _ItemsMasterView.sets
-      : _ItemsMasterView.items;
-
-  bool get _isSetsView => _view == _ItemsMasterView.sets;
   double _cardWidth = 200;
   double _cardHeight = 250;
   // Boarding-pass card view: number of columns the resize slider requests
   // (clamped to what the desktop width can fit). 1 = full-width hero, up to 10.
   int _columnCount = 4;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialSetsView) {
-      // Arriving straight on Sets skips the toggle that would normally have
-      // loaded them. Sets live on the inventory provider, which this screen
-      // otherwise never touches. Idempotent.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) context.read<InventoryProvider>().initialize();
-      });
-    }
-  }
 
   /// The item another screen sent the user here to see. Kept lit until a
   /// moment after its details close, so the eye lands on the row the list has
@@ -254,11 +236,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
   /// Honours a reveal request wherever the screen happens to be.
   ///
   /// The request is a one-off left on the provider; it was consumed by the
-  /// table alone, which meant a card view, the Sets view, or a search that hid
-  /// the item all swallowed it. Handled here, above the views: switch to Items,
-  /// drop a search the item does not match, light the row or card, let the view
-  /// scroll to it, and open its details — arriving means seeing the item, not
-  /// a list it is somewhere inside of.
+  /// table alone, which meant a card view or a search that hid the item
+  /// swallowed it. Handled here, above the views: drop a search the item does
+  /// not match, light the row or card, let the view scroll to it, and open its
+  /// details — arriving means seeing the item, not a list it is somewhere
+  /// inside of.
   void _applyPendingReveal(ItemsProvider items) {
     if (items.pendingRevealItemId == null || _revealScheduled) return;
     _revealScheduled = true;
@@ -278,10 +260,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
         items.setSearchQuery('');
       }
       _revealTimer?.cancel();
-      setState(() {
-        _view = _ItemsMasterView.items;
-        _revealedItemId = target.id;
-      });
+      setState(() => _revealedItemId = target.id);
       await showItemDetailPanel(
         context,
         item: target,
@@ -300,10 +279,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.initialTab == 1) {
-      return const GroupsScreen();
-    }
-
     return Consumer3<ItemsProvider, GroupsProvider, UnitsProvider>(
       builder: (context, items, groups, units, _) {
         if ((items.isLoading && items.items.isEmpty) ||
@@ -348,43 +323,40 @@ class _ItemsScreenState extends State<ItemsScreen> {
             ),
           },
           child: SoftMasterDataPage(
-            title: switch (_view) {
-              _ItemsMasterView.sets => 'Sets',
-              _ItemsMasterView.items => 'Items',
-            },
-            subtitle: switch (_view) {
-              _ItemsMasterView.sets =>
-                'Named compositions of exact item variations and quantities.',
-              _ItemsMasterView.items =>
+            title: 'Items',
+            subtitle:
                 'Manage sellable catalog items with recursive property and value inheritance.',
-            },
-            action: _isSetsView
-                ? AppButton(
-                    label: 'Add Set',
-                    icon: Icons.add,
-                    onPressed: () => InventorySetEditorDialog.open(context),
-                  )
-                : AppButton(
-                    label: 'Add Item',
-                    icon: Icons.add,
-                    isLoading: items.isSaving,
-                    // The creation window: the item workflow in the middle, the
-                    // items added so far on the left, and dies and machines one
-                    // click away for each of them.
-                    onPressed: () =>
-                        ComponentCreationDialog.openForItems(context),
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Lazy data entry: a group, the sets inside it and the items
+                // that go in them, a name and a tick each.
+                Tooltip(
+                  message:
+                      'Quick entry — add a group, its sets and their '
+                      'items in one pass.',
+                  child: AppButton(
+                    label: 'Wizard',
+                    icon: Icons.auto_fix_high_outlined,
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => CatalogQuickEntryDialog.open(context),
                   ),
+                ),
+                const SizedBox(width: 12),
+                AppButton(
+                  label: 'Add Item',
+                  icon: Icons.add,
+                  isLoading: items.isSaving,
+                  // The creation window: the item workflow in the middle, the
+                  // items added so far on the left, and dies and machines one
+                  // click away for each of them.
+                  onPressed: () =>
+                      ComponentCreationDialog.openForItems(context),
+                ),
+              ],
+            ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
-              view: _view,
-              onSelectView: (next) {
-                setState(() => _view = next);
-                if (_isSetsView) {
-                  // Sets belong to the inventory provider, which this screen
-                  // otherwise never touches. Idempotent.
-                  context.read<InventoryProvider>().initialize();
-                }
-              },
               boardingPass: FeatureFlags.isEnabled(
                 FeatureKeys.boardingPassCards,
               ),
@@ -419,13 +391,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   isError: true,
                 ),
             ],
-            body: _isSetsView
-                ? _ItemsSetsView(
-                    isGridView: _isGridView,
-                    cardWidth: _cardWidth,
-                    cardHeight: _cardHeight,
-                  )
-                : items.filteredItems.isEmpty
+            body: items.filteredItems.isEmpty
                 ? const AppEmptyState(
                     title: 'No items found',
                     message:
@@ -459,343 +425,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
   }
 }
 
-/// Inventory sets in the item master. Each set opens on click — same
-/// no-chevron affordance as a group row — to show its members, colour-coded
-/// item vs variant with the per-line quantity.
-/// A set on a card, led by its own photo. Falls back to initials on a soft
-/// ground when none has been uploaded — same treatment an item card gives a
-/// picture-less item, so a mixed grid reads evenly.
-class _SetCard extends StatelessWidget {
-  const _SetCard({required this.set, required this.variantCount});
-
-  final InventorySetDefinition set;
-  final int variantCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final photoUrl = set.photoUrl;
-    final baseCount = set.lines.length - variantCount;
-    return AppCard(
-      onTap: () => SetOverviewDialog.open(context, set: set),
-      padding: EdgeInsets.zero,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: photoUrl == null || photoUrl.isEmpty
-                  ? _SetCardPlaceholder(name: set.name)
-                  : Image.network(
-                      photoUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _SetCardPlaceholder(name: set.name),
-                    ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              color: SoftErpTheme.cardSurface,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    set.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: SoftErpTheme.textPrimary,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      _CountPill(
-                        count: baseCount,
-                        label: 'items',
-                        color: SoftErpTheme.entityItem,
-                        background: SoftErpTheme.entityItemBg,
-                        border: SoftErpTheme.entityItemBorder,
-                      ),
-                      if (variantCount > 0)
-                        _CountPill(
-                          count: variantCount,
-                          label: variantCount == 1 ? 'variant' : 'variants',
-                          color: SoftErpTheme.entityVariant,
-                          background: SoftErpTheme.entityVariantBg,
-                          border: SoftErpTheme.entityVariantBorder,
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SetCardPlaceholder extends StatelessWidget {
-  const _SetCardPlaceholder({required this.name});
-
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final parts = name
-        .split(RegExp(r'\s+'))
-        .where((part) => part.trim().isNotEmpty)
-        .take(2)
-        .map((part) => part.substring(0, 1).toUpperCase());
-    final token = parts.isEmpty ? 'ST' : parts.join();
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFFDFBF6), Color(0xFFF1F5F9)],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              token,
-              style: const TextStyle(
-                color: SoftErpTheme.accentDark,
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'No photo yet',
-              style: TextStyle(
-                color: SoftErpTheme.textSecondary,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ItemsSetsView extends StatefulWidget {
-  const _ItemsSetsView({
-    this.isGridView = false,
-    this.cardWidth = 240,
-    this.cardHeight = 260,
-  });
-
-  final bool isGridView;
-  final double cardWidth;
-  final double cardHeight;
-
-  @override
-  State<_ItemsSetsView> createState() => _ItemsSetsViewState();
-}
-
-class _ItemsSetsViewState extends State<_ItemsSetsView> {
-  final Set<int> _expandedSetIds = <int>{};
-
-  /// Lines pointing at spawned "basic" items rather than base items.
-  static int _variantCountOf(
-    InventorySetDefinition set,
-    List<ItemDefinition> items,
-  ) {
-    return set.lines.where((line) {
-      final item = items
-          .where((candidate) => candidate.id == line.itemId)
-          .firstOrNull;
-      return item?.isBasicItem ?? false;
-    }).length;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final inventory = context.watch<InventoryProvider>();
-    final items = context.watch<ItemsProvider>().items;
-    final sets = inventory.sets;
-
-    if (inventory.isLoading && sets.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (sets.isEmpty) {
-      return const AppEmptyState(
-        title: 'No sets yet',
-        message:
-            'A set bundles items and variants as quantity lines — a kit. '
-            'Create one from Inventory, or while spawning variants in the item '
-            'workflow.',
-        icon: Icons.inventory_2_outlined,
-      );
-    }
-
-    if (widget.isGridView) {
-      return GridView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: widget.cardWidth,
-          mainAxisExtent: widget.cardHeight,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: sets.length,
-        itemBuilder: (context, index) => _SetCard(
-          set: sets[index],
-          variantCount: _variantCountOf(sets[index], items),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      itemCount: sets.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final set = sets[index];
-        final expanded = _expandedSetIds.contains(set.id);
-        final variantCount = set.lines.where((line) {
-          final item = items
-              .where((candidate) => candidate.id == line.itemId)
-              .firstOrNull;
-          return item?.isBasicItem ?? false;
-        }).length;
-        return SoftMasterRow(
-          // Opening the set is the primary act now that there is something to
-          // open; the leading icon keeps the quick inline peek.
-          onTap: () => SetOverviewDialog.open(context, set: set),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      InkWell(
-                        onTap: () => setState(() {
-                          if (!_expandedSetIds.remove(set.id)) {
-                            _expandedSetIds.add(set.id);
-                          }
-                        }),
-                        borderRadius: BorderRadius.circular(6),
-                        child: Tooltip(
-                          message: expanded ? 'Collapse' : 'Peek inside',
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              expanded
-                                  ? Icons.folder_open_rounded
-                                  : Icons.inventory_2_outlined,
-                              size: 18,
-                              color: expanded
-                                  ? SoftErpTheme.accent
-                                  : SoftErpTheme.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          set.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: expanded
-                                ? SoftErpTheme.accentDeeper
-                                : SoftErpTheme.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      _CountPill(
-                        count: set.lines.length - variantCount,
-                        label: 'items',
-                        color: SoftErpTheme.entityItem,
-                        background: SoftErpTheme.entityItemBg,
-                        border: SoftErpTheme.entityItemBorder,
-                      ),
-                      if (variantCount > 0) ...[
-                        const SizedBox(width: 8),
-                        _CountPill(
-                          count: variantCount,
-                          label: variantCount == 1 ? 'variant' : 'variants',
-                          color: SoftErpTheme.entityVariant,
-                          background: SoftErpTheme.entityVariantBg,
-                          border: SoftErpTheme.entityVariantBorder,
-                        ),
-                      ],
-                      const SizedBox(width: 10),
-                      Text(
-                        '${set.totalItemCount} total',
-                        style: const TextStyle(
-                          color: SoftErpTheme.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (expanded) ...[
-                    const SizedBox(height: 12),
-                    const Divider(height: 1, color: SoftErpTheme.border),
-                    const SizedBox(height: 10),
-                    if (set.lines.isEmpty)
-                      const Text(
-                        'Empty set.',
-                        style: TextStyle(
-                          color: SoftErpTheme.textSecondary,
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      )
-                    else
-                      for (final line in set.lines)
-                        _MemberRow(
-                          label: line.itemDisplayName.trim().isNotEmpty
-                              ? line.itemDisplayName
-                              : (line.itemName.trim().isNotEmpty
-                                    ? line.itemName
-                                    : 'Item #${line.itemId}'),
-                          isVariant:
-                              items
-                                  .where(
-                                    (candidate) => candidate.id == line.itemId,
-                                  )
-                                  .firstOrNull
-                                  ?.isBasicItem ??
-                              false,
-                          quantity: line.quantity,
-                        ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 class _ItemsToolbar extends StatelessWidget {
   const _ItemsToolbar({
     required this.isGridView,
-    required this.view,
-    required this.onSelectView,
     required this.boardingPass,
     required this.cardWidth,
     required this.cardHeight,
@@ -807,11 +439,6 @@ class _ItemsToolbar extends StatelessWidget {
   });
 
   final bool isGridView;
-  final _ItemsMasterView view;
-  final ValueChanged<_ItemsMasterView> onSelectView;
-
-  bool get isSetsView => view == _ItemsMasterView.sets;
-  bool get isListOfItems => view == _ItemsMasterView.items;
   final bool boardingPass;
   final double cardWidth;
   final double cardHeight;
@@ -826,30 +453,23 @@ class _ItemsToolbar extends StatelessWidget {
     final provider = context.watch<ItemsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
 
-    // Items, Groups and Sets are the three things this master holds, so they
-    // sit in one switch rather than several controls that mean the same kind
-    // of thing. Groups still hands off to its own screen.
+    // Items, Item Groups and Item Sets are three masters, each with its own
+    // sidebar entry. They stay in one switch because it is how people already
+    // move between them — and every arm navigates, so the sidebar follows.
     final tabSegment = SoftSegmentedFilter<String>(
-      selected: switch (view) {
-        _ItemsMasterView.sets => 'sets',
-        _ItemsMasterView.items => 'items',
-      },
+      selected: 'items',
       onChanged: (value) {
-        if (value == 'groups') {
-          try {
-            context.read<AppNavigation>().select('configurator_groups');
-          } catch (_) {}
-          return;
-        }
-        onSelectView(switch (value) {
-          'sets' => _ItemsMasterView.sets,
-          _ => _ItemsMasterView.items,
-        });
+        if (value == 'items') return;
+        try {
+          context.read<AppNavigation>().select(
+            value == 'groups' ? 'configurator_groups' : 'configurator_sets',
+          );
+        } catch (_) {}
       },
       options: const [
         SoftSegmentOption<String>(value: 'items', label: 'Items'),
         SoftSegmentOption<String>(value: 'groups', label: 'Item Groups'),
-        SoftSegmentOption<String>(value: 'sets', label: 'Sets'),
+        SoftSegmentOption<String>(value: 'sets', label: 'Item Sets'),
       ],
     );
 
@@ -869,15 +489,14 @@ class _ItemsToolbar extends StatelessWidget {
             onChanged: provider.setSearchQuery,
           ),
 
-        // Card/List applies to both the item list and the set list.
         _ItemsViewToggleButton(isGridView: isGridView, onTap: onToggleView),
-        if (isListOfItems && isGridView && boardingPass)
+        if (isGridView && boardingPass)
           _ItemsColumnSlider(
             columnCount: columnCount,
             maxColumns: _maxColumnsForWidth(MediaQuery.of(context).size.width),
             onChanged: onColumnCountChanged,
           )
-        else if (isListOfItems && isGridView)
+        else if (isGridView)
           _ItemsGridSizeControls(
             cardWidth: cardWidth,
             cardHeight: cardHeight,
@@ -1556,7 +1175,7 @@ class _GroupHeaderRow extends StatelessWidget {
                   ),
                 ),
               ),
-              _CountPill(
+              EntityCountPill(
                 count: itemCount,
                 label: itemCount == 1 ? 'item' : 'items',
                 color: SoftErpTheme.entityItem,
@@ -1565,7 +1184,7 @@ class _GroupHeaderRow extends StatelessWidget {
               ),
               if (variantCount > 0) ...[
                 const SizedBox(width: 8),
-                _CountPill(
+                EntityCountPill(
                   count: variantCount,
                   label: variantCount == 1 ? 'variant' : 'variants',
                   color: SoftErpTheme.entityVariant,
@@ -1586,42 +1205,6 @@ class _GroupHeaderRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _CountPill extends StatelessWidget {
-  const _CountPill({
-    required this.count,
-    required this.label,
-    required this.color,
-    required this.background,
-    required this.border,
-  });
-
-  final int count;
-  final String label;
-  final Color color;
-  final Color background;
-  final Color border;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        '$count $label',
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
     );
   }
 }
@@ -2498,7 +2081,15 @@ class _ItemEditorSheet extends StatefulWidget {
     this.paged = false,
     this.page,
     this.onPagesChanged,
+    this.overrideSections,
+    this.identityOnly = false,
   });
+
+  /// See `_ItemWorkflowWindow.overrideSections`.
+  final ItemFormSections? overrideSections;
+
+  /// See `_ItemWorkflowWindow.identityOnly`.
+  final bool identityOnly;
 
   /// Shows one section at a time instead of the whole form: the host lists
   /// the pages (via [onPagesChanged]) and picks one with [page]. The others
@@ -2567,6 +2158,34 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _isDirty = false;
   late final TextEditingController _nameController;
   late final TextEditingController _aliasController;
+
+  /// The part's number and the code read off a drawing. Editable here, which
+  /// the quick-entry wizard is not a substitute for: a part issued months ago
+  /// is corrected in this form or nowhere.
+  late final TextEditingController _partNoController;
+  late final TextEditingController _partCodeController;
+
+  /// A code the user typed in this session is theirs: the group change stops
+  /// rewriting it. Same rule as the wizard's.
+  bool _partCodePinned = false;
+
+  /// The server's refusal for a code another part already holds, shown on the
+  /// field rather than only in the banner at the top of the form.
+  String? _partCodeError;
+
+  /// True when the last code in the box came from a group change rather than
+  /// from the keyboard — the 409 then has to say so, or the user is handed a
+  /// refusal about a value they never entered.
+  bool _partCodeWasDerived = false;
+
+  /// Which sets hold this part. Null while it is being asked for, and after a
+  /// failed ask — the two are told apart by [_membershipFailed], and neither
+  /// may re-derive a code, which would drop the set's letter and look right.
+  List<ItemSetMembership>? _membership;
+  bool _membershipFailed = false;
+  bool _membershipWritten = false;
+  bool _setWriteInFlight = false;
+  String? _setsError;
   late final TextEditingController _displayNameController;
   late final TextEditingController _photoUrlController;
   late final TextEditingController _cadFileKeyController;
@@ -2626,7 +2245,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _availableForPurchase = false;
   late final TextEditingController _blankWidthController;
   late final TextEditingController _blankHeightController;
-  int? _developedForClientId;
+  /// Who the part was developed for. The whole block, not just the client id
+  /// it replaces: the kind, the party, the stamp and the quotation are one
+  /// fact and travel together.
+  DevelopedFor _developedFor = DevelopedFor.empty;
 
   bool get _isReadOnly => false;
 
@@ -2648,6 +2270,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     variationTree: false,
     machines: false,
     dies: false,
+    // Stated rather than left to the default: a spawned variant is exactly the
+    // thing that goes into a kit, so it shows its sets like any other part.
+    sets: true,
   );
 
   @override
@@ -2658,6 +2283,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       text: _item?.name ?? widget.initialName,
     );
     _aliasController = TextEditingController(text: _item?.alias ?? '');
+    _partNoController = TextEditingController(
+      text: _item?.partNo == null ? '' : '${_item!.partNo}',
+    );
+    _partCodeController = TextEditingController(text: _item?.partCode ?? '');
     _displayNameController = TextEditingController(
       text: _item?.displayName ?? '',
     );
@@ -2681,6 +2310,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<MaterialsProvider>().ensureLoaded();
     });
+    // Which sets hold this part. Needed before the code can re-derive, and the
+    // Sets card is built from it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadMembership();
+    });
     _availableForPurchase = _item?.availableForPurchase ?? false;
     _blankWidthController = TextEditingController(
       text: _blankInitial(_item?.blankWidthMm ?? 0),
@@ -2690,7 +2324,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
     _blankWidthController.addListener(_handleChange);
     _blankHeightController.addListener(_handleChange);
-    _developedForClientId = _item?.developedForClientId;
+    _developedFor = _item?.developedFor ?? DevelopedFor.empty;
     final storedBaseline = _item?.penPaperBaseline;
     if (storedBaseline != null) {
       _penPaperBaseline = storedBaseline;
@@ -3024,9 +2658,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       final discard = await showConfirmDialog(
         context,
         title: 'Discard changes?',
-        message:
-            'This item has edits that have not been saved yet. Closing now '
-            'loses them.',
+        message: _membershipWritten
+            // Sets save as you change them, so "loses them" would be a lie
+            // about half of what the user just did.
+            ? 'This item has edits that have not been saved yet. Closing now '
+                  'loses them. Your changes to Sets are already saved.'
+            : 'This item has edits that have not been saved yet. Closing now '
+                  'loses them.',
         confirmLabel: 'Discard',
       );
       if (!discard || !mounted) {
@@ -3413,6 +3051,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         _selectedUnitId = groupUnitId;
       }
     });
+    // The code carries the group's initials, so a move makes them wrong. The
+    // number stays: it records what this part was issued, not where it lives.
+    _rederivePartCode();
     if (value == null) {
       setState(_resetInheritedFlags);
       return;
@@ -3669,6 +3310,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   void dispose() {
     _nameController.dispose();
     _aliasController.dispose();
+    _partNoController.dispose();
+    _partCodeController.dispose();
     _displayNameController.dispose();
     _photoUrlController.dispose();
     _blankWidthController.dispose();
@@ -3702,9 +3345,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ?.itemFormSections;
     // A basic item's layout is fixed by what a spawned variant can own, so it
     // outranks both the group override and the user's default.
+    // A host's override beats the group's layout and the user's default, but
+    // NOT a basic item's — a spawned variant's form is fixed by what a variant
+    // can own, and no host opens the editor on one.
     final sections = _isBasicItem
         ? _basicItemSections
-        : (groupSectionOverride ??
+        : (widget.overrideSections ??
+              groupSectionOverride ??
               context.watch<ItemFormSectionsProvider>().sections);
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
@@ -3732,40 +3379,55 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       title: 'Item Details',
       child: Column(
         children: [
+          // identityOnly trims this card to what names the part. Alias and the
+          // generated Item Name are both optional refinements of the name, and
+          // the use-codes toggle only changes how that generated label reads —
+          // none of them is needed to identify a first part, and all three ask
+          // the newcomer a question they cannot answer yet.
           _formRow(
             children: [
-              _responsiveFieldPair(
-                first: _buildTextField(
+              if (widget.identityOnly)
+                _buildTextField(
                   controller: _nameController,
                   label: 'Base Name',
                   helper: 'Base commercial item name',
                   readOnly: _isReadOnly,
+                )
+              else
+                _responsiveFieldPair(
+                  first: _buildTextField(
+                    controller: _nameController,
+                    label: 'Base Name',
+                    helper: 'Base commercial item name',
+                    readOnly: _isReadOnly,
+                  ),
+                  second: _buildTextField(
+                    controller: _aliasController,
+                    label: 'Alias',
+                    helper: 'Optional alternate label',
+                    readOnly: _isReadOnly,
+                    required: false,
+                  ),
                 ),
-                second: _buildTextField(
-                  controller: _aliasController,
-                  label: 'Alias',
-                  helper: 'Optional alternate label',
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (!widget.identityOnly) ...[
+            _formRow(
+              children: [
+                _buildTextField(
+                  controller: _displayNameController,
+                  label: 'Item Name',
+                  helper: 'Editable generated label',
                   readOnly: _isReadOnly,
-                  required: false,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _formRow(
-            children: [
-              _buildTextField(
-                controller: _displayNameController,
-                label: 'Item Name',
-                helper: 'Editable generated label',
-                readOnly: _isReadOnly,
-              ),
-            ],
-          ),
-          // Sits with the display name because that is all it changes — the
-          // item's own name keeps the values spelled out.
-          _buildUseCodesToggle(),
-          const SizedBox(height: 12),
+              ],
+            ),
+            // Sits with the display name because that is all it changes — the
+            // item's own name keeps the values spelled out.
+            _buildUseCodesToggle(),
+            const SizedBox(height: 12),
+          ],
           _formRow(
             children: [
               GroupPickerField(
@@ -3884,6 +3546,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             ],
           ),
           const SizedBox(height: 16),
+          // This field is where a fresh workspace stops somebody: it holds only
+          // the server's `Primary Unit` ('-') and an item cannot be saved
+          // without a real one. The offer lives here as well as on the Units
+          // master, which a first-day user has no reason to open.
+          if (_unitsLookUnset(unitsProvider)) ...[
+            _starterUnitsOffer(unitsProvider),
+            const SizedBox(height: 16),
+          ],
           if (selectedUnit != null)
             Align(
               alignment: Alignment.centerLeft,
@@ -4029,19 +3699,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           ],
           const SizedBox(height: 12),
           _WarningText(warning: duplicate.warning),
-          if (sections.developedFor) ...[
-            const SizedBox(height: 12),
-            _DevelopedForField(
-              clientId: _developedForClientId,
-              readOnly: _isReadOnly,
-              onChanged: (clientId) {
-                setState(() {
-                  _developedForClientId = clientId;
-                  _handleChange();
-                });
-              },
-            ),
-          ],
           const SizedBox(height: 12),
           _BlankSizeField(
             width: _blankWidthController,
@@ -4052,6 +3709,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             importing: _importingBlank,
           ),
           // Compact, flag-gated: adds no height for clients without the flag.
+          const SizedBox(height: 12),
+          _partIdentityFields(),
           if (FeatureFlags.isEnabled(FeatureKeys.catalogPurchaseItems))
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
@@ -4071,6 +3730,29 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ],
       ),
     );
+    // Membership needs a real item id, and the workflow window runs its own set
+    // step — two writers to one set would race, since a save replaces the whole
+    // line list.
+    final showSets = sections.sets && _item != null && !widget.embedded;
+    final setsSection = showSets ? _buildSetsSection() : const SizedBox.shrink();
+    // Its own card rather than another row inside Item Details: details is
+    // already the heaviest card the packer places, and this is nine values.
+    //
+    // A basic item has the key forced off but still INHERITS the block from
+    // the part it was spawned from, so it is shown read-only there instead of
+    // hidden — data a variant genuinely carries should not disappear.
+    final developedForSection = _SectionCard(
+      title: 'Developed For',
+      child: DevelopedForForm(
+        value: _developedFor,
+        enabled: !_isReadOnly && !_isBasicItem,
+        onChanged: (next) {
+          setState(() => _developedFor = next);
+          _handleChange();
+        },
+      ),
+    );
+
     // A basic item inherits group, unit and naming from its base item, so its
     // details card shows those as context instead of as editable fields.
     final detailsSection = _isBasicItem
@@ -4177,6 +3859,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                if (_selectedDieIds.isNotEmpty)
+                  AppButton(
+                    key: const ValueKey('items_derive_variations_die'),
+                    label: 'Derive from Die',
+                    icon: Icons.alt_route,
+                    variant: AppButtonVariant.secondary,
+                    onPressed: _deriveVariationsFromDie,
+                  ),
                 AppButton(
                   label: 'Add Top-Level Property',
                   icon: Icons.add,
@@ -4312,48 +4002,36 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ),
     );
-    final content = Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // The host supplies the header when embedded in a workflow.
-          if (!widget.embedded)
-            Row(
-              children: [
-                Expanded(
-                  child: AppSectionTitle(
-                    title: _item == null
-                        ? 'Create Item'
-                        : _isReadOnly
-                        ? 'View Item'
-                        : _isBasicItem
-                        ? 'Edit Basic Item'
-                        : 'Edit Item',
-                  ),
-                ),
-                // The section layout is configured in Settings → Item
-                // Creation (or on the group, for components) — not from
-                // the form it controls.
-                IconButton(
-                  onPressed: () => _requestClose(),
-                  icon: const Icon(Icons.close),
-                ),
+    final title = _item == null
+        ? 'Create Item'
+        : _isReadOnly
+        ? 'View Item'
+        : _isBasicItem
+        ? 'Edit Basic Item'
+        : 'Edit Item';
+
+    // Kept out of the scrolling body: a refusal is set at the top of a form the
+    // user is usually at the bottom of, pressing Save.
+    final bannerMessages = <String>[
+      if (_localError != null) _localError!,
+      if (itemsProvider.errorMessage != null && !itemsProvider.isSaving)
+        itemsProvider.errorMessage!,
+    ];
+    final Widget? banner = bannerMessages.isEmpty
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < bannerMessages.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                _ItemsMessageBanner(message: bannerMessages[i], isError: true),
               ],
-            ),
-          if (_localError != null) ...[
-            const SizedBox(height: 12),
-            _ItemsMessageBanner(message: _localError!, isError: true),
-          ],
-          if (itemsProvider.errorMessage != null &&
-              !itemsProvider.isSaving) ...[
-            const SizedBox(height: 12),
-            _ItemsMessageBanner(
-              message: itemsProvider.errorMessage!,
-              isError: true,
-            ),
-          ],
-          const SizedBox(height: 16),
+            ],
+          );
+
+    final bodyColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           LayoutBuilder(
             builder: (context, constraints) {
               final wideComposer = constraints.maxWidth >= 1140;
@@ -4651,9 +4329,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               final entries = <_SectionEntry>[
                 _SectionEntry(
                   detailsSection,
+                  // Both carry the part identity pair and its stamp line now.
                   _isBasicItem
-                      ? 4.5
-                      : 5.5 + _secondaryUnitConversions.length * 0.6,
+                      ? 5.1
+                      : 6.1 + _secondaryUnitConversions.length * 0.6,
                   id: 'details',
                   label: 'Details',
                 ),
@@ -4700,6 +4379,24 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   ),
                 if (sections.dies)
                   _SectionEntry(diesSection, 2.0, id: 'dies', label: 'Dies'),
+                if (showSets)
+                  _SectionEntry(
+                    setsSection,
+                    2.0 + (_membership?.length ?? 0) * 0.8,
+                    id: 'sets',
+                    label: 'Sets',
+                  ),
+                if (sections.developedFor || _developedFor.isNotEmpty)
+                  _SectionEntry(
+                    developedForSection,
+                    // Grows once a party is picked: the person block appears
+                    // under it, and the stamp and quotation under that.
+                    _developedFor.kind == DevelopedForKind.none
+                        ? 2.0
+                        : (_developedFor.needsParty ? 4.0 : 7.0),
+                    id: 'developed_for',
+                    label: 'Developed For',
+                  ),
                 if (showPipeline)
                   _SectionEntry(
                     defaultPipelineSection,
@@ -4795,9 +4492,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ),
           ],
-          if (!widget.embedded) ...[
-            const SizedBox(height: 20),
-            Wrap(
+      ],
+    );
+
+    final actions = Wrap(
               spacing: 12,
               runSpacing: 12,
               children: [
@@ -4833,26 +4531,35 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     },
                   ),
               ],
-            ),
-          ],
-        ],
-      ),
-    );
+            );
 
-    // Embedded: the host owns the surface, the padding and the scrolling, so
-    // the form is returned bare. Standalone: keep the bottom-sheet chrome.
+    // Embedded: the host owns the surface, the scrolling, the header and the
+    // footer, so the form is returned bare.
     if (widget.embedded) {
-      return content;
-    }
-    return Material(
-      color: Colors.white,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(child: content),
+      return Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (banner != null) ...[banner, const SizedBox(height: 12)],
+            bodyColumn,
+          ],
         ),
+      );
+    }
+
+    // Standalone: the house surface, which is what keeps the title and the
+    // buttons on screen while a long form scrolls between them. The Form stays
+    // outside the scaffold so _formKey is an ancestor of every field AND of
+    // Save, and so SubmitFormShortcuts still finds the footer's button last.
+    return Form(
+      key: _formKey,
+      child: ErpFormScaffold(
+        title: title,
+        onClose: _requestClose,
+        errorBanner: banner,
+        body: bodyColumn,
+        footer: actions,
       ),
     );
   }
@@ -5606,6 +5313,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _selectedGroupId = value;
       _localError = null;
     });
+    // Same as the full form: the letters follow the group, the number does not.
+    _rederivePartCode();
     _handleChange();
   }
 
@@ -5718,6 +5427,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          // A variant is a part like any other: it carries its own number and
+          // code, even though the rest of this card is inherited.
+          _partIdentityFields(),
         ],
       ),
     );
@@ -6191,7 +5904,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         attachments: _attachmentInputs,
         machineIds: _selectedMachineIds.toList(growable: false),
         dieIds: _selectedDieIds.toList(growable: false),
-        developedForClientId: _developedForClientId,
+        developedFor: _developedFor,
         availableForPurchase: _availableForPurchase,
         blankWidthMm: _blankWidthMm,
         blankHeightMm: _blankHeightMm,
@@ -6256,6 +5969,119 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       await context.read<ItemsProvider>().refresh();
     }
     return null;
+  }
+
+  Future<void> _deriveVariationsFromDie() async {
+    if (_selectedDieIds.isEmpty) return;
+    final rawDieId = _selectedDieIds.first;
+    final dieId = rawDieId.replaceFirst('die-', '').replaceFirst('die:', '');
+
+    VariationTreeService? service;
+    try {
+      service = context.read<VariationTreeService>();
+    } catch (_) {
+      // Not provided
+    }
+
+    if (service == null) {
+      if (mounted) {
+        showAppToast(
+          context,
+          'Variation service not available.',
+          kind: AppToastKind.warning,
+        );
+      }
+      return;
+    }
+
+    try {
+      final tree = await service.fetch('die', dieId);
+      if (tree.nodes.isEmpty) {
+        if (mounted) {
+          showAppToast(
+            context,
+            'This die has no variation tree defined.',
+            kind: AppToastKind.info,
+          );
+        }
+        return;
+      }
+
+      int addedCount = 0;
+      setState(() {
+        for (final dieNode in tree.nodes) {
+          final existingProp = _rootNodes
+              .where(
+                (n) =>
+                    n.kind == ItemVariationNodeKind.property &&
+                    n.nameController.text.trim().toLowerCase() ==
+                        dieNode.name.trim().toLowerCase(),
+              )
+              .firstOrNull;
+
+          if (existingProp == null) {
+            final propDraft = _draftFromVariationNode(dieNode, null);
+            _rootNodes.add(propDraft);
+            addedCount++;
+          } else {
+            // Merge missing values into existing property
+            for (final dieVal in dieNode.children) {
+              final valExists = existingProp.children.any(
+                (c) =>
+                    c.nameController.text.trim().toLowerCase() ==
+                    dieVal.name.trim().toLowerCase(),
+              );
+              if (!valExists) {
+                final valDraft = _draftFromVariationNode(dieVal, existingProp);
+                existingProp.children.add(valDraft);
+                addedCount++;
+              }
+            }
+          }
+        }
+        _syncLeafDisplayNames();
+      });
+      _handleChange();
+
+      if (mounted) {
+        showAppToast(
+          context,
+          'Derived $addedCount variation${addedCount == 1 ? '' : 's'} from die.',
+          kind: AppToastKind.success,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showAppToast(
+          context,
+          'Could not load variations from die: $e',
+          kind: AppToastKind.error,
+        );
+      }
+    }
+  }
+
+  _NodeDraft _draftFromVariationNode(
+    VariationNode node,
+    _NodeDraft? parent,
+  ) {
+    final kind = node.kind == 'property'
+        ? ItemVariationNodeKind.property
+        : ItemVariationNodeKind.value;
+    final draft = _newDraft(kind, parent);
+    draft.nameController.text = node.name;
+    draft.codeController.text = node.code;
+    draft.displayNameController.text = node.displayName;
+    draft.displayNameTouched = node.displayName.trim().isNotEmpty;
+    draft.detailsExpanded = true;
+    draft.inputType = node.inputType;
+    draft.numericMin = node.numericMin;
+    draft.numericMax = node.numericMax;
+    draft.materialTypeId = node.materialTypeId;
+    for (final child in node.children) {
+      draft.children.add(_draftFromVariationNode(child, draft));
+    }
+    return draft;
   }
 
   void _addTopLevelProperty() {
@@ -6467,11 +6293,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               attachments: _attachmentInputs,
               machineIds: _selectedMachineIds.toList(growable: false),
               dieIds: _selectedDieIds.toList(growable: false),
-              developedForClientId: _developedForClientId,
+              developedFor: _developedFor,
               availableForPurchase: _availableForPurchase,
               blankWidthMm: _blankWidthMm,
               blankHeightMm: _blankHeightMm,
               penPaperBaseline: _hasPenPaperBaseline ? _penPaperBaseline : null,
+              // Only when the person actually typed one. An untouched pair
+              // must send NEITHER key, because the server stamps a new part
+              // only when both are absent (server.js:16870) — an empty
+              // string counts as present and would leave the part unnamed.
+              partNo: int.tryParse(_partNoController.text.trim()),
+              partCode: _partCodeController.text.trim().isEmpty
+                  ? null
+                  : _partCodeController.text.trim(),
             ),
           )
         : await itemsProvider.updateItem(
@@ -6503,11 +6337,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               attachments: _attachmentInputs,
               machineIds: _selectedMachineIds.toList(growable: false),
               dieIds: _selectedDieIds.toList(growable: false),
-              developedForClientId: _developedForClientId,
+              developedFor: _developedFor,
               availableForPurchase: _availableForPurchase,
               blankWidthMm: _blankWidthMm,
               blankHeightMm: _blankHeightMm,
               penPaperBaseline: _hasPenPaperBaseline ? _penPaperBaseline : null,
+              // This form owns the part's identity, including the right to
+              // clear it — which an absent key cannot say, so an edit always
+              // sends both. The create branch above sends them only when they
+              // were typed, so an untouched pair still lets the server stamp.
+              partNo: int.tryParse(_partNoController.text.trim()),
+              partCode: _partCodeController.text.trim(),
+              partIdentitySpecified: true,
             ),
           );
 
@@ -6516,6 +6357,23 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
     setState(() => _isSubmitting = false);
     if (result == null || itemsProvider.errorMessage != null) {
+      // A taken part code refuses the whole save, but nothing was written: the
+      // check runs before the transaction and the index backstop rolls back,
+      // so every other edit is still in the form. Mark the field rather than
+      // leaving the reason in a banner at the top of a form where Part Code
+      // may be in another column, or on another page.
+      if (itemsProvider.errorCode == 'part_code_duplicate') {
+        setState(() {
+          _partCodeError = _partCodeWasDerived
+              // The user never typed this code — moving the part derived it —
+              // so a bare "already used" would be about a value they did not
+              // enter.
+              ? 'Moving this part derives a code another part already has '
+                    'here. Edit it, or move the part back.'
+              : 'Another part in this group already has this code.';
+        });
+        _formKey.currentState?.validate();
+      }
       return null;
     }
     // Adopt the persisted item. Without this a host that keeps the editor open
@@ -6530,6 +6388,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     // the variant-level copy as the fallback for pipelines this variant has no
     // record on yet; this pins it to the pipeline it was actually typed against.
     await _persistMasterDataPair(result.id);
+    if (!mounted) return result;
+    // The item may have moved group, which changes nothing about membership —
+    // but the first save of a new item is what makes the Sets card possible.
+    if (_membership == null) await _loadMembership();
     if (!mounted) return result;
     showAppToast(
       context,
@@ -6576,6 +6438,600 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ],
       ],
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Set membership
+  // ---------------------------------------------------------------------------
+
+  /// Whether the workspace still holds nothing but the boot placeholder.
+  ///
+  /// Read defensively: a host that cannot answer should draw no offer rather
+  /// than fail the form around it.
+  bool _unitsLookUnset(UnitsProvider units) {
+    try {
+      return unitsLookUnset(
+        activeUnitNames: units.activeUnits.map((unit) => unit.name),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Whether this user may add a unit. Defensive for the same reason as
+  /// [_canEditSets].
+  bool get _canCreateUnits {
+    try {
+      return context.read<AuthProvider>().can('units.create');
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// The standard units, offered where the blocker is actually met.
+  ///
+  /// Names and symbols only — no family, no conversion factor. Nothing in
+  /// Paper can convert between units yet, and a seeded ratio would be a claim
+  /// the system cannot honour. See `starter_units.dart`.
+  Widget _starterUnitsOffer(UnitsProvider units) {
+    final canCreate = _canCreateUnits;
+    return Container(
+      key: ValueKey<String>('items-starter-units${widget.keyScope}'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.accentSoft,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'This workspace has no units yet, and an item needs one.',
+              style: TextStyle(fontSize: 14.5, color: SoftErpTheme.textPrimary),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Drawn disabled with the reason, never hidden: a control that
+          // vanishes reads as a missing feature.
+          Tooltip(
+            message: canCreate
+                ? 'Adds the standard units — editable like any other'
+                : 'You do not have permission to add units (units.create).',
+            child: AppButton(
+              key: ValueKey<String>(
+                'items-load-starter-units${widget.keyScope}',
+              ),
+              label: 'Load standard units',
+              variant: AppButtonVariant.secondary,
+              isLoading: units.isSaving,
+              onPressed: canCreate
+                  ? () async {
+                      final added = await units.seedStarterUnits();
+                      if (!mounted || added == 0) return;
+                      _selectSeededPiece(units);
+                      showAppToast(
+                        context,
+                        'Added $added units.',
+                        kind: AppToastKind.success,
+                      );
+                    }
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Picks `Piece` as the unit once the standard units land.
+  ///
+  /// Matched on the **symbol** `Pc`, not the name: `missingStarterUnits` treats
+  /// a unit as present when either its name or its symbol is taken, so a
+  /// workspace that already called it `Pieces` keeps that row and this still
+  /// finds it.
+  ///
+  /// Only when nothing is chosen yet. The placeholder is an exception — a
+  /// `-` sitting there came from the boot group rather than from a decision,
+  /// and leaving it is how a first part ends up measured in nothing. Any real
+  /// unit the person picked is left alone.
+  void _selectSeededPiece(UnitsProvider units) {
+    final piece = units.activeUnits
+        .where((unit) => unit.symbol.trim().toLowerCase() == 'pc')
+        .firstOrNull;
+    if (piece == null) return;
+    final current = _selectedUnitId == null
+        ? null
+        : units.findById(_selectedUnitId!);
+    final holdingPlaceholder =
+        current != null && current.id == units.primaryUnit?.id;
+    if (_selectedUnitId != null && !holdingPlaceholder) return;
+    setState(() {
+      _selectedUnitId = piece.id;
+      _localError = null;
+    });
+    _handleChange();
+  }
+
+  /// Whether this user may change a set at all. The item editor's own writes
+  /// are config.write; a set's are inventory.update, and the two do not travel
+  /// together. Read defensively — a host may not provide the auth provider.
+  bool get _canEditSets {
+    try {
+      return context.read<AuthProvider>().can('inventory.update');
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Which sets hold this part, with the quantity each holds.
+  ///
+  /// Writes here land immediately, unlike the rest of this form — a set line
+  /// needs a real item id, and staging them would mean the wizard's
+  /// pending-set state machine all over again. The card says so.
+  Widget _buildSetsSection() {
+    final rows = _membership ?? const <ItemSetMembership>[];
+    final canEdit = _canEditSets && !_isReadOnly;
+    return _SectionCard(
+      title: 'Sets',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.bolt_outlined,
+                size: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  canEdit
+                      ? 'Changes here save immediately.'
+                      : 'You can see this part\'s sets but not change them.',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: SoftErpTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_setsError != null) ...[
+            const SizedBox(height: 10),
+            _ItemsMessageBanner(message: _setsError!, isError: true),
+          ],
+          const SizedBox(height: 12),
+          if (_membershipFailed)
+            const Text(
+              'Could not read this part\'s sets.',
+              style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+            )
+          else if (_membership == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              ),
+            )
+          else if (rows.isEmpty)
+            const Text(
+              'This part is not in any set.',
+              style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+            )
+          else
+            for (final row in rows) _buildSetMembershipRow(row, canEdit),
+          if (canEdit) ...[
+            const SizedBox(height: 12),
+            AppButton(
+              label: 'File into a set',
+              icon: Icons.add,
+              variant: AppButtonVariant.secondary,
+              isLoading: _setWriteInFlight,
+              onPressed: _setWriteInFlight ? null : _openFileIntoSet,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSetMembershipRow(ItemSetMembership row, bool canEdit) {
+    final ownGroup = row.groupId == null || row.groupId == _selectedGroupId;
+    final subtitleParts = <String>[
+      if (!ownGroup && (row.groupName ?? '').isNotEmpty) 'in ${row.groupName}',
+      if (row.variationPathLabel.trim().isNotEmpty &&
+          row.variationPathLabel != 'Base item')
+        row.variationPathLabel,
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.sectionSurface,
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    row.setName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: SoftErpTheme.textPrimary,
+                    ),
+                  ),
+                  if (subtitleParts.isNotEmpty)
+                    Text(
+                      subtitleParts.join(' · '),
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 74,
+              child: _SetQuantityField(
+                key: ValueKey<String>('set-qty-${row.setId}-${row.variationLeafNodeId}'),
+                initial: row.quantity,
+                enabled: canEdit && !_setWriteInFlight,
+                onCommitted: (value) => _changeSetQuantity(row, value),
+              ),
+            ),
+            if (row.isOnlyLine)
+              // The server refuses a set with no lines, so removing the only
+              // one is not a removal — it is a deletion of the set, which is
+              // far bigger than this gesture.
+              Tooltip(
+                message:
+                    'This part is the only thing in ${row.setName}, and a set '
+                    'cannot be empty. Delete the set instead.',
+                child: IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  color: SoftErpTheme.textSecondary,
+                  onPressed: canEdit && !_setWriteInFlight
+                      ? () => _deleteSetFromItem(row)
+                      : null,
+                ),
+              )
+            else
+              IconButton(
+                tooltip: 'Take out of ${row.setName}',
+                icon: const Icon(Icons.close_rounded, size: 18),
+                color: SoftErpTheme.textSecondary,
+                onPressed: canEdit && !_setWriteInFlight
+                    ? () => _removeFromSet(row)
+                    : null,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Runs one membership write, start to finish.
+  ///
+  /// Never [_handleChange]: this is already saved, and marking the form dirty
+  /// would offer to discard something discarding cannot undo. The in-flight
+  /// flag is local because `saveSet` has no re-entrancy guard of its own — two
+  /// fast taps would both compute from the same snapshot and the second would
+  /// undo the first.
+  Future<void> _runSetWrite(Future<String?> Function() write) async {
+    if (_setWriteInFlight) return;
+    setState(() {
+      _setWriteInFlight = true;
+      _setsError = null;
+    });
+    final error = await write();
+    if (!mounted) return;
+    setState(() {
+      _setWriteInFlight = false;
+      // Kept on the card, not in the form's banner: _localError is cleared by
+      // the next save attempt, and the inventory provider's message is global
+      // enough to show a stale error from another screen.
+      _setsError = error;
+      if (error == null) _membershipWritten = true;
+    });
+    await _loadMembership();
+  }
+
+  Future<void> _removeFromSet(ItemSetMembership row) async {
+    final inventory = context.read<InventoryProvider>();
+    await _runSetWrite(() async {
+      final set = await _readSet(inventory, row.setId);
+      if (set == null) return 'Could not read ${row.setName}.';
+      await inventory.replaceSetLines(
+        setId: row.setId,
+        name: set.name,
+        photoUrl: set.photoUrl ?? '',
+        // From the set just read, so a change since this card was drawn is
+        // refused rather than overwritten.
+        expectedVersion: set.version,
+        lines: linesWithout(
+          set,
+          itemId: _item!.id,
+          variationLeafNodeId: row.variationLeafNodeId,
+        ),
+      );
+      return inventory.errorMessage;
+    });
+  }
+
+  Future<void> _changeSetQuantity(ItemSetMembership row, int quantity) async {
+    if (quantity == row.quantity) return;
+    final inventory = context.read<InventoryProvider>();
+    await _runSetWrite(() async {
+      final set = await _readSet(inventory, row.setId);
+      if (set == null) return 'Could not read ${row.setName}.';
+      await inventory.replaceSetLines(
+        setId: row.setId,
+        name: set.name,
+        photoUrl: set.photoUrl ?? '',
+        expectedVersion: set.version,
+        lines: linesWithQuantity(
+          set,
+          itemId: _item!.id,
+          variationLeafNodeId: row.variationLeafNodeId,
+          quantity: quantity,
+        ),
+      );
+      return inventory.errorMessage;
+    });
+  }
+
+  Future<void> _deleteSetFromItem(ItemSetMembership row) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete "${row.setName}"?',
+      message:
+          'This part is the only thing in it, and a set cannot be empty. '
+          'Deleting the set removes it everywhere, not just from this part.',
+      confirmLabel: 'Delete set',
+    );
+    if (!confirmed || !mounted) return;
+    final inventory = context.read<InventoryProvider>();
+    await _runSetWrite(() async {
+      await inventory.deleteSet(row.setId);
+      return inventory.errorMessage;
+    });
+  }
+
+  /// Picks a set — and a variation, when the part has any — then files it.
+  Future<void> _openFileIntoSet() async {
+    final item = _item;
+    if (item == null) return;
+    final inventory = context.read<InventoryProvider>();
+    await inventory.initialize();
+    if (!mounted) return;
+
+    final taken = {
+      for (final row in _membership ?? const <ItemSetMembership>[])
+        '${row.setId}:${row.variationLeafNodeId}',
+    };
+    // Every real set, not only this group's: the server's line validation says
+    // nothing about the group, and a card that can show a cross-group
+    // membership but not create one is harder to explain than one that does
+    // both.
+    final candidates = inventory.sets
+        .where((set) => !set.isTemporary && !set.groupIsArchived)
+        .toList(growable: false)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    if (candidates.isEmpty) {
+      setState(() => _setsError = 'There are no sets to file this part into.');
+      return;
+    }
+
+    // A part with variations cannot be a line at leaf 0 — the server refuses
+    // it — so it has to name which variation is in the set.
+    final references = canFileAtLeafZero(item)
+        ? const <ExactItemVariationReference>[]
+        : buildExactItemVariationReferences(<ItemDefinition>[item]);
+
+    final choice = await showDialog<(InventorySetDefinition, int, String)>(
+      context: context,
+      builder: (dialogContext) => _FileIntoSetDialog(
+        sets: candidates,
+        ownGroupId: _selectedGroupId,
+        references: references,
+        isTaken: (setId, leafId) => taken.contains('$setId:$leafId'),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    final (set, leafId, leafLabel) = choice;
+    await _runSetWrite(() async {
+      final fresh = await _readSet(inventory, set.id);
+      if (fresh == null) return 'Could not read ${set.name}.';
+      await inventory.replaceSetLines(
+        setId: set.id,
+        name: fresh.name,
+        photoUrl: fresh.photoUrl ?? '',
+        expectedVersion: fresh.version,
+        lines: mergeSetLines(
+          fresh,
+          added: item,
+          variationLeafNodeId: leafId,
+          variationPathLabel: leafLabel,
+        ),
+      );
+      return inventory.errorMessage;
+    });
+  }
+
+  /// The set as it stands right now, lines and all.
+  ///
+  /// Read back before every write rather than trusted from the membership row:
+  /// the whole line list is being replaced, and another screen may have changed
+  /// it since this card was drawn.
+  Future<InventorySetDefinition?> _readSet(
+    InventoryProvider inventory,
+    int setId,
+  ) async {
+    await inventory.initialize();
+    await inventory.reloadSets();
+    return inventory.sets.where((set) => set.id == setId).firstOrNull;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Part identity
+  // ---------------------------------------------------------------------------
+
+  /// The Part No / Part Code pair and the line saying when the part was
+  /// stamped. Lives inside Item Details, in both the full and the basic card.
+  Widget _partIdentityFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _responsiveFieldPair(
+          first: TextFormField(
+            key: ValueKey<String>('item-part-no${widget.keyScope}'),
+            controller: _partNoController,
+            readOnly: _isReadOnly,
+            keyboardType: TextInputType.number,
+            decoration: _fieldDecoration(
+              label: 'Part No',
+              helper: 'The number this part was issued',
+            ),
+            validator: (value) {
+              final text = (value ?? '').trim();
+              if (text.isEmpty) return null;
+              final parsed = int.tryParse(text);
+              if (parsed == null || parsed <= 0) {
+                return 'A whole number above zero';
+              }
+              return null;
+            },
+            onChanged: (_) {
+              _handleChange();
+              // Typing a number re-derives the code, unless the code is the
+              // user's own.
+              if (!_partCodePinned) _rederivePartCode();
+            },
+          ),
+          second: TextFormField(
+            key: ValueKey<String>('item-part-code${widget.keyScope}'),
+            controller: _partCodeController,
+            readOnly: _isReadOnly,
+            textCapitalization: TextCapitalization.characters,
+            // Uppercased in the field, because the server uppercases on the
+            // way in and the box should agree with what will be stored before
+            // the round trip.
+            inputFormatters: [
+              TextInputFormatter.withFunction(
+                (_, next) => next.copyWith(text: next.text.toUpperCase()),
+              ),
+            ],
+            decoration: _fieldDecoration(
+              label: 'Part Code',
+              helper: _partCodeHelper(),
+            ),
+            // A validator, not decoration.errorText: paged mode finds the page
+            // that failed by walking for a FormFieldState with an error.
+            validator: (_) => _partCodeError,
+            onChanged: (_) {
+              setState(() {
+                _partCodePinned = true;
+                _partCodeWasDerived = false;
+                _partCodeError = null;
+              });
+              _handleChange();
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        _partStampLine(),
+      ],
+    );
+  }
+
+  String _partCodeHelper() {
+    final membership = _membership;
+    if (membership != null && membership.length > 1) {
+      return 'In ${membership.length} sets — not re-derived automatically';
+    }
+    return 'Initials of group, set and name, then the number';
+  }
+
+  Widget _partStampLine() {
+    final item = _item;
+    final String text;
+    if (item == null) {
+      text = 'Date and time stamped on save';
+    } else if (item.partNo == null && item.partCode.trim().isEmpty) {
+      // Every part that predates the stamp is in this state; a confident date
+      // here would be a date for an identity the part does not have.
+      text = 'Not stamped yet';
+    } else {
+      text = 'Stamped ${partStamp(item.createdAt)}';
+    }
+    return Row(
+      children: [
+        const Icon(
+          Icons.schedule_outlined,
+          size: 14,
+          color: SoftErpTheme.textSecondary,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            color: SoftErpTheme.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Re-derives the code from the group, the set and the name.
+  ///
+  /// Suppressed while the membership is unknown: without it the code loses the
+  /// set's letter and comes out looking perfectly plausible. With several sets
+  /// there is no fact of the matter about which lends its letter, so it is left
+  /// alone and the helper text says so.
+  void _rederivePartCode() {
+    if (_partCodePinned || _isReadOnly) return;
+    final membership = _membership;
+    if (membership == null || _membershipFailed) return;
+    if (membership.length > 1) return;
+
+    final groupName = context.read<GroupsProvider>().findById(_selectedGroupId)?.name;
+    final derived = buildPartCode(
+      groupName: groupName,
+      setName: membership.length == 1 ? membership.first.setName : '',
+      itemName: _nameController.text.trim(),
+      partNo: int.tryParse(_partNoController.text.trim()),
+    );
+    if (derived == _partCodeController.text) return;
+    setState(() {
+      _partCodeController.text = derived;
+      _partCodeWasDerived = true;
+      _partCodeError = null;
+    });
+  }
+
+  Future<void> _loadMembership() async {
+    final item = _item;
+    if (item == null) return;
+    final rows = await context.read<ItemsProvider>().itemSets(item.id);
+    if (!mounted) return;
+    setState(() {
+      _membership = rows;
+      _membershipFailed = rows == null;
+    });
   }
 
   Widget _responsiveFieldPair({required Widget first, required Widget second}) {
@@ -8264,6 +8720,237 @@ class _EmptySampleDataPrompt extends StatelessWidget {
   }
 }
 
+/// How many of this part a set holds. Commits on blur or Enter, not on every
+/// keystroke — each commit is a write.
+class _SetQuantityField extends StatefulWidget {
+  const _SetQuantityField({
+    super.key,
+    required this.initial,
+    required this.enabled,
+    required this.onCommitted,
+  });
+
+  final int initial;
+  final bool enabled;
+  final ValueChanged<int> onCommitted;
+
+  @override
+  State<_SetQuantityField> createState() => _SetQuantityFieldState();
+}
+
+class _SetQuantityFieldState extends State<_SetQuantityField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.initial}',
+  );
+  late final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SetQuantityField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A write landed and the row came back with a new number.
+    if (widget.initial != oldWidget.initial && !_focus.hasFocus) {
+      _controller.text = '${widget.initial}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final parsed = int.tryParse(_controller.text.trim());
+    // Zero is not a removal — the server refuses it, and turning a typo into a
+    // deletion is worse than putting the old number back.
+    if (parsed == null || parsed <= 0) {
+      _controller.text = '${widget.initial}';
+      return;
+    }
+    if (parsed != widget.initial) widget.onCommitted(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      focusNode: _focus,
+      enabled: widget.enabled,
+      keyboardType: TextInputType.number,
+      textAlign: TextAlign.center,
+      onSubmitted: (_) => _commit(),
+      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      decoration: InputDecoration(
+        prefixText: '× ',
+        isDense: true,
+        filled: true,
+        fillColor: SoftErpTheme.cardSurface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+      ),
+    );
+  }
+}
+
+/// Picks the set to file a part into, and which variation of it goes in.
+class _FileIntoSetDialog extends StatefulWidget {
+  const _FileIntoSetDialog({
+    required this.sets,
+    required this.ownGroupId,
+    required this.references,
+    required this.isTaken,
+  });
+
+  final List<InventorySetDefinition> sets;
+  final int? ownGroupId;
+
+  /// One per orderable leaf. Empty when the part has no variations, in which
+  /// case the line files at leaf 0.
+  final List<ExactItemVariationReference> references;
+  final bool Function(int setId, int leafId) isTaken;
+
+  @override
+  State<_FileIntoSetDialog> createState() => _FileIntoSetDialogState();
+}
+
+class _FileIntoSetDialogState extends State<_FileIntoSetDialog> {
+  InventorySetDefinition? _set;
+  ExactItemVariationReference? _reference;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.references.length == 1) _reference = widget.references.single;
+  }
+
+  int get _leafId => widget.references.isEmpty
+      ? 0
+      : (_reference?.variationLeafNodeId ?? -1);
+
+  bool get _canFile {
+    final set = _set;
+    if (set == null) return false;
+    if (widget.references.isNotEmpty && _reference == null) return false;
+    return !widget.isTaken(set.id, _leafId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final set = _set;
+    final alreadyThere = set != null && widget.isTaken(set.id, _leafId);
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text(
+        'File into a set',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SearchableSelectField<int>(
+              options: widget.sets
+                  .map(
+                    (row) => SearchableSelectOption<int>(
+                      value: row.id,
+                      // A set filed under another group says so, rather than
+                      // looking like one of this part's own.
+                      label:
+                          row.groupId == null ||
+                              row.groupId == widget.ownGroupId
+                          ? row.name
+                          : '${row.name}  ·  ${row.groupName ?? 'another group'}',
+                    ),
+                  )
+                  .toList(growable: false),
+              value: set?.id,
+              decoration: const InputDecoration(
+                labelText: 'Set',
+                border: OutlineInputBorder(),
+              ),
+              dialogTitle: 'Set',
+              onChanged: (value) => setState(() {
+                _set = widget.sets.where((row) => row.id == value).firstOrNull;
+              }),
+            ),
+            if (widget.references.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SearchableSelectField<int>(
+                options: widget.references
+                    .map(
+                      (reference) => SearchableSelectOption<int>(
+                        value: reference.variationLeafNodeId,
+                        label: reference.variationPathLabel.trim().isEmpty
+                            ? reference.itemLabel
+                            : reference.variationPathLabel,
+                      ),
+                    )
+                    .toList(growable: false),
+                value: _reference?.variationLeafNodeId,
+                decoration: const InputDecoration(
+                  labelText: 'Which variation',
+                  helperText: 'A part with variations has to say which one',
+                  border: OutlineInputBorder(),
+                ),
+                dialogTitle: 'Variation',
+                onChanged: (value) => setState(() {
+                  _reference = widget.references
+                      .where((row) => row.variationLeafNodeId == value)
+                      .firstOrNull;
+                }),
+              ),
+            ],
+            if (alreadyThere) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Already in ${set.name}.',
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _canFile
+              ? () => Navigator.of(context).pop((
+                  _set!,
+                  _leafId,
+                  _reference?.variationPathLabel ?? '',
+                ))
+              : null,
+          child: const Text('File'),
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionEntry {
   const _SectionEntry(this.child, this.weight, {this.id = '', this.label = ''});
 
@@ -8539,89 +9226,6 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
 /// "Developed for" — links the item to the client it was developed for, so it
 /// can be listed under them. Renders as a button until a client is picked, then
 /// as a clearable chip.
-class _DevelopedForField extends StatelessWidget {
-  const _DevelopedForField({
-    required this.clientId,
-    required this.readOnly,
-    required this.onChanged,
-  });
-
-  final int? clientId;
-  final bool readOnly;
-  final ValueChanged<int?> onChanged;
-
-  Future<void> _pick(
-    BuildContext context,
-    List<ClientDefinition> clients,
-  ) async {
-    final selected = await showSearchableSelectDialog<int>(
-      context: context,
-      title: 'Developed for',
-      searchHintText: 'Search clients',
-      options: clients
-          .map(
-            (client) => SearchableSelectOption<int>(
-              value: client.id,
-              label: client.name,
-              searchText: client.name,
-            ),
-          )
-          .toList(growable: false),
-      selectedValue: clientId,
-    );
-    if (selected != null) {
-      onChanged(selected.value);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final clients = context
-        .watch<ClientsProvider>()
-        .clients
-        .where((client) => !client.isArchived)
-        .toList(growable: false);
-    final selected = clients.where((c) => c.id == clientId).firstOrNull;
-
-    return Row(
-      children: [
-        const Text(
-          'Developed for',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF334155),
-          ),
-        ),
-        const SizedBox(width: 12),
-        if (selected != null)
-          Chip(
-            label: Text(selected.name, style: const TextStyle(fontSize: 12.5)),
-            onDeleted: readOnly ? null : () => onChanged(null),
-          )
-        else if (clientId != null)
-          // The client was archived or removed after this item was saved.
-          Chip(
-            label: Text(
-              'Client #$clientId',
-              style: const TextStyle(fontSize: 12.5),
-            ),
-            onDeleted: readOnly ? null : () => onChanged(null),
-          ),
-        if (!readOnly) ...[
-          const SizedBox(width: 8),
-          AppButton(
-            label: clientId == null ? 'Select client' : 'Change',
-            icon: Icons.person_search_outlined,
-            variant: AppButtonVariant.secondary,
-            onPressed: () => _pick(context, clients),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 /// A presigned PUT sends the whole file from memory, so cap the size.
 const int _kMaxAttachmentBytes = 50 * 1024 * 1024;
 
@@ -10135,7 +10739,7 @@ class _VariationPanelState extends State<_VariationPanel> {
         .items
         .where((item) => item.combinationGroupIds.contains(groupId))
         .map(
-          (item) => _MemberRow(
+          (item) => EntityMemberRow(
             label: item.displayName.trim().isEmpty
                 ? item.name
                 : item.displayName,
@@ -10159,7 +10763,7 @@ class _VariationPanelState extends State<_VariationPanel> {
               : (line.itemName.trim().isNotEmpty
                     ? line.itemName
                     : 'Item #${line.itemId}');
-          return _MemberRow(
+          return EntityMemberRow(
             label: label,
             isVariant: item?.isBasicItem ?? false,
             quantity: line.quantity,
@@ -10983,75 +11587,6 @@ class _VariationPanelState extends State<_VariationPanel> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One member inside an expanded group or set: its name, colour-coded by
-/// whether it is a base item or a spawned variant.
-class _MemberRow extends StatelessWidget {
-  const _MemberRow({
-    required this.label,
-    required this.isVariant,
-    this.quantity,
-  });
-
-  final String label;
-  final bool isVariant;
-  final int? quantity;
-
-  @override
-  Widget build(BuildContext context) {
-    final fg = isVariant ? SoftErpTheme.entityVariant : SoftErpTheme.entityItem;
-    final bg = isVariant
-        ? SoftErpTheme.entityVariantBg
-        : SoftErpTheme.entityItemBg;
-    final border = isVariant
-        ? SoftErpTheme.entityVariantBorder
-        : SoftErpTheme.entityItemBorder;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (quantity != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                '×$quantity',
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );
@@ -11947,7 +12482,28 @@ class _ItemWorkflowWindow extends StatefulWidget {
     this.startAtVariations = false,
     this.onClosed,
     this.controller,
+    this.overrideSections,
+    this.identityOnly = false,
   });
+
+  /// Which sections the editor shows, overriding BOTH the group's layout and
+  /// the user's stored default.
+  ///
+  /// For a host that needs a known-shaped form — the guided first run asks for
+  /// identity and nothing else. It deliberately does NOT override a basic
+  /// item's fixed layout, and it is never written into
+  /// `ItemFormSectionsProvider`, which is stored per user and would otherwise
+  /// follow them everywhere.
+  final ItemFormSections? overrideSections;
+
+  /// Trims Item Details to what identifies the part: name, group, unit and the
+  /// part number/code pair, hiding alias, the generated display name and the
+  /// use-codes toggle.
+  ///
+  /// Separate from [overrideSections] on purpose. That one picks whole
+  /// sections; this is field surgery inside one card, because those four fields
+  /// all live in Item Details together and no section flag can separate them.
+  final bool identityOnly;
 
   /// Set when a host carries the step navigation; see
   /// [ItemsScreen.workflowPanel].
@@ -12318,7 +12874,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
           .map((machine) => machine.id)
           .toList(growable: false),
       dieIds: item.dies.map((die) => die.id).toList(growable: false),
-      developedForClientId: item.developedForClientId,
+      developedFor: item.developedFor,
       availableForPurchase: item.availableForPurchase,
       penPaperBaseline: item.penPaperBaseline,
     );
@@ -12604,6 +13160,10 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
 
     InventorySetDefinition? existing;
     if (!choice.isCreateNew) {
+      // Read it back first: this window's cached list is as old as the session,
+      // and the version sent below has to be the set's current one or every
+      // write from a long-open window would bounce.
+      await inventoryProvider.reloadSets();
       existing = inventoryProvider.sets
           .where((set) => set.id == choice.existingGroupId)
           .firstOrNull;
@@ -12637,6 +13197,13 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
       SaveInventorySetInput(
         id: existing?.id,
         name: choice.isCreateNew ? choice.newName : existing!.name,
+        // Carried deliberately: the server writes photo_url on every update, so
+        // leaving it out of a merge write clears the set's photo. The group is
+        // safe for the opposite reason — an absent groupId means "leave the
+        // link alone".
+        photoUrl: existing?.photoUrl ?? '',
+        // Null on a create, which has nothing to conflict with.
+        expectedVersion: existing?.version,
         lines: lines,
       ),
     );
@@ -12907,6 +13474,8 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
         paged: widget.controller != null,
         page: _detailsPage,
         onPagesChanged: (pages) => setState(() => _detailsPages = pages),
+        overrideSections: widget.overrideSections,
+        identityOnly: widget.identityOnly,
         onCreateVariant: _isAdvancing ? null : _enterVariantFlow,
         onRequestClose: _close,
         onFinished: (result) {

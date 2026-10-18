@@ -106,11 +106,28 @@ class _UnitsScreenState extends State<UnitsScreen> {
               ),
             ),
           ),
-          action: AppButton(
-            label: 'Add Unit',
-            icon: Icons.add,
-            isLoading: units.isSaving,
-            onPressed: () => _openUnitEditor(context),
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Always here, not only on an empty master: somebody who deleted
+              // a unit months ago should get it back without retyping it, and
+              // an offer that shows once and vanishes is one nobody can find.
+              AppButton(
+                key: const ValueKey<String>('units-load-starter'),
+                label: 'Load standard units',
+                icon: Icons.playlist_add_outlined,
+                variant: AppButtonVariant.secondary,
+                isLoading: units.isSaving,
+                onPressed: () => _loadStarterUnits(context),
+              ),
+              const SizedBox(width: 12),
+              AppButton(
+                label: 'Add Unit',
+                icon: Icons.add,
+                isLoading: units.isSaving,
+                onPressed: () => _openUnitEditor(context),
+              ),
+            ],
           ),
           toolbar: _UnitsToolbar(
             isGridView: _isGridView,
@@ -132,6 +149,24 @@ class _UnitsScreenState extends State<UnitsScreen> {
               : _UnitsTable(units: units.filteredUnits),
         );
       },
+    );
+  }
+
+  /// Writes the standard units this workspace is missing, and says what it
+  /// did — including when the answer is "nothing", which is what pressing it a
+  /// second time should feel like.
+  static Future<void> _loadStarterUnits(BuildContext context) async {
+    final provider = context.read<UnitsProvider>();
+    final added = await provider.seedStarterUnits();
+    if (!context.mounted) return;
+    if (provider.errorMessage != null) return;
+    showAppToast(
+      context,
+      added == 0
+          ? 'Nothing to add — you already have the standard units.'
+          : 'Added $added unit${added == 1 ? '' : 's'}. Edit or remove any of '
+                'them like any other.',
+      kind: added == 0 ? AppToastKind.info : AppToastKind.success,
     );
   }
 

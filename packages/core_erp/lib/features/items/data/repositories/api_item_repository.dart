@@ -1,7 +1,9 @@
+import '../../domain/part_code.dart';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../domain/developed_for.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
@@ -155,6 +157,7 @@ class ApiItemRepository implements ItemRepository {
             .map((id) => ItemDieLink(id: id, toolCode: ''))
             .toList(growable: false),
         developedForClientId: input.developedForClientId,
+        developedFor: input.developedFor ?? DevelopedFor.empty,
         availableForPurchase: input.availableForPurchase,
       );
       _mockItems.add(created);
@@ -174,7 +177,11 @@ class ApiItemRepository implements ItemRepository {
         response.statusCode >= 300 ||
         !parsed.success ||
         parsed.item == null) {
-      throw ItemApiException(parsed.error ?? 'Failed to create item.');
+      throw ItemApiException(
+        parsed.error ?? 'Failed to create item.',
+        statusCode: response.statusCode,
+        code: payload['code'] as String?,
+      );
     }
     return parsed.item!.toDomain();
   }
@@ -250,6 +257,7 @@ class ApiItemRepository implements ItemRepository {
             .map((id) => ItemDieLink(id: id, toolCode: ''))
             .toList(growable: false),
         developedForClientId: input.developedForClientId,
+        developedFor: input.developedFor ?? DevelopedFor.empty,
         availableForPurchase: input.availableForPurchase,
       );
       _mockItems[index] = updated;
@@ -554,6 +562,71 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
+  Future<List<ItemSetMembership>> itemSets(int itemId) async {
+    if (useMockResponses) {
+      return const <ItemSetMembership>[];
+    }
+    final response = await _client.get(Uri.parse('$baseUrl/api/items/$itemId/sets'));
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to fetch the sets this part is in.',
+        statusCode: response.statusCode,
+      );
+    }
+    return ((payload['sets'] as List<dynamic>?) ?? const <dynamic>[])
+        .map((row) => ItemSetMembership.fromJson(row as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<PartIdentitySuggestion> nextPartIdentity({
+    required int groupId,
+    int? setId,
+    bool setPending = false,
+    String setName = '',
+    String name = '',
+  }) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      // Demo mode has no server to count for it, so it counts what it holds
+      // and derives with the same rule.
+      final inGroup = _mockItems.where((item) => item.groupId == groupId);
+      final highest = inGroup.fold<int>(
+        0,
+        (max, item) => (item.partNo ?? 0) > max ? item.partNo! : max,
+      );
+      final partNo = setPending ? 1 : highest + 1;
+      return PartIdentitySuggestion(
+        partNo: partNo,
+        partCode: buildPartCode(setName: setName, itemName: name, partNo: partNo),
+        scope: setPending ? 'pending-set' : 'group-unfiled',
+      );
+    }
+
+    final uri = Uri.parse(
+      '$baseUrl/api/items/next-part-identity'
+      '?groupId=$groupId'
+      '${setId == null ? '' : '&setId=$setId'}'
+      '${setPending ? '&setPending=1' : ''}'
+      // A set that is still a draft cannot be looked up, so its name travels
+      // with the question — otherwise the code would be missing its type
+      // letter until the first part is named.
+      '${setName.isEmpty ? '' : '&setName=${Uri.encodeQueryComponent(setName)}'}'
+      '&name=${Uri.encodeQueryComponent(name)}',
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to work out the next part number.',
+        statusCode: response.statusCode,
+      );
+    }
+    return PartIdentitySuggestion.fromJson(payload);
+  }
+
+  @override
   Future<ItemDefinition> updateShortCode(int id, String shortCode) async {
     if (useMockResponses) {
       final index = _mockItems.indexWhere((item) => item.id == id);
@@ -589,6 +662,7 @@ class ApiItemRepository implements ItemRepository {
         dies: current.dies,
         developedForClientId: current.developedForClientId,
         developedForClientName: current.developedForClientName,
+        developedFor: current.developedFor,
         combinationGroupIds: current.combinationGroupIds,
       );
       _mockItems[index] = updated;
@@ -2340,9 +2414,16 @@ extension<T> on Iterable<T> {
 }
 
 class ItemApiException implements Exception {
-  const ItemApiException(this.message);
+  const ItemApiException(this.message, {this.statusCode, this.code});
 
   final String message;
+
+  /// The HTTP status and the server's machine-readable `code`, where it sent
+  /// one. Both optional: this is thrown from several dozen places that have
+  /// only a sentence, and a caller that needs to tell one refusal from another
+  /// should not have to pattern-match prose to do it.
+  final int? statusCode;
+  final String? code;
 
   @override
   String toString() => message;

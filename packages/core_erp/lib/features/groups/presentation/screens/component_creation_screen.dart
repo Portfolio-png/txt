@@ -1,19 +1,26 @@
 import '../../../../core/app_flow_hooks.dart';
+import '../../../../core/network/sitting_scope.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/domain/item_form_sections.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../links/data/entity_link_service.dart';
 import '../../../links/domain/entity_link.dart';
 import '../../../links/presentation/widgets/link_columns.dart';
+import '../../../../core/widgets/soft_master_data.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/track_panel.dart';
+import '../../../units/domain/starter_units.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_inputs.dart';
 import '../providers/groups_provider.dart';
+import 'creation_guided_run.dart';
 import 'creation_sessions.dart';
 import 'creation_wizard_kinds.dart';
 import 'dart:math' as math;
@@ -49,7 +56,17 @@ class ComponentCreationWorkspace extends StatefulWidget {
     this.itemsOnly = false,
     this.sessions,
     this.linkService,
+    this.initialKinds,
+    this.onLineupChanged,
+    this.sittingId,
   });
+
+  /// This opening of the window, as the server groups it.
+  ///
+  /// Also used as the recents entry's id, so the local memory of the bench and
+  /// the server's record of it name the same opening. Null only in a test that
+  /// builds the workspace directly.
+  final String? sittingId;
 
   /// The recents list in the title bar: this workspace files what it saves
   /// into it, and answers when one is picked.
@@ -73,6 +90,16 @@ class ComponentCreationWorkspace extends StatefulWidget {
   /// Replaces the item workflow window; tests use it to stay light.
   final ComponentItemEditorBuilder? itemEditorBuilder;
 
+  /// The tiles to open with. Null is the usual Item / Die / Machine.
+  ///
+  /// Only the Express door passes this, together with [onLineupChanged] —
+  /// Add Item starts fresh every time on purpose.
+  final List<String>? initialKinds;
+
+  /// Fires whenever the lineup gains, loses or reorders a tile, with the kinds
+  /// in their new order. Null means nobody is remembering it.
+  final ValueChanged<List<String>>? onLineupChanged;
+
   @override
   State<ComponentCreationWorkspace> createState() =>
       _ComponentCreationWorkspaceState();
@@ -86,9 +113,21 @@ class ComponentCreationDialog extends StatefulWidget {
     this.itemEditorBuilder,
     this.itemsOnly = false,
     this.linkService,
+    this.title,
+    this.initialKinds,
+    this.onLineupChanged,
   });
 
   final GroupDefinition? component;
+
+  /// What the title bar says. Null keeps the name the mode gives it.
+  final String? title;
+
+  /// See [ComponentCreationWorkspace.initialKinds].
+  final List<String>? initialKinds;
+
+  /// See [ComponentCreationWorkspace.onLineupChanged].
+  final ValueChanged<List<String>>? onLineupChanged;
 
   /// See [ComponentCreationWorkspace.linkService].
   final EntityLinkService? linkService;
@@ -116,6 +155,36 @@ class ComponentCreationDialog extends StatefulWidget {
     );
   }
 
+  /// The Masters header's Express: the same window, opened on whatever the
+  /// person was entering last time.
+  ///
+  /// Everything `itemsOnly` gives is what Express wants — no component to
+  /// name, the item editor picking its own group, the last column listing what
+  /// this sitting saved. What differs is the title and that the lineup is
+  /// remembered, so those two travel as arguments rather than as a third mode.
+  ///
+  /// The lineup is read **before** the window is shown: opening on the right
+  /// tiles and then rebuilding a frame later would be a flicker on the thing
+  /// the person came to use.
+  static Future<void> openExpress(
+    BuildContext context, {
+    CreationLineupStore? store,
+  }) async {
+    final lineupStore = store ?? CreationLineupStore();
+    final remembered = CreationKinds.sanitizeLineup(await lineupStore.load());
+    if (!context.mounted) return;
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ComponentCreationDialog(
+        itemsOnly: true,
+        title: 'Express entry',
+        initialKinds: remembered,
+        onLineupChanged: lineupStore.save,
+      ),
+    );
+  }
+
   @override
   State<ComponentCreationDialog> createState() =>
       _ComponentCreationDialogState();
@@ -126,8 +195,26 @@ class _ComponentCreationDialogState extends State<ComponentCreationDialog> {
   late final CreationSessionController _sessions = CreationSessionController()
     ..load();
 
+  /// This opening of the window, as the server will group it.
+  ///
+  /// Minted here rather than in the workspace because the *window* is the
+  /// sitting: both doors — Add Item and Express — build this dialog, and a
+  /// nested editor opened from inside it keeps writing under the same id,
+  /// which is right, because that is where it happened. The workspace's own
+  /// `_session.id` is a different thing: it names an entry in the recents list.
+  late final String _sittingId;
+
+  @override
+  void initState() {
+    super.initState();
+    _sittingId = SittingScope.begin();
+  }
+
   @override
   void dispose() {
+    // Passing the id, not clearing outright: Add Item can open over Express,
+    // and the inner window closing must not strand the outer one's writes.
+    SittingScope.end(_sittingId);
     _sessions.dispose();
     super.dispose();
   }
@@ -152,9 +239,12 @@ class _ComponentCreationDialogState extends State<ComponentCreationDialog> {
         child: Column(
           children: [
             _Header(
-              title: widget.itemsOnly ? 'Item creation' : 'Component creation',
+              title:
+                  widget.title ??
+                  (widget.itemsOnly ? 'Item creation' : 'Component creation'),
               componentName: _component?.name,
               sessions: _sessions,
+              sittingId: _sittingId,
               onClose: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
@@ -162,10 +252,13 @@ class _ComponentCreationDialogState extends State<ComponentCreationDialog> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: ComponentCreationWorkspace(
                   sessions: _sessions,
+                  sittingId: _sittingId,
                   component: widget.component,
                   itemEditorBuilder: widget.itemEditorBuilder,
                   itemsOnly: widget.itemsOnly,
                   linkService: widget.linkService,
+                  initialKinds: widget.initialKinds,
+                  onLineupChanged: widget.onLineupChanged,
                   onComponentChanged: (component) =>
                       setState(() => _component = component),
                 ),
@@ -336,19 +429,61 @@ class _ComponentCreationWorkspaceState
   /// Starts as Item / Die / Machine; tiles can be removed, dragged, duplicated
   /// and added from the + menu. Lives as long as the window.
   late final List<_LineupEntry> _lineup = [
-    for (final kind in CreationKinds.defaults) _makeEntry(kind),
+    for (final kind in widget.initialKinds ?? CreationKinds.defaults)
+      _makeEntry(kind),
   ];
-  late String _activeId = _lineup.first.id;
+  /// The tile in front, or null when the bench is empty — which it is every
+  /// time Express is opened with nothing remembered.
+  late String? _activeId = _lineup.firstOrNull?.id;
 
   /// The item tile whose sub-tabs are listed: the open one, or the one that
   /// was open last, so they stay clickable while a die sits in front.
-  late String? _stepsOwnerId = _lineup.first.id;
+  late String? _stepsOwnerId = _lineup.firstOrNull?.id;
   int _entrySeq = 0;
 
   /// Everything the middle column saved in this window, newest first.
   final Map<String, List<CreatedRecord>> _added = {};
 
   bool _itemStepsOpen = true;
+
+  /// The standard-units offer was waved away for this opening of the window.
+  bool _starterUnitsDismissed = false;
+
+  /// Whether this opening is a guided first run.
+  ///
+  /// **Decided once, on the first build, and then left alone.** It cannot be a
+  /// live `items.isEmpty` — saving the part in step 1 makes that false and
+  /// would yank the run away mid-flow. Null means not yet decided.
+  bool? _guidedActive;
+
+  GuidedStep _guidedStep = GuidedStep.part;
+
+  /// The part step 1 produced, and the answers to steps 2 and 3. A null
+  /// machine or die means the step was skipped, which is a real answer.
+  ItemDefinition? _guidedPart;
+  CreatedRecord? _guidedMachine;
+  CreatedRecord? _guidedDie;
+
+  /// What the current step offers to attach, and which one is being written.
+  List<LinkRef> _guidedCandidates = const <LinkRef>[];
+  bool _guidedLoading = false;
+  String? _guidedBusy;
+
+  /// Pairs this window has already joined — whether from the + Die under an
+  /// item or from the offer below — so neither is proposed twice.
+  final Set<String> _joinedPairs = <String>{};
+
+  /// Records somebody said to leave unattached, keyed `<kind>:<recordId>`.
+  ///
+  /// Per record, not per pair: the question asked is "is this die attached to
+  /// anything?", so the answer is about the die. Persisted, because an answer
+  /// that dies with the window means nothing the next time it opens.
+  final Set<String> _declinedRecords = <String>{};
+  final CreationDeclinedStore _declinedStore = CreationDeclinedStore();
+
+  /// A record being attached, so its row can say so and cannot be
+  /// double-tapped.
+  String? _joiningPair;
   String? _flashRecordKey;
 
   /// How many links each record this window has shown is known to have, so the
@@ -378,8 +513,14 @@ class _ComponentCreationWorkspaceState
   int? _lastItemGroupId;
 
   /// This sitting, as the recents list will remember it.
+  ///
+  /// The id is the dialog's sitting id, so the entry in the recents list and
+  /// the server's row group are one and the same opening — which is what stops
+  /// the header's count and the panel it opens from being able to disagree.
+  /// `CreationSession.id` is only ever compared for equality, never parsed, so
+  /// the format change costs nothing.
   late CreationSession _session = CreationSession(
-    id: 's${DateTime.now().microsecondsSinceEpoch}',
+    id: widget.sittingId ?? 's${DateTime.now().microsecondsSinceEpoch}',
     savedAt: DateTime.now(),
     records: const [],
   );
@@ -387,6 +528,10 @@ class _ComponentCreationWorkspaceState
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _searchController = TextEditingController();
+
+  /// Whether the right rail is showing the live sitting activity timeline
+  /// or local session records.
+  bool _showTimeline = false;
 
   /// Tells the link columns to re-read after this window changes the graph by
   /// its own means — saving a die in the middle editor and attaching it to the
@@ -400,10 +545,13 @@ class _ComponentCreationWorkspaceState
     _nameController.addListener(() => setState(() {}));
     _searchController.addListener(() => setState(() {}));
     widget.sessions?.onRestore = _restoreSession;
-    Future<void>.microtask(() {
+    Future<void>.microtask(() async {
       if (!mounted) return;
       context.read<UnitsProvider>().initialize();
       context.read<ItemsProvider>().initialize();
+      final declined = await _declinedStore.load();
+      if (!mounted || declined.isEmpty) return;
+      setState(() => _declinedRecords.addAll(declined));
     });
   }
 
@@ -439,10 +587,30 @@ class _ComponentCreationWorkspaceState
     return entry;
   }
 
-  _LineupEntry get _activeEntry =>
-      _lineup.firstWhere((e) => e.id == _activeId, orElse: () => _lineup.first);
+  /// The tile in front. Null on an empty bench — and the fallback for a stale
+  /// id is the first tile, which is why this cannot simply be a firstWhere:
+  /// its own orElse was the thing that threw.
+  _LineupEntry? get _activeEntry {
+    if (_lineup.isEmpty) return null;
+    return _lineup.firstWhere(
+      (e) => e.id == _activeId,
+      orElse: () => _lineup.first,
+    );
+  }
 
   Iterable<_LineupEntry> get _itemEntries => _lineup.where((e) => e.isItem);
+
+  /// The item tile to put an item in: the one in front if it is an item, else
+  /// the first item tile there is, else a new one.
+  ///
+  /// Both callers used to work this out themselves and only one of them did it
+  /// safely — the + beside the Items list reached for `_itemEntries.first`,
+  /// which threw whenever the bench held tiles but no Item among them.
+  _LineupEntry _itemTileToUse() {
+    final active = _activeEntry;
+    if (active != null && active.isItem) return active;
+    return _itemEntries.firstOrNull ?? _makeEntry(CreationKinds.item);
+  }
 
   bool get _naming => !widget.itemsOnly && _component == null;
 
@@ -488,7 +656,7 @@ class _ComponentCreationWorkspaceState
     if (id == _activeId || _naming) return;
     setState(() {
       _activeId = id;
-      if (_activeEntry.isItem) _stepsOwnerId = id;
+      if (_activeEntry?.isItem ?? false) _stepsOwnerId = id;
     });
   }
 
@@ -502,6 +670,42 @@ class _ComponentCreationWorkspaceState
   /// The + menu, or a tile's own +: another form of that kind, opened. A kind
   /// already in the lineup gets a second tile rather than being refused —
   /// a second item that shares the die you just made needs one.
+  /// Says what the lineup now holds, for whoever is remembering it.
+  ///
+  /// Called from every path that changes it — the + menu, a tile's ×, a drag,
+  /// and the + Die / + Machine under an item, which adds a tile when there is
+  /// none of that kind yet.
+  void _lineupChanged() {
+    widget.onLineupChanged?.call([
+      for (final entry in _lineup) entry.kind,
+    ]);
+  }
+
+  /// Every master not already on the bench, in catalogue order.
+  ///
+  /// One setState and **one** [_lineupChanged], not a loop over [_addKind]:
+  /// that would announce a different lineup per kind and write the remembered
+  /// one that many times.
+  void _addAllKinds() {
+    final present = {for (final entry in _lineup) entry.kind};
+    final missing = CreationKinds.catalog
+        .map((spec) => spec.key)
+        .where((key) => !present.contains(key))
+        .toList(growable: false);
+    if (missing.isEmpty) return;
+    setState(() {
+      for (final kind in missing) {
+        final entry = _makeEntry(kind);
+        _lineup.add(entry);
+        // The first one added comes forward; the half-typed tile someone was
+        // already on would be rude to replace.
+        _activeId ??= entry.id;
+        if (entry.isItem) _stepsOwnerId ??= entry.id;
+      }
+    });
+    _lineupChanged();
+  }
+
   void _addKind(String kind) {
     setState(() {
       final entry = _makeEntry(kind);
@@ -509,20 +713,22 @@ class _ComponentCreationWorkspaceState
       _activeId = entry.id;
       if (entry.isItem) _stepsOwnerId = entry.id;
     });
+    _lineupChanged();
   }
 
-  /// A tile's ×. The lineup never goes empty.
+  /// A tile's ×. Taking the last one off is allowed: it leaves the bench
+  /// empty, which puts the chooser back in the middle.
   void _removeEntry(_LineupEntry entry) {
-    if (_lineup.length <= 1) return;
     setState(() {
       _lineup.remove(entry);
       entry.controller
         ?..removeListener(_onItemWorkflowChanged)
         ..dispose();
-      if (_activeId == entry.id) _activeId = _lineup.first.id;
+      if (_activeId == entry.id) _activeId = _lineup.firstOrNull?.id;
       if (_stepsOwnerId == entry.id)
         _stepsOwnerId = _itemEntries.firstOrNull?.id;
     });
+    _lineupChanged();
   }
 
   void _reorderKinds(int oldIndex, int newIndex) {
@@ -530,6 +736,7 @@ class _ComponentCreationWorkspaceState
       if (newIndex > oldIndex) newIndex--;
       _lineup.insert(newIndex, _lineup.removeAt(oldIndex));
     });
+    _lineupChanged();
   }
 
   /// From an item's + Die / + Machine: opens that editor, aimed at the item.
@@ -544,6 +751,7 @@ class _ComponentCreationWorkspaceState
       _activeId = entry.id;
       _expandedIds.add(itemId);
     });
+    if (existing == null) _lineupChanged();
   }
 
   void _setDragging(bool dragging) {
@@ -580,7 +788,7 @@ class _ComponentCreationWorkspaceState
       }
       setState(() {
         _component = created;
-        _activeId = _lineup.first.id;
+        _activeId = _lineup.firstOrNull?.id;
       });
       widget.onComponentChanged?.call(created);
     } finally {
@@ -664,6 +872,8 @@ class _ComponentCreationWorkspaceState
           );
     if (!mounted) return;
     if (saved != null) {
+      // Already joined, so the offer below must not propose it again.
+      _joinedPairs.add(_pairKey(target.id, entry.kind, id));
       // The item a column may be showing just gained a die or a machine.
       _linkColumns.refresh();
       return;
@@ -676,7 +886,15 @@ class _ComponentCreationWorkspaceState
 
   @override
   Widget build(BuildContext context) {
-    final items = _componentItems(context.watch<ItemsProvider>().items);
+    final allItems = context.watch<ItemsProvider>().items;
+    // Decided once. `_componentItems` below answers a different question — in
+    // Express it lists only what THIS window added, so it is empty on every
+    // opening and would start a guided run every time.
+    _guidedActive ??= widget.itemsOnly && allItems.isEmpty;
+    final items = _componentItems(allItems);
+    // What was made on this bench and is still attached to nothing — worked
+    // out once, so the reference column and its list agree.
+    final looseEnds = _looseEndsFor(items);
     final units = context.watch<UnitsProvider>().activeUnits;
     final unitSymbols = {for (final unit in units) unit.id: unit.symbol};
     final linkService = _linkService;
@@ -685,7 +903,7 @@ class _ComponentCreationWorkspaceState
     // record being worked on, so the column that opens beside it is that
     // record's own — a 1.1 to the lineup's 1. The reference tile on the right
     // keeps its place.
-    final subject = _activeEntry.subject;
+    final subject = _activeEntry?.subject;
 
     // How many link columns fit beside the editor, and how wide. Taken from
     // the window, NOT from a LayoutBuilder around this row.
@@ -736,16 +954,146 @@ class _ComponentCreationWorkspaceState
             width: _referenceWidth,
             child: _BentoTile(
               // Whatever the top tile is, viewed: the first column picks, the
-              // last one shows what picking it has produced.
-              child: _lineup.first.isItem
-                  ? _buildItemsColumn(items, unitSymbols)
-                  : _buildRecordsColumn(
-                      CreationKinds.byKey(_lineup.first.kind),
+              // last one shows what picking it has produced. With nothing on
+              // the bench there is nothing to have produced anything.
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                    child: Row(
+                      children: [
+                        _buildRailTab(
+                          label: 'Records',
+                          icon: Icons.list_alt_rounded,
+                          selected: !_showTimeline,
+                          onTap: () => setState(() => _showTimeline = false),
+                          key: const ValueKey('creation_rail_tab_records'),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildRailTab(
+                          label: 'Timeline',
+                          icon: Icons.timeline_rounded,
+                          selected: _showTimeline,
+                          onTap: () => setState(() => _showTimeline = true),
+                          key: const ValueKey('creation_rail_tab_timeline'),
+                        ),
+                      ],
                     ),
+                  ),
+                  if (!_showTimeline) ...[
+                    // Above the list, because it is about what is in the list.
+                    if (looseEnds.isNotEmpty) _buildLooseEnds(looseEnds),
+                    Expanded(
+                      child: _lineup.isEmpty
+                          ? const _EmptyReference(
+                              text: 'What you add shows up here.',
+                            )
+                          : _lineup.first.isItem
+                          ? _buildItemsColumn(items, unitSymbols)
+                          : _buildRecordsColumn(
+                              CreationKinds.byKey(_lineup.first.kind),
+                            ),
+                    ),
+                  ] else ...[
+                    Expanded(
+                      child: _buildSittingTimeline(),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildSittingTimeline() {
+    final sittingId = widget.sittingId ?? _session.id;
+    bool canAudit = true;
+    try {
+      canAudit = context.read<AuthProvider>().can('audit.read');
+    } catch (_) {
+      canAudit = true;
+    }
+    if (!canAudit) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.lock_outline, size: 32, color: SoftErpTheme.textSecondary),
+            const SizedBox(height: 12),
+            const Text(
+              'Timeline requires audit.read permission.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => setState(() => _showTimeline = false),
+              child: const Text('View local session records'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: TrackPanel.sitting(
+        key: ValueKey('creation_sitting_track_$sittingId'),
+        sittingId: sittingId,
+        showHeader: false,
+      ),
+    );
+  }
+
+  Widget _buildRailTab({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+    Key? key,
+  }) {
+    return InkWell(
+      key: key,
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? SoftErpTheme.accentSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+          border: Border.all(
+            color: selected ? SoftErpTheme.accent : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -951,7 +1299,7 @@ class _ComponentCreationWorkspaceState
   /// A tile dropped on the link columns: link what it stands for to whatever the
   /// lineup has selected.
   Future<void> _linkDropped(EntityLinkService service, LinkRef dropped) async {
-    final subject = _activeEntry.subject;
+    final subject = _activeEntry?.subject;
     if (subject == null) return;
     try {
       await service.link(
@@ -1090,9 +1438,7 @@ class _ComponentCreationWorkspaceState
                 tooltip: 'New item',
                 onPressed: _naming
                     ? null
-                    : () => _newItem(
-                        _activeEntry.isItem ? _activeEntry : _itemEntries.first,
-                      ),
+                    : () => _newItem(_itemTileToUse()),
                 iconSize: 24,
                 color: SoftErpTheme.accent,
                 icon: const Icon(Icons.add),
@@ -1133,8 +1479,8 @@ class _ComponentCreationWorkspaceState
                       unitSymbol: unitSymbols[item.unitId] ?? '',
                       expanded: _expandedIds.contains(item.id),
                       targeted:
-                          _isAssetKey(_activeEntry.kind) &&
-                          item.id == _activeEntry.targetItemId,
+                          _isAssetKey(_activeEntry?.kind ?? '') &&
+                          item.id == _activeEntry?.targetItemId,
                       flash: item.id == _flashId,
                       onOpen: () => _openItem(item),
                       onToggle: () => _toggleExpanded(item.id),
@@ -1155,6 +1501,13 @@ class _ComponentCreationWorkspaceState
 
   Widget _buildMiddle(List<ItemDefinition> items) {
     if (_naming) return _buildComponentForm();
+    // A workspace with no items at all has nothing to copy from, so three
+    // questions in the factory's own words beat thirteen cards. Ahead of the
+    // chooser because it answers the same "nothing yet" state, better.
+    if (_guidedActive == true) return _buildGuidedRun();
+    // Nothing on the bench: ask what is being added, rather than showing an
+    // empty panel beside a + that has to be found first.
+    if (_lineup.isEmpty) return _buildKindChooser();
     // Every open form stays mounted, so switching tiles — to make the die a
     // second item also needs — leaves neither of them half-lost.
     return Stack(
@@ -1219,6 +1572,10 @@ class _ComponentCreationWorkspaceState
   /// are listed rather than reopened.
   void _restoreSession(CreationSession session) {
     setState(() {
+      // A remembered sitting is a bench, not a guided run: it arrives with
+      // tiles and records already in it, which is the opposite of the empty
+      // workspace the guided run exists for.
+      _guidedActive = false;
       _session = session;
       _added.clear();
       _addedItemIds.clear();
@@ -1247,7 +1604,7 @@ class _ComponentCreationWorkspaceState
         _lineup
           ..clear()
           ..addAll([for (final kind in kinds) _makeEntry(kind)]);
-        _activeId = _lineup.first.id;
+        _activeId = _lineup.firstOrNull?.id;
         _stepsOwnerId = _itemEntries.firstOrNull?.id;
       }
       _flashId = null;
@@ -1258,17 +1615,17 @@ class _ComponentCreationWorkspaceState
   /// Opens a saved item back in the middle column, in the active item tile
   /// when there is one, else a new tile of its own.
   void _openItem(ItemDefinition item) {
-    final entry = _activeEntry.isItem
-        ? _activeEntry
-        : (_itemEntries.firstOrNull ?? _makeEntry(CreationKinds.item));
+    final entry = _itemTileToUse();
+    final added = !_lineup.contains(entry);
     setState(() {
-      if (!_lineup.contains(entry)) _lineup.add(entry);
+      if (added) _lineup.add(entry);
       entry.editingItem = item;
       entry.subject = _refForItem(item);
       entry.generation++;
       _activeId = entry.id;
       _stepsOwnerId = entry.id;
     });
+    if (added) _lineupChanged();
   }
 
   LinkRef _refForItem(ItemDefinition item) => LinkRef(
@@ -1280,12 +1637,712 @@ class _ComponentCreationWorkspaceState
 
   /// Back to a blank form, from the + beside the item list or the editing bar.
   void _newItem(_LineupEntry entry) {
+    // [_itemTileToUse] can hand back a tile that is not on the bench yet —
+    // there may not have been an Item tile at all. Selecting one that is not
+    // in the lineup would leave the middle column blank.
+    final added = !_lineup.contains(entry);
     setState(() {
+      if (added) _lineup.add(entry);
       entry.editingItem = null;
       entry.generation++;
       _activeId = entry.id;
       _stepsOwnerId = entry.id;
     });
+    if (added) _lineupChanged();
+  }
+
+  // ---------------------------------------------------------------------
+  // Joining what was made together
+  // ---------------------------------------------------------------------
+
+  String _pairKey(int itemId, String kind, String assetId) =>
+      'item:$itemId|$kind:$assetId';
+
+  /// The pairs on this bench that could plausibly be joined.
+  ///
+  /// Only item↔die and item↔machine. Those two are facts the system already
+  /// has a home for — `item_dies` and `item_machines` — and the words for them
+  /// are plain: this part is cut by that die, this part runs on that press.
+  ///
+  /// A client is deliberately NOT offered against an item: the item already
+  /// carries Developed For, so a link would be a second claim on the same
+  /// fact — the trap `modules/links/catalog.js` documents for these very
+  /// tables. A set and a group are not offered either: filing a set is a SOLE
+  /// link, and an additive one would leave the set filed under two groups.
+  /// Whether [item] already holds this die or machine.
+  bool _holds(ItemDefinition item, String kind, String recordId) =>
+      _joinedPairs.contains(_pairKey(item.id, kind, recordId)) ||
+      (kind == CreationKinds.die
+          ? item.dies.any((die) => die.id == recordId)
+          : item.machines.any((machine) => machine.id == recordId));
+
+  /// The dies and machines made on this bench that nothing here holds.
+  ///
+  /// One row per **record**, not per pair. The pair version of this was a
+  /// triple loop — kinds x records x items — so three parts and two dies made
+  /// six rows in a 356px column that fits about two, and the overflow was hidden
+  /// by truncating the list. Folding it this way bounds the list by how many
+  /// records were made, which is a dozen at the very worst.
+  List<_LooseEnd> _looseEndsFor(List<ItemDefinition> items) {
+    final made = items
+        .where((item) => _addedItemIds.contains(item.id))
+        .toList(growable: false);
+    if (made.isEmpty) return const <_LooseEnd>[];
+
+    final out = <_LooseEnd>[];
+    for (final kind in const [CreationKinds.die, CreationKinds.machine]) {
+      for (final record in _added[kind] ?? const <CreatedRecord>[]) {
+        if (_declinedRecords.contains(_recordKey(kind, record.id))) continue;
+        // Held by anything made here — by the + Die under an item, by this
+        // list, or by any other path — so it is not a loose end.
+        if (made.any((item) => _holds(item, kind, record.id))) continue;
+        out.add(
+          _LooseEnd(
+            kind: kind,
+            recordId: record.id,
+            recordLabel: record.title,
+            candidates: made,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  String _recordKey(String kind, String recordId) => '$kind:$recordId';
+
+  /// Remembers that somebody chose to leave this record unattached.
+  void _leaveUnattached(_LooseEnd end) {
+    setState(() => _declinedRecords.add(end.key));
+    _declinedStore.save(_declinedRecords);
+  }
+
+  /// Writes one accepted pair, through the same path the rest of this window
+  /// uses for the fact — `setItemLinks`, which is a full replace, so whatever
+  /// the item already carries travels with it.
+  Future<void> _attach(_LooseEnd end, int itemId) async {
+    if (_joiningPair != null) return;
+    setState(() => _joiningPair = end.key);
+    final items = context.read<ItemsProvider>();
+    // Read the row as it is NOW, not as it was when this list was built.
+    // `setItemLinks` replaces the whole list, so sending a snapshot taken when
+    // the window drew would drop anything attached in between.
+    final item = items.items.where((row) => row.id == itemId).firstOrNull;
+    if (item == null) {
+      setState(() => _joiningPair = null);
+      _toast('That part is no longer on the bench.');
+      return;
+    }
+    final saved = end.kind == CreationKinds.die
+        ? await items.setItemLinks(
+            item.id,
+            dieIds: [
+              ...item.dies.map((die) => die.id),
+              if (!item.dies.any((die) => die.id == end.recordId)) end.recordId,
+            ],
+          )
+        : await items.setItemLinks(
+            item.id,
+            machineIds: [
+              ...item.machines.map((machine) => machine.id),
+              if (!item.machines.any((m) => m.id == end.recordId)) end.recordId,
+            ],
+          );
+    if (!mounted) return;
+    setState(() {
+      _joiningPair = null;
+      if (saved != null) {
+        _joinedPairs.add(_pairKey(item.id, end.kind, end.recordId));
+      }
+    });
+    if (saved == null) {
+      _toast(items.errorMessage ?? 'That could not be attached.');
+      return;
+    }
+    _linkColumns.refresh();
+  }
+
+  /// Whether this user may attach anything. Tolerant of a missing provider,
+  /// the way the rest of this screen is.
+  bool get _canJoin {
+    try {
+      return context.read<AuthProvider>().can('items.update');
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Whether to bring the standard units forward here.
+  ///
+  /// An item cannot be created without a unit — the contract refuses it — and
+  /// a fresh workspace holds only the server's `Primary Unit` placeholder. So
+  /// the one thing that would stop somebody is offered before they start,
+  /// rather than after a refused save. Dismissible, and the same action lives
+  /// permanently in the Units master either way.
+  bool get _showStarterUnitsOffer {
+    if (_starterUnitsDismissed) return false;
+    try {
+      return unitsLookUnset(
+        activeUnitNames: context
+            .watch<UnitsProvider>()
+            .activeUnits
+            .map((unit) => unit.name),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Widget _buildStarterUnitsOffer() {
+    final units = context.watch<UnitsProvider>();
+    return Container(
+      key: const ValueKey<String>('creation_starter_units'),
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.accentSoft,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'This workspace has no units yet, and an item needs one.',
+              style: TextStyle(fontSize: 14.5, color: SoftErpTheme.textPrimary),
+            ),
+          ),
+          const SizedBox(width: 12),
+          AppButton(
+            key: const ValueKey<String>('creation_load_starter_units'),
+            label: 'Load standard units',
+            variant: AppButtonVariant.secondary,
+            isLoading: units.isSaving,
+            onPressed: () async {
+              final added = await units.seedStarterUnits();
+              if (!mounted || added == 0) return;
+              showAppToast(
+                context,
+                'Added $added units.',
+                kind: AppToastKind.success,
+              );
+            },
+          ),
+          IconButton(
+            key: const ValueKey<String>('creation_dismiss_starter_units'),
+            tooltip: 'Not now',
+            iconSize: 18,
+            color: SoftErpTheme.textSecondary,
+            onPressed: () => setState(() => _starterUnitsDismissed = true),
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// What was made here and is still attached to nothing.
+  ///
+  /// Nothing is written until a part is picked. Co-occurrence is evidence, not
+  /// a relationship — two things made in the same sitting are not thereby
+  /// related, and a window that decided they were would fill the link graph
+  /// with accidents nobody could tell from intentions. So the row states only
+  /// what is true (this die holds no part) and the menu is where a person says
+  /// what is so.
+  ///
+  /// One row per record. As pairs this was kinds x records x items, which
+  /// outgrew a 356px column at three parts and two dies and hid the rest
+  /// behind a truncation.
+  Widget _buildLooseEnds(List<_LooseEnd> ends) {
+    final canJoin = _canJoin;
+    return Container(
+      key: const ValueKey<String>('creation_link_offer'),
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.accentSoft,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            ends.length == 1 ? 'One loose end' : '${ends.length} loose ends',
+            style: const TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Every one of them, never a truncated few: the list is bounded by
+          // how many records were made here, so there is nothing to hide.
+          for (final end in ends)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          end.recordLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: SoftErpTheme.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          end.sentence,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                        if (end.candidates.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: InkWell(
+                              key: ValueKey<String>('creation_quick_attach_${end.key}'),
+                              onTap: canJoin
+                                  ? () => _attach(end, end.candidates.first.id)
+                                  : null,
+                              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.link,
+                                      size: 14,
+                                      color: canJoin
+                                          ? SoftErpTheme.accent
+                                          : SoftErpTheme.textSecondary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        'Attach to ${_itemLabel(end.candidates.first)}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: canJoin
+                                              ? SoftErpTheme.accent
+                                              : SoftErpTheme.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_joiningPair == end.key)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else
+                    // One picker where the old row carried a Join link AND a
+                    // close button. The parts are in the menu, not the row, so
+                    // the row's width no longer depends on their names.
+                    Tooltip(
+                      message: canJoin
+                          ? 'Say which part ${end.recordLabel} belongs to'
+                          : 'You do not have permission to change items '
+                                '(items.update).',
+                      child: PopupMenuButton<int>(
+                        key: ValueKey<String>('creation_attach_${end.key}'),
+                        enabled: canJoin,
+                        icon: const Icon(Icons.more_horiz, size: 20),
+                        padding: EdgeInsets.zero,
+                        onSelected: (itemId) {
+                          if (itemId == _leaveUnattachedValue) {
+                            _leaveUnattached(end);
+                          } else {
+                            _attach(end, itemId);
+                          }
+                        },
+                        itemBuilder: (_) => <PopupMenuEntry<int>>[
+                          for (final item in end.candidates)
+                            PopupMenuItem<int>(
+                              value: item.id,
+                              child: Text(
+                                _itemLabel(item),
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem<int>(
+                            value: _leaveUnattachedValue,
+                            child: Text(
+                              'Leave unattached',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _itemLabel(ItemDefinition item) => item.displayName.trim().isEmpty
+      ? item.name
+      : item.displayName;
+
+  /// The link client, **ungated**.
+  ///
+  /// Distinct from [_linkService], which is behind `masters.linkColumns`
+  /// because that flag governs the Miller columns. Writing one link is not the
+  /// columns, and a build with the flag off must still be able to attach a
+  /// machine to a part.
+  EntityLinkService? get _links {
+    final injected = widget.linkService;
+    if (injected != null) return injected;
+    try {
+      return context.read<EntityLinkService>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Whether this user may attach records of [module].
+  ///
+  /// Linking counts as `update` on BOTH sides, so a machine needs
+  /// `machines.update` as well as `items.update`. Nothing in this window asked
+  /// this before — a user without the right got an enabled button and learned
+  /// the refusal from the server.
+  bool _mayLink(String module) {
+    try {
+      final auth = context.read<AuthProvider>();
+      return auth.can('items.update') && auth.can('$module.update');
+    } catch (_) {
+      return true;
+    }
+  }
+
+  void _leaveGuided() {
+    setState(() => _guidedActive = false);
+  }
+
+  /// Loads what the current step can offer. `browse` is exactly this question.
+  Future<void> _guidedLoadCandidates(String type) async {
+    final links = _links;
+    if (links == null) {
+      setState(() => _guidedCandidates = const <LinkRef>[]);
+      return;
+    }
+    setState(() => _guidedLoading = true);
+    try {
+      final found = await links.browse(type, limit: 25);
+      if (!mounted) return;
+      setState(() => _guidedCandidates = found);
+    } catch (_) {
+      // Nothing to offer is survivable — the step can still create one, and
+      // skipping is a real answer.
+      if (mounted) setState(() => _guidedCandidates = const <LinkRef>[]);
+    } finally {
+      if (mounted) setState(() => _guidedLoading = false);
+    }
+  }
+
+  /// Step 1 saved. Everything else about the item editor is unchanged, so this
+  /// mirrors `_onItemClosed`'s bookkeeping rather than replacing it.
+  void _onGuidedPartSaved(ItemDefinition? saved) {
+    if (saved == null) return;
+    _remember(CreationKinds.item, '${saved.id}', saved.displayName);
+    _linkColumns.refresh();
+    setState(() {
+      _guidedPart = saved;
+      _addedItemIds.add(saved.id);
+      _lastItemGroupId = saved.groupId;
+      _guidedStep = GuidedStep.machine;
+    });
+    _guidedLoadCandidates('machine');
+  }
+
+  /// Attaches one pair, then moves on.
+  ///
+  /// `EntityLinkService.link`, not `setItemLinks`: POST /api/links is additive
+  /// and INSERT OR IGNORE, so answering twice is harmless and there is no list
+  /// to spread or snapshot to go stale.
+  Future<void> _guidedAttach(String type, LinkRef target) async {
+    final part = _guidedPart;
+    final links = _links;
+    if (part == null) return;
+    setState(() => _guidedBusy = target.id);
+    try {
+      await links?.link(
+        fromType: 'item',
+        fromId: '${part.id}',
+        toType: type,
+        toId: target.id,
+      );
+      _joinedPairs.add(
+        _pairKey(part.id, type == 'die' ? CreationKinds.die : CreationKinds.machine, target.id),
+      );
+      _linkColumns.refresh();
+    } catch (error) {
+      if (mounted) _toast('$error');
+      if (mounted) setState(() => _guidedBusy = null);
+      return;
+    }
+    if (!mounted) return;
+    final record = CreatedRecord(
+      id: target.id,
+      title: target.label,
+      subtitle: target.subtitle,
+    );
+    setState(() {
+      _guidedBusy = null;
+      if (type == 'machine') {
+        _guidedMachine = record;
+        _guidedStep = GuidedStep.die;
+      } else {
+        _guidedDie = record;
+        _guidedStep = GuidedStep.done;
+      }
+    });
+    if (type == 'machine') _guidedLoadCandidates('die');
+  }
+
+  /// "Add one" — reuses the dialog the link columns already use, so the record
+  /// lands in this sitting and in `_added` exactly as any other save does.
+  Future<void> _guidedCreate(String type) async {
+    final made = await _createForLink(context, type);
+    if (made == null || !mounted) return;
+    await _guidedAttach(type, made);
+  }
+
+  void _guidedSkip() {
+    setState(() {
+      if (_guidedStep == GuidedStep.machine) {
+        _guidedStep = GuidedStep.die;
+      } else {
+        _guidedStep = GuidedStep.done;
+      }
+    });
+    if (_guidedStep == GuidedStep.die) _guidedLoadCandidates('die');
+  }
+
+  Widget _buildGuidedRun() {
+    final step = _guidedStep;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GuidedStepChrome(step: step, onSwitchToBench: _leaveGuided),
+        Expanded(child: _buildGuidedBody(step)),
+      ],
+    );
+  }
+
+  Widget _buildGuidedBody(GuidedStep step) {
+    switch (step) {
+      case GuidedStep.part:
+        // A host that substitutes the item editor is honoured here too, the
+        // same way `_buildItemEditor` honours it — otherwise the guided run
+        // would be the one place in this window that ignored the seam, and a
+        // host would get its editor everywhere except the first screen a new
+        // workspace sees. Its own shape is then its own business.
+        final builder = widget.itemEditorBuilder;
+        if (builder != null) {
+          return builder(
+            context,
+            groupId: _component?.id ?? _lastItemGroupId,
+            item: null,
+            onClosed: _onGuidedPartSaved,
+          );
+        }
+        // The item editor itself, trimmed to what names a part. Nothing about
+        // saving an item is reimplemented here.
+        return ItemsScreen.workflowPanel(
+          item: null,
+          initialGroupId: _component?.id ?? _lastItemGroupId,
+          overrideSections: const ItemFormSections(
+            itemImage: false,
+            cadFile: false,
+            additionalFiles: false,
+            developedFor: false,
+            defaultPipeline: false,
+            variationTree: false,
+            machines: false,
+            dies: false,
+            sets: false,
+          ),
+          identityOnly: true,
+          onClosed: _onGuidedPartSaved,
+        );
+      case GuidedStep.machine:
+      case GuidedStep.die:
+        final isMachine = step == GuidedStep.machine;
+        final type = isMachine ? 'machine' : 'die';
+        final module = isMachine ? 'machines' : 'dies';
+        final may = _mayLink(module);
+        if (_guidedLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return GuidedPickOrCreate(
+          step: step,
+          candidates: [
+            for (final ref in _guidedCandidates)
+              GuidedCandidate(
+                id: ref.id,
+                label: ref.label,
+                subtitle: ref.subtitle,
+              ),
+          ],
+          busyId: _guidedBusy,
+          onPick: (candidate) => _guidedAttach(
+            type,
+            _guidedCandidates.firstWhere((ref) => ref.id == candidate.id),
+          ),
+          onSkip: _guidedSkip,
+          skipLabel: isMachine ? 'Not sure yet' : 'No die',
+          createLabel: isMachine ? 'Add a machine' : 'Add a die',
+          onCreate: may ? () => _guidedCreate(type) : null,
+          denialReason:
+              'You do not have permission to attach $module ($module.update).',
+        );
+      case GuidedStep.done:
+        return GuidedFinishLine(
+          partName: _guidedPart?.displayName ?? 'The part',
+          machine: _guidedMachine,
+          die: _guidedDie,
+          records: [for (final record in _session.records) record.title],
+          onOpenPart: () {
+            final part = _guidedPart;
+            _leaveGuided();
+            if (part != null) _openItemOnBench(part);
+          },
+          onAddAnother: () {
+            setState(() {
+              _guidedPart = null;
+              _guidedMachine = null;
+              _guidedDie = null;
+              _guidedCandidates = const <LinkRef>[];
+              _guidedStep = GuidedStep.part;
+            });
+          },
+          onSwitchToBench: _leaveGuided,
+        );
+    }
+  }
+
+  /// Leaves the guided run with the part open on the bench.
+  void _openItemOnBench(ItemDefinition item) {
+    setState(() {
+      final entry = _makeEntry(CreationKinds.item);
+      entry.editingItem = item;
+      _lineup.add(entry);
+      _activeId = entry.id;
+      _stepsOwnerId = entry.id;
+    });
+    _lineupChanged();
+  }
+
+  /// The empty bench: every master, to pick from.
+  ///
+  /// A Wrap rather than a grid, and deliberately **not** inside a
+  /// LayoutBuilder — the comment on `fit` in [build] explains what putting any
+  /// of this window inside a layout callback did to the lineup's
+  /// ReorderableListView.
+  Widget _buildKindChooser() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'What are you adding?',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Pick as many as you need — each one gets its own form, and they '
+            'all stay open together.',
+            style: TextStyle(fontSize: 15, color: SoftErpTheme.textSecondary),
+          ),
+          const SizedBox(height: 20),
+          if (_showStarterUnitsOffer) _buildStarterUnitsOffer(),
+          // One labelled group per tier, in the order a factory has to set
+          // things up. Groups, not literal rows: 168pt cards fit five across
+          // at the 1760 dialog cap but only three on a 1440 laptop, so a tier
+          // wraps onto a second line there and that is fine.
+          for (final tier in CreationTier.values) ...[
+            Text(
+              tier.label,
+              key: ValueKey<String>('creation_tier_${tier.name}'),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: SoftErpTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              tier.reason,
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final spec in CreationKinds.catalog.where(
+                  (spec) => spec.tier == tier,
+                ))
+                  _KindChoiceCard(spec: spec, onTap: () => _addKind(spec.key)),
+              ],
+            ),
+            const SizedBox(height: 22),
+          ],
+          const SizedBox(height: 2),
+          AppButton(
+            key: const ValueKey('creation_add_all'),
+            // Says all N because here it IS all of them: this chooser renders
+            // only when the bench is empty (see _buildMiddle). The + menu's
+            // own entry keeps "Add them all", because from a populated bench
+            // it opens fewer. Counted from the catalogue so a fourteenth kind
+            // cannot make this a lie.
+            label: 'Open all ${CreationKinds.catalog.length} forms',
+            icon: Icons.library_add_outlined,
+            variant: AppButtonVariant.secondary,
+            onPressed: _addAllKinds,
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRecordEditor(_LineupEntry entry, List<ItemDefinition> items) {
@@ -1424,6 +2481,31 @@ class _ComponentCreationWorkspaceState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // At the top: it is the first thing to do on an empty bench, and
+          // from here the menu opens downward over the tiles instead of being
+          // flipped up off the bottom of the window.
+          _AddKindButton(
+            options: addable,
+            enabled: !_naming,
+            onPick: _addKind,
+            onAddAll: _addAllKinds,
+          ),
+          const SizedBox(height: 10),
+          // Says what the bench is for: these forms are open at once, not one
+          // after another. Only from two upward — "These 1 forms open
+          // together" is meaningless, and at zero the chooser is showing in
+          // the middle instead of a lineup.
+          if (_lineup.length >= 2) ...[
+            Text(
+              'These ${_lineup.length} forms open together',
+              key: const ValueKey<String>('creation_lineup_header'),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Expanded(
             child: ReorderableListView.builder(
               buildDefaultDragHandles: false,
@@ -1446,9 +2528,7 @@ class _ComponentCreationWorkspaceState
                   count: _countOf(entry.kind, items),
                   selected: selected,
                   onTap: _naming ? null : () => _selectEntry(entry.id),
-                  onRemove: _lineup.length > 1
-                      ? () => _removeEntry(entry)
-                      : null,
+                  onRemove: () => _removeEntry(entry),
                   onAddAnother: _naming ? null : () => _addKind(entry.kind),
                   canLink: canLink,
                   onLink: _naming || entry.subject == null || !canLink
@@ -1498,12 +2578,6 @@ class _ComponentCreationWorkspaceState
                 ),
               ),
             ),
-          if (addable.isNotEmpty)
-            _AddKindButton(
-              options: addable,
-              enabled: !_naming,
-              onPick: _addKind,
-            ),
         ],
       ),
     );
@@ -1535,12 +2609,21 @@ class _ComponentCreationWorkspaceState
             children: [
               Icon(kind.icon, size: 22, color: SoftErpTheme.textSecondary),
               const SizedBox(width: 8),
-              Text(
-                kind.pluralLabel,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: SoftErpTheme.textPrimary,
+              // Flexible, because this column is a fixed 356 wide and the
+              // longest plural in the catalogue — "Sub-contractors" — ran 11
+              // pixels past it. The count gives way last: how many you have
+              // added is worth more than the end of a word you can already
+              // read from the tile.
+              Flexible(
+                child: Text(
+                  kind.pluralLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: SoftErpTheme.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1631,13 +2714,41 @@ class _Header extends StatelessWidget {
     required this.title,
     required this.componentName,
     required this.sessions,
+    required this.sittingId,
     required this.onClose,
   });
 
   final String title;
   final String? componentName;
   final CreationSessionController sessions;
+
+  /// This opening of the window — the id the server groups its rows by, and
+  /// the id the recents entry carries, which are now the same string.
+  final String sittingId;
   final VoidCallback onClose;
+
+  /// How many records have been saved in this opening.
+  ///
+  /// Read off the recents entry for this sitting rather than counted
+  /// separately, because the workspace already files every save there — one
+  /// source, so this cannot drift from the bench.
+  int get _savedHere => sessions.recent
+      .where((session) => session.id == sittingId)
+      .map((session) => session.records.length)
+      .firstOrNull ??
+      0;
+
+  /// Whether this user may look at a sitting at all. `audit.read`, not the
+  /// per-record feed's weaker guard: a sitting is minutes of somebody's work
+  /// across every master. Tolerant of a missing provider the way the rest of
+  /// this window is.
+  bool _canRead(BuildContext context) {
+    try {
+      return context.read<AuthProvider>().can('audit.read');
+    } catch (_) {
+      return true;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1674,6 +2785,26 @@ class _Header extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          // Rebuilt on the controller, because the count has to climb as
+          // records are saved. Nothing in this header watched it before — the
+          // recents field reads it only when its dropdown opens, which is why
+          // it never needed to.
+          ListenableBuilder(
+            listenable: sessions,
+            builder: (context, _) {
+              // Nothing drawn until something has been saved: a count of zero
+              // is not news, and there would be nothing to open.
+              if (_savedHere <= 0) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _SittingCountPill(
+                  sittingId: sittingId,
+                  savedHere: _savedHere,
+                  canRead: _canRead(context),
+                ),
+              );
+            },
+          ),
           _RecentSessionsField(sessions: sessions),
           const SizedBox(width: 8),
           IconButton(
@@ -1690,6 +2821,56 @@ class _Header extends StatelessWidget {
 
 /// The title bar's way back into a recent sitting: type to narrow the list,
 /// pick one to put that whole combination back on screen.
+/// "6 saved here" — what this opening has produced, and a way into the detail.
+///
+/// The count is of records SAVED in this window, which is what the local
+/// session knows. The panel it opens is headed by the server's count of
+/// CHANGES, a larger number because it includes edits and links. Two different
+/// words for two different things, so neither has to lie to agree with the
+/// other.
+///
+/// Sits in the header rather than the 356px reference column, which already
+/// carries the loose-ends panel plus one list and is dropped from the row
+/// entirely when the link branch opens.
+class _SittingCountPill extends StatelessWidget {
+  const _SittingCountPill({
+    required this.sittingId,
+    required this.savedHere,
+    required this.canRead,
+  });
+
+  final String sittingId;
+  final int savedHere;
+  final bool canRead;
+
+  @override
+  Widget build(BuildContext context) {
+    // Deliberately NOT "N saved": the recents dropdown on this same bar
+    // already says that about a remembered combination, and two controls an
+    // inch apart reading "2 saved" while meaning different things is worse
+    // than either wording alone.
+    final label = 'This sitting · $savedHere';
+    return Tooltip(
+      message: canRead
+          ? 'Everything recorded in this window'
+          : 'You do not have permission to view activity (audit.read).',
+      child: TextButton.icon(
+        key: const ValueKey<String>('creation_sitting_count'),
+        // Drawn disabled rather than hidden: a control that vanishes reads as
+        // a missing feature, which has cost rounds of "I don't see it" here.
+        onPressed: canRead
+            ? () => showSittingTrackDialog(context, sittingId: sittingId)
+            : null,
+        icon: const Icon(Icons.history_outlined, size: 18),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
 class _RecentSessionsField extends StatefulWidget {
   const _RecentSessionsField({required this.sessions});
 
@@ -2480,16 +3661,104 @@ class _StepTab extends StatelessWidget {
 }
 
 /// The + under the lineup: pulls another master's editor into the wizard.
+/// Two things made on the same bench that could be joined.
+/// Menu value standing for "leave this one alone". No item has a negative id,
+/// so it cannot collide with a part.
+const int _leaveUnattachedValue = -1;
+
+/// One die or machine made on this bench that nothing here holds.
+///
+/// It names a record and the parts it could belong to — not a pair. The row
+/// states a fact ("not attached to any part") and the menu is where the answer
+/// is given, which is what keeps the row a fixed width.
+class _LooseEnd {
+  const _LooseEnd({
+    required this.kind,
+    required this.recordId,
+    required this.recordLabel,
+    required this.candidates,
+  });
+
+  final String kind;
+  final String recordId;
+  final String recordLabel;
+
+  /// The parts made on this bench, any of which could take it.
+  final List<ItemDefinition> candidates;
+
+  String get key => '$kind:$recordId';
+
+  /// Said in the words of the floor, and said about this record.
+  String get sentence => kind == CreationKinds.die
+      ? 'not cutting any part yet'
+      : 'not running any part yet';
+}
+
+/// One master on the empty bench's chooser.
+class _KindChoiceCard extends StatelessWidget {
+  const _KindChoiceCard({required this.spec, required this.onTap});
+
+  final CreationKindSpec spec;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 168,
+      child: Material(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+        child: InkWell(
+          key: ValueKey('creation_choose_${spec.key}'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: Row(
+              children: [
+                Icon(spec.icon, size: 24, color: SoftErpTheme.accent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    spec.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                      color: SoftErpTheme.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AddKindButton extends StatelessWidget {
   const _AddKindButton({
     required this.options,
     required this.enabled,
     required this.onPick,
+    required this.onAddAll,
   });
+
+  /// What the menu's "add them all" entry carries. Not a kind, so the handler
+  /// branches on it rather than passing it to [onPick].
+  static const String addAllValue = '__add_all__';
 
   final List<CreationKindSpec> options;
   final bool enabled;
   final ValueChanged<String> onPick;
+  final VoidCallback onAddAll;
 
   @override
   Widget build(BuildContext context) {
@@ -2497,9 +3766,32 @@ class _AddKindButton extends StatelessWidget {
       key: const ValueKey('creation_add_kind'),
       enabled: enabled,
       tooltip: 'Add a form',
-      onSelected: onPick,
+      onSelected: (value) =>
+          value == addAllValue ? onAddAll() : onPick(value),
       position: PopupMenuPosition.under,
       itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          key: const ValueKey('creation_add_kind_all'),
+          value: addAllValue,
+          child: const Row(
+            children: [
+              Icon(
+                Icons.library_add_outlined,
+                size: 22,
+                color: SoftErpTheme.accent,
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Add them all',
+                style: TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
         for (final spec in options)
           PopupMenuItem<String>(
             key: ValueKey('creation_add_kind_${spec.key}'),

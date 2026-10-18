@@ -23,6 +23,15 @@ class Die {
     this.setupMinutes,
     this.reportNotes = '',
     this.physicalSpecs = const [],
+    this.dieType = '',
+    this.madeBy = '',
+    this.poAt,
+    this.dateInAt,
+    this.linerSizeNm,
+    this.linerSizeUnit = 'mm',
+    this.noOfSet,
+    this.storeArea = '',
+    this.rackNo = '',
     required this.status,
     required this.ownership,
     required this.createdAt,
@@ -44,6 +53,32 @@ class Die {
   final double? setupMinutes;
   final String reportNotes;
   final List<CustomProperty> physicalSpecs;
+
+  // --- the die sheet (migrations/048) ---------------------------------------
+
+  /// '' | 'cutting' | 'bending'. What the code's initials come from.
+  final String dieType;
+
+  /// Whoever cut it — a fitter here, or an outside toolroom. Free text.
+  final String madeBy;
+
+  /// UTC instants: ordered, and came into store. Render with .toLocal().
+  final DateTime? poAt;
+  final DateTime? dateInAt;
+
+  /// An integer count of nanometres, per the units contract: no floats in a
+  /// quantity, and a base small enough that thou and SWG land on it exactly.
+  final int? linerSizeNm;
+
+  /// How that size was read. Display only; never used in arithmetic.
+  final String linerSizeUnit;
+  final int? noOfSet;
+
+  /// Where it is kept. These replace the free-text [storageLocation], which is
+  /// kept only so dies that predate them still say where they are.
+  final String storeArea;
+  final String rackNo;
+
   final DieStatus status;
   final DieOwnership ownership;
   final DateTime createdAt;
@@ -65,6 +100,15 @@ class Die {
     Object? setupMinutes = _dieAbsent,
     String? reportNotes,
     List<CustomProperty>? physicalSpecs,
+    String? dieType,
+    String? madeBy,
+    Object? poAt = _dieAbsent,
+    Object? dateInAt = _dieAbsent,
+    Object? linerSizeNm = _dieAbsent,
+    String? linerSizeUnit,
+    Object? noOfSet = _dieAbsent,
+    String? storeArea,
+    String? rackNo,
     DieStatus? status,
     DieOwnership? ownership,
     DateTime? createdAt,
@@ -93,6 +137,17 @@ class Die {
           : setupMinutes as double?,
       reportNotes: reportNotes ?? this.reportNotes,
       physicalSpecs: physicalSpecs ?? this.physicalSpecs,
+      dieType: dieType ?? this.dieType,
+      madeBy: madeBy ?? this.madeBy,
+      poAt: poAt == _dieAbsent ? this.poAt : poAt as DateTime?,
+      dateInAt: dateInAt == _dieAbsent ? this.dateInAt : dateInAt as DateTime?,
+      linerSizeNm: linerSizeNm == _dieAbsent
+          ? this.linerSizeNm
+          : linerSizeNm as int?,
+      linerSizeUnit: linerSizeUnit ?? this.linerSizeUnit,
+      noOfSet: noOfSet == _dieAbsent ? this.noOfSet : noOfSet as int?,
+      storeArea: storeArea ?? this.storeArea,
+      rackNo: rackNo ?? this.rackNo,
       status: status ?? this.status,
       ownership: ownership ?? this.ownership,
       createdAt: createdAt ?? this.createdAt,
@@ -157,4 +212,21 @@ class CompleteDieAssetUploadInput {
   final String uploadSessionId;
   final String objectKey;
   final String dieId;
+}
+
+/// A refused die save, with what the server said about it.
+///
+/// `die_tool_code_duplicate` is the one worth keying off: tool codes are
+/// unique across the factory while part codes are unique only within a group,
+/// so two groups holding the same part code derive the same die code. The
+/// server offers the first free one in the series rather than refusing flatly.
+class DieSaveException implements Exception {
+  const DieSaveException(this.message, {this.code, this.suggestedToolCode});
+
+  final String message;
+  final String? code;
+  final String? suggestedToolCode;
+
+  @override
+  String toString() => message;
 }

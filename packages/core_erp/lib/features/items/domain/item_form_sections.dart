@@ -17,6 +17,7 @@ class ItemFormSections {
     this.variationTree = true,
     this.machines = false,
     this.dies = false,
+    this.sets = true,
   });
 
   /// Media group.
@@ -32,6 +33,9 @@ class ItemFormSections {
   final bool machines;
   final bool dies;
 
+  /// Which inventory sets this part belongs to, and how many of it each holds.
+  final bool sets;
+
   /// Whether any member of the Media group is on — the group header hides
   /// entirely when they are all off.
   bool get hasAnyMedia => itemImage || cadFile || additionalFiles;
@@ -45,6 +49,7 @@ class ItemFormSections {
     bool? variationTree,
     bool? machines,
     bool? dies,
+    bool? sets,
   }) {
     return ItemFormSections(
       itemImage: itemImage ?? this.itemImage,
@@ -55,6 +60,7 @@ class ItemFormSections {
       variationTree: variationTree ?? this.variationTree,
       machines: machines ?? this.machines,
       dies: dies ?? this.dies,
+      sets: sets ?? this.sets,
     );
   }
 
@@ -68,6 +74,7 @@ class ItemFormSections {
       'variationTree': variationTree,
       'machines': machines,
       'dies': dies,
+      'sets': sets,
     };
   }
 
@@ -85,6 +92,7 @@ class ItemFormSections {
       variationTree: read('variationTree', defaults.variationTree),
       machines: read('machines', defaults.machines),
       dies: read('dies', defaults.dies),
+      sets: read('sets', defaults.sets),
     );
   }
 }
@@ -100,6 +108,7 @@ enum ItemFormSectionKey {
   variationTree,
   machines,
   dies,
+  sets,
 }
 
 extension ItemFormSectionKeyX on ItemFormSectionKey {
@@ -112,7 +121,7 @@ extension ItemFormSectionKeyX on ItemFormSectionKey {
       case ItemFormSectionKey.additionalFiles:
         return 'Additional files';
       case ItemFormSectionKey.developedFor:
-        return 'Developed for';
+        return 'Developed For';
       case ItemFormSectionKey.defaultPipeline:
         return 'Default pipeline';
       case ItemFormSectionKey.variationTree:
@@ -121,6 +130,8 @@ extension ItemFormSectionKeyX on ItemFormSectionKey {
         return 'Machines';
       case ItemFormSectionKey.dies:
         return 'Dies';
+      case ItemFormSectionKey.sets:
+        return 'Sets';
     }
   }
 
@@ -133,7 +144,7 @@ extension ItemFormSectionKeyX on ItemFormSectionKey {
       case ItemFormSectionKey.additionalFiles:
         return 'Any number of extra files, each with your own label.';
       case ItemFormSectionKey.developedFor:
-        return 'Link the item to the client it was developed for.';
+        return 'Who the part was developed for, when, and what was quoted.';
       case ItemFormSectionKey.defaultPipeline:
         return 'Production pipeline this item defaults to.';
       case ItemFormSectionKey.variationTree:
@@ -142,6 +153,8 @@ extension ItemFormSectionKeyX on ItemFormSectionKey {
         return 'Machines this item can be produced on.';
       case ItemFormSectionKey.dies:
         return 'Dies used to produce this item.';
+      case ItemFormSectionKey.sets:
+        return 'Which sets this part belongs to, and how many of it each holds.';
     }
   }
 
@@ -169,6 +182,8 @@ extension ItemFormSectionKeyX on ItemFormSectionKey {
         return sections.machines;
       case ItemFormSectionKey.dies:
         return sections.dies;
+      case ItemFormSectionKey.sets:
+        return sections.sets;
     }
   }
 
@@ -188,6 +203,8 @@ extension ItemFormSectionKeyX on ItemFormSectionKey {
         return sections.copyWith(variationTree: value);
       case ItemFormSectionKey.machines:
         return sections.copyWith(machines: value);
+      case ItemFormSectionKey.sets:
+        return sections.copyWith(sets: value);
       case ItemFormSectionKey.dies:
         return sections.copyWith(dies: value);
     }

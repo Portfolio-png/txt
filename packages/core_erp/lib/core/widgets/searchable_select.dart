@@ -7,12 +7,21 @@ class SearchableSelectOption<T> {
   const SearchableSelectOption({
     required this.value,
     required this.label,
+    this.subtitle,
     this.searchText,
     this.highlightColor,
   });
 
   final T value;
   final String label;
+
+  /// A second line under the label — what this row is, beyond its name: a
+  /// part's code and stamp, a die's rack, why a row cannot be used.
+  ///
+  /// Callers used to smuggle this into [searchText], which made it findable
+  /// and invisible. It is not searched unless [searchText] says so, because
+  /// the two answer different questions.
+  final String? subtitle;
   final String? searchText;
   final Color? highlightColor;
 
@@ -820,19 +829,39 @@ class _SearchableSelectOptionTileState<T>
                   child: Tooltip(
                     message: widget.option.label,
                     waitDuration: const Duration(milliseconds: 400),
-                    child: Text(
-                      widget.option.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: const Color(0xFF2F3744),
-                        fontSize: MediaQuery.of(context).size.width >= 600
-                            ? 15.0
-                            : 13.0,
-                        fontWeight: widget.isSelected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.option.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: const Color(0xFF2F3744),
+                            fontSize: MediaQuery.of(context).size.width >= 600
+                                ? 15.0
+                                : 13.0,
+                            fontWeight: widget.isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                        if ((widget.option.subtitle ?? '').trim().isNotEmpty)
+                          Text(
+                            widget.option.subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: const Color(0xFF7B8494),
+                              fontSize:
+                                  MediaQuery.of(context).size.width >= 600
+                                  ? 13.0
+                                  : 12.0,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),

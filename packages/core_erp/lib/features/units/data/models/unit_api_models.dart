@@ -16,6 +16,12 @@ class UnitDto {
     required this.precision,
     required this.unitGroupDimension,
     required this.unitGroupBaseUnitId,
+    this.factorToBase = 1,
+    this.isBase = false,
+    this.onLadder = true,
+    this.uqc,
+    this.unitGroupCode,
+    this.unitGroupIntegralOnly = false,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -35,6 +41,12 @@ class UnitDto {
   final int? precision;
   final String? unitGroupDimension;
   final int? unitGroupBaseUnitId;
+  final int factorToBase;
+  final bool isBase;
+  final bool onLadder;
+  final String? uqc;
+  final String? unitGroupCode;
+  final bool unitGroupIntegralOnly;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;
@@ -55,6 +67,12 @@ class UnitDto {
       precision: json['precision'] as int?,
       unitGroupDimension: json['unitGroupDimension'] as String?,
       unitGroupBaseUnitId: json['unitGroupBaseUnitId'] as int?,
+      factorToBase: (json['factorToBase'] as num? ?? 1).toInt(),
+      isBase: json['isBase'] as bool? ?? false,
+      onLadder: json['onLadder'] as bool? ?? true,
+      uqc: json['uqc'] as String?,
+      unitGroupCode: json['unitGroupCode'] as String?,
+      unitGroupIntegralOnly: json['unitGroupIntegralOnly'] as bool? ?? false,
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
       createdAt:
@@ -81,6 +99,12 @@ class UnitDto {
       precision: precision,
       unitGroupDimension: unitGroupDimension,
       unitGroupBaseUnitId: unitGroupBaseUnitId,
+      factorToBase: factorToBase,
+      isBase: isBase,
+      onLadder: onLadder,
+      uqc: uqc,
+      unitGroupCode: unitGroupCode,
+      unitGroupIntegralOnly: unitGroupIntegralOnly,
       isArchived: isArchived,
       usageCount: usageCount,
       createdAt: createdAt,

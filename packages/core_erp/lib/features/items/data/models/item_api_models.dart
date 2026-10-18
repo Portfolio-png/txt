@@ -1,4 +1,5 @@
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 
@@ -107,12 +108,21 @@ class ItemVariationNodeDto {
   }
 }
 
+/// A stored instant on a linked die, or null. Never defaulted to now(): a
+/// fabricated timestamp is printed as though someone had entered it.
+DateTime? _dieInstant(Object? raw) {
+  if (raw is! String || raw.isEmpty) return null;
+  return DateTime.tryParse(raw);
+}
+
 class ItemDto {
   const ItemDto({
     required this.id,
     required this.name,
     required this.alias,
     required this.shortCode,
+    this.partNo,
+    this.partCode = '',
     required this.displayName,
     required this.quantity,
     required this.groupId,
@@ -134,6 +144,7 @@ class ItemDto {
     this.attachments = const <ItemAttachmentDefinition>[],
     this.developedForClientId,
     this.developedForClientName = '',
+    this.developedFor = DevelopedFor.empty,
     this.machines = const <ItemMachineLink>[],
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
@@ -147,6 +158,8 @@ class ItemDto {
   final String name;
   final String alias;
   final String shortCode;
+  final int? partNo;
+  final String partCode;
   final String displayName;
   final double quantity;
   final int groupId;
@@ -170,6 +183,7 @@ class ItemDto {
   final List<ItemDieLink> dies;
   final int? developedForClientId;
   final String developedForClientName;
+  final DevelopedFor developedFor;
   final List<int> combinationGroupIds;
   final bool availableForPurchase;
 
@@ -185,6 +199,9 @@ class ItemDto {
       alias: json['alias'] as String? ?? '',
       shortCode:
           json['shortCode'] as String? ?? json['short_code'] as String? ?? '',
+      // Absent on a payload from a server that does not stamp parts yet.
+      partNo: (json['partNo'] as num?)?.toInt(),
+      partCode: json['partCode'] as String? ?? '',
       displayName: json['displayName'] as String? ?? '',
       quantity: (json['quantity'] as num? ?? 0).toDouble(),
       groupId: json['groupId'] as int? ?? 0,
@@ -243,6 +260,19 @@ class ItemDto {
               id: entry['id']?.toString() ?? '',
               name: entry['name'] as String? ?? '',
               assetId: entry['assetId'] as String? ?? '',
+              // The server has always sent this and nothing read it, which is
+              // why a linked machine showed no thumbnail anywhere.
+              photoUrl: entry['photoUrl'] as String?,
+              groupId: entry['groupId'] as int?,
+              machineType: entry['machineType'] as String? ?? '',
+              machineMake: entry['machineMake'] as String? ?? '',
+              manufacturedYear: entry['manufacturedYear'] as int?,
+              feederMake: entry['feederMake'] as String? ?? '',
+              runningHours: entry['runningHours'] as int?,
+              strokesPerMinute: entry['strokesPerMinute'] as int?,
+              capacityKind: entry['capacityKind'] as String? ?? '',
+              capacityKgf: entry['capacityKgf'] as int?,
+              dieFeedType: entry['dieFeedType'] as String? ?? '',
             ),
           )
           .toList(growable: false),
@@ -252,11 +282,33 @@ class ItemDto {
             (entry) => ItemDieLink(
               id: entry['id']?.toString() ?? '',
               toolCode: entry['toolCode'] as String? ?? '',
+              photoUrl: entry['photoUrl'] as String?,
+              dieType: entry['dieType'] as String? ?? '',
+              madeBy: entry['madeBy'] as String? ?? '',
+              poAt: _dieInstant(entry['poAt']),
+              dateInAt: _dieInstant(entry['dateInAt']),
+              linerSizeNm: entry['linerSizeNm'] as int?,
+              linerSizeUnit: entry['linerSizeUnit'] as String? ?? 'mm',
+              noOfSet: entry['noOfSet'] as int?,
+              storeArea: entry['storeArea'] as String? ?? '',
+              rackNo: entry['rackNo'] as String? ?? '',
             ),
           )
           .toList(growable: false),
       developedForClientId: json['developedForClientId'] as int?,
       developedForClientName: json['developedForClientName'] as String? ?? '',
+      // Falls back to the pre-047 pair when the block is absent, which is what
+      // a payload the local replica cached before this change looks like.
+      developedFor: json['developedFor'] is Map<String, dynamic>
+          ? DevelopedFor.fromJson(json['developedFor'] as Map<String, dynamic>)
+          : DevelopedFor(
+              kind: json['developedForClientId'] == null
+                  ? DevelopedForKind.none
+                  : DevelopedForKind.client,
+              clientId: json['developedForClientId'] as int?,
+              clientName: json['developedForClientName'] as String? ?? '',
+              companyName: json['developedForClientName'] as String? ?? '',
+            ),
       combinationGroupIds:
           (json['combinationGroupIds'] as List<dynamic>? ?? const [])
               .map((e) => e as int)
@@ -278,6 +330,8 @@ class ItemDto {
       name: name,
       alias: alias,
       shortCode: shortCode,
+      partNo: partNo,
+      partCode: partCode,
       displayName: displayName,
       quantity: quantity,
       groupId: groupId,
@@ -307,6 +361,7 @@ class ItemDto {
       dies: dies,
       developedForClientId: developedForClientId,
       developedForClientName: developedForClientName,
+      developedFor: developedFor,
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
       blankWidthMm: blankWidthMm,
@@ -535,10 +590,13 @@ class CreateItemRequest {
     this.machineIds = const [],
     this.dieIds = const [],
     this.developedForClientId,
+    this.developedFor,
     this.availableForPurchase = false,
     this.blankWidthMm = 0,
     this.blankHeightMm = 0,
     this.penPaperBaseline,
+    this.partNo,
+    this.partCode,
   });
 
   final String name;
@@ -558,12 +616,21 @@ class CreateItemRequest {
   final List<String> machineIds;
   final List<String> dieIds;
   final int? developedForClientId;
+
+  /// Who the part was developed for. Null says nothing, and the server keeps
+  /// what is recorded; [DevelopedFor.empty] is how it is cleared.
+  final DevelopedFor? developedFor;
   final bool availableForPurchase;
 
   /// The blank size this part is cut as, in millimetres.
   final double blankWidthMm;
   final double blankHeightMm;
   final PenPaperBaseline? penPaperBaseline;
+
+  /// Null means this save says nothing about the part's identity, and the
+  /// server keeps what is stamped. See the omission in toJson below.
+  final int? partNo;
+  final String? partCode;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
     return CreateItemRequest(
@@ -588,10 +655,13 @@ class CreateItemRequest {
       machineIds: input.machineIds,
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
+      developedFor: input.developedFor,
       availableForPurchase: input.availableForPurchase,
       blankWidthMm: input.blankWidthMm,
       blankHeightMm: input.blankHeightMm,
       penPaperBaseline: input.penPaperBaseline,
+      partNo: input.partNo,
+      partCode: input.partCode,
     );
   }
 
@@ -625,7 +695,15 @@ class CreateItemRequest {
           .toList(growable: false),
       'machineIds': machineIds,
       'dieIds': dieIds,
-      'developedForClientId': developedForClientId,
+      // Omitted when null, like everything else here that the server preserves
+      // on absence. It used to be sent unconditionally, which meant any save
+      // that did not mention a client cleared the one on the part — and now
+      // that these columns also carry a kind, a contractor, a date and a
+      // quotation, it would clear all of those with it. The block below is
+      // what the editor actually sends.
+      if (developedForClientId != null)
+        'developedForClientId': developedForClientId,
+      if (developedFor != null) 'developedFor': developedFor!.toJson(),
       'availableForPurchase': availableForPurchase,
       'blankWidthMm': blankWidthMm,
       'blankHeightMm': blankHeightMm,
@@ -634,6 +712,12 @@ class CreateItemRequest {
       // null. The editor only sends a baseline it actually has.
       if (penPaperBaseline != null)
         'penPaperBaseline': penPaperBaseline!.toJson(),
+      // Same rule, and for the same reason as the baseline above: a save that
+      // says nothing about the part's identity must leave what is stamped
+      // alone. Sent unconditionally, these would wipe it on every preserving
+      // write — which is what happened to photo_url once already.
+      if (partNo != null) 'partNo': partNo,
+      if (partCode != null) 'partCode': partCode,
     };
   }
 }
@@ -657,10 +741,14 @@ class UpdateItemRequest {
     this.machineIds = const [],
     this.dieIds = const [],
     this.developedForClientId,
+    this.developedFor,
     this.availableForPurchase = false,
     this.blankWidthMm = 0,
     this.blankHeightMm = 0,
     this.penPaperBaseline,
+    this.partNo,
+    this.partCode,
+    this.partIdentitySpecified = false,
   });
 
   final String name;
@@ -680,12 +768,25 @@ class UpdateItemRequest {
   final List<String> machineIds;
   final List<String> dieIds;
   final int? developedForClientId;
+
+  /// Who the part was developed for. Null says nothing, and the server keeps
+  /// what is recorded; [DevelopedFor.empty] is how it is cleared.
+  final DevelopedFor? developedFor;
   final bool availableForPurchase;
 
   /// The blank size this part is cut as, in millimetres.
   final double blankWidthMm;
   final double blankHeightMm;
   final PenPaperBaseline? penPaperBaseline;
+
+  /// Null means this save says nothing about the part's identity, and the
+  /// server keeps what is stamped. See the omission in toJson below.
+  final int? partNo;
+  final String? partCode;
+
+  /// Send both keys whatever they hold, so a null number or an empty code
+  /// clears what is stamped rather than preserving it.
+  final bool partIdentitySpecified;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
     return UpdateItemRequest(
@@ -710,10 +811,14 @@ class UpdateItemRequest {
       machineIds: input.machineIds,
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
+      developedFor: input.developedFor,
       availableForPurchase: input.availableForPurchase,
       blankWidthMm: input.blankWidthMm,
       blankHeightMm: input.blankHeightMm,
       penPaperBaseline: input.penPaperBaseline,
+      partNo: input.partNo,
+      partCode: input.partCode,
+      partIdentitySpecified: input.partIdentitySpecified,
     );
   }
 
@@ -747,7 +852,15 @@ class UpdateItemRequest {
           .toList(growable: false),
       'machineIds': machineIds,
       'dieIds': dieIds,
-      'developedForClientId': developedForClientId,
+      // Omitted when null, like everything else here that the server preserves
+      // on absence. It used to be sent unconditionally, which meant any save
+      // that did not mention a client cleared the one on the part — and now
+      // that these columns also carry a kind, a contractor, a date and a
+      // quotation, it would clear all of those with it. The block below is
+      // what the editor actually sends.
+      if (developedForClientId != null)
+        'developedForClientId': developedForClientId,
+      if (developedFor != null) 'developedFor': developedFor!.toJson(),
       'availableForPurchase': availableForPurchase,
       'blankWidthMm': blankWidthMm,
       'blankHeightMm': blankHeightMm,
@@ -756,6 +869,19 @@ class UpdateItemRequest {
       // null. The editor only sends a baseline it actually has.
       if (penPaperBaseline != null)
         'penPaperBaseline': penPaperBaseline!.toJson(),
+      // Same rule, and for the same reason as the baseline above: a save that
+      // says nothing about the part's identity must leave what is stamped
+      // alone. Sent unconditionally, these would wipe it on every preserving
+      // write — which is what happened to photo_url once already.
+      // Unconditional when the caller is speaking about identity: that is the
+      // only way to say "clear it", since an absent key means preserve.
+      if (partIdentitySpecified) ...{
+        'partNo': partNo,
+        'partCode': partCode ?? '',
+      } else ...{
+        if (partNo != null) 'partNo': partNo,
+        if (partCode != null) 'partCode': partCode,
+      },
     };
   }
 }

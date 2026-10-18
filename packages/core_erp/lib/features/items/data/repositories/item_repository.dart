@@ -3,6 +3,7 @@ import '../../../production_pipelines/domain/pipeline_stage_node.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
+import '../../domain/part_code.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_usage_record.dart';
 
@@ -13,6 +14,27 @@ abstract class ItemRepository {
   Future<ItemDefinition> createItem(CreateItemInput input);
   Future<ItemDefinition> updateItem(UpdateItemInput input);
   Future<ItemDefinition> updateShortCode(int id, String shortCode);
+
+  /// Which sets hold this part, one row per line.
+  ///
+  /// Asked of the server because nothing else answers it: the usage endpoint
+  /// covers orders, challans, BOM requirements, materials and group links, and
+  /// set lines are in none of them.
+  Future<List<ItemSetMembership>> itemSets(int itemId);
+
+  /// The number and code the next part in this scope should carry.
+  ///
+  /// Asked of the server rather than worked out here: the sequence is the
+  /// backend's rule, and a scope spanning items, sets and set membership is
+  /// not something a dialog can compute correctly from what it happens to
+  /// have loaded.
+  Future<PartIdentitySuggestion> nextPartIdentity({
+    required int groupId,
+    int? setId,
+    bool setPending = false,
+    String setName = '',
+    String name = '',
+  });
 
   Future<void> deleteItem(int id);
   Future<ItemDefinition> reassignItemGroup(int id, int groupId);

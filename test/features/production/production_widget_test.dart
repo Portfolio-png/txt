@@ -847,6 +847,8 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
     String? orderNo,
     int? orderItemId,
     String? scrapRouting,
+    int? outputVariationLeafNodeId,
+    String? outputVariationPathLabel,
   }) {
     throw UnimplementedError();
   }
@@ -1149,6 +1151,12 @@ class _FakeUnitRepository implements UnitRepository {
 }
 
 class _FakeItemRepository implements ItemRepository {
+  // Forwards anything the interface grows that this fake does not need; see
+  // the note on the shared fakes in widget_test.dart.
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+
   const _FakeItemRepository(this.seedItems);
 
   final List<ItemDefinition> seedItems;

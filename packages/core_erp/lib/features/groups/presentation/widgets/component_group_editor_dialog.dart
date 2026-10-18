@@ -138,7 +138,12 @@ class _ComponentGroupEditorDialogState
         value: _selectedParentGroupId,
         onChanged: (value) => setState(() => _selectedParentGroupId = value),
         scope: GroupPickerScope.hierarchical,
-        groupType: 'component',
+        // 'item', not 'component'. A component group is stored as
+        // `group_type = 'item'` with `group_structure = 'component'`, and the
+        // picker filters on groupType — so asking for 'component' matched
+        // nothing and this field offered an empty list, which meant a
+        // component group could not be reparented at all.
+        groupType: 'item',
         decoration: _selectDecoration(label: 'Parent Group'),
         dialogTitle: 'Parent Group',
         nullOptionLabel: 'Primary',

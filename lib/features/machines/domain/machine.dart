@@ -55,6 +55,14 @@ class Machine {
     this.setupMinutes,
     this.laborCount,
     this.powerKw,
+    this.machineMake = '',
+    this.manufacturedYear,
+    this.feederMake = '',
+    this.runningHours,
+    this.strokesPerMinute,
+    this.capacityKind = '',
+    this.capacityKgf,
+    this.dieFeedType = '',
     this.reportNotes = '',
     this.customProperties = const [],
     this.capabilities = const [],
@@ -80,6 +88,35 @@ class Machine {
   final double? setupMinutes;
   final double? laborCount;
   final double? powerKw;
+  // --- the machine sheet (migrations/049) ------------------------------------
+
+  /// Who built it. Its own column rather than [makeModel], which the editor
+  /// treats as legacy and blanks on every save.
+  final String machineMake;
+
+  /// The year it was built — a year, not a date, because that is all anyone
+  /// records. Distinct from [installationDate], which is when it arrived here.
+  final int? manufacturedYear;
+
+  /// The make of the feeder attached to it. NOT the pipeline sense of the
+  /// word, which is an upstream node in a graph.
+  final String feederMake;
+
+  /// The latest meter reading, and the rated strokes per minute.
+  final int? runningHours;
+  final int? strokesPerMinute;
+
+  /// `''` | `rated` | `free_hand`. Stored rather than inferred: a bench with
+  /// no rated tonnage is a fact, and a blank is the absence of one.
+  final String capacityKind;
+
+  /// An integer count of kilograms-force, per the units contract.
+  final int? capacityKgf;
+
+  /// What tooling it takes — Manual, Semi Prog, Progressive. NOT a die's own
+  /// type, which is Cutting or Bending.
+  final String dieFeedType;
+
   final String reportNotes;
   final List<CustomProperty> customProperties;
   final List<MachineCapability> capabilities;
@@ -102,6 +139,14 @@ class Machine {
     Object? setupMinutes = _absent,
     Object? laborCount = _absent,
     Object? powerKw = _absent,
+    String? machineMake,
+    Object? manufacturedYear = _absent,
+    String? feederMake,
+    Object? runningHours = _absent,
+    Object? strokesPerMinute = _absent,
+    String? capacityKind,
+    Object? capacityKgf = _absent,
+    String? dieFeedType,
     String? reportNotes,
     List<CustomProperty>? customProperties,
     List<MachineCapability>? capabilities,
@@ -130,6 +175,22 @@ class Machine {
           ? this.laborCount
           : laborCount as double?,
       powerKw: powerKw == _absent ? this.powerKw : powerKw as double?,
+      machineMake: machineMake ?? this.machineMake,
+      manufacturedYear: manufacturedYear == _absent
+          ? this.manufacturedYear
+          : manufacturedYear as int?,
+      feederMake: feederMake ?? this.feederMake,
+      runningHours: runningHours == _absent
+          ? this.runningHours
+          : runningHours as int?,
+      strokesPerMinute: strokesPerMinute == _absent
+          ? this.strokesPerMinute
+          : strokesPerMinute as int?,
+      capacityKind: capacityKind ?? this.capacityKind,
+      capacityKgf: capacityKgf == _absent
+          ? this.capacityKgf
+          : capacityKgf as int?,
+      dieFeedType: dieFeedType ?? this.dieFeedType,
       reportNotes: reportNotes ?? this.reportNotes,
       customProperties: customProperties ?? this.customProperties,
       capabilities: capabilities ?? this.capabilities,
@@ -228,4 +289,22 @@ class CompleteMachineAssetUploadInput {
   final String uploadSessionId;
   final String objectKey;
   final String machineId;
+}
+
+/// A refused machine save, with what the server said about it.
+///
+/// `machine_asset_id_duplicate` is the one worth keying off: asset ids are
+/// unique across the whole plant while the number series is per type, so a
+/// suggestion can collide with a machine of another type or one numbered by
+/// hand years ago. The server offers the next free number rather than refusing
+/// flatly.
+class MachineSaveException implements Exception {
+  const MachineSaveException(this.message, {this.code, this.suggestedAssetId});
+
+  final String message;
+  final String? code;
+  final String? suggestedAssetId;
+
+  @override
+  String toString() => message;
 }

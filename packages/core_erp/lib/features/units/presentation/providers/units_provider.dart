@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/config_service.dart';
 import '../../data/repositories/unit_repository.dart';
 import '../../domain/unit_definition.dart';
+import '../../domain/starter_units.dart';
 import '../../domain/unit_inputs.dart';
 
 enum UnitDuplicateWarning { none, nameOnly, symbolOnly, nameAndSymbol }
@@ -365,6 +366,42 @@ class UnitsProvider extends ChangeNotifier {
       _isSaving = false;
       notifyListeners();
     }
+  }
+
+  /// Writes the starter units this workspace does not have yet.
+  ///
+  /// Returns how many were added — zero when there was nothing missing, which
+  /// is the ordinary answer the second time somebody presses it.
+  ///
+  /// One refresh at the end rather than one per unit: [createUnit] refetches
+  /// the whole master after every write, and eight of those would be eight
+  /// round trips to show one result.
+  Future<int> seedStarterUnits() async {
+    final missing = missingStarterUnits(
+      existingNames: _units.map((unit) => unit.name),
+      existingSymbols: _units.map((unit) => unit.symbol),
+    );
+    if (missing.isEmpty) return 0;
+
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    var added = 0;
+    try {
+      for (final unit in missing) {
+        await _repository.createUnit(unit.toInput());
+        added += 1;
+      }
+    } catch (error) {
+      // Whatever landed before the failure stays: they are ordinary units and
+      // pressing the offer again adds only what is still missing.
+      _errorMessage = error.toString();
+    } finally {
+      await refresh();
+      _isSaving = false;
+      notifyListeners();
+    }
+    return added;
   }
 
   Future<UnitDefinition?> updateUnit(UpdateUnitInput input) async {

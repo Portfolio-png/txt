@@ -13,6 +13,7 @@ import 'package:core_erp/features/delivery_challans/presentation/providers/chall
 import 'package:core_erp/features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import 'package:core_erp/features/inventory/presentation/screens/inventory_screen.dart';
 import 'package:core_erp/features/inventory/presentation/screens/material_scan_screen.dart';
+import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
 import 'package:core_erp/features/clients/presentation/screens/clients_screen.dart';
 import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart';
@@ -596,8 +597,8 @@ class _ShellContentSwitcher extends StatelessWidget {
               ),
               'configurator_clients' => const ClientsScreen(),
               'configurator_vendors' => const VendorsScreen(),
-              'configurator_items' => const ItemsScreen(initialTab: 0),
-              'configurator_groups' => const ItemsScreen(initialTab: 1),
+              'configurator_items' => const ItemsScreen(),
+              'configurator_groups' => const GroupsScreen(),
               'configurator_units' => const UnitsScreen(),
               _ => const DashboardScreen(),
             },

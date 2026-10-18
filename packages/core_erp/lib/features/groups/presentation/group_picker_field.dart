@@ -60,6 +60,8 @@ class GroupPickerField extends StatelessWidget {
     this.tapTargetKey,
     this.onCreateOption,
     this.createOptionLabelBuilder,
+    this.canCreateOption,
+    this.inlinePanelBuilder,
   });
 
   final int? value;
@@ -88,6 +90,15 @@ class GroupPickerField extends StatelessWidget {
   final Future<SearchableSelectOption<int?>?> Function(String query)?
   onCreateOption;
   final String Function(String query)? createOptionLabelBuilder;
+
+  /// Whether the typed name can be created at all. Withholding the create row
+  /// is how a picker refuses before anything is sent.
+  final SearchableSelectCanCreateOption<int?>? canCreateOption;
+
+  /// Rendered inside the picker, above the list, for the current query.
+  /// Passed straight through so a caller can offer a richer way to answer than
+  /// picking a row — without stacking a second dialog on the one it is in.
+  final SearchableSelectInlinePanelBuilder<int?>? inlinePanelBuilder;
 
   /// The groups this picker may offer, in tree order with the depth each sits
   /// at. A group whose parent is not in the list — archived, or out of scope —
@@ -221,6 +232,8 @@ class GroupPickerField extends StatelessWidget {
       validator: validator,
       onCreateOption: onCreateOption,
       createOptionLabelBuilder: createOptionLabelBuilder,
+      canCreateOption: canCreateOption,
+      inlinePanelBuilder: inlinePanelBuilder,
     );
   }
 }

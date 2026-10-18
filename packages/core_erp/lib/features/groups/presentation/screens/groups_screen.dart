@@ -311,6 +311,27 @@ class _GroupsToolbar extends StatelessWidget {
             color: SoftErpTheme.border,
             margin: const EdgeInsets.symmetric(horizontal: 4),
           ),
+        SoftSegmentedFilter<GroupStatusFilter>(
+          selected: provider.statusFilter,
+          onChanged: provider.setStatusFilter,
+          options: [
+            for (final filter in GroupStatusFilter.values)
+              SoftSegmentOption<GroupStatusFilter>(
+                value: filter,
+                label: filter.label,
+                count: filter == GroupStatusFilter.all
+                    ? null
+                    : provider.groups
+                          .where(
+                            (group) =>
+                                group.groupType ==
+                                    (mode == 'machines' ? 'machine' : 'item') &&
+                                filter.matches(group),
+                          )
+                          .length,
+              ),
+          ],
+        ),
         if (!isDesktop)
           SoftMasterSearchField(
             width: 300,
@@ -861,12 +882,21 @@ class _GroupRow extends StatelessWidget {
         Expanded(flex: 2, child: SoftInlineText(unitName)),
         Expanded(
           flex: 1,
-          child: SoftStatusPill(
-            label: 'Active',
-            background: const Color(0xFFECFDF5),
-            textColor: const Color(0xFF0F766E),
-            borderColor: const Color(0xFFBFEAD8),
-          ),
+          // Read from the group rather than hardcoded: this column said
+          // "Active" for every row, archived ones included.
+          child: group.isArchived
+              ? const SoftStatusPill(
+                  label: 'Archived',
+                  background: Color(0xFFF1F5F9),
+                  textColor: Color(0xFF475569),
+                  borderColor: Color(0xFFCBD5E1),
+                )
+              : const SoftStatusPill(
+                  label: 'Active',
+                  background: Color(0xFFECFDF5),
+                  textColor: Color(0xFF0F766E),
+                  borderColor: Color(0xFFBFEAD8),
+                ),
         ),
         Expanded(
           flex: 2,
@@ -882,6 +912,35 @@ class _GroupRow extends StatelessWidget {
                   groupType: group.groupType,
                 ),
               ),
+
+              // Worded so it cannot be mistaken for a delete: the group and
+              // everything under it stays exactly where it is.
+              if (group.isArchived)
+                SoftActionLink(
+                  label: 'Restore',
+                  onTap: groupsProvider.isSaving
+                      ? null
+                      : () => groupsProvider.restoreGroup(group.id),
+                )
+              else
+                SoftActionLink(
+                  label: 'Archive',
+                  onTap: groupsProvider.isSaving
+                      ? null
+                      : () async {
+                          final ok = await showConfirmDialog(
+                            context,
+                            title: 'Archive "${group.name}"?',
+                            message:
+                                'It stops being offered when filing items, and '
+                                'leaves the Active list. Nothing is deleted and '
+                                'you can restore it here at any time.',
+                            confirmLabel: 'Archive',
+                            destructive: false,
+                          );
+                          if (ok) groupsProvider.archiveGroup(group.id);
+                        },
+                ),
 
               SoftActionLink(
                 label: 'Delete',

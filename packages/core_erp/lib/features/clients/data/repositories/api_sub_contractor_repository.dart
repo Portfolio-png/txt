@@ -101,6 +101,7 @@ class ApiSubContractorRepository implements SubContractorRepository {
         id: _mockNextId++,
         clientId: clientId,
         name: input.name,
+        designation: input.designation,
         phone: input.phone,
         email: input.email,
         notes: input.notes,
@@ -147,6 +148,7 @@ class ApiSubContractorRepository implements SubContractorRepository {
       final current = _mockSubContractors[index];
       final updated = current.copyWith(
         name: input.name,
+        designation: input.designation,
         phone: input.phone,
         email: input.email,
         notes: input.notes,

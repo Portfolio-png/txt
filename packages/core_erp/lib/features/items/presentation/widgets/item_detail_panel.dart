@@ -10,13 +10,18 @@ import 'package:mime/mime.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../links/domain/entity_link.dart';
+import '../../../links/presentation/widgets/ecosystem_inspector.dart';
+import '../../../links/presentation/widgets/linked_ecosystem_ribbon.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
+import 'developed_for_form.dart';
 import '../../domain/item_usage_record.dart';
 import '../providers/items_provider.dart';
 
@@ -101,6 +106,11 @@ class ItemDetailPanel extends StatefulWidget {
 class _ItemDetailPanelState extends State<ItemDetailPanel> {
   bool _isUploading = false;
   int _activeTab = 0;
+
+  /// Whether the Developed For card is showing. Off by default: most parts
+  /// were not developed for anyone in particular, and nine rows of mostly
+  /// blanks would push the factsheet off the first screen.
+  bool _showDevelopedFor = false;
 
   @override
   void initState() {
@@ -233,6 +243,23 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
       return 'image/webp';
     }
     return 'image/jpeg';
+  }
+
+  /// Walks to a neighbour in the cluster.
+  ///
+  /// Pop first, then open: this panel is a `showGeneralDialog` and is not
+  /// re-entrant, so opening a second from inside it would stack routes and
+  /// leave one Back press per hop. The group view and the barcode inspector
+  /// already pivot this way.
+  ///
+  /// A type with no registered inspector simply does not open — the chip stays
+  /// a label, which is the honest state until a host provides one.
+  Future<void> _openNeighbour(LinkRef ref) async {
+    if (!AppFlowHooks.canInspect(ref.type)) return;
+    final navigator = Navigator.of(context);
+    final rootContext = navigator.context;
+    navigator.maybePop();
+    await showEcosystemInspector(rootContext, subject: ref);
   }
 
   @override
@@ -437,6 +464,55 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                 widget.onEdit?.call();
                               },
                             );
+                      // "Developed for", not "Client": the answer may be Self
+                      // or a contractor, and a button that promises a client
+                      // and shows neither is a button that lies.
+                      //
+                      // Drawn disabled with a reason rather than hidden when
+                      // there is nothing to show — a control that appears only
+                      // once its precondition holds is a control nobody knows
+                      // about.
+                      final hasDevelopedFor = item.developedFor.isNotEmpty;
+                      //
+                      // An OutlinedButton rather than an AppButton: this sits
+                      // in the panel's 240-wide left column, and AppButton's
+                      // tablet padding plus a two-word label overflows there
+                      // by about 50px.
+                      final developedForButton = Tooltip(
+                        message: hasDevelopedFor
+                            ? 'Who this part was developed for'
+                            : 'Nobody has recorded who this part was '
+                                  'developed for. Open Edit Item to fill it in.',
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.handshake_outlined, size: 18),
+                            label: const Text(
+                              'Developed for',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: hasDevelopedFor
+                                ? () => setState(
+                                    () =>
+                                        _showDevelopedFor = !_showDevelopedFor,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      );
+                      // No fetch and no spinner, unlike the usage row beside
+                      // it: the item DTO carries this block already.
+                      final developedForCard = !_showDevelopedFor
+                          ? null
+                          : _DetailCard(
+                              title: 'Developed For',
+                              children: [
+                                DevelopedForSummary(value: item.developedFor),
+                              ],
+                            );
 
                       final content = useTwoColumn
                           ? Row(
@@ -457,11 +533,26 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                         const SizedBox(height: 16),
                                         editButton,
                                       ],
+                                      const SizedBox(height: 12),
+                                      developedForButton,
                                     ],
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                SizedBox(width: 320, child: factsheet),
+                                SizedBox(
+                                  width: 320,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      factsheet,
+                                      if (developedForCard != null) ...[
+                                        const SizedBox(height: 16),
+                                        developedForCard,
+                                      ],
+                                    ],
+                                  ),
+                                ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: _ItemVariationSection(item: item),
@@ -478,18 +569,42 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                 ],
                                 const SizedBox(height: 18),
                                 factsheet,
+                                if (developedForCard != null) ...[
+                                  const SizedBox(height: 18),
+                                  developedForCard,
+                                ],
                                 const SizedBox(height: 18),
                                 _ItemVariationSection(item: item),
                                 if (editButton != null) ...[
                                   const SizedBox(height: 18),
                                   editButton,
                                 ],
+                                const SizedBox(height: 12),
+                                developedForButton,
                               ],
                             );
 
                       return SingleChildScrollView(
                         padding: const EdgeInsets.all(18),
-                        child: content,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // What this part is attached to — the die that cuts
+                            // it, the machine it runs on. Headed "Works with"
+                            // rather than "linked", because the factsheet below
+                            // already says "N linked record(s)" about something
+                            // else entirely: transactional usage, read from
+                            // /api/items/:id/usage. Two different questions
+                            // must not share a word on one screen.
+                            LinkedEcosystemRibbon(
+                              type: 'item',
+                              id: '${item.id}',
+                              onOpen: _openNeighbour,
+                            ),
+                            const SizedBox(height: 18),
+                            content,
+                          ],
+                        ),
                       );
                     },
                   ),

@@ -15,6 +15,7 @@ import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/presentation/screens/component_creation_screen.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/widgets/item_form_sections_dialog.dart';
@@ -43,6 +44,15 @@ class AppSidebar extends StatefulWidget {
 
 class _AppSidebarState extends State<AppSidebar> {
   bool _isConfiguratorExpanded = true;
+
+  /// Nested entries that are open. Open to begin with: these two masters were
+  /// unreachable from the sidebar until now, and a closed drawer would leave
+  /// them exactly as hard to find as they were.
+  final Set<String> _expandedParents = <String>{'configurator_items'};
+
+  /// What was selected when this was last built, so an arrival can be told
+  /// apart from a rebuild.
+  String? _lastSelectedKey;
   final FocusScopeNode _focusScopeNode = FocusScopeNode(
     debugLabel: 'app_sidebar_scope',
   );
@@ -81,7 +91,23 @@ class _AppSidebarState extends State<AppSidebar> {
       'Vendors',
       Icons.storefront_outlined,
     ),
-    _SidebarItemData('configurator_items', 'Items', Icons.inventory_outlined),
+    _SidebarItemData(
+      'configurator_items',
+      'Items',
+      Icons.inventory_outlined,
+      children: <_SidebarItemData>[
+        _SidebarItemData(
+          'configurator_groups',
+          'Item Groups',
+          Icons.folder_outlined,
+        ),
+        _SidebarItemData(
+          'configurator_sets',
+          'Item Sets',
+          Icons.inventory_2_outlined,
+        ),
+      ],
+    ),
     _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
     _SidebarItemData(
       'configurator_materials',
@@ -125,7 +151,13 @@ class _AppSidebarState extends State<AppSidebar> {
           .map((item) => item.key),
       if (mastersOn) 'configurator',
       if (mastersOn && isConfiguratorExpanded)
-        ..._configuratorItems.map((item) => item.key),
+        ..._configuratorItems.expand(
+          (item) => <String>[
+            item.key,
+            if (_expandedParents.contains(item.key))
+              ...item.children.map((child) => child.key),
+          ],
+        ),
     ];
   }
 
@@ -142,6 +174,52 @@ class _AppSidebarState extends State<AppSidebar> {
         _isConfiguratorExpanded = true;
       });
     }
+  }
+
+  /// The entry [key] is drawn under, if any.
+  String? _parentKeyOf(String key) {
+    for (final item in _configuratorItems) {
+      if (item.children.any((child) => child.key == key)) return item.key;
+    }
+    return null;
+  }
+
+  /// Opens the entry a newly selected destination lives under.
+  ///
+  /// Watched on the selected key rather than done in [_selectKey], because a
+  /// tap on the sidebar is not the only way to get there: the Items toolbar,
+  /// the Action Center and an item reveal all call `AppNavigation.select`
+  /// directly, and those are exactly the arrivals that would otherwise light a
+  /// row inside a folded entry where nobody can see it.
+  ///
+  /// Only on a *change*, so folding an entry you are standing in still works —
+  /// a chevron that sprang back open would be a control that does nothing.
+  void _openParentOfNewSelection(String selectedKey) {
+    if (selectedKey == _lastSelectedKey) return;
+    _lastSelectedKey = selectedKey;
+    final parent = _parentKeyOf(selectedKey);
+    if (parent == null || _expandedParents.contains(parent)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _expandedParents.add(parent);
+      });
+    });
+  }
+
+  /// The Masters header's Express: one window holding a form for each master
+  /// the person is entering, side by side.
+  ///
+  /// The window itself is the item master's creation workspace — this is a
+  /// second door to it, opened on the tiles that were left there last time.
+  Future<void> _openExpressWizard() async {
+    await ComponentCreationDialog.openExpress(context);
+  }
+
+  void _toggleParent(String key) {
+    setState(() {
+      if (!_expandedParents.remove(key)) _expandedParents.add(key);
+    });
   }
 
   void _requestFocus(String key) {
@@ -216,6 +294,7 @@ class _AppSidebarState extends State<AppSidebar> {
     final canOpenSettings = context.select<AuthProvider, bool>(
       (auth) => auth.can('config.write'),
     );
+    _openParentOfNewSelection(selectedKey);
     final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     final isConfiguratorExpanded = _isConfiguratorExpanded;
 
@@ -291,6 +370,12 @@ class _AppSidebarState extends State<AppSidebar> {
                                   },
                                   onSelected: _selectKey,
                                   focusNodeForKey: _focusNodeFor,
+                                  expandedParents: _expandedParents,
+                                  onToggleParent: _toggleParent,
+                                  headerAction: _ExpressWizardButton(
+                                    enabled: canOpenSettings,
+                                    onTap: _openExpressWizard,
+                                  ),
                                 ),
                               ],
                             ],
@@ -356,6 +441,9 @@ class _SidebarSection extends StatelessWidget {
     this.onExpansionToggle,
     required this.focusNodeForKey,
     this.ordersShowcaseKey,
+    this.expandedParents = const <String>{},
+    this.onToggleParent,
+    this.headerAction,
   });
 
   final String title;
@@ -370,11 +458,71 @@ class _SidebarSection extends StatelessWidget {
   final FocusNode Function(String key) focusNodeForKey;
   final GlobalKey? ordersShowcaseKey;
 
+  /// Which entries with children are open.
+  final Set<String> expandedParents;
+
+  /// Opens or closes one entry's children. Null leaves them closed.
+  final ValueChanged<String>? onToggleParent;
+
+  /// Drawn in an expandable section's header, before the chevron. Only the
+  /// Masters drawer has one; the generic section knows nothing about it.
+  final Widget? headerAction;
+
   static const Color _drawerColor = Color(0xFFEFEFF2);
   static const Color _drawerTabColor = Colors.white;
 
   bool _matchesSelectedKey(String itemKey) {
     return itemKey == selectedKey;
+  }
+
+  /// One entry and, under it, the destinations that belong to it.
+  ///
+  /// The compact rail draws icons with no labels, so an indented tree would be
+  /// a column of anonymous glyphs — children are left out there and the parent
+  /// behaves exactly as it did before it had any.
+  List<Widget> _tilesFor(
+    _SidebarItemData item, {
+    required double tileSpacing,
+    required Color inactiveColor,
+  }) {
+    final hasChildren = item.children.isNotEmpty && !compact;
+    final expanded = hasChildren && expandedParents.contains(item.key);
+
+    return <Widget>[
+      Padding(
+        padding: EdgeInsets.only(bottom: tileSpacing),
+        child: _SidebarTile(
+          item: item,
+          compact: compact,
+          isSelected: _matchesSelectedKey(item.key),
+          inactiveColor: inactiveColor,
+          focusNode: focusNodeForKey(item.key),
+          onTap: () => onSelected(item.key),
+          // Tapping the entry goes there AND opens it: the chevron alone is a
+          // small target, and a parent that only toggled would make Items a
+          // click further away than it is today.
+          isExpanded: hasChildren ? expanded : null,
+          onChevronTap: hasChildren && onToggleParent != null
+              ? () => onToggleParent!(item.key)
+              : null,
+          onTapAlsoExpands: hasChildren,
+        ),
+      ),
+      if (expanded)
+        for (final child in item.children)
+          Padding(
+            padding: EdgeInsets.only(bottom: tileSpacing),
+            child: _SidebarTile(
+              item: child,
+              compact: compact,
+              isSelected: _matchesSelectedKey(child.key),
+              inactiveColor: inactiveColor,
+              focusNode: focusNodeForKey(child.key),
+              onTap: () => onSelected(child.key),
+              indented: true,
+            ),
+          ),
+    ];
   }
 
   @override
@@ -411,6 +559,7 @@ class _SidebarSection extends StatelessWidget {
               focusNode: focusNodeForKey('configurator'),
               onTap: onExpansionToggle ?? () {},
               onChevronTap: onExpansionToggle ?? () {},
+              action: headerAction,
             ),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 320),
@@ -454,29 +603,14 @@ class _SidebarSection extends StatelessWidget {
                       key: ValueKey<String>('sidebar_${title}_expanded'),
                       padding: EdgeInsets.only(top: compact ? 6 : 8),
                       child: Column(
-                        children: children
-                            .asMap()
-                            .entries
-                            .map(
-                              (entry) => Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: entry.key == children.length - 1
-                                      ? 0
-                                      : tileSpacing,
-                                ),
-                                child: _SidebarTile(
-                                  item: entry.value,
-                                  compact: compact,
-                                  isSelected: _matchesSelectedKey(
-                                    entry.value.key,
-                                  ),
-                                  inactiveColor: _drawerTabColor,
-                                  focusNode: focusNodeForKey(entry.value.key),
-                                  onTap: () => onSelected(entry.value.key),
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
+                        children: [
+                          for (final item in children)
+                            ..._tilesFor(
+                              item,
+                              tileSpacing: tileSpacing,
+                              inactiveColor: _drawerTabColor,
+                            ),
+                        ],
                       ),
                     )
                   : const SizedBox(
@@ -504,26 +638,21 @@ class _SidebarSection extends StatelessWidget {
               ),
             ),
           ),
-        ...children.map((item) {
-          Widget tile = _SidebarTile(
-            item: item,
-            compact: compact,
-            isSelected: _matchesSelectedKey(item.key),
-            focusNode: focusNodeForKey(item.key),
-            onTap: () => onSelected(item.key),
+        ...children.expand((item) {
+          final tiles = _tilesFor(
+            item,
+            tileSpacing: tileSpacing,
+            inactiveColor: const Color(0xFFEFEFF2),
           );
           if (item.key == 'orders' && ordersShowcaseKey != null) {
-            tile = Showcase(
+            tiles[0] = Showcase(
               key: ordersShowcaseKey!,
               description:
                   'Manage and update client order statuses dynamically from the orders menu!',
-              child: tile,
+              child: tiles[0],
             );
           }
-          return Padding(
-            padding: EdgeInsets.only(bottom: tileSpacing),
-            child: tile,
-          );
+          return tiles;
         }),
       ],
     );
@@ -539,6 +668,7 @@ class _SidebarExpandableHeader extends StatelessWidget {
     required this.focusNode,
     required this.onTap,
     required this.onChevronTap,
+    this.action,
   });
 
   final String title;
@@ -548,6 +678,10 @@ class _SidebarExpandableHeader extends StatelessWidget {
   final FocusNode focusNode;
   final VoidCallback onTap;
   final VoidCallback onChevronTap;
+
+  /// Drawn between the title and the chevron. Never in the compact rail,
+  /// which has room for one icon and no label to sit beside.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -590,6 +724,11 @@ class _SidebarExpandableHeader extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title == 'Configurator' ? 'Masters' : title,
+                        // Ellipsis because the title no longer has the row to
+                        // itself: with an action beside it, a narrow sidebar
+                        // would otherwise paint the word past its own edge.
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: foreground,
                           fontWeight: FontWeight.w500,
@@ -597,6 +736,10 @@ class _SidebarExpandableHeader extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (action != null) ...[
+                      action!,
+                      const SizedBox(width: 10),
+                    ],
                     GestureDetector(
                       key: const ValueKey<String>(
                         'sidebar_configurator_chevron',
@@ -1668,6 +1811,10 @@ class _SidebarTile extends StatelessWidget {
     required this.onTap,
     required this.compact,
     this.inactiveColor = const Color(0xFFEFEFF2),
+    this.isExpanded,
+    this.onChevronTap,
+    this.onTapAlsoExpands = false,
+    this.indented = false,
   });
 
   final _SidebarItemData item;
@@ -1676,6 +1823,19 @@ class _SidebarTile extends StatelessWidget {
   final VoidCallback onTap;
   final bool compact;
   final Color inactiveColor;
+
+  /// Whether this entry's children are showing. Null when it has none, which
+  /// is also what decides whether a chevron is drawn at all.
+  final bool? isExpanded;
+
+  /// Opens or closes the children without going anywhere.
+  final VoidCallback? onChevronTap;
+
+  /// Whether tapping the row should open the children as well as navigate.
+  final bool onTapAlsoExpands;
+
+  /// Drawn as one of another entry's children.
+  final bool indented;
 
   @override
   Widget build(BuildContext context) {
@@ -1700,10 +1860,27 @@ class _SidebarTile extends StatelessWidget {
             onTap: () {
               focusNode.requestFocus();
               onTap();
+              if (onTapAlsoExpands && isExpanded == false) {
+                onChevronTap?.call();
+              }
             },
             child: Container(
-              height: compact ? 42 : 56,
-              padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 20),
+              // A child row is shorter and set in from its parent. The label
+              // keeps the parent's size — the user reads these, and small type
+              // is the first thing they complain about.
+              height: compact
+                  ? 42
+                  : indented
+                  ? 46
+                  : 56,
+              padding: EdgeInsets.only(
+                left: compact
+                    ? 12
+                    : indented
+                    ? 34
+                    : 20,
+                right: compact ? 12 : 20,
+              ),
               decoration: BoxDecoration(
                 color: isSelected ? null : inactiveColor,
                 gradient: isSelected ? SoftErpTheme.accentGradient : null,
@@ -1721,6 +1898,11 @@ class _SidebarTile extends StatelessWidget {
                     else
                       Icon(item.icon, color: foreground, size: 18),
                   ] else ...[
+                    if (indented)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Icon(item.icon, color: foreground, size: 16),
+                      ),
                     Expanded(
                       child: Text(
                         item.label,
@@ -1731,6 +1913,29 @@ class _SidebarTile extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (isExpanded != null)
+                      InkWell(
+                        key: ValueKey<String>('sidebar_chevron_${item.key}'),
+                        onTap: onChevronTap,
+                        borderRadius: BorderRadius.circular(999),
+                        child: Tooltip(
+                          message: isExpanded!
+                              ? 'Hide what is under ${item.label}'
+                              : 'Show what is under ${item.label}',
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: AnimatedRotation(
+                              turns: isExpanded! ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 180),
+                              child: Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: foreground,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               ),
@@ -1742,12 +1947,86 @@ class _SidebarTile extends StatelessWidget {
   }
 }
 
+/// Express, in the Masters header.
+///
+/// It sits inside the header's own InkWell, which toggles the drawer — so the
+/// pill swallows its gesture (the chevron beside it does the same), or opening
+/// the window would fold Masters shut behind it.
+///
+/// Drawn whatever the permission, greyed with a tooltip when it cannot be
+/// used: a control that disappears reads as a missing feature.
+class _ExpressWizardButton extends StatelessWidget {
+  const _ExpressWizardButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    // The header's own label size. Smaller would be easier to fit and is
+    // exactly what this project does not want.
+    final labelSize = viewportWidth < 1240 ? 14.5 : 16.0;
+    final foreground = enabled
+        ? SoftErpTheme.textPrimary
+        : SoftErpTheme.textSecondary;
+
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        // The chevron's own fill, so the two read as a pair of controls.
+        color: enabled ? const Color(0xFFE3E6FB) : const Color(0xFFEAEAEE),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_fix_high_outlined, size: 16, color: foreground),
+          const SizedBox(width: 6),
+          Text(
+            'Express',
+            style: TextStyle(
+              color: foreground,
+              fontWeight: FontWeight.w700,
+              fontSize: labelSize,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return GestureDetector(
+      key: const ValueKey<String>('sidebar_express_wizard'),
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Tooltip(
+        message: enabled
+            ? 'Express entry — add several masters in one window'
+            : 'You do not have permission to create records (config.write).',
+        child: pill,
+      ),
+    );
+  }
+}
+
 class _SidebarItemData {
-  const _SidebarItemData(this.key, this.label, this.icon);
+  const _SidebarItemData(
+    this.key,
+    this.label,
+    this.icon, {
+    this.children = const <_SidebarItemData>[],
+  });
 
   final String key;
   final String label;
   final IconData icon;
+
+  /// Destinations that belong under this one, drawn indented beneath it.
+  ///
+  /// One level deep on purpose. Items, Item Groups and Item Sets are three
+  /// masters over one catalogue and reading them as a family is the point; a
+  /// general tree here would just invite a sidebar nobody can scan.
+  final List<_SidebarItemData> children;
 }
 
 /// Factory reset is the one irreversible control in the app: it deletes every

@@ -16,6 +16,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_vendors',
   'configurator_items',
   'configurator_groups',
+  'configurator_sets',
   'configurator_units',
   'configurator_materials',
   'configurator_machines',

@@ -16,6 +16,9 @@ const crypto = require('crypto');
 // The universal barcode codec: one code space over every entity, derived
 // from stable ids rather than minted, so nothing can be allocated twice.
 const barcodes = require('./kernel/barcodes');
+// The part number and code rule, shared with GET /api/items/next-part-identity
+// so a form's suggestion and what saveItem stamps cannot drift.
+const { buildPartCode, nextPartNo } = require('./modules/items/part-identity');
 const fs = require('fs');
 const { EventEmitter } = require('events');
 const { imageSize } = require('image-size');
@@ -1336,6 +1339,14 @@ const TRACK_ENTITY_LABELS = {
   dies: 'Die',
   pipeline_templates: 'Pipeline',
   employees: 'Person',
+  // These five wrote nothing at all until sittings needed them: a window that
+  // made a group and a set showed an empty sitting, which reads as "nothing
+  // happened" rather than "this is not recorded".
+  departments: 'Department',
+  sub_contractors: 'Sub-contractor',
+  groups: 'Group',
+  inventory_sets: 'Set',
+  materials: 'Material',
 };
 
 // Columns never worth surfacing in a diff.
@@ -1379,6 +1390,22 @@ function trackLabelFor(row, entityType, entityId) {
   return name ? String(name) : `${noun} #${entityId}`;
 }
 
+/// Which sitting this request belongs to, or null.
+///
+/// A sitting is one opening of a window on the client — the Express bench mints
+/// an id when it opens and clears it when it closes, and
+/// `AuthenticatedHttpClient` stamps it on every non-GET while it is set.
+/// Read inline off `req.headers`, the way `x-client-platform` is read in the
+/// login handler; there is no middleware for custom headers and no allow-list
+/// to add this to.
+function sittingIdOf(req) {
+  const raw = req && req.headers ? req.headers['x-paper-sitting'] : null;
+  const trimmed = String(raw || '').trim();
+  // Bounded: this lands in a column that a read endpoint groups by, so a
+  // client sending something enormous should not be stored.
+  return trimmed.length > 0 && trimmed.length <= 64 ? trimmed : null;
+}
+
 async function logEntityActivity({
   entityType,
   entityId,
@@ -1390,8 +1417,8 @@ async function logEntityActivity({
   try {
     await run(
       `INSERT INTO entity_activity_log
-        (entity_type, entity_id, action, actor_user_id, actor_name, actor_role, changes_json, details_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (entity_type, entity_id, action, actor_user_id, actor_name, actor_role, changes_json, details_json, created_at, sitting_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         String(entityType || ''),
         String(entityId ?? ''),
@@ -1402,6 +1429,12 @@ async function logEntityActivity({
         changes ? JSON.stringify(changes) : null,
         JSON.stringify(details || {}),
         nowIso(),
+        // The whole sitting feature hangs off this one line. Every
+        // trackCreate/trackUpdate/trackDelete call site already hands us `req`
+        // for the actor, so reading the header here gives all of them sittings
+        // without one of them being edited. A write made outside a window has
+        // no header and lands NULL, which is the honest answer.
+        sittingIdOf(req),
       ],
     );
   } catch (e) {
@@ -1418,6 +1451,39 @@ function trackCreate(entityType, entityId, afterRow, req) {
     req,
     details: { label: trackLabelFor(afterRow, entityType, entityId) },
   });
+}
+
+// A link is a thing somebody did in a window, so it belongs in the sitting —
+// but it is the one write with two subjects. Both get a row, each naming the
+// other, so the Track tab on either record shows it; `pairKey` is what lets a
+// sitting read collapse the two back into one line.
+//
+// Each side is `{ entityType, id, label }`, where entityType is the links
+// catalog's own `table` (items, dies, inventory_sets, …) so these rows sit in
+// the same feed as every other change to that record. Fire-and-forget like the
+// wrappers above, and deliberately outside the link's own write: a link must
+// never fail because its log line could not be written.
+function trackLink(left, right, action, req) {
+  // canonicalPair has already ordered the sides by type then id, so one pair
+  // yields one key whichever end it was linked from.
+  const pairKey = `${left.entityType}:${left.id}|${right.entityType}:${right.id}`;
+  for (const [subject, other] of [[left, right], [right, left]]) {
+    logEntityActivity({
+      entityType: subject.entityType,
+      entityId: subject.id,
+      action,
+      req,
+      details: {
+        label: subject.label || `${subject.entityType} #${subject.id}`,
+        pairKey,
+        otherType: other.entityType,
+        otherId: String(other.id),
+        // Snapshotted on purpose: the line still reads after the other record
+        // is deleted, which is exactly when somebody goes looking.
+        otherLabel: other.label || null,
+      },
+    });
+  }
 }
 
 function trackUpdate(entityType, entityId, beforeRow, afterRow, req) {
@@ -1463,6 +1529,7 @@ function rowToEntityActivityDto(row) {
     changes,
     details,
     createdAt: row.created_at,
+    sittingId: row.sitting_id || null,
   };
 }
 
@@ -1957,10 +2024,13 @@ function moduleOpForRequest(req) {
     '', 'auth', 'me', 'users', 'admins', 'permissions', 'permission-templates',
     'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
     'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
-    'record-options',
+    'record-options', 'dev',
     // A link spans two masters, so there is no one module to gate it as. Its
     // own guard asks about both sides — modules/links/routes.js.
     'links',
+    // A variation tree's module is named by the entity type in the path, which
+    // this map cannot express — modules/variations/routes.js gates it.
+    'variations',
   ]);
   if (EXCLUDED.has(seg)) return null;
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
@@ -2114,6 +2184,17 @@ function requireApiWritePermission(req, res, next) {
   // than this gate can ask. Falling through to the admin check here would
   // mean nobody but an admin could attach a die to an item.
   if (req.path === '/links' || req.path.startsWith('/links/')) {
+    return next();
+  }
+  // The dev marker's notes. The routes only exist outside production, and
+  // gating them as an admin write would stop a developer using the tool on
+  // their own machine for no gain.
+  if (req.path.startsWith('/dev/marks')) {
+    return next();
+  }
+  // Same for the variation tree: its guard reads the owning module out of the
+  // path and asks for update on THAT, which this gate cannot do.
+  if (req.path.startsWith('/variations/')) {
     return next();
   }
 
@@ -2382,6 +2463,12 @@ function rowToUnitDto(row) {
     unitGroupName: row.unit_group_name || null,
     unitGroupDimension: row.unit_group_dimension || null,
     unitGroupBaseUnitId: row.unit_group_base_unit_id || null,
+    factorToBase: Number(row.factor_to_base || 1),
+    isBase: Boolean(row.is_base),
+    onLadder: row.on_ladder == null ? true : Boolean(row.on_ladder),
+    uqc: row.uqc || null,
+    unitGroupCode: row.unit_group_code || null,
+    unitGroupIntegralOnly: Boolean(row.unit_group_integral_only),
     conversionFactor: Number(row.conversion_factor || 1),
     conversionBaseUnitId: row.conversion_base_unit_id || null,
     conversionBaseUnitName: row.conversion_base_unit_name || null,
@@ -2401,7 +2488,9 @@ function rowToUnitGroupDto(row) {
   return {
     id: row.id,
     name: row.name || '',
+    code: row.code || null,
     dimension: row.dimension || null,
+    integralOnly: Boolean(row.integral_only),
     baseUnitId: row.base_unit_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2447,6 +2536,23 @@ async function trashAndDelete(tableName, recordId, req) {
 // declare one against a polymorphic pair — so the cascades call this by hand.
 // null before the mount, so a seeder deleting during boot does not throw.
 let purgeEntityLinks = null;
+let purgeEntityVariations = null;
+// Also from the links module, but these two are not cascade cleanup: they are
+// how a legacy writer keeps a single-valued link (a set's group) and reads it
+// back. Unlike the purges they throw when unmounted — a link write that
+// silently did not happen is worse than a 500.
+let setSoleEntityLink = null;
+let resolveSoleEntityLinks = null;
+
+function requireLinkWriter() {
+  if (!setSoleEntityLink) throw new Error('Links module is not mounted yet.');
+  return setSoleEntityLink;
+}
+
+function requireLinkResolver() {
+  if (!resolveSoleEntityLinks) throw new Error('Links module is not mounted yet.');
+  return resolveSoleEntityLinks;
+}
 
 async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_variation_nodes WHERE item_id = ?', [id]);
@@ -2470,6 +2576,7 @@ async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_property_schema WHERE item_id = ?', [id]);
   await run('DELETE FROM item_bom_lines WHERE item_id = ?', [id]);
   if (purgeEntityLinks) await purgeEntityLinks('item', id);
+  if (purgeEntityVariations) await purgeEntityVariations('item', id);
   await trashAndDelete('items', id, req);
 }
 
@@ -2485,6 +2592,9 @@ async function deleteGroupWithCascade(id, req) {
   }
 
   await run('DELETE FROM uploaded_assets WHERE entity_type = ? AND entity_id = ?', ['group', id]);
+  // Links the group is on either side of. Sets are the first pair a user would
+  // notice this for — a set's card names its group, so a stale row would show.
+  if (purgeEntityLinks) await purgeEntityLinks('group', id);
   await trashAndDelete('groups', id, req);
 }
 
@@ -2577,6 +2687,16 @@ function rowToInventorySetDto(row, lines = []) {
       ? null
       : Number(row.on_hand_qty),
     materialBarcode: row.material_barcode || null,
+    // The group the set is filed under, from the entity_links graph rather than
+    // a column of its own — resolved by the caller and smuggled in on the row,
+    // the way asset_photo_url is. groupIsArchived is reported so a display
+    // surface does not present a retired group as a live one.
+    groupId: row.group_id === null || row.group_id === undefined ? null : Number(row.group_id),
+    groupName: row.group_name || null,
+    groupIsArchived: Number(row.group_is_archived || 0) === 1,
+    // The token a save is allowed to carry back (migrations/046). A caller that
+    // sends the version it opened at is refused if the set moved on.
+    version: Number(row.version || 0),
     // A set carries its own photo, shown on its card in the Items master.
     // Uploaded against entity_type 'inventory_set', which assets already allow.
     photoUrl: row.photo_url || row.asset_photo_url || null,
@@ -2595,6 +2715,14 @@ function rowToClientDto(row) {
     alias: row.alias || '',
     gstNumber: row.gst_number || '',
     address: row.address || '',
+    // The person you ring about this company, mirroring rowToVendorDto —
+    // answered once here rather than retyped on every part developed for them.
+    // Distinct from this client's sub-contractors, who are parties you give
+    // work TO; the same human may legitimately appear in both.
+    contactName: row.contact_name || '',
+    designation: row.designation || '',
+    phone: row.phone || '',
+    email: row.email || '',
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -2755,6 +2883,61 @@ function rowToOrderStatusHistoryDto(row) {
   };
 }
 
+// Who a part was developed for, read off the columns the item queries join in
+// (migrations/047). A row, not nine loose fields: it crosses the border, the
+// Dart domain, two inputs and three screens, and developedForClientId already
+// taught us what nine of those look like.
+//
+// The person is resolved FROM THE PARTY, so changing a client's phone number
+// changes what every part developed for them shows. For a contractor the
+// company is still the client (normalizeDevelopedFor derives the parent id, so
+// "parts for this client" includes contractor work) while the person is the
+// contractor itself — that is who you actually deal with.
+//
+// Reading joined columns rather than issuing a SELECT per item is deliberate:
+// this DTO already costs ~7 queries per item and GET /api/items runs it over
+// every row.
+function developedForDto(row) {
+  const kindColumn = String(row.developed_for_kind || '').trim();
+  const clientId = row.developed_for_client_id || null;
+  const subContractorId = row.developed_for_sub_contractor_id || null;
+  // A row written before 047 has no kind but may well name a client. The
+  // migration backfilled those, so this only catches a write that went around
+  // saveItem — but '' with a client id can only have meant 'client'.
+  const kind = kindColumn || (clientId ? 'client' : '');
+  const fromContractor = kind === 'contractor' && subContractorId;
+
+  return {
+    kind,
+    clientId,
+    clientName: row.developed_for_client_name || '',
+    subContractorId,
+    subContractorName: row.developed_for_sub_contractor_name || '',
+    companyName: row.developed_for_client_name || '',
+    contactName: fromContractor
+      ? row.developed_for_sub_contractor_name || ''
+      : row.developed_for_contact_name || '',
+    designation: fromContractor
+      ? row.developed_for_sub_contractor_designation || ''
+      : row.developed_for_designation || '',
+    phone: fromContractor
+      ? row.developed_for_sub_contractor_phone || ''
+      : row.developed_for_phone || '',
+    email: fromContractor
+      ? row.developed_for_sub_contractor_email || ''
+      : row.developed_for_email || '',
+    // Full ISO in UTC. The client converts with .toLocal() before showing it.
+    at: row.developed_for_at || null,
+    // Rupees. Null rather than 0, so "never quoted" is not printed as the
+    // figure zero across the whole catalogue.
+    quotationAmount:
+      row.developed_for_quotation_amount === null ||
+      row.developed_for_quotation_amount === undefined
+        ? null
+        : Number(row.developed_for_quotation_amount),
+  };
+}
+
 async function rowToItemDto(row) {
   if (!row) {
     return null;
@@ -2795,20 +2978,25 @@ async function rowToItemDto(row) {
   );
   const machineLinkRows = await all(
     `
-    SELECT machines.id, machines.name, machines.asset_id, machines.primary_photo_url
+    SELECT machines.id, machines.name, machines.asset_id, machines.primary_photo_url,
+           machines.machine_make, machines.manufactured_year, machines.feeder_make,
+           machines.running_hours, machines.strokes_per_minute,
+           machines.capacity_kind, machines.capacity_kgf, machines.die_feed_type,
+           machines.group_id, machine_groups.name AS machine_group_name
     FROM item_machines
     INNER JOIN machines ON machines.id = item_machines.machine_id
+    LEFT JOIN groups machine_groups ON machine_groups.id = machines.group_id
     WHERE item_machines.item_id = ?
     ORDER BY LOWER(machines.name) ASC
     `,
     [row.id],
   );
-  const developedForClientRow = row.developed_for_client_id
-    ? await get('SELECT id, name FROM clients WHERE id = ?', [row.developed_for_client_id])
-    : null;
   const dieLinkRows = await all(
     `
-    SELECT dies.id, dies.tool_code, dies.photo_urls
+    SELECT dies.id, dies.tool_code, dies.photo_urls,
+           dies.die_type, dies.made_by, dies.po_at, dies.date_in_at,
+           dies.liner_size_nm, dies.liner_size_unit, dies.no_of_set,
+           dies.store_area, dies.rack_no
     FROM item_dies
     INNER JOIN dies ON dies.id = item_dies.die_id
     WHERE item_dies.item_id = ?
@@ -2822,6 +3010,10 @@ async function rowToItemDto(row) {
     name: row.name || '',
     alias: row.alias || '',
     shortCode: row.short_code || '',
+    // The number this part was issued and the code derived from it. Null and
+    // '' mean never stamped — most of the catalogue predates them.
+    partNo: row.part_no == null ? null : Number(row.part_no),
+    partCode: row.part_code || '',
     displayName: row.display_name || '',
     quantity: Number(row.quantity || 0),
     groupId: row.group_id || null,
@@ -2856,22 +3048,54 @@ async function rowToItemDto(row) {
       objectKey: entry.object_key || '',
       fileName: entry.file_name || '',
     })),
+    // The whole sheet per machine, for the same reason as the dies below: a
+    // part runs on several, and the screen listing them has to show what tells
+    // them apart — the type, the make, the tonnage, the strokes.
     machines: machineLinkRows.map((entry) => ({
       id: String(entry.id),
       name: entry.name || '',
       assetId: entry.asset_id || '',
       photoUrl: entry.primary_photo_url || null,
+      groupId: entry.group_id || null,
+      machineType: entry.machine_group_name || '',
+      machineMake: entry.machine_make || '',
+      manufacturedYear:
+        entry.manufactured_year == null ? null : Number(entry.manufactured_year),
+      feederMake: entry.feeder_make || '',
+      runningHours: entry.running_hours == null ? null : Number(entry.running_hours),
+      strokesPerMinute:
+        entry.strokes_per_minute == null ? null : Number(entry.strokes_per_minute),
+      capacityKind: entry.capacity_kind || '',
+      capacityKgf: entry.capacity_kgf == null ? null : Number(entry.capacity_kgf),
+      dieFeedType: entry.die_feed_type || '',
     })),
+    // The whole sheet per die, not just the code: a part can hold several, and
+    // the screen that lists them has to show what tells them apart — the type,
+    // the maker, the size, which rack. Columns on a join that was already
+    // happening, so listing them costs nothing extra, the same discipline
+    // developedFor follows.
     dies: dieLinkRows.map((entry) => {
       const urls = parseJson(entry.photo_urls, []);
       return {
         id: String(entry.id),
         toolCode: entry.tool_code || '',
         photoUrl: urls.length > 0 ? urls[0] : null,
+        dieType: entry.die_type || '',
+        madeBy: entry.made_by || '',
+        poAt: entry.po_at || null,
+        dateInAt: entry.date_in_at || null,
+        linerSizeNm: entry.liner_size_nm == null ? null : Number(entry.liner_size_nm),
+        linerSizeUnit: entry.liner_size_unit || 'mm',
+        noOfSet: entry.no_of_set == null ? null : Number(entry.no_of_set),
+        storeArea: entry.store_area || '',
+        rackNo: entry.rack_no || '',
       };
     }),
+    developedFor: developedForDto(row),
+    // Kept as aliases of the block above: the local replica has these two
+    // cached in payloads it already wrote, and an older client still reads them.
     developedForClientId: row.developed_for_client_id || null,
-    developedForClientName: developedForClientRow?.name || '',
+    developedForClientName: row.developed_for_client_name || '',
     availableForPurchase: Boolean(row.available_for_purchase),
     // null until a sample run is recorded on this specific item.
     penPaperBaseline: parseJson(row.pen_paper_baseline_json, null),
@@ -3024,14 +3248,22 @@ async function ensureTemporarySetFromAssembly(runId, nodeId, producedQty) {
   let setId;
   if (existing) {
     setId = existing.id;
+    // Bumped, but never conditional: a run must not fail because somebody has
+    // the produced set open in the editor. The bump is what makes their save
+    // bounce off instead of overwriting what the run just recorded — production
+    // wins, and the person is told rather than silently losing.
     await run(
       `UPDATE inventory_sets
-          SET name = ?, source_set_id = ?, produced_at = ?, updated_at = ?
+          SET name = ?, source_set_id = ?, produced_at = ?, updated_at = ?,
+              version = version + 1
         WHERE id = ?`,
       [name, matched?.id ?? null, now, now, setId],
     );
     await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
   } else {
+    // No group link, deliberately: a produced set is run output, not the
+    // definition it matched, so it does not inherit source_set_id's group and
+    // reads as ungrouped everywhere.
     const inserted = await run(
       `INSERT INTO inventory_sets
          (name, created_at, updated_at, origin_run_id, origin_node_id,
@@ -5060,11 +5292,17 @@ async function initDb() {
       actor_role TEXT,
       changes_json TEXT,
       details_json TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      -- Which opening of a window this change belongs to; see
+      -- migrations/050-activity-sitting.sql. Kept in step with that file by
+      -- hand: this table is defined in both places, and a column added to one
+      -- only is how a fresh database quietly loses it.
+      sitting_id TEXT
     )
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_entity ON entity_activity_log(entity_type, entity_id, created_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_actor ON entity_activity_log(actor_user_id, created_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_sitting ON entity_activity_log(sitting_id, created_at)');
 
   // Per-record (row-level) permission grants for an individual user.
   await run(`
@@ -5354,6 +5592,11 @@ async function initDb() {
   await ensureColumnExists('items', 'pen_paper_baseline_json', 'TEXT');
   await ensureColumnExists('items', 'blank_width_mm', 'REAL DEFAULT 0');
   await ensureColumnExists('items', 'blank_height_mm', 'REAL DEFAULT 0');
+  // The number a part was issued and the code derived from it (migrations/045).
+  // NULL part_no means never stamped; '' part_code means no code, which the
+  // unique index deliberately ignores.
+  await ensureColumnExists('items', 'part_no', 'INTEGER');
+  await ensureColumnExists('items', 'part_code', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_unit_conversions', 'factor_to_primary', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
@@ -5378,6 +5621,13 @@ async function initDb() {
   await ensureColumnExists('unit_groups', 'base_unit_id', 'INTEGER');
   await ensureColumnExists('units', 'conversion_type', "TEXT NOT NULL DEFAULT 'linear'");
   await ensureColumnExists('units', 'precision', 'INTEGER');
+  // Bootstrap parity with migrations/051-units-contract-ladders.sql
+  await ensureColumnExists('unit_groups', 'code', 'TEXT');
+  await ensureColumnExists('unit_groups', 'integral_only', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('units', 'factor_to_base', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('units', 'is_base', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('units', 'on_ladder', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('units', 'uqc', 'TEXT');
   await run(`
     CREATE TABLE IF NOT EXISTS unit_conversion_points (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6150,6 +6400,7 @@ async function ensurePrimaryGroupAndUnit() {
 
 async function ensureDemoDataset(scenarioId = 'default') {
   await ensureDemoUnitsPresent(scenarioId);
+  await seedStandardUnitFamilies({ run, get, all });
   await backfillMaterialUnitIds();
   await ensureDemoClientsPresent();
   await ensureDemoGroupsPresent(scenarioId);
@@ -7543,32 +7794,7 @@ async function bootstrapUnitsFromMaterials() {
 }
 
 async function seedUnitsIfEmpty() {
-  const countRow = await get('SELECT COUNT(*) AS count FROM units');
-  if ((countRow?.count || 0) > 0) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const units = [
-    { name: 'Kilogram', symbol: 'Kg', notes: 'Mock seed' },
-    { name: 'Sheet', symbol: 'Sheet', notes: 'Mock seed' },
-    { name: 'Piece', symbol: 'pcs', notes: 'Mock seed' },
-    { name: 'Liter', symbol: 'L', notes: 'Mock seed' },
-    { name: 'Meter', symbol: 'm', notes: 'Mock seed' },
-    { name: 'Gram', symbol: 'g', notes: 'Mock seed' },
-    { name: 'Archived Unit', symbol: 'arch', notes: 'Mock seed' },
-    { name: 'Box', symbol: 'Box', notes: 'Mock seed' },
-  ];
-
-  for (const unit of units) {
-    await run(
-      `
-      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, notes, is_archived, created_at, updated_at)
-      VALUES (?, ?, NULL, 1, NULL, ?, 0, ?, ?)
-      `,
-      [unit.name, unit.symbol, unit.notes, now, now],
-    );
-  }
+  await seedStandardUnitFamilies({ run, get, all });
 }
 
 async function findUnitByNameSymbol(name, symbol) {
@@ -8472,6 +8698,15 @@ async function getItemRowById(id) {
     SELECT
       items.*,
       pipeline_templates.name AS default_pipeline_name,
+      developed_for_client.name AS developed_for_client_name,
+      developed_for_client.contact_name AS developed_for_contact_name,
+      developed_for_client.designation AS developed_for_designation,
+      developed_for_client.phone AS developed_for_phone,
+      developed_for_client.email AS developed_for_email,
+      developed_for_contractor.name AS developed_for_sub_contractor_name,
+      developed_for_contractor.designation AS developed_for_sub_contractor_designation,
+      developed_for_contractor.phone AS developed_for_sub_contractor_phone,
+      developed_for_contractor.email AS developed_for_sub_contractor_email,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -8481,6 +8716,8 @@ async function getItemRowById(id) {
       ) AS usage_count
     FROM items
     LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
+    LEFT JOIN clients developed_for_client ON developed_for_client.id = items.developed_for_client_id
+    LEFT JOIN sub_contractors developed_for_contractor ON developed_for_contractor.id = items.developed_for_sub_contractor_id
     WHERE items.id = ?
     `,
     [id],
@@ -8492,6 +8729,15 @@ async function getItemsWithUsage() {
     SELECT
       items.*,
       pipeline_templates.name AS default_pipeline_name,
+      developed_for_client.name AS developed_for_client_name,
+      developed_for_client.contact_name AS developed_for_contact_name,
+      developed_for_client.designation AS developed_for_designation,
+      developed_for_client.phone AS developed_for_phone,
+      developed_for_client.email AS developed_for_email,
+      developed_for_contractor.name AS developed_for_sub_contractor_name,
+      developed_for_contractor.designation AS developed_for_sub_contractor_designation,
+      developed_for_contractor.phone AS developed_for_sub_contractor_phone,
+      developed_for_contractor.email AS developed_for_sub_contractor_email,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -8501,8 +8747,82 @@ async function getItemsWithUsage() {
       ) AS usage_count
     FROM items
     LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
+    LEFT JOIN clients developed_for_client ON developed_for_client.id = items.developed_for_client_id
+    LEFT JOIN sub_contractors developed_for_contractor ON developed_for_contractor.id = items.developed_for_sub_contractor_id
     ORDER BY items.is_archived ASC, LOWER(items.name) ASC
   `);
+}
+
+// Which sets hold this part, one row per LINE — a set can hold the same item
+// at two variations, and each of those is its own line with its own quantity.
+//
+// Nothing else answers this question: /usage covers orders, challans, BOM
+// requirements, materials and group links, and inventory_set_lines is in none
+// of them. The item editor needs it to show membership from the part's side.
+//
+// photo_url rides along because a later write to one of these sets has to carry
+// it — saveInventorySet writes the column unconditionally, so a merge that
+// omitted it would clear the set's picture.
+//
+// Temporary sets are left out: their lines are the record of what fed a
+// production run, with a stock ledger behind them, and are not something to
+// hand-edit from a part.
+async function getItemSetMembership(itemId) {
+  const normalizedItemId = Number(itemId);
+  if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) return [];
+
+  const rows = await all(
+    `
+    SELECT
+      lines.id AS line_id,
+      lines.quantity,
+      lines.variation_leaf_node_id,
+      sets.id AS set_id,
+      sets.name AS set_name,
+      sets.photo_url,
+      (SELECT COUNT(*) FROM inventory_set_lines siblings
+        WHERE siblings.set_id = sets.id) AS set_line_count
+    FROM inventory_set_lines lines
+    JOIN inventory_sets sets ON sets.id = lines.set_id
+    WHERE lines.item_id = ? AND COALESCE(sets.is_temporary, 0) = 0
+    ORDER BY sets.name COLLATE NOCASE ASC, lines.position ASC, lines.id ASC
+    `,
+    [normalizedItemId],
+  );
+  if (rows.length === 0) return [];
+
+  // The same label machinery getInventorySetLineDtos uses, so a membership row
+  // reads exactly as the line does in the set editor.
+  const itemTree = await getItemVariationTree(normalizedItemId);
+  const groups = await requireLinkResolver()(
+    'set',
+    rows.map((row) => row.set_id),
+    'group',
+  );
+
+  return rows.map((row) => {
+    const selection = activeValueSelectionForLeaf(
+      itemTree,
+      Number(row.variation_leaf_node_id || 0),
+    );
+    const group = groups.get(String(row.set_id)) || null;
+    return {
+      lineId: Number(row.line_id),
+      setId: Number(row.set_id),
+      setName: row.set_name || '',
+      photoUrl: row.photo_url || '',
+      groupId: group ? Number(group.id) : null,
+      groupName: group ? group.label : null,
+      quantity: Number(row.quantity || 0),
+      variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+      variationPathLabel: selection
+        ? buildVariationPathLabel(selection.segments)
+        : 'Base item',
+      // The SET's line count, not the item's: it is what says whether removing
+      // this line would empty the set, which the backend refuses.
+      setLineCount: Number(row.set_line_count || 0),
+    };
+  });
 }
 
 async function getItemUsageDetails(itemId) {
@@ -8530,7 +8850,25 @@ async function getItemUsageDetails(itemId) {
   ]);
 
   const usage = [];
-  
+
+  // The sets this part is a line of. Listed here so the delete confirmation
+  // mentions the sets that are about to lose a line — the item editor now
+  // shows that membership two cards up, which made the omission visible.
+  //
+  // Deliberately NOT added to getItemsWithUsage's usage_count: that count gates
+  // structuralChangeDetected in saveItem, so counting set members there would
+  // start archiving variation nodes on the next group or unit change.
+  for (const row of await getItemSetMembership(itemId)) {
+    usage.push({
+      type: 'inventory_set',
+      id: String(row.setId),
+      title: `Set ${row.setName}`,
+      subtitle: row.variationPathLabel && row.variationPathLabel !== 'Base item'
+        ? `${row.variationPathLabel} · × ${row.quantity}`
+        : `× ${row.quantity}`,
+    });
+  }
+
   orders.forEach(o => {
     usage.push({ type: 'order', id: String(o.id), title: `Order ${o.order_no}`, subtitle: o.client_name || '-', status: o.status, date: o.created_at });
   });
@@ -8728,14 +9066,62 @@ async function findClientDuplicate({ name, gstNumber = '', excludeId = null }) {
   }) || null;
 }
 
-async function saveClient({ name, alias = '', gstNumber = '', address = '', logoUrl = '', photoUrl = '', id = null }) {
-  const trimmedName = String(name || '').trim();
-  const trimmedAlias = String(alias || '').trim();
-  const trimmedGstNumber = normalizeGstNumber(gstNumber);
-  const trimmedAddress = String(address || '').trim();
+// Every field but the name is undefined-preserving, and has to be: the PATCH
+// route spreads the request body straight in (`{...req.body, id}`), and four
+// internal callers mention only what they happen to know. Defaulting the rest
+// to '' meant a PATCH about a phone number blanked the address — exactly the
+// photo_url bug, one table over.
+//
+// logoUrl and photoUrl are accepted and still dropped, as before; the clients
+// table has no column for either. Left alone deliberately rather than fixed in
+// passing, so the change that adds them can say so.
+async function saveClient({
+  name,
+  alias,
+  gstNumber,
+  address,
+  // The company's primary contact (migrations/047) — one person, answered here
+  // and shown on every part developed for them.
+  contactName,
+  designation,
+  phone,
+  email,
+  logoUrl,
+  photoUrl,
+  id = null,
+}) {
+  // Read before anything else, so "what is already stored" is the fallback for
+  // every field the caller left out — including the two checks below, which
+  // would otherwise compare against a blank.
+  const existing = id == null ? null : await getClientRowById(id);
+  if (id != null && !existing) {
+    const error = new Error('Client not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const kept = (value, column) =>
+    value !== undefined ? String(value || '').trim() : String(existing?.[column] || '');
+
+  const trimmedName = kept(name, 'name');
+  const trimmedAlias = kept(alias, 'alias');
+  const trimmedAddress = kept(address, 'address');
+  const trimmedContactName = kept(contactName, 'contact_name');
+  const trimmedDesignation = kept(designation, 'designation');
+  const trimmedPhone = kept(phone, 'phone');
+  const trimmedEmail = kept(email, 'email');
+  const trimmedGstNumber =
+    gstNumber !== undefined
+      ? normalizeGstNumber(gstNumber)
+      : normalizeGstNumber(existing?.gst_number || '');
 
   if (!trimmedName) {
-    throw new Error('name is required.');
+    // 400, not the 500 a bare Error threw here before: a missing name is the
+    // caller's mistake and the form has to be told so. saveVendor already does
+    // it this way.
+    const error = new Error('name is required.');
+    error.statusCode = 400;
+    throw error;
   }
   if (trimmedGstNumber && trimmedGstNumber.length !== 15) {
     const error = new Error('GST number must be 15 characters.');
@@ -8764,21 +9150,26 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
   if (id == null) {
     const result = await run(
       `
-      INSERT INTO clients (name, alias, gst_number, address, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO clients (name, alias, gst_number, address, contact_name, designation, phone, email, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
-      [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, now],
+      [
+        trimmedName,
+        trimmedAlias,
+        trimmedGstNumber,
+        trimmedAddress,
+        trimmedContactName,
+        trimmedDesignation,
+        trimmedPhone,
+        trimmedEmail,
+        now,
+        now,
+      ],
     );
     await logChange('clients', result.lastID, 'INSERT');
     return getClientRowById(result.lastID);
   }
 
-  const existing = await getClientRowById(id);
-  if (!existing) {
-    const error = new Error('Client not found.');
-    error.statusCode = 404;
-    throw error;
-  }
   if ((existing.usage_count || 0) > 0) {
     const lockedOrderUsage = Number(
       (
@@ -8793,6 +9184,10 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
         )
       )?.count || 0,
     );
+    // Name and GST only. A contact person, their designation, phone or email
+    // are not the client's legal identity — those are the facts most likely to
+    // change on a client you are actively working with, and locking them would
+    // make the Contact card unusable precisely where it matters.
     const identityChanged =
       normalizePartyValue(existing.name) !== normalizePartyValue(trimmedName) ||
       normalizeGstNumber(existing.gst_number) !== trimmedGstNumber;
@@ -8804,8 +9199,19 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
   }
 
   await run(
-    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, updated_at = ? WHERE id = ?',
-    [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, id],
+    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, designation = ?, phone = ?, email = ?, updated_at = ? WHERE id = ?',
+    [
+      trimmedName,
+      trimmedAlias,
+      trimmedGstNumber,
+      trimmedAddress,
+      trimmedContactName,
+      trimmedDesignation,
+      trimmedPhone,
+      trimmedEmail,
+      now,
+      id,
+    ],
   );
   await logChange('clients', id, 'UPDATE');
   return getClientRowById(id);
@@ -16211,6 +16617,114 @@ function buildVariationPathLabel(segments = []) {
     .join(' | ');
 }
 
+// The four columns behind "Developed For" (migrations/047), validated and
+// resolved into what the row should hold.
+//
+// Returns `undefined` when the caller said nothing, which is how every other
+// optional field on saveItem preserves what is stored — a seed, an
+// ensureItemRecord re-save or a PATCH about the name must not erase who a part
+// was made for. A present block with kind 'self' is how you clear it.
+//
+// For a contractor the PARENT CLIENT is derived and stored alongside, the way
+// saveOrder does it: without that, "For: Contractor" has no company name to
+// print, and a future "parts for this client" would silently exclude every
+// part made through one of their contractors.
+async function normalizeDevelopedFor(developedFor) {
+  if (developedFor === undefined) return undefined;
+  if (developedFor === null) {
+    return { kind: '', clientId: null, subContractorId: null, at: null, quotationAmount: null };
+  }
+
+  const kind = String(developedFor.kind || '').trim();
+  if (!['', 'self', 'client', 'contractor'].includes(kind)) {
+    const error = new Error("Developed for must be one of self, client or contractor.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rawClientId = developedFor.clientId ? Number(developedFor.clientId) : null;
+  const rawSubContractorId = developedFor.subContractorId
+    ? Number(developedFor.subContractorId)
+    : null;
+
+  const at = String(developedFor.at || '').trim() || null;
+  const quotationRaw = developedFor.quotationAmount;
+  let quotationAmount = null;
+  if (quotationRaw !== null && quotationRaw !== undefined && quotationRaw !== '') {
+    const parsed = Number(quotationRaw);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      const error = new Error('Quotation must be an amount of zero or more.');
+      error.statusCode = 400;
+      throw error;
+    }
+    quotationAmount = parsed;
+  }
+
+  // 'self' means developed in-house, so no party at all — and that is a
+  // different fact from '' (nobody has filled this in yet), which is why the
+  // kind is stored rather than inferred from which id happens to be set.
+  if (kind === 'self') {
+    return { kind, clientId: null, subContractorId: null, at, quotationAmount };
+  }
+
+  if (kind === 'contractor') {
+    if (!rawSubContractorId) {
+      const error = new Error('Pick the contractor this part was developed for.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const contractor = await get('SELECT id, client_id FROM sub_contractors WHERE id = ?', [
+      rawSubContractorId,
+    ]);
+    if (!contractor) {
+      const error = new Error('Selected contractor does not exist.');
+      error.statusCode = 400;
+      throw error;
+    }
+    // A contractor is owned by one client. If the caller named a different one
+    // it is a mistake worth refusing rather than quietly overruling — the two
+    // answers would disagree about which company the part belongs to.
+    if (rawClientId && Number(contractor.client_id || 0) !== rawClientId) {
+      const error = new Error('That contractor belongs to a different client.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return {
+      kind,
+      clientId: contractor.client_id || null,
+      subContractorId: contractor.id,
+      at,
+      quotationAmount,
+    };
+  }
+
+  if (kind === 'client') {
+    if (!rawClientId) {
+      const error = new Error('Pick the client this part was developed for.');
+      error.statusCode = 400;
+      throw error;
+    }
+    // No is_archived check: a part made for a client who has since been
+    // archived still records that fact, and the read resolves the name either
+    // way. Only the picker hides archived rows.
+    const client = await get('SELECT id FROM clients WHERE id = ?', [rawClientId]);
+    if (!client) {
+      const error = new Error('Selected client does not exist.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return { kind, clientId: client.id, subContractorId: null, at, quotationAmount };
+  }
+
+  // kind '' — explicitly emptied. A client id arriving with it is the legacy
+  // shape (developed_for_client_id with nothing to say about kind), and the
+  // only thing it can have meant is 'client'.
+  if (rawClientId) {
+    return { kind: 'client', clientId: rawClientId, subContractorId: null, at, quotationAmount };
+  }
+  return { kind: '', clientId: null, subContractorId: null, at, quotationAmount };
+}
+
 async function saveItem({
   name,
   alias = '',
@@ -16240,6 +16754,14 @@ async function saveItem({
   penPaperBaseline,
   blankWidthMm,
   blankHeightMm,
+  // The number this part is issued and the code read off a drawing
+  // (migrations/045). Same undefined-preserving contract as everything above:
+  // an update that does not mention them keeps what was stamped.
+  partNo,
+  partCode,
+  // Who the part was developed for (migrations/047). Same contract again:
+  // absent preserves, and a block with kind 'self' is how it is cleared.
+  developedFor,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -16310,6 +16832,31 @@ async function saveItem({
     });
   }
 
+  // Upper-cased on the way in, so the unique index is effectively
+  // case-insensitive without redeclaring the column COLLATE NOCASE.
+  const normalizedPartCode =
+    partCode === undefined ? undefined : String(partCode || '').trim().toUpperCase();
+  let normalizedPartNo;
+  if (partNo !== undefined) {
+    if (partNo === null || partNo === '') {
+      normalizedPartNo = null;
+    } else {
+      const parsed = Number(partNo);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        // Not silently nulled: a number the caller meant is either usable or
+        // worth refusing, and the backend is where that is decided.
+        const error = new Error('Part number must be a whole number above zero.');
+        error.statusCode = 400;
+        throw error;
+      }
+      normalizedPartNo = parsed;
+    }
+  }
+
+  // Resolved before BEGIN, so a bad party is a 400 that costs nothing and
+  // leaves the rest of the edit sitting in the form.
+  const normalizedDevelopedFor = await normalizeDevelopedFor(developedFor);
+
   const duplicate = await findItemDuplicate({
     name: trimmedName,
     groupId: normalizedGroupId,
@@ -16317,9 +16864,36 @@ async function saveItem({
     excludeId: id,
   });
   if (duplicate) {
-    const error = new Error('An item with the same name already exists.');
+    // Named rather than generic, because the rule surprises people: the key is
+    // name + group + unit, and the SET is not in it. Someone filing "Patti"
+    // under Dolly and again under Chakri reads the type as the thing that tells
+    // them apart, and it is not.
+    const error = new Error(
+      `"${trimmedName}" already exists in this group. A part name has to be ` +
+        'unique within its group, even across types — rename it, or pick the ' +
+        'existing part from the list.',
+    );
     error.statusCode = 409;
+    error.code = 'item_name_duplicate';
     throw error;
+  }
+
+  // Checked here so the refusal can name the part that holds the code; the
+  // unique index below is the real guard and catches the race this cannot.
+  if (normalizedPartCode) {
+    const clash = await get(
+      `SELECT id, name FROM items
+        WHERE group_id = ? AND part_code = ? AND (? IS NULL OR id <> ?)`,
+      [normalizedGroupId, normalizedPartCode, id, id],
+    );
+    if (clash) {
+      const error = new Error(
+        `Part code "${normalizedPartCode}" is already used by "${clash.name}" in this group.`,
+      );
+      error.statusCode = 409;
+      error.code = 'part_code_duplicate';
+      throw error;
+    }
   }
 
 
@@ -16341,6 +16915,38 @@ async function saveItem({
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Nobody said anything about identity on a create, so stamp one. The rule
+  // belongs here rather than in whichever form happened to be open — the
+  // wizard sends its own (asked for through /api/items/next-part-identity,
+  // which shares this module), and everything else gets the group's next
+  // unfiled number.
+  //
+  // Best effort, deliberately: MAX over the unfiled scope is NOT monotonic,
+  // because an item leaves that scope the moment it joins a set, so a number
+  // can be handed out twice. A clash here therefore means no code rather than
+  // a refused create — an automatic stamp must never block a save the caller
+  // did ask for.
+  let autoPartNo = normalizedPartNo;
+  let autoPartCode = normalizedPartCode;
+  if (id == null && partNo === undefined && partCode === undefined) {
+    const candidateNo = await nextPartNo({ groupId: normalizedGroupId }, { get });
+    const candidateCode = buildPartCode({
+      groupName: groupRow?.name || '',
+      itemName: trimmedName,
+      partNo: candidateNo,
+    });
+    const taken = candidateCode
+      ? await get('SELECT id FROM items WHERE group_id = ? AND part_code = ?', [
+          normalizedGroupId,
+          candidateCode,
+        ])
+      : null;
+    if (candidateCode && !taken) {
+      autoPartNo = candidateNo;
+      autoPartCode = candidateCode;
+    }
+  }
+
   const now = new Date().toISOString();
   await run('BEGIN TRANSACTION');
   try {
@@ -16350,8 +16956,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, available_for_purchase, pen_paper_baseline_json, blank_width_mm, blank_height_mm, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, developed_for_kind, developed_for_sub_contractor_id, developed_for_at, developed_for_quotation_amount, available_for_purchase, pen_paper_baseline_json, blank_width_mm, blank_height_mm, part_no, part_code, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -16366,11 +16972,23 @@ async function saveItem({
           photoUrl || null,
           String(cadFileKey || '').trim() || null,
           String(cadFileName || '').trim(),
-          developedForClientId ? Number(developedForClientId) : null,
+          // developedForClientId is the pre-047 way of saying the same thing.
+          // The block wins where both arrive, because it also carries the kind.
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.clientId
+            : (developedForClientId ? Number(developedForClientId) : null),
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.kind
+            : (developedForClientId ? 'client' : ''),
+          normalizedDevelopedFor ? normalizedDevelopedFor.subContractorId : null,
+          normalizedDevelopedFor ? normalizedDevelopedFor.at : null,
+          normalizedDevelopedFor ? normalizedDevelopedFor.quotationAmount : null,
           availableForPurchase ? 1 : 0,
           penPaperBaseline ? JSON.stringify(penPaperBaseline) : null,
           Number(blankWidthMm || 0),
           Number(blankHeightMm || 0),
+          autoPartNo === undefined ? null : autoPartNo,
+          autoPartCode === undefined ? '' : autoPartCode,
           now,
           now,
         ],
@@ -16394,7 +17012,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, blank_width_mm = ?, blank_height_mm = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, developed_for_kind = ?, developed_for_sub_contractor_id = ?, developed_for_at = ?, developed_for_quotation_amount = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, blank_width_mm = ?, blank_height_mm = ?, part_no = ?, part_code = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -16431,9 +17049,30 @@ async function saveItem({
           cadFileName !== undefined
             ? String(cadFileName || '').trim()
             : (existing.cad_file_name || ''),
-          developedForClientId !== undefined
-            ? (developedForClientId ? Number(developedForClientId) : null)
-            : (existing.developed_for_client_id || null),
+          // The block, then the legacy single field, then what is stored.
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.clientId
+            : developedForClientId !== undefined
+              ? (developedForClientId ? Number(developedForClientId) : null)
+              : (existing.developed_for_client_id || null),
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.kind
+            : developedForClientId !== undefined
+              ? (developedForClientId ? 'client' : '')
+              : (existing.developed_for_kind || ''),
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.subContractorId
+            : developedForClientId !== undefined
+              // The legacy field can only ever mean a client, so naming one
+              // retires whatever contractor was recorded.
+              ? null
+              : (existing.developed_for_sub_contractor_id || null),
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.at
+            : (existing.developed_for_at || null),
+          normalizedDevelopedFor
+            ? normalizedDevelopedFor.quotationAmount
+            : (existing.developed_for_quotation_amount ?? null),
           // Preserve the existing flag when the caller didn't send it (e.g. an
           // internal re-seed via ensureItemRecord) instead of resetting to 0.
           availableForPurchase !== undefined
@@ -16448,6 +17087,15 @@ async function saveItem({
           blankHeightMm !== undefined
             ? Number(blankHeightMm || 0)
             : Number(existing.blank_height_mm || 0),
+          // A part's identity is issued once. Every caller that does not speak
+          // about it keeps what was stamped — the item editor and every
+          // internal re-save go through here.
+          normalizedPartNo !== undefined
+            ? normalizedPartNo
+            : (existing.part_no ?? null),
+          normalizedPartCode !== undefined
+            ? normalizedPartCode
+            : (existing.part_code || ''),
           now,
           id,
         ],
@@ -16679,6 +17327,17 @@ async function saveItem({
     return getItemRowById(itemId);
   } catch (error) {
     await run('ROLLBACK');
+    // The pre-check above cannot see a code another connection wrote between
+    // its read and this write. The index can, and a raw SQLITE_CONSTRAINT must
+    // not reach a client as a 500.
+    if (/UNIQUE constraint failed: items\.group_id, items\.part_code/.test(String(error?.message || ''))) {
+      const conflict = new Error(
+        `Part code "${normalizedPartCode}" was just taken by another part in this group.`,
+      );
+      conflict.statusCode = 409;
+      conflict.code = 'part_code_duplicate';
+      throw conflict;
+    }
     throw error;
   }
 }
@@ -18276,7 +18935,27 @@ async function inventorySetPhotoUrl(setId) {
   return dto?.readUrl || null;
 }
 
-async function getInventorySetById(setId) {
+// The group each of these sets is filed under, from the link graph. One call
+// for a whole list: resolving per set would be a third layer of N+1 on top of
+// the per-set detail read and the per-line item describe.
+async function inventorySetGroups(setIds) {
+  return requireLinkResolver()('set', setIds, 'group');
+}
+
+// Rows carry the group the way they carry asset_photo_url: resolved outside and
+// smuggled in, so rowToInventorySetDto stays a pure mapping.
+function withInventorySetGroup(row, group) {
+  return {
+    ...row,
+    group_id: group ? group.id : null,
+    group_name: group ? group.label : null,
+    group_is_archived: group && group.archived ? 1 : 0,
+  };
+}
+
+// `group` is the already-resolved link when a caller resolved a whole list;
+// left out, this resolves its own.
+async function getInventorySetById(setId, group) {
   const row = await get(
     `
     SELECT
@@ -18300,8 +18979,13 @@ async function getInventorySetById(setId) {
   if (!row) {
     return null;
   }
+  const resolvedGroup =
+    group === undefined ? (await inventorySetGroups([row.id])).get(String(row.id)) || null : group;
   return rowToInventorySetDto(
-    { ...row, asset_photo_url: await inventorySetPhotoUrl(row.id) },
+    withInventorySetGroup(
+      { ...row, asset_photo_url: await inventorySetPhotoUrl(row.id) },
+      resolvedGroup,
+    ),
     await getInventorySetLineDtos(row.id),
   );
 }
@@ -18320,9 +19004,10 @@ async function getInventorySets() {
     ORDER BY LOWER(inventory_sets.name) ASC, inventory_sets.id ASC
     `,
   );
+  const groups = await inventorySetGroups(rows.map((row) => row.id));
   const sets = [];
   for (const row of rows) {
-    sets.push(await getInventorySetById(row.id));
+    sets.push(await getInventorySetById(row.id, groups.get(String(row.id)) || null));
   }
   return sets.filter(Boolean);
 }
@@ -18413,6 +19098,37 @@ async function saveInventorySet(payload = {}) {
     throw error;
   }
   const photoUrl = String(payload.photoUrl || '').trim();
+
+  // The version the caller opened this set at, when it knows one. Checked
+  // against the stored version below; absent means "do not check", which is
+  // what the seeders, the create path and any pre-version client send.
+  const expectedVersion =
+    payload.expectedVersion === undefined || payload.expectedVersion === null
+      ? null
+      : Number(payload.expectedVersion);
+
+  // The group is tri-state, and it has to be: this function is a full replace,
+  // but the "add spawned items to a set" path sends only id, name and lines.
+  // Were an absent key read as "clear", adding items to a set would silently
+  // unfile it from its group.
+  //   absent            -> leave the link graph alone
+  //   present and null  -> clear the group
+  //   present with an id -> file it there
+  const groupSpecified = Object.prototype.hasOwnProperty.call(payload, 'groupId');
+  const groupId =
+    !groupSpecified || payload.groupId === null || payload.groupId === ''
+      ? null
+      : Number(payload.groupId);
+  if (groupSpecified && groupId !== null) {
+    // Same check, and the same sentence, as saveItem and PATCH /api/items/:id/group.
+    const groupRow = await get('SELECT * FROM groups WHERE id = ?', [groupId]);
+    if (!groupRow || groupRow.is_archived) {
+      const error = new Error('Selected group does not exist or is archived.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
   const mergedLines = mergeInventorySetLines(payload.lines || []);
   if (mergedLines.length === 0) {
     const error = new Error('Add at least one item to the set.');
@@ -18441,7 +19157,7 @@ async function saveInventorySet(payload = {}) {
       setId = result.lastID;
     } else {
       const existing = await get(
-        'SELECT id FROM inventory_sets WHERE id = ?',
+        'SELECT id, name, version FROM inventory_sets WHERE id = ?',
         [setId],
       );
       if (!existing) {
@@ -18449,9 +19165,25 @@ async function saveInventorySet(payload = {}) {
         error.statusCode = 404;
         throw error;
       }
+      // This save is a full replace of the line list, so a caller working from
+      // a stale copy would erase whatever has happened since. A caller that
+      // tells us which version it opened at gets refused instead; one that says
+      // nothing keeps the old behaviour, which is what every pre-version client
+      // and the seeders rely on.
+      if (expectedVersion !== undefined && expectedVersion !== null) {
+        if (Number(existing.version || 0) !== Number(expectedVersion)) {
+          const error = new Error(
+            `"${existing.name}" changed since you opened it. Reload it and make ` +
+              'your change again — saving now would replace someone else\'s edit.',
+          );
+          error.statusCode = 409;
+          error.code = 'set_changed';
+          throw error;
+        }
+      }
       await run(
         `UPDATE inventory_sets
-            SET name = ?, photo_url = ?, updated_at = ?
+            SET name = ?, photo_url = ?, updated_at = ?, version = version + 1
           WHERE id = ?`,
         [name, photoUrl, now, setId],
       );
@@ -18473,6 +19205,14 @@ async function saveInventorySet(payload = {}) {
         ],
       );
     }
+    // Filing happens here rather than through POST /api/links so that the
+    // editor keeps one save, and so that a user with inventory.update alone can
+    // file a set — the links route would also demand items.update, because the
+    // catalog maps a group to the items module. The asymmetry that leaves: such
+    // a user can re-file from the editor but cannot unlink from the links UI.
+    if (groupSpecified) {
+      await requireLinkWriter()('set', setId, 'group', groupId);
+    }
     await run('COMMIT');
     return getInventorySetById(setId);
   } catch (error) {
@@ -18488,6 +19228,9 @@ async function deleteInventorySet(setId) {
     error.statusCode = 400;
     throw error;
   }
+  // Links the set is on either side of, its group among them. No foreign key
+  // can cascade a polymorphic pair, so the cascade is asked for by hand.
+  if (purgeEntityLinks) await purgeEntityLinks('set', normalizedSetId);
   await run('DELETE FROM inventory_sets WHERE id = ?', [normalizedSetId]);
 }
 
@@ -21182,6 +21925,119 @@ app.get('/api/track/actor/:userId', requirePermission('audit.read'), async (req,
   }
 });
 
+// Sittings — what was done in one opening of one window.
+//
+// DECLARED BEFORE `/api/track/:entityType/:id`, which would otherwise match
+// `/api/track/sittings` with entityType = 'sittings' and answer an empty list.
+// The `actor` route above is ordered for the same reason.
+//
+// Both require `audit.read`, not the weaker `config.read` the per-record route
+// below uses: a sitting shows everything a person did in a span of minutes,
+// across every master, which is a wider view than one record's history.
+// Who may see whose activity, in the one dialect this codebase already speaks.
+//
+// Lifted out of `/api/audit/global`, which has scoped its reads this way all
+// along: super_admin sees everything, an admin sees their own plus anything a
+// plain user did, everyone else sees only their own. A sitting is a wider view
+// than one record's history — minutes of somebody's work across every master —
+// so it is scoped like the audit feed rather than like the unscoped
+// `/api/track/*` routes beside it.
+//
+// Returns SQL fragments to AND into a WHERE, plus the params they need.
+function actorScopeFor(req, column = 'actor_user_id', roleColumn = 'actor_role') {
+  if (req.user?.role === 'super_admin') return { sql: null, params: [] };
+  if (req.user?.role === 'admin') {
+    return {
+      sql: `(${column} = ? OR ${roleColumn} = ?)`,
+      params: [req.user.id, 'user'],
+    };
+  }
+  return { sql: `${column} = ?`, params: [req.user?.id ?? null] };
+}
+
+app.get('/api/track/sittings', requirePermission('audit.read'), async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 25, 100);
+    // One row per sitting. Grouping in SQL rather than reading every event and
+    // folding in JS, because a busy workspace has far more events than
+    // sittings and only the summary is wanted here.
+    const scope = actorScopeFor(req);
+    const rows = await all(
+      `SELECT
+         sitting_id AS sittingId,
+         COUNT(*) AS events,
+         MIN(created_at) AS startedAt,
+         MAX(created_at) AS endedAt,
+         MAX(actor_user_id) AS actorUserId,
+         MAX(actor_name) AS actorName
+       FROM entity_activity_log
+       WHERE sitting_id IS NOT NULL${scope.sql ? ` AND ${scope.sql}` : ''}
+       GROUP BY sitting_id
+       ORDER BY MAX(created_at) DESC, sitting_id DESC
+       LIMIT ?`,
+      [...scope.params, limit],
+    );
+    res.json({ success: true, sittings: rows, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, sittings: [], error: error.message });
+  }
+});
+
+app.get('/api/track/sitting/:id', requirePermission('audit.read'), async (req, res) => {
+  try {
+    const sittingId = String(req.params.id || '');
+    const scope = actorScopeFor(req);
+    const rows = await all(
+      `SELECT * FROM entity_activity_log
+       WHERE sitting_id = ?${scope.sql ? ` AND ${scope.sql}` : ''}
+       ORDER BY created_at ASC, id ASC`,
+      [sittingId, ...scope.params],
+    );
+    if (rows.length === 0) {
+      // Not an empty list: a sitting somebody else's, and a sitting that never
+      // existed, must not be told apart from one where nothing happened — and
+      // "nothing happened here" is a claim this route cannot make about a
+      // window it is not allowed to see.
+      return res.status(404).json({
+        success: false,
+        events: [],
+        error: 'No such sitting.',
+      });
+    }
+    const events = rows.map(rowToEntityActivityDto);
+
+    // A link writes one row on each side so it shows on both records' Track
+    // tabs. Here that is one thing that happened, so the pair is folded back
+    // into a single line — in JS, after the indexed read, because nothing
+    // queries inside details_json.
+    const seenPairs = new Set();
+    const collapsed = [];
+    for (const event of events) {
+      const pairKey = event.details?.pairKey;
+      if (!pairKey) {
+        collapsed.push(event);
+        continue;
+      }
+      const fold = `${event.action}|${pairKey}`;
+      if (seenPairs.has(fold)) continue;
+      seenPairs.add(fold);
+      collapsed.push(event);
+    }
+
+    res.json({
+      success: true,
+      sittingId,
+      events: collapsed,
+      // The raw count, so a caller can tell that two rows became one line
+      // rather than that a row went missing.
+      rowCount: events.length,
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, events: [], error: error.message });
+  }
+});
+
 // Per-record track — the "Track" tab on a master (Item, Vendor, Client, ...).
 app.get('/api/track/:entityType/:id', requirePermission('config.read'), async (req, res) => {
   try {
@@ -22277,6 +23133,17 @@ function machineRowToDto(r) {
     barcode: r.barcode && r.barcode.length ? r.barcode : r.asset_id,
     primaryPhotoUrl: r.primary_photo_url,
     groupId: r.group_id,
+    // The machine sheet (migrations/049). Null stays null: never read and
+    // read as zero are different answers.
+    machineMake: r.machine_make || '',
+    manufacturedYear: r.manufactured_year == null ? null : Number(r.manufactured_year),
+    feederMake: r.feeder_make || '',
+    runningHours: r.running_hours == null ? null : Number(r.running_hours),
+    strokesPerMinute:
+      r.strokes_per_minute == null ? null : Number(r.strokes_per_minute),
+    capacityKind: r.capacity_kind || '',
+    capacityKgf: r.capacity_kgf == null ? null : Number(r.capacity_kgf),
+    dieFeedType: r.die_feed_type || '',
     makeModel: r.make_model,
     serialNumber: r.serial_number,
     location: r.location,
@@ -22320,6 +23187,18 @@ function dieRowToDto(r) {
     operationalNotes: r.operational_notes,
     compatibleMachineGroupIds: dieJsonList(r.compatible_machine_group_ids),
     storageLocation: r.storage_location,
+    // The die sheet (migrations/048). Null stays null: never measured and
+    // measured at zero are different answers, which is why these are not
+    // `|| 0`.
+    dieType: r.die_type || '',
+    madeBy: r.made_by || '',
+    poAt: r.po_at || null,
+    dateInAt: r.date_in_at || null,
+    linerSizeNm: r.liner_size_nm == null ? null : Number(r.liner_size_nm),
+    linerSizeUnit: r.liner_size_unit || 'mm',
+    noOfSet: r.no_of_set == null ? null : Number(r.no_of_set),
+    storeArea: r.store_area || '',
+    rackNo: r.rack_no || '',
     numberOfCavities: r.number_of_cavities,
     strokeCount: r.stroke_count,
     maxStrokes: r.max_strokes,
@@ -22378,32 +23257,154 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
       powerKw,
       reportNotes,
       customProperties,
+      // The machine sheet (migrations/049).
+      machineMake,
+      manufacturedYear,
+      feederMake,
+      runningHours,
+      strokesPerMinute,
+      capacityKind,
+      capacityKgf,
+      dieFeedType,
     } = req.body || {};
+
     const now = new Date().toISOString();
-    let finalAssetId = assetId;
-    if (!finalAssetId || finalAssetId.trim() === '') {
-      finalAssetId = `MACH-${Date.now()}`;
-    }
-    // Machine barcode defaults to the asset tag when the client doesn't supply one.
-    const finalBarcode = barcode && barcode.trim() !== '' ? barcode.trim() : finalAssetId;
-    let resultId = id;
-    let beforeRow = null;
     const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
-    if (isUpdate) {
-      // Update
-      beforeRow = await get('SELECT * FROM machines WHERE id = ?', [Number(id)]);
-      await run(
-        `UPDATE machines SET name = ?, asset_id = ?, barcode = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
-        [name, finalAssetId, finalBarcode, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, Number(id)]
-      );
-    } else {
-      // Create
-      const info = await run(
-        `INSERT INTO machines (name, asset_id, barcode, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, finalAssetId, finalBarcode, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, now]
-      );
-      resultId = String(info.lastID);
+    const beforeRow = isUpdate
+      ? await get('SELECT * FROM machines WHERE id = ?', [Number(id)])
+      : null;
+    if (isUpdate && !beforeRow) {
+      return res.status(404).json({ success: false, machine: null, error: 'Machine not found.' });
     }
+
+    // Every field preserves what is stored when the caller does not mention
+    // it. This route is an upsert that used to write every column from the
+    // body, so the first save from the Machines screen after the wizard filled
+    // in a maker would have blanked it — the same bug /api/dies had, and
+    // already live here for the columns that were here before.
+    const kept = (value, column, fallback = null) =>
+      value !== undefined ? value : (beforeRow ? beforeRow[column] : fallback);
+    const keptText = (value, column) => {
+      const chosen = kept(value, column, '');
+      return chosen === null || chosen === undefined ? '' : String(chosen);
+    };
+    const keptInt = (value, column) => {
+      const chosen = kept(value, column);
+      return chosen === null || chosen === undefined || chosen === '' ? null : Number(chosen);
+    };
+
+    const normalizedCapacityKind = String(keptText(capacityKind, 'capacity_kind')).trim();
+    if (normalizedCapacityKind && !['rated', 'free_hand'].includes(normalizedCapacityKind)) {
+      return res.status(400).json({
+        success: false,
+        machine: null,
+        error: `"${normalizedCapacityKind}" is not a capacity kind.`,
+      });
+    }
+    const normalizedGroupId = kept(groupId, 'group_id');
+
+    // Derived from the machine's type before the timestamp fallback, so a
+    // press is named after what it is rather than after the clock. The
+    // fallback stays for a machine created with no type.
+    let finalAssetId = String(assetId || '').trim();
+    if (!finalAssetId && !isUpdate && normalizedGroupId) {
+      const group = await get('SELECT name FROM groups WHERE id = ?', [Number(normalizedGroupId)]);
+      finalAssetId = buildMachineNo({
+        groupName: group?.name || '',
+        nextNumber: await nextMachineNo({ groupId: normalizedGroupId }, { get }),
+      });
+    }
+    if (!finalAssetId) {
+      finalAssetId = isUpdate ? String(beforeRow.asset_id) : `MACH-${Date.now()}`;
+    }
+
+    // Named before the index refuses it, so the message can say which machine
+    // holds the number and the client can offer a free one. asset_id is unique
+    // across the whole plant while the series is per type, so a clash is
+    // expected traffic rather than an edge case.
+    const clash = await get(
+      'SELECT id, asset_id FROM machines WHERE UPPER(asset_id) = ? AND (? IS NULL OR id <> ?)',
+      [finalAssetId.toUpperCase(), isUpdate ? Number(id) : null, isUpdate ? Number(id) : null],
+    );
+    if (clash) {
+      const free = await nextFreeMachineNo(finalAssetId, {
+        get,
+        excludeId: isUpdate ? Number(id) : null,
+      });
+      return res.status(409).json({
+        success: false,
+        machine: null,
+        code: 'machine_asset_id_duplicate',
+        suggestedAssetId: free || null,
+        error: free
+          ? `Machine No "${finalAssetId}" is already used by machine #${clash.id}. Try "${free}".`
+          : `Machine No "${finalAssetId}" is already used by machine #${clash.id}.`,
+      });
+    }
+
+    // Machine barcode defaults to the asset tag when the client doesn't supply one.
+    const keptBarcode = keptText(barcode, 'barcode').trim();
+    const finalBarcode = keptBarcode !== '' ? keptBarcode : finalAssetId;
+
+    const columns = [
+      keptText(name, 'name'),
+      finalAssetId,
+      finalBarcode,
+      kept(primaryPhotoUrl, 'primary_photo_url'),
+      normalizedGroupId,
+      kept(makeModel, 'make_model'),
+      kept(serialNumber, 'serial_number'),
+      kept(location, 'location'),
+      kept(installationDate, 'installation_date'),
+      kept(status, 'status'),
+      keptInt(reportOutputPerHour, 'report_output_per_hour'),
+      keptInt(setupMinutes, 'setup_minutes'),
+      keptInt(laborCount, 'labor_count'),
+      keptInt(powerKw, 'power_kw'),
+      keptText(reportNotes, 'report_notes'),
+      customProperties !== undefined
+        ? JSON.stringify(customProperties || [])
+        : (beforeRow?.custom_properties ?? '[]'),
+      keptText(machineMake, 'machine_make').trim(),
+      keptInt(manufacturedYear, 'manufactured_year'),
+      keptText(feederMake, 'feeder_make').trim(),
+      keptInt(runningHours, 'running_hours'),
+      keptInt(strokesPerMinute, 'strokes_per_minute'),
+      normalizedCapacityKind,
+      // Only a rated machine carries a figure: free hand means there is none,
+      // and keeping the old number beside that kind would be two answers.
+      normalizedCapacityKind === 'rated' ? keptInt(capacityKgf, 'capacity_kgf') : null,
+      keptText(dieFeedType, 'die_feed_type').trim(),
+    ];
+
+    let resultId = id;
+    try {
+      if (isUpdate) {
+        await run(
+          `UPDATE machines SET name = ?, asset_id = ?, barcode = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, machine_make = ?, manufactured_year = ?, feeder_make = ?, running_hours = ?, strokes_per_minute = ?, capacity_kind = ?, capacity_kgf = ?, die_feed_type = ?, updated_at = ? WHERE id = ?`,
+          [...columns, now, Number(id)],
+        );
+      } else {
+        const info = await run(
+          `INSERT INTO machines (name, asset_id, barcode, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, machine_make, manufactured_year, feeder_make, running_hours, strokes_per_minute, capacity_kind, capacity_kgf, die_feed_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...columns, now, now],
+        );
+        resultId = String(info.lastID);
+      }
+    } catch (error) {
+      // The index is the real guard and catches the race the check above
+      // cannot. Same answer, so it reads the same to the client.
+      if (String(error.message || '').includes('UNIQUE constraint failed: machines.asset_id')) {
+        return res.status(409).json({
+          success: false,
+          machine: null,
+          code: 'machine_asset_id_duplicate',
+          error: `Machine No "${finalAssetId}" was taken a moment ago. Pick another.`,
+        });
+      }
+      throw error;
+    }
+
     const r = await get('SELECT * FROM machines WHERE id = ?', [resultId]);
     const machine = machineRowToDto(r);
     if (isUpdate) {
@@ -22433,6 +23434,7 @@ app.delete('/api/machines/:id', requirePermission('config.write'), async (req, r
     const before = await get('SELECT * FROM machines WHERE id = ?', [id]);
     await run('DELETE FROM machines WHERE id = ?', [id]);
     if (purgeEntityLinks) await purgeEntityLinks('machine', id);
+    if (purgeEntityVariations) await purgeEntityVariations('machine', id);
     trackDelete('machines', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
@@ -22516,30 +23518,147 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
       physicalSpecs,
       status,
       ownership,
+      // The die sheet (migrations/048).
+      dieType,
+      madeBy,
+      poAt,
+      dateInAt,
+      linerSizeNm,
+      linerSizeUnit,
+      noOfSet,
+      storeArea,
+      rackNo,
+      // Accepted for DERIVATION ONLY and never stored: which part a die makes
+      // is item_dies, not a column here.
+      partCode,
     } = req.body || {};
+
     const now = new Date().toISOString();
-    let finalToolCode = toolCode;
-    if (!finalToolCode || finalToolCode.trim() === '') {
-      finalToolCode = `DIE-${Date.now()}`;
-    }
-    let resultId = id;
-    let beforeRow = null;
     const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
-    if (isUpdate) {
-      // Update
-      beforeRow = await get('SELECT * FROM dies WHERE id = ?', [Number(id)]);
-      await run(
-        `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, updated_at = ? WHERE id = ?`,
-        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, strokesPerPiece ?? null, setupMinutes ?? null, reportNotes || '', JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
-      );
-    } else {
-      // Create
-      const info = await run(
-        `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, strokes_per_piece, setup_minutes, report_notes, physical_specs, status, ownership, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, strokesPerPiece ?? null, setupMinutes ?? null, reportNotes || '', JSON.stringify(physicalSpecs || {}), status, ownership, now, now]
-      );
-      resultId = String(info.lastID);
+    const beforeRow = isUpdate
+      ? await get('SELECT * FROM dies WHERE id = ?', [Number(id)])
+      : null;
+    if (isUpdate && !beforeRow) {
+      return res.status(404).json({ success: false, die: null, error: 'Die not found.' });
     }
+
+    // Every field preserves what is stored when the caller does not mention
+    // it. This route is an upsert that used to write every column from the
+    // body, so the first save from the Dies screen after the wizard filled in
+    // a maker would have blanked it — the photo_url bug, one table over, and
+    // already live for the columns that were here before.
+    const kept = (value, column, fallback = null) =>
+      value !== undefined ? value : (beforeRow ? beforeRow[column] : fallback);
+    const keptText = (value, column) => {
+      const chosen = kept(value, column, '');
+      return chosen === null || chosen === undefined ? '' : String(chosen);
+    };
+    const keptJson = (value, column, empty) =>
+      value !== undefined ? JSON.stringify(value ?? empty) : (beforeRow?.[column] ?? JSON.stringify(empty));
+    const keptInt = (value, column) => {
+      const chosen = kept(value, column);
+      return chosen === null || chosen === undefined || chosen === '' ? null : Number(chosen);
+    };
+
+    const normalizedDieType = String(keptText(dieType, 'die_type')).trim();
+    if (normalizedDieType && !DIE_TYPE_SLUGS.includes(normalizedDieType)) {
+      return res.status(400).json({
+        success: false,
+        die: null,
+        error: `"${normalizedDieType}" is not a die type.`,
+      });
+    }
+
+    // Derived before the timestamp fallback, so a die made against a part is
+    // named after it rather than after the clock. The fallback stays for a die
+    // created from nothing, which the Dies screen can still do.
+    let finalToolCode = String(toolCode || '').trim();
+    if (!finalToolCode && !isUpdate) {
+      finalToolCode = buildDieCode({ dieType: normalizedDieType, partCode });
+    }
+    if (!finalToolCode) {
+      finalToolCode = isUpdate ? String(beforeRow.tool_code) : `DIE-${Date.now()}`;
+    }
+
+    // Named before the index refuses it, so the message can say who holds the
+    // code and the client can offer a free one. tool_code is unique across the
+    // whole factory while a part code is unique only within its group, so this
+    // is expected traffic rather than an edge case.
+    const clash = await get(
+      'SELECT id, tool_code FROM dies WHERE UPPER(tool_code) = ? AND (? IS NULL OR id <> ?)',
+      [finalToolCode.toUpperCase(), isUpdate ? Number(id) : null, isUpdate ? Number(id) : null],
+    );
+    if (clash) {
+      const free = await nextFreeDieCode(finalToolCode, {
+        get,
+        excludeId: isUpdate ? Number(id) : null,
+      });
+      return res.status(409).json({
+        success: false,
+        die: null,
+        code: 'die_tool_code_duplicate',
+        suggestedToolCode: free || null,
+        error: free
+          ? `Die code "${finalToolCode}" is already used by die #${clash.id}. Try "${free}".`
+          : `Die code "${finalToolCode}" is already used by die #${clash.id}.`,
+      });
+    }
+
+    const columns = [
+      finalToolCode,
+      keptJson(producedPartNumbers, 'produced_part_numbers', []),
+      keptJson(photoUrls, 'photo_urls', []),
+      kept(operationalNotes, 'operational_notes'),
+      keptJson(compatibleMachineGroupIds, 'compatible_machine_group_ids', []),
+      kept(storageLocation, 'storage_location'),
+      keptInt(numberOfCavities, 'number_of_cavities'),
+      Number(kept(strokeCount, 'stroke_count', 0) || 0),
+      Number(kept(maxStrokes, 'max_strokes', 0) || 0),
+      keptInt(strokesPerPiece, 'strokes_per_piece'),
+      keptInt(setupMinutes, 'setup_minutes'),
+      keptText(reportNotes, 'report_notes'),
+      keptJson(physicalSpecs, 'physical_specs', {}),
+      kept(status, 'status'),
+      kept(ownership, 'ownership'),
+      normalizedDieType,
+      keptText(madeBy, 'made_by').trim(),
+      kept(poAt, 'po_at'),
+      kept(dateInAt, 'date_in_at'),
+      keptInt(linerSizeNm, 'liner_size_nm'),
+      keptText(linerSizeUnit, 'liner_size_unit') || 'mm',
+      keptInt(noOfSet, 'no_of_set'),
+      keptText(storeArea, 'store_area').trim(),
+      keptText(rackNo, 'rack_no').trim(),
+    ];
+
+    let resultId = id;
+    try {
+      if (isUpdate) {
+        await run(
+          `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, die_type = ?, made_by = ?, po_at = ?, date_in_at = ?, liner_size_nm = ?, liner_size_unit = ?, no_of_set = ?, store_area = ?, rack_no = ?, updated_at = ? WHERE id = ?`,
+          [...columns, now, Number(id)],
+        );
+      } else {
+        const info = await run(
+          `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, strokes_per_piece, setup_minutes, report_notes, physical_specs, status, ownership, die_type, made_by, po_at, date_in_at, liner_size_nm, liner_size_unit, no_of_set, store_area, rack_no, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...columns, now, now],
+        );
+        resultId = String(info.lastID);
+      }
+    } catch (error) {
+      // The index is the real guard and catches the race the check above
+      // cannot. Same answer, so it reads the same to the client.
+      if (String(error.message || '').includes('UNIQUE constraint failed: dies.tool_code')) {
+        return res.status(409).json({
+          success: false,
+          die: null,
+          code: 'die_tool_code_duplicate',
+          error: `Die code "${finalToolCode}" was taken a moment ago. Pick another.`,
+        });
+      }
+      throw error;
+    }
+
     const r = await get('SELECT * FROM dies WHERE id = ?', [resultId]);
     const die = dieRowToDto(r);
     if (isUpdate) {
@@ -22568,6 +23687,7 @@ app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) 
     const before = await get('SELECT * FROM dies WHERE id = ?', [id]);
     await run('DELETE FROM dies WHERE id = ?', [id]);
     if (purgeEntityLinks) await purgeEntityLinks('die', id);
+    if (purgeEntityVariations) await purgeEntityVariations('die', id);
     trackDelete('dies', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
@@ -23304,6 +24424,9 @@ function rowToSubContractorDto(row) {
     id: row.id,
     clientId: row.client_id,
     name: row.name,
+    // So a contractor answers the same four questions a client's contact does
+    // (migrations/047) — a part developed for one prints their designation.
+    designation: row.designation || '',
     phone: row.phone,
     email: row.email,
     notes: row.notes,
@@ -23351,7 +24474,7 @@ app.get('/api/clients/:clientId/sub-contractors', requirePermission('config.read
 app.post('/api/clients/:clientId/sub-contractors', requirePermission('config.write'), async (req, res) => {
   try {
     const clientId = Number(req.params.clientId);
-    const { name, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
+    const { name, designation, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
     
     if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, error: 'Name is required' });
@@ -23359,12 +24482,13 @@ app.post('/api/clients/:clientId/sub-contractors', requirePermission('config.wri
     
     const now = new Date().toISOString();
     const result = await run(
-      `INSERT INTO sub_contractors (client_id, name, phone, email, notes, gst_number, address, photo_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, String(name).trim(), phone || '', email || '', notes || '', gstNumber || '', address || '', photoUrl || '', now, now]
+      `INSERT INTO sub_contractors (client_id, name, designation, phone, email, notes, gst_number, address, photo_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, String(name).trim(), designation || '', phone || '', email || '', notes || '', gstNumber || '', address || '', photoUrl || '', now, now]
     );
     
     const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [result.lastID]);
+    trackCreate('sub_contractors', result.lastID, row, req);
     res.status(201).json({ success: true, subContractor: rowToSubContractorDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, subContractor: null, error: error.message });
@@ -23374,24 +24498,47 @@ app.post('/api/clients/:clientId/sub-contractors', requirePermission('config.wri
 app.put('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { name, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
+    const { name, designation, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
     
     if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, error: 'Name is required' });
     }
     
+    // Read first: UpdateSubContractorInput omits every field the form did not
+    // touch, and this route used to write all of them with `|| ''` — so a PATCH
+    // about a phone number blanked the GST, the address and the photo. Same
+    // undefined-preserving contract as saveClient and saveItem.
+    const existing = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    const kept = (value, column) =>
+      value !== undefined ? String(value || '').trim() : String(existing[column] || '');
+
     const now = new Date().toISOString();
     await run(
       `UPDATE sub_contractors 
-       SET name = ?, phone = ?, email = ?, notes = ?, gst_number = ?, address = ?, photo_url = ?, updated_at = ?
+       SET name = ?, designation = ?, phone = ?, email = ?, notes = ?, gst_number = ?, address = ?, photo_url = ?, updated_at = ?
        WHERE id = ?`,
-      [String(name).trim(), phone || '', email || '', notes || '', gstNumber || '', address || '', photoUrl || '', now, id]
+      [
+        String(name).trim(),
+        kept(designation, 'designation'),
+        kept(phone, 'phone'),
+        kept(email, 'email'),
+        kept(notes, 'notes'),
+        kept(gstNumber, 'gst_number'),
+        kept(address, 'address'),
+        kept(photoUrl, 'photo_url'),
+        now,
+        id,
+      ]
     );
     
     const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
     if (!row) {
       return res.status(404).json({ success: false, error: 'Not found' });
     }
+    trackUpdate('sub_contractors', id, existing, row, req);
     res.json({ success: true, subContractor: rowToSubContractorDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, subContractor: null, error: error.message });
@@ -23401,7 +24548,12 @@ app.put('/api/sub-contractors/:id', requirePermission('config.write'), async (re
 app.delete('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
+    // Read before the row is gone — trackDelete needs it for the label, and a
+    // DELETE here is permanent (no trashAndDelete, so nothing reaches the
+    // Action Center to recover the name from).
+    const before = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
     await run('DELETE FROM sub_contractors WHERE id = ?', [id]);
+    trackDelete('sub_contractors', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -27076,16 +28228,81 @@ app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (
     if (!client) {
       return res.status(404).json({ success: false, error: 'Not found' });
     }
-    const usage = await get('SELECT COUNT(*) AS count FROM order_items WHERE client_id = ?', [id]);
-    if ((usage?.count || 0) > 0) {
-      const error = new Error('Client is in use');
+    if (Number(client.is_archived || 0) === 1) {
+      // Already there. Answering with the row rather than refusing keeps two
+      // clients racing the same button from showing one of them an error.
+      return res.json({ success: true, client: rowToClientDto(client), error: null });
+    }
+    const usage = await get(`
+      SELECT
+        (SELECT COUNT(*) FROM order_items WHERE client_id = ?) AS orderLines,
+        (SELECT COUNT(*) FROM sub_contractors WHERE client_id = ?) AS subContractors
+    `, [id, id]);
+    const blockers = [];
+    const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+    if (Number(usage?.orderLines || 0) > 0) {
+      blockers.push(plural(Number(usage.orderLines), 'order line'));
+    }
+    if (Number(usage?.subContractors || 0) > 0) {
+      blockers.push(plural(Number(usage.subContractors), 'sub-contractor'));
+    }
+    if (blockers.length > 0) {
+      // It used to refuse with the bare words "Client is in use", which told
+      // nobody what to go and look at.
+      const error = new Error(
+        `"${client.name}" is still named on ${blockers.join(' and ')}. `
+        + 'Archiving it would leave those without a client.',
+      );
       error.statusCode = 409;
+      error.code = 'client_in_use';
       throw error;
     }
     await run('UPDATE clients SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
-    res.json({ success: true, error: null });
+    const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    const clientDto = rowToClientDto(after);
+    // Every other client write broadcasts; this one never did, so an archive
+    // stayed invisible to every other session until it reloaded.
+    if (io) {
+      io.emit('client_updated', clientDto);
+    }
+    trackUpdate('clients', id, client, after, req);
+    // The updated row, so the caller knows the new state without refetching
+    // the whole list.
+    res.json({ success: true, client: clientDto, error: null });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    res.status(error.statusCode || 500).json({
+      success: false,
+      client: null,
+      code: error.code || null,
+      error: error.message,
+    });
+  }
+});
+
+// Archive was a one-way door: there was no route back, so a client archived by
+// mistake could only be fixed in the database.
+app.patch('/api/clients/:id/unarchive', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const client = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    await run('UPDATE clients SET is_archived = 0, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    const clientDto = rowToClientDto(after);
+    if (io) {
+      io.emit('client_updated', clientDto);
+    }
+    trackUpdate('clients', id, client, after, req);
+    res.json({ success: true, client: clientDto, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      client: null,
+      code: error.code || null,
+      error: error.message,
+    });
   }
 });
 
@@ -27263,6 +28480,7 @@ app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req,
       success: false,
       sets: [],
       error: error.message,
+      code: error.code ?? null,
     });
   }
 });
@@ -27270,41 +28488,63 @@ app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req,
 app.post('/api/inventory/sets', requirePermission('inventory.create'), async (req, res) => {
   try {
     const set = await saveInventorySet(req.body || {});
+    trackCreate('inventory_sets', set.id, set, req);
     res.status(201).json({ success: true, set, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
       set: null,
       error: error.message,
+      // Machine-readable, so a caller can tell "this set moved on" from any
+      // other refusal without matching on prose.
+      code: error.code ?? null,
     });
   }
 });
 
 app.patch('/api/inventory/sets/:id', requirePermission('inventory.update'), async (req, res) => {
   try {
+    const id = Number(req.params.id);
+    // saveInventorySet answers with the DTO, not the row it replaced, so the
+    // before state has to be read here or the diff would be empty and
+    // trackUpdate would log nothing at all.
+    const before = await get('SELECT * FROM inventory_sets WHERE id = ?', [id]);
     const set = await saveInventorySet({
       ...(req.body || {}),
-      id: Number(req.params.id),
+      id,
     });
+    const after = await get('SELECT * FROM inventory_sets WHERE id = ?', [id]);
+    trackUpdate('inventory_sets', id, before, after, req);
     res.json({ success: true, set, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
       set: null,
       error: error.message,
+      // Machine-readable, so a caller can tell "this set moved on" from any
+      // other refusal without matching on prose.
+      code: error.code ?? null,
     });
   }
 });
 
 app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), async (req, res) => {
   try {
-    await deleteInventorySet(Number(req.params.id));
+    const id = Number(req.params.id);
+    // Deleting a set is permanent — it purges links and drops the row with no
+    // trashAndDelete — so this log line is the only surviving record of it.
+    const before = await get('SELECT * FROM inventory_sets WHERE id = ?', [id]);
+    await deleteInventorySet(id);
+    trackDelete('inventory_sets', id, before, req);
     res.json({ success: true, set: null, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
       set: null,
       error: error.message,
+      // Machine-readable, so a caller can tell "this set moved on" from any
+      // other refusal without matching on prose.
+      code: error.code ?? null,
     });
   }
 });
@@ -27348,6 +28588,11 @@ app.post('/api/materials/parent', requirePermission('inventory.create'), async (
     const groupConfiguration = createdRow
       ? await getMaterialGroupGovernance(createdRow.id)
       : { selectedItemIds: [], selectedItems: [], propertyDrafts: [] };
+    // Materials also keep their own `material_activity` feed, read by
+    // GET /api/materials/:barcode/activity. That one is per-barcode stock
+    // movement; this is who-changed-what, which is the axis a sitting groups
+    // by — so both are wanted, and neither replaces the other.
+    if (createdRow) trackCreate('materials', createdRow.id, createdRow, req);
     res.status(201).json({ success: true, material, groupConfiguration, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
@@ -27366,6 +28611,7 @@ app.post('/api/materials/:barcode/child', requirePermission('inventory.create'),
       return;
     }
     const material = await createChildMaterial(req.params.barcode, payload);
+    trackCreate('materials', material.id, material, req);
     res.status(201).json({ success: true, material: rowToMaterialDto(material), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
@@ -27383,8 +28629,10 @@ app.patch('/api/materials/:barcode', requirePermission('inventory.update'), asyn
       });
       return;
     }
+    const before = await getMaterialRowByBarcode(req.params.barcode);
     const material = await updateMaterialRecord(req.params.barcode, payload);
     const groupConfiguration = await getMaterialGroupGovernance(material.id);
+    trackUpdate('materials', material.id, before, material, req);
     res.json({
       success: true,
       material: rowToMaterialDto(material),
@@ -27414,7 +28662,11 @@ app.patch('/api/materials/:barcode/group-config', requirePermission('inventory.u
 
 app.delete('/api/materials/:barcode', requirePermission('inventory.delete'), async (req, res) => {
   try {
+    // The barcode is the handle here, not the id, so the row has to be read
+    // before it goes to have anything to log against.
+    const before = await getMaterialRowByBarcode(req.params.barcode);
     await deleteMaterialRecord(req.params.barcode);
+    if (before) trackDelete('materials', before.id, before, req);
     res.json({ success: true, material: null, error: null });
   } catch (error) {
     res.status(500).json({ success: false, material: null, error: error.message });
@@ -30586,6 +31838,18 @@ async function ensureDemoOrderRunLinks() {
 }
 
 const seedEstablishedYear = require('./modules/scenarios/established-year');
+const {
+  DIE_TYPE_SLUGS,
+  buildDieCode,
+  nextFreeDieCode,
+} = require('./modules/dies/die-identity');
+const {
+  buildMachineNo,
+  nextMachineNo,
+  nextFreeMachineNo,
+} = require('./modules/machines/machine-identity');
+const { seedStandardUnitFamilies } = require('./modules/units/service');
+const { registerUnitRoutes } = require('./modules/units/routes');
 const runPendingMigrations = require('./modules/kernel/migration-runner');
 
 async function reseedDemoData(scenarioId = 'default') {
@@ -30857,6 +32121,7 @@ app.post('/api/departments', requirePermission('config.write'), async (req, res)
       [name.trim(), description.trim(), photoUrl, now, now]
     );
     const row = await get('SELECT * FROM departments WHERE id = ?', [result.lastID]);
+    trackCreate('departments', result.lastID, row, req);
     res.status(201).json({ success: true, department: rowToDepartmentDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -30880,6 +32145,7 @@ app.patch('/api/departments/:id', requirePermission('config.write'), async (req,
       [newName, newDesc, newPhoto, new Date().toISOString(), id]
     );
     const row = await get('SELECT * FROM departments WHERE id = ?', [id]);
+    trackUpdate('departments', id, existing, row, req);
     res.json({ success: true, department: rowToDepartmentDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -30893,9 +32159,18 @@ app.delete('/api/departments/:id', requirePermission('config.write'), async (req
     // so cascade-trash them before removing the department. Cross-entity references
     // (e.g. an order that names a deleted client) are intentionally left for the
     // Action Center to surface rather than cascade-deleted.
-    const employeeIds = (await all('SELECT id FROM employees WHERE department_id = ?', [id])).map((r) => r.id);
+    const employees = await all('SELECT * FROM employees WHERE department_id = ?', [id]);
+    const employeeIds = employees.map((r) => r.id);
+    const before = await get('SELECT * FROM departments WHERE id = ?', [id]);
     await trashAndDeleteMany('employees', employeeIds, req);
     await trashAndDelete('departments', id, req);
+    // The cascade is part of what happened, so it is part of the record: a
+    // sitting that showed the department going and not the people would read
+    // as complete while being partial.
+    for (const employee of employees) {
+      trackDelete('employees', employee.id, employee, req);
+    }
+    trackDelete('departments', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -31598,6 +32873,7 @@ registerItemsModuleRoutes({
   getItemsWithUsage,
   getGroupsWithUsage,
   getItemUsageDetails,
+  getItemSetMembership,
   getItemRowById,
   getGroupRowById,
   getEffectiveSchema,
@@ -31626,10 +32902,31 @@ const linksModule = registerLinksModuleRoutes({
   all,
   run,
   logChange,
+  // logChange is replication, not an audit trail — it carries no actor and no
+  // words. A link needed both to appear in a sitting, and this context was the
+  // reason the module could not log: no track* helper was in it.
+  trackLink,
   hasPermission,
   hasRecordPermission,
 });
 purgeEntityLinks = linksModule.purgeLinksFor;
+setSoleEntityLink = linksModule.setSoleLink;
+resolveSoleEntityLinks = linksModule.soleNeighboursOf;
+
+// A property/value tree for masters other than items, versioned so that what
+// was derived from a die can still be read against the die as it stood.
+require('./modules/devtools/marks')({ app });
+
+const registerVariationsModuleRoutes = require('./modules/variations/routes');
+const variationsModule = registerVariationsModuleRoutes({
+  app,
+  get,
+  all,
+  run,
+  hasPermission,
+  hasRecordPermission,
+});
+purgeEntityVariations = variationsModule.purgeVariationsFor;
 
 // Material types carry the one number that turns a sheet's volume into its
 // weight. Named apart from `materials`, which is barcoded physical stock.
@@ -31649,6 +32946,8 @@ const itemMasterData = registerMasterDataRoutes({
   run,
   logChange,
 });
+
+registerUnitRoutes(app, { run, get, all, requirePermission, trackCreate });
 
 const { computeTerritory } = require("./kernel/territory");
 app.get("/api/kernel/territory", async (req, res) => {

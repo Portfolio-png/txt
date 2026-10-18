@@ -1550,6 +1550,10 @@ class InventorySetDto {
     this.onHandQty,
     this.materialBarcode,
     this.photoUrl,
+    this.groupId,
+    this.groupName,
+    this.groupIsArchived = false,
+    this.version = 0,
   });
 
   final int id;
@@ -1566,6 +1570,10 @@ class InventorySetDto {
   final double? onHandQty;
   final String? materialBarcode;
   final String? photoUrl;
+  final int? groupId;
+  final String? groupName;
+  final bool groupIsArchived;
+  final int version;
 
   factory InventorySetDto.fromJson(Map<String, dynamic> json) {
     return InventorySetDto(
@@ -1592,6 +1600,11 @@ class InventorySetDto {
       onHandQty: (json['onHandQty'] as num?)?.toDouble(),
       materialBarcode: json['materialBarcode'] as String?,
       photoUrl: json['photoUrl'] as String?,
+      // Absent on a payload from a server that does not file sets yet.
+      groupId: (json['groupId'] as num?)?.toInt(),
+      groupName: json['groupName'] as String?,
+      groupIsArchived: json['groupIsArchived'] as bool? ?? false,
+      version: (json['version'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -1611,6 +1624,10 @@ class InventorySetDto {
       onHandQty: onHandQty,
       materialBarcode: materialBarcode,
       photoUrl: photoUrl,
+      groupId: groupId,
+      groupName: groupName,
+      groupIsArchived: groupIsArchived,
+      version: version,
     );
   }
 }
@@ -1642,11 +1659,17 @@ class InventorySetResponse {
     required this.success,
     required this.set,
     this.error,
+    this.code,
   });
 
   final bool success;
   final InventorySetDto? set;
   final String? error;
+
+  /// The server's machine-readable reason, where it sent one — 'set_changed'
+  /// for a save whose set moved on. Prose is for the person; this is for the
+  /// caller deciding what to offer them.
+  final String? code;
 
   factory InventorySetResponse.fromJson(Map<String, dynamic> json) {
     final setJson = json['set'];
@@ -1656,6 +1679,7 @@ class InventorySetResponse {
           ? InventorySetDto.fromJson(setJson)
           : null,
       error: json['error'] as String?,
+      code: json['code'] as String?,
     );
   }
 }

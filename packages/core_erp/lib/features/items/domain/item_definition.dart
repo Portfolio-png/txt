@@ -1,4 +1,5 @@
 import '../../production_pipelines/domain/pen_paper_baseline.dart';
+import 'developed_for.dart';
 
 enum ItemVariationNodeKind { property, value }
 
@@ -137,6 +138,8 @@ class ItemDefinition {
     required this.name,
     required this.alias,
     this.shortCode = '',
+    this.partNo,
+    this.partCode = '',
     required this.displayName,
     required this.quantity,
     required this.groupId,
@@ -158,6 +161,7 @@ class ItemDefinition {
     this.attachments = const <ItemAttachmentDefinition>[],
     this.developedForClientId,
     this.developedForClientName = '',
+    this.developedFor = DevelopedFor.empty,
     this.machines = const <ItemMachineLink>[],
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
@@ -171,6 +175,17 @@ class ItemDefinition {
   final String name;
   final String alias;
   final String shortCode;
+
+  /// The number this part was issued and the code read off a drawing —
+  /// "the forty-eighth Dolly patti in Switch Action" is SADP48.
+  ///
+  /// Null and '' mean never stamped; most of the catalogue predates them. The
+  /// number is a stamp rather than a sequence: it records what this part was
+  /// issued under the group and set in play when it was created, and does not
+  /// follow the item if either changes later. Never show it on its own — "48"
+  /// says nothing without "of Dolly" — only inside [partCode].
+  final int? partNo;
+  final String partCode;
   final String displayName;
   final double quantity;
   final int groupId;
@@ -224,7 +239,12 @@ class ItemDefinition {
   /// Whether this part can be planned onto a sheet at all.
   bool get hasBlankSize => blankWidthMm > 0 && blankHeightMm > 0;
 
-  /// Client this item was developed for, so it can be listed under them.
+  /// Who this part was developed for, when, and what was quoted.
+  final DevelopedFor developedFor;
+
+  /// The pre-047 shape of the same fact, kept as aliases of
+  /// [developedFor]: the local replica holds item payloads on disk that were
+  /// written with only these two keys in them.
   final int? developedForClientId;
   final String developedForClientName;
 
@@ -261,6 +281,8 @@ class ItemDefinition {
       name: name ?? this.name,
       alias: alias,
       shortCode: shortCode,
+      partNo: partNo,
+      partCode: partCode,
       displayName: displayName ?? this.displayName,
       quantity: quantity,
       groupId: groupId,
@@ -282,6 +304,7 @@ class ItemDefinition {
       attachments: attachments,
       developedForClientId: developedForClientId,
       developedForClientName: developedForClientName,
+      developedFor: developedFor,
       machines: machines,
       dies: dies,
       combinationGroupIds: combinationGroupIds,
@@ -335,30 +358,108 @@ class ItemAttachmentDefinition {
       label.trim().isNotEmpty ? label.trim() : fileName.trim();
 }
 
+/// A machine this part runs on, and the sheet that tells it from the others.
+///
+/// A part runs on as many as it needs — a press and a punching machine, or two
+/// presses of different tonnage — so the number alone does not say which is
+/// which. These ride along on the join the item read already does, so listing
+/// them costs no extra fetch.
 class ItemMachineLink {
   const ItemMachineLink({
     required this.id,
     required this.name,
     this.assetId = '',
     this.photoUrl,
+    this.groupId,
+    this.machineType = '',
+    this.machineMake = '',
+    this.manufacturedYear,
+    this.feederMake = '',
+    this.runningHours,
+    this.strokesPerMinute,
+    this.capacityKind = '',
+    this.capacityKgf,
+    this.dieFeedType = '',
   });
 
   final String id;
   final String name;
+
+  /// The Machine No — `PP-4`.
   final String assetId;
   final String? photoUrl;
+
+  /// The machine group this machine belongs to, and its name: Power Press,
+  /// Punching M. The same groups a die declares itself compatible with.
+  final int? groupId;
+  final String machineType;
+
+  final String machineMake;
+
+  /// The year it was built. A year, not a date: that is all anyone records.
+  final int? manufacturedYear;
+
+  /// The make of the feeder on it — not the pipeline sense of the word.
+  final String feederMake;
+
+  /// The latest meter reading, and the machine's rated strokes per minute.
+  final int? runningHours;
+  final int? strokesPerMinute;
+
+  /// `''` | `rated` | `free_hand`, with the figure in kilograms-force.
+  final String capacityKind;
+  final int? capacityKgf;
+
+  /// What tooling it takes — Manual, Semi Prog, Progressive. NOT a die's own
+  /// type, which is Cutting or Bending.
+  final String dieFeedType;
 }
 
+/// A die this part is made with, and the sheet that tells it from the others.
+///
+/// A part can hold several — a cutting die and a bending die, or two of a kind
+/// — so the code alone does not say which is which. These ride along on the
+/// join the item read already does, so listing them costs no extra fetch.
 class ItemDieLink {
   const ItemDieLink({
-    required this.id, 
+    required this.id,
     required this.toolCode,
     this.photoUrl,
+    this.dieType = '',
+    this.madeBy = '',
+    this.poAt,
+    this.dateInAt,
+    this.linerSizeNm,
+    this.linerSizeUnit = 'mm',
+    this.noOfSet,
+    this.storeArea = '',
+    this.rackNo = '',
   });
 
   final String id;
   final String toolCode;
   final String? photoUrl;
+
+  /// '' | 'cutting' | 'bending'.
+  final String dieType;
+  final String madeBy;
+
+  /// UTC instants. Render through `partStamp`, never by reading their fields.
+  final DateTime? poAt;
+  final DateTime? dateInAt;
+
+  /// An integer count of nanometres; the unit beside it is how it was read.
+  final int? linerSizeNm;
+  final String linerSizeUnit;
+  final int? noOfSet;
+  final String storeArea;
+  final String rackNo;
+
+  /// Where it is kept, as one line — `F206 · Rack 23-4`.
+  String get whereKept => <String>[
+    if (storeArea.trim().isNotEmpty) storeArea.trim(),
+    if (rackNo.trim().isNotEmpty) 'Rack ${rackNo.trim()}',
+  ].join(' · ');
 }
 
 class ItemUnitConversionDefinition {

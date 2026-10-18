@@ -166,3 +166,107 @@ class CreationSessionController extends ChangeNotifier {
 
   void restore(CreationSession session) => onRestore?.call(session);
 }
+
+/// The tiles the Express window opens with, as the person last left them.
+///
+/// Only the Express door remembers its lineup. The creation window reached
+/// from Add Item deliberately starts fresh every time — that was a decision,
+/// not an oversight — so the store is wired up at one opener, not inside the
+/// workspace.
+///
+/// It keeps no catalogue knowledge of its own: what comes back is a list of
+/// strings, and `CreationKinds.sanitizeLineup` decides which of them still
+/// name something. That keeps this file to `dart:convert` and the prefs
+/// plugin, with no path back into the widget tree it belongs to.
+class CreationLineupStore {
+  CreationLineupStore({SharedPreferences? preferences})
+    : _preferences = preferences;
+
+  static const String prefsKey = 'creation_express_lineup';
+
+  final SharedPreferences? _preferences;
+
+  Future<SharedPreferences?> _prefs() async {
+    if (_preferences != null) return _preferences;
+    try {
+      return await SharedPreferences.getInstance();
+    } catch (_) {
+      // No store (a test, a platform without one): the window opens on its
+      // defaults. A convenience must never be why it will not open at all.
+      return null;
+    }
+  }
+
+  /// The kinds last used, in order. Empty when nothing has been stored or the
+  /// store cannot be read.
+  Future<List<String>> load() async {
+    try {
+      final prefs = await _prefs();
+      return prefs?.getStringList(prefsKey) ?? const <String>[];
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  Future<void> save(List<String> kinds) async {
+    try {
+      final prefs = await _prefs();
+      await prefs?.setStringList(prefsKey, kinds);
+    } catch (_) {
+      // Losing the last lineup is not worth failing a save the user made.
+    }
+  }
+}
+
+/// The records somebody deliberately left unattached.
+///
+/// A loose end is a question the window asks once: "this die is not attached to
+/// any part". Answering *no* has to outlive the window, or reopening it asks
+/// again and the answer stops meaning anything — which is what
+/// `_declinedPairs` did while it was a bare in-memory set.
+///
+/// Keyed `<kind>:<recordId>`, the same shape the window uses, so this file
+/// still knows nothing about the catalogue or the widget tree.
+class CreationDeclinedStore {
+  CreationDeclinedStore({SharedPreferences? preferences})
+    : _preferences = preferences;
+
+  static const String prefsKey = 'creation_declined_links';
+
+  /// Enough for many sittings of loose ends; old answers fall off the back.
+  static const int keep = 200;
+
+  final SharedPreferences? _preferences;
+
+  Future<SharedPreferences?> _prefs() async {
+    if (_preferences != null) return _preferences;
+    try {
+      return await SharedPreferences.getInstance();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Every record left unattached, newest last. Empty when nothing is stored
+  /// or the store cannot be read.
+  Future<Set<String>> load() async {
+    try {
+      final prefs = await _prefs();
+      return (prefs?.getStringList(prefsKey) ?? const <String>[]).toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  Future<void> save(Set<String> keys) async {
+    try {
+      final prefs = await _prefs();
+      final kept = keys.length <= keep
+          ? keys.toList(growable: false)
+          : keys.toList().sublist(keys.length - keep);
+      await prefs?.setStringList(prefsKey, kept);
+    } catch (_) {
+      // Losing an answer is not worth failing the save that produced it.
+    }
+  }
+}

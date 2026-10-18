@@ -43,6 +43,7 @@ import 'package:core_erp/features/items/domain/item_usage_record.dart';
 import 'package:core_erp/features/orders/data/models/order_api_models.dart';
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
+import 'package:core_erp/features/orders/domain/order_fulfilment.dart';
 import 'package:core_erp/features/orders/domain/order_history.dart';
 import 'package:core_erp/features/orders/domain/order_inputs.dart';
 import 'package:core_erp/features/orders/domain/order_production_report.dart';
@@ -1088,8 +1089,17 @@ class FakeGroupRepository extends GroupRepository {
   }
 
   @override
-  Future<List<GroupDefinition>> getGroups() async =>
+  Future<List<GroupDefinition>> getGroups({bool withCovers = false}) async =>
       List<GroupDefinition>.from(_groups);
+
+  // Lets Dart forward anything the interface grows that this fake does not
+  // need. Without it, every addition to the repository broke the whole file at
+  // compile time — which is how 97 tests in three files went dark unnoticed.
+  // It throws if a test actually calls one of those members, which is correct:
+  // these are paths these tests do not exercise.
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
 
   @override
   Future<GroupDefinition> createGroup(CreateGroupInput input) async {
@@ -1456,6 +1466,14 @@ class FakeVendorRepository extends VendorRepository {
 }
 
 class FakeItemRepository extends ItemRepository {
+  // Eight members of ItemRepository are not implemented here — the Master Data
+  // and part-identity additions. Forwarded rather than stubbed, because a stub
+  // returning a plausible empty value would be a quiet lie about behaviour
+  // these tests never exercise; this throws if one is ever called.
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+
   FakeItemRepository({List<ItemDefinition>? seedItems})
     : _items =
           seedItems ??
@@ -2464,6 +2482,15 @@ class FakeItemRepository extends ItemRepository {
 }
 
 class FakeOrderRepository extends OrderRepository {
+  // Implemented, NOT left to noSuchMethod. `OrdersProvider.loadFulfilment`
+  // swallows a failure and leaves `_fulfilmentLoaded` false, so a throwing
+  // stub makes the orders screen retry on every rebuild — an infinite loop
+  // that surfaced as `pumpAndSettle timed out` in 28 different tests. An
+  // empty rollup is the truthful answer for a fake with no production runs.
+  @override
+  Future<List<OrderFulfilment>> getFulfilment() async =>
+      const <OrderFulfilment>[];
+
   FakeOrderRepository({List<OrderEntry> seedOrders = const <OrderEntry>[]})
     : _orders = List<OrderEntry>.from(seedOrders),
       _nextId = seedOrders.isEmpty
@@ -2491,7 +2518,51 @@ class FakeOrderRepository extends OrderRepository {
   Future<void> init() async {}
 
   @override
-  Future<List<OrderEntry>> getOrders() async => List<OrderEntry>.from(_orders);
+  Future<List<OrderEntry>> getOrders({
+    String search = '',
+    int? clientId,
+    List<String> statuses = const [],
+    List<int> ids = const [],
+    int? limit,
+    int offset = 0,
+  }) async {
+    // The filters are honoured, not swallowed. A fake that accepted a narrowing
+    // argument and returned everything anyway would let a test asserting "this
+    // query returns only X" pass while the real repository did no such thing.
+    var rows = _orders.where((order) {
+      if (ids.isNotEmpty && !ids.contains(order.id)) return false;
+      if (clientId != null && order.clientId != clientId) return false;
+      // OrderStatus is an enum; the wire and this filter both speak its name.
+      if (statuses.isNotEmpty && !statuses.contains(order.status.name)) {
+        return false;
+      }
+      if (search.isNotEmpty) {
+        final needle = search.toLowerCase();
+        final haystack = [
+          order.orderNo,
+          order.clientName,
+          order.poNumber,
+          order.itemName,
+        ].join(' ').toLowerCase();
+        if (!haystack.contains(needle)) return false;
+      }
+      return true;
+    }).toList();
+    if (offset > 0) {
+      rows = offset >= rows.length ? <OrderEntry>[] : rows.sublist(offset);
+    }
+    if (limit != null && limit < rows.length) rows = rows.sublist(0, limit);
+    return rows;
+  }
+
+  // Lets Dart forward anything the interface grows that this fake does not
+  // need. Without it, every addition to the repository broke the whole file at
+  // compile time — which is how 97 tests in three files went dark unnoticed.
+  // It throws if a test actually calls one of those members, which is correct:
+  // these are paths these tests do not exercise.
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
 
   @override
   Future<OrderProductionReport> getProductionReport(String orderNo) async =>
@@ -3485,9 +3556,11 @@ class TrackingGroupRepository extends FakeGroupRepository {
   int getGroupsCalls = 0;
 
   @override
-  Future<List<GroupDefinition>> getGroups() async {
+  Future<List<GroupDefinition>> getGroups({bool withCovers = false}) async {
     getGroupsCalls += 1;
-    return super.getGroups();
+    // Passed through, not dropped: this subclass exists to count calls, and a
+    // counter that also quietly changed the query would be two behaviours.
+    return super.getGroups(withCovers: withCovers);
   }
 }
 
@@ -3515,9 +3588,23 @@ class TrackingOrderRepository extends FakeOrderRepository {
   int getOrdersCalls = 0;
 
   @override
-  Future<List<OrderEntry>> getOrders() async {
+  Future<List<OrderEntry>> getOrders({
+    String search = '',
+    int? clientId,
+    List<String> statuses = const [],
+    List<int> ids = const [],
+    int? limit,
+    int offset = 0,
+  }) async {
     getOrdersCalls += 1;
-    return super.getOrders();
+    return super.getOrders(
+      search: search,
+      clientId: clientId,
+      statuses: statuses,
+      ids: ids,
+      limit: limit,
+      offset: offset,
+    );
   }
 }
 

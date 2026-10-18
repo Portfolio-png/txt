@@ -13,6 +13,11 @@ class DiesProvider extends ChangeNotifier {
   bool _isSaving = false;
   bool _isAssetUploading = false;
   String? _errorMessage;
+
+  /// What KIND of refusal the last save was, when the server named one.
+  /// `die_tool_code_duplicate` is the one callers act on.
+  String? _errorCode;
+  String? _suggestedToolCode;
   String _searchQuery = '';
   bool _initialized = false;
 
@@ -21,6 +26,10 @@ class DiesProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
+  String? get errorCode => _errorCode;
+
+  /// The first free code in the series, when a save was refused for a clash.
+  String? get suggestedToolCode => _suggestedToolCode;
   String get searchQuery => _searchQuery;
 
   List<Die> filteredDiesWithGroups(Map<int, String> groupNames) {
@@ -73,11 +82,19 @@ class DiesProvider extends ChangeNotifier {
   Future<Die?> createDie(Die die) async {
     _isSaving = true;
     _errorMessage = null;
+    _errorCode = null;
+    _suggestedToolCode = null;
     notifyListeners();
     try {
       final savedDie = await _repository.saveDie(die);
       await refresh();
       return savedDie;
+    } on DieSaveException catch (e) {
+      _errorMessage = e.message;
+      _errorCode = e.code;
+      _suggestedToolCode = e.suggestedToolCode;
+      notifyListeners();
+      return null;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -91,11 +108,19 @@ class DiesProvider extends ChangeNotifier {
   Future<Die?> updateDie(Die die) async {
     _isSaving = true;
     _errorMessage = null;
+    _errorCode = null;
+    _suggestedToolCode = null;
     notifyListeners();
     try {
       final savedDie = await _repository.saveDie(die);
       await refresh();
       return savedDie;
+    } on DieSaveException catch (e) {
+      _errorMessage = e.message;
+      _errorCode = e.code;
+      _suggestedToolCode = e.suggestedToolCode;
+      notifyListeners();
+      return null;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();

@@ -580,6 +580,31 @@ class AuthApi {
         .toList(growable: false);
   }
 
+  /// Track feed for one sitting — everything done in one opening of one
+  /// window, across every master.
+  ///
+  /// Needs `audit.read`, which is stricter than the per-record feed's
+  /// `config.read`: a sitting is minutes of somebody's work rather than one
+  /// record's history. A sitting belonging to somebody the caller may not see
+  /// answers 404, which this turns into a throw like any other refusal — the
+  /// one thing it must not do is come back as an empty list.
+  Future<List<TrackEvent>> getSittingTrack(String sittingId) async {
+    final uri = Uri.parse('$baseUrl/api/track/sitting/$sittingId');
+    final response = await _client.get(uri, headers: _authHeaders);
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load this sitting.',
+      );
+    }
+    return (payload['events'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(TrackEvent.fromJson)
+        .toList(growable: false);
+  }
+
   /// Track feed for one person — everything they changed across the app.
   Future<List<TrackEvent>> getActorTrack(int userId, {int limit = 200}) async {
     final uri = Uri.parse(

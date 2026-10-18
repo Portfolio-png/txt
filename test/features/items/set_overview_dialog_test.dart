@@ -274,4 +274,49 @@ void main() {
     expect(find.text('Starter Pack'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('names the group the set is filed under, and only when it has one', (
+    tester,
+  ) async {
+    // The group's name travels on the set itself, which is what lets this
+    // dialog show it while pumped with the items provider alone — no
+    // GroupsProvider in this tree, deliberately.
+    final filed = InventorySetDefinition(
+      id: set.id,
+      name: set.name,
+      totalItemCount: set.totalItemCount,
+      createdAt: set.createdAt,
+      updatedAt: set.updatedAt,
+      lines: set.lines,
+      groupId: 4,
+      groupName: 'Ash Trays',
+    );
+
+    await _pump(tester, set: filed, items: [_item(id: 1, name: 'Cone 90mm'), _item(id: 2, name: 'Handle')]);
+    expect(find.textContaining('Ash Trays'), findsOneWidget);
+
+    await _pump(tester, set: set, items: [_item(id: 1, name: 'Cone 90mm'), _item(id: 2, name: 'Handle')]);
+    expect(find.textContaining('Ash Trays'), findsNothing);
+  });
+
+  testWidgets('marks a group that has since been archived', (tester) async {
+    final filedUnderRetired = InventorySetDefinition(
+      id: set.id,
+      name: set.name,
+      totalItemCount: set.totalItemCount,
+      createdAt: set.createdAt,
+      updatedAt: set.updatedAt,
+      lines: set.lines,
+      groupId: 9,
+      groupName: 'Retired Line',
+      groupIsArchived: true,
+    );
+
+    await _pump(
+      tester,
+      set: filedUnderRetired,
+      items: [_item(id: 1, name: 'Cone 90mm'), _item(id: 2, name: 'Handle')],
+    );
+    expect(find.textContaining('Retired Line (archived)'), findsOneWidget);
+  });
 }

@@ -14,6 +14,10 @@ class InventorySetDefinition {
     this.onHandQty,
     this.materialBarcode,
     this.photoUrl,
+    this.groupId,
+    this.groupName,
+    this.groupIsArchived = false,
+    this.version = 0,
   });
 
   final int id;
@@ -46,6 +50,27 @@ class InventorySetDefinition {
   /// The set's own photo, shown on its card in the Items master. Null when none
   /// has been uploaded.
   final String? photoUrl;
+
+  /// The group the set is filed under, and the name to show for it. Null for a
+  /// set nobody has filed — a set produced by an assembly step is always one.
+  ///
+  /// The name travels with the set so a display surface never has to reach for
+  /// GroupsProvider to label it.
+  final int? groupId;
+  final String? groupName;
+
+  /// True when that group has since been archived, so a card can say so rather
+  /// than present a retired group as a live one.
+  final bool groupIsArchived;
+
+  /// What this set's state is numbered, bumped by every save.
+  ///
+  /// A save that carries the version it was opened at is refused when the set
+  /// has moved on — which is the only thing standing between two people with
+  /// the same set open and one of them silently erasing the other's lines.
+  /// Defaulted rather than required: most of the places that build one of these
+  /// by hand have no version to give.
+  final int version;
 }
 
 class InventorySetLineDefinition {
@@ -78,6 +103,9 @@ class SaveInventorySetInput {
     required this.name,
     required this.lines,
     this.photoUrl = '',
+    this.groupId,
+    this.groupIdSpecified = false,
+    this.expectedVersion,
   });
 
   final int? id;
@@ -86,6 +114,26 @@ class SaveInventorySetInput {
 
   /// The set's photo, as the read URL returned by the upload. Empty clears it.
   final String photoUrl;
+
+  /// The group to file the set under, and whether this save is speaking about
+  /// the group at all.
+  ///
+  /// The save is a full replace, but not every caller fills the whole form: the
+  /// "add spawned items to a set" path in the items master sends a name and
+  /// lines only. Were a null groupId read as "clear", adding items to a set
+  /// would silently unfile it. So only a save that sets [groupIdSpecified]
+  /// touches the group; [groupId] null with the flag set means "clear it".
+  final int? groupId;
+  final bool groupIdSpecified;
+
+  /// The version the caller opened this set at, when it knows one.
+  ///
+  /// Sent only when non-null, and then the server refuses the save if the set
+  /// has changed since. Null means "do not check" — which is right for a create
+  /// (there is nothing to conflict with) and for a caller that never read the
+  /// set in the first place. No tri-state is needed: unknown and absent mean
+  /// the same thing here.
+  final int? expectedVersion;
 }
 
 class SaveInventorySetLineInput {

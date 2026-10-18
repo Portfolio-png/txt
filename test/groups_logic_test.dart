@@ -65,8 +65,12 @@ void main() {
 
       await provider.initialize();
 
-      expect(provider.groups.first.isArchived, isFalse);
-      expect(provider.groups.last.isArchived, isTrue);
+      // Not first/last: `refresh()` sorts by lineage — parent name, then own
+      // name — so the tree reads in order, and where an archived group lands
+      // is not something that sort promises. What matters here is that the
+      // seed holds both kinds, which is what the status filter below sorts out.
+      expect(provider.groups.where((group) => group.isArchived), isNotEmpty);
+      expect(provider.groups.where((group) => !group.isArchived), isNotEmpty);
 
       provider.setSearchQuery('solvents');
       expect(provider.filteredGroups.map((group) => group.name), ['Solvents']);

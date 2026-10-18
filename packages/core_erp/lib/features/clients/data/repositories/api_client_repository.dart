@@ -106,6 +106,10 @@ class ApiClientRepository implements ClientRepository {
         updatedAt: now,
         logoUrl: input.logoUrl.trim(),
         photoUrl: input.photoUrl.trim(),
+        contactName: input.contactName.trim(),
+        designation: input.designation.trim(),
+        phone: input.phone.trim(),
+        email: input.email.trim(),
       );
       _mockClients.add(created);
       return created;
@@ -155,6 +159,10 @@ class ApiClientRepository implements ClientRepository {
         updatedAt: DateTime.now(),
         logoUrl: input.logoUrl.trim(),
         photoUrl: input.photoUrl.trim(),
+        contactName: input.contactName.trim(),
+        designation: input.designation.trim(),
+        phone: input.phone.trim(),
+        email: input.email.trim(),
       );
       _mockClients[index] = updated;
       return updated;
@@ -174,6 +182,48 @@ class ApiClientRepository implements ClientRepository {
         !parsed.success ||
         parsed.client == null) {
       throw ClientApiException(parsed.error ?? 'Failed to update client.');
+    }
+    return parsed.client!.toDomain();
+  }
+
+  @override
+  Future<ClientDefinition> archiveClient(int id) => _setArchived(id, true);
+
+  @override
+  Future<ClientDefinition> restoreClient(int id) => _setArchived(id, false);
+
+  /// One body for both directions: the two routes differ only in their last
+  /// path segment and the flag they set.
+  Future<ClientDefinition> _setArchived(int id, bool archived) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockClients.indexWhere((client) => client.id == id);
+      if (index == -1) {
+        throw ClientApiException('Client not found.');
+      }
+      final updated = _mockClients[index].copyWith(
+        isArchived: archived,
+        updatedAt: DateTime.now(),
+      );
+      _mockClients[index] = updated;
+      return updated;
+    }
+
+    final segment = archived ? 'archive' : 'unarchive';
+    final uri = Uri.parse('$baseUrl/api/clients/$id/$segment');
+    final response = await _client.patch(uri);
+    final payload = _decodeJsonObject(response.body);
+    final parsed = ClientResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.client == null) {
+      throw ClientApiException(
+        parsed.error ??
+            (archived
+                ? 'Failed to archive client.'
+                : 'Failed to restore client.'),
+      );
     }
     return parsed.client!.toDomain();
   }

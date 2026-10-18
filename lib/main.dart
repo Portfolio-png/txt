@@ -7,6 +7,7 @@ import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:core_erp/core/network/authenticated_http_client.dart';
+import 'package:core_erp/core/network/sitting_scope.dart';
 import 'package:core_erp/core/network/conditional_cache_client.dart';
 import 'dart:async';
 
@@ -53,7 +54,9 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/core/services/generic_asset_service.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/items/data/services/item_link_options_service.dart';
+import 'package:core_erp/core/devtools/mark_tool.dart';
 import 'package:core_erp/features/links/data/entity_link_service.dart';
+import 'package:core_erp/features/variations/data/variation_tree_service.dart';
 import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
@@ -610,6 +613,15 @@ class MyApp extends StatelessWidget {
             useMockResponses: _effectiveDemoMode,
           ),
         ),
+        // A master's variation tree (/api/variations): the die editor's
+        // Variations section, and whatever master grows one next.
+        Provider<VariationTreeService>(
+          create: (context) => VariationTreeService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
         // The link graph between masters (/api/links): what the creation
         // window's columns read, and what records a link from one of them.
         Provider<EntityLinkService>(
@@ -736,7 +748,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
           builder: (context, child) {
-            return Listener(
+            final app = Listener(
               onPointerDown: (event) {
                 final media = MediaQuery.of(context);
                 SessionReplayService.instance.recordTap(
@@ -747,6 +759,20 @@ class MyApp extends StatelessWidget {
                 );
               },
               child: child ?? const SizedBox(),
+            );
+            // Debug only: the tool reads the element behind a pointer out of
+            // RenderObject.debugCreator, which a release build does not fill
+            // in. Gated here rather than inside, so release does not even
+            // carry the widget.
+            if (!kDebugMode) return app;
+            // The sink posts to the backend, which owns the file: this app is
+            // sandboxed on macOS and cannot write anywhere findable itself.
+            return MarkTool(
+              sink: MarkSink(
+                baseUrl: _apiBaseUrl,
+                client: _authClient(context.read<AuthProvider>()),
+              ),
+              child: app,
             );
           },
           onGenerateRoute: (settings) {
@@ -778,6 +804,10 @@ class MyApp extends StatelessWidget {
           auth.logout();
         }
       },
+      // One line that covers every write in the app. This factory is called
+      // about twenty-five times — once per repository — so resolving the
+      // sitting here is what saves threading it through all of them.
+      sittingResolver: () => SittingScope.current,
       // Conditional requests, so unchanged data costs a header instead of a
       // payload. The server has issued ETags on its high-volume reads all
       // along; nothing was sending them back.

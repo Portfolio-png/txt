@@ -142,7 +142,14 @@ class ApiDieRepository implements DieRepository {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to save die');
+      // The code and the suggestion are carried, not flattened into a string:
+      // a taken die code needs a different answer from a dead network, and the
+      // server already offered the first free one.
+      throw DieSaveException(
+        payload['error'] as String? ?? 'Failed to save die',
+        code: payload['code'] as String?,
+        suggestedToolCode: payload['suggestedToolCode'] as String?,
+      );
     }
     return _dieFromJson(payload['die'] as Map<String, dynamic>);
   }
@@ -365,6 +372,13 @@ class ApiDieRepository implements DieRepository {
     return null;
   }
 
+  /// A stored instant, or null. Never defaulted to now(): a fabricated
+  /// timestamp is printed as though someone had entered it.
+  DateTime? _utcFromJson(Object? raw) {
+    if (raw is! String || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
   Die _dieFromJson(Map<String, dynamic> json) {
     return Die(
       id: json['id'] as String? ?? '',
@@ -407,6 +421,18 @@ class ApiDieRepository implements DieRepository {
         }
         return const <CustomProperty>[];
       }(),
+      // The die sheet (migrations/048). Read back in full so the editor can
+      // correct what the wizard wrote — and so a save from the editor cannot
+      // blank it by leaving it out.
+      dieType: json['dieType'] as String? ?? '',
+      madeBy: json['madeBy'] as String? ?? '',
+      poAt: _utcFromJson(json['poAt']),
+      dateInAt: _utcFromJson(json['dateInAt']),
+      linerSizeNm: json['linerSizeNm'] as int?,
+      linerSizeUnit: json['linerSizeUnit'] as String? ?? 'mm',
+      noOfSet: json['noOfSet'] as int?,
+      storeArea: json['storeArea'] as String? ?? '',
+      rackNo: json['rackNo'] as String? ?? '',
       status: _parseStatus(json['status'] as String? ?? ''),
       ownership: _parseOwnership(json['ownership'] as String? ?? ''),
       createdAt: json['createdAt'] != null
@@ -440,6 +466,15 @@ class ApiDieRepository implements DieRepository {
       'setupMinutes': d.setupMinutes,
       'reportNotes': d.reportNotes,
       'physicalSpecs': d.physicalSpecs.map(_propertyToJson).toList(),
+      'dieType': d.dieType,
+      'madeBy': d.madeBy,
+      'poAt': d.poAt?.toUtc().toIso8601String(),
+      'dateInAt': d.dateInAt?.toUtc().toIso8601String(),
+      'linerSizeNm': d.linerSizeNm,
+      'linerSizeUnit': d.linerSizeUnit,
+      'noOfSet': d.noOfSet,
+      'storeArea': d.storeArea,
+      'rackNo': d.rackNo,
       'status': _statusToString(d.status),
       'ownership': _ownershipToString(d.ownership),
       'createdAt': d.createdAt.toIso8601String(),

@@ -1,4 +1,5 @@
 import '../../production_pipelines/domain/pen_paper_baseline.dart';
+import 'developed_for.dart';
 import 'item_definition.dart';
 
 class ItemUnitConversionInput {
@@ -80,6 +81,9 @@ class CreateItemInput {
     this.penPaperBaseline,
     this.blankWidthMm = 0,
     this.blankHeightMm = 0,
+    this.partNo,
+    this.partCode,
+    this.developedFor,
   });
 
   final String name;
@@ -104,6 +108,24 @@ class CreateItemInput {
   /// The blank size this part is cut as, in millimetres. Zero when unmeasured.
   final double blankWidthMm;
   final double blankHeightMm;
+
+  /// The number this part is issued and the code derived from it.
+  ///
+  /// Null means "say nothing about identity", and the server then keeps what is
+  /// already stamped. That matters because this input is rebuilt wholesale by
+  /// every preserving save: a non-null default would ship on each of them and
+  /// wipe the identity the first time anyone edited a variation.
+  final int? partNo;
+  final String? partCode;
+
+  /// Who this part was developed for, when, and what was quoted.
+  ///
+  /// **Null means say nothing**, and the server then keeps whatever is
+  /// recorded. Clearing it is a present-but-empty block
+  /// ([DevelopedFor.empty]) — the object carries that distinction itself,
+  /// which is why this needs no `specified` flag of the kind [partNo] has.
+  final DevelopedFor? developedFor;
+
 
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.
@@ -134,6 +156,10 @@ class UpdateItemInput {
     this.penPaperBaseline,
     this.blankWidthMm = 0,
     this.blankHeightMm = 0,
+    this.partNo,
+    this.partCode,
+    this.partIdentitySpecified = false,
+    this.developedFor,
   });
 
   final int id;
@@ -159,6 +185,35 @@ class UpdateItemInput {
   /// The blank size this part is cut as, in millimetres. Zero when unmeasured.
   final double blankWidthMm;
   final double blankHeightMm;
+
+  /// The number this part is issued and the code derived from it.
+  ///
+  /// Null means "say nothing about identity", and the server then keeps what is
+  /// already stamped. That matters because this input is rebuilt wholesale by
+  /// every preserving save: a non-null default would ship on each of them and
+  /// wipe the identity the first time anyone edited a variation.
+  final int? partNo;
+  final String? partCode;
+
+  /// True when this save speaks about the part's identity at all, in which case
+  /// both keys are sent — and a null [partNo] or an empty [partCode] then means
+  /// **clear it**, not "leave it alone".
+  ///
+  /// Only the item editor sets this. Without it there is no way to remove a
+  /// number, because an absent key is how every other caller says "preserve".
+  /// Deliberately absent from [CreateItemInput]: the server only stamps a new
+  /// part when neither key arrives, so sending them on a create would turn the
+  /// automatic stamp off.
+  final bool partIdentitySpecified;
+
+  /// Who this part was developed for, when, and what was quoted.
+  ///
+  /// **Null means say nothing**, and the server then keeps whatever is
+  /// recorded. Clearing it is a present-but-empty block
+  /// ([DevelopedFor.empty]) — the object carries that distinction itself,
+  /// which is why this needs no `specified` flag of the kind [partNo] has.
+  final DevelopedFor? developedFor;
+
 
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.

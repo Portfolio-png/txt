@@ -340,6 +340,20 @@ class ApiInventoryRepository implements InventoryRepository {
             );
           })
           .toList(growable: false);
+      // Demo mode is a second server: if it ignored the version it would permit
+      // exactly the lost update the real one now refuses, and no test driving
+      // mock mode could ever see a conflict.
+      if (existingIndex >= 0 &&
+          input.expectedVersion != null &&
+          _mockSets[existingIndex].version != input.expectedVersion) {
+        throw InventoryApiException(
+          '"${_mockSets[existingIndex].name}" changed since you opened it. '
+          'Reload it and make your change again — saving now would replace '
+          "someone else's edit.",
+          code: 'set_changed',
+          statusCode: 409,
+        );
+      }
       final next = InventorySetDefinition(
         id: existingIndex >= 0 ? _mockSets[existingIndex].id : _mockNextId++,
         name: input.name.trim(),
@@ -352,6 +366,15 @@ class ApiInventoryRepository implements InventoryRepository {
             : now,
         updatedAt: now,
         lines: resolvedLines,
+        // The same tri-state the backend applies: a save that says nothing
+        // about the group leaves the one already there.
+        groupId: input.groupIdSpecified
+            ? input.groupId
+            : (existingIndex >= 0 ? _mockSets[existingIndex].groupId : null),
+        groupName: input.groupIdSpecified
+            ? null
+            : (existingIndex >= 0 ? _mockSets[existingIndex].groupName : null),
+        version: existingIndex >= 0 ? _mockSets[existingIndex].version + 1 : 0,
       );
       if (existingIndex >= 0) {
         _mockSets[existingIndex] = next;
@@ -383,7 +406,11 @@ class ApiInventoryRepository implements InventoryRepository {
         response.statusCode >= 300 ||
         !parsed.success ||
         parsed.set == null) {
-      throw InventoryApiException(parsed.error ?? 'Failed to save set.');
+      throw InventoryApiException(
+        parsed.error ?? 'Failed to save set.',
+        code: parsed.code,
+        statusCode: response.statusCode,
+      );
     }
     return parsed.set!.toDomain();
   }
@@ -1618,6 +1645,15 @@ class ApiInventoryRepository implements InventoryRepository {
     return {
       'name': input.name.trim(),
       'photoUrl': input.photoUrl.trim(),
+      // Sent only when the caller knows which version it opened at. The server
+      // then refuses the save if the set has changed since; absent means it
+      // cannot tell, so it does not check.
+      if (input.expectedVersion != null) 'expectedVersion': input.expectedVersion,
+      // Sent only when this save speaks about the group at all: the backend
+      // reads an absent key as "leave the group alone" and a null one as
+      // "clear it", which is what keeps the "add spawned items to a set" path
+      // from unfiling the set. See SaveInventorySetInput.groupIdSpecified.
+      if (input.groupIdSpecified) 'groupId': input.groupId,
       'lines': _mergeSetLines(input.lines)
           .map(
             (line) => {
@@ -1709,9 +1745,15 @@ class ApiInventoryRepository implements InventoryRepository {
 }
 
 class InventoryApiException implements Exception {
-  const InventoryApiException(this.message);
+  const InventoryApiException(this.message, {this.code, this.statusCode});
 
   final String message;
+
+  /// The server's machine-readable reason and its status, where it sent them.
+  /// 'set_changed' is the one a caller acts on: the set moved on, so offer a
+  /// reload rather than reporting a generic failure.
+  final String? code;
+  final int? statusCode;
 
   @override
   String toString() => message;

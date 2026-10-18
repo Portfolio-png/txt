@@ -21,6 +21,12 @@
 //                candidate picker (but NOT out of links that already exist —
 //                archiving a die must not make the link to it disappear
 //                silently).
+//   browseFilterSql
+//                nullable; an extra WHERE clause with the same "picker only"
+//                reach as archivedCol, for a master whose unpickable rows are
+//                not marked by an archive flag. A set is the case: production
+//                mints one set row per run and stage, and those must not flood
+//                the picker, but a link to one still reads.
 //
 // Declaration order is the order columns and menus list them.
 const LINKABLE_TYPES = {
@@ -35,6 +41,23 @@ const LINKABLE_TYPES = {
     module: 'items',
     archivedCol: 'is_archived',
   },
+  set: {
+    label: 'Set',
+    plural: 'Sets',
+    icon: 'set',
+    table: 'inventory_sets',
+    idCol: 'id',
+    labelSql: 'name',
+    // Interpolated as a bare select expression, so it has to be SQL: the two
+    // kinds of set are worth telling apart in a picker.
+    subtitleSql:
+      "CASE WHEN COALESCE(is_temporary, 0) = 1 THEN 'From production' ELSE '' END",
+    module: 'inventory',
+    archivedCol: null,
+    // A set has no archive flag; what it has is run output. Only sets someone
+    // defined are pickable.
+    browseFilterSql: 'COALESCE(is_temporary, 0) = 0',
+  },
   die: {
     label: 'Die',
     plural: 'Dies',
@@ -42,7 +65,17 @@ const LINKABLE_TYPES = {
     table: 'dies',
     idCol: 'id',
     labelSql: "COALESCE(NULLIF(TRIM(tool_code), ''), 'Die ' || id)",
-    subtitleSql: "COALESCE(NULLIF(TRIM(storage_location), ''), '')",
+    // Where it is kept, preferring the structured pair that migration 048
+    // added and falling back to the free text for dies that only ever had it.
+    // One place knows that precedence; nothing composes the two into the old
+    // column on write, which would be two columns holding one fact.
+    subtitleSql:
+      "COALESCE(" +
+      "NULLIF(TRIM(COALESCE(NULLIF(TRIM(store_area), ''), '') || " +
+      "CASE WHEN TRIM(COALESCE(rack_no, '')) <> '' " +
+      "THEN CASE WHEN TRIM(COALESCE(store_area, '')) <> '' THEN ' · Rack ' ELSE 'Rack ' END " +
+      "|| TRIM(rack_no) ELSE '' END), ''), " +
+      "NULLIF(TRIM(storage_location), ''), '')",
     module: 'dies',
     archivedCol: null,
   },

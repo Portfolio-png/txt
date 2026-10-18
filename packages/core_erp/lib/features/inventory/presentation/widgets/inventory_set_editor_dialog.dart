@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/searchable_select.dart';
@@ -21,6 +22,7 @@ import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/domain/item_expression.dart';
 import '../../../items/presentation/widgets/item_expression_field.dart';
 import '../../../items/presentation/utils/naming_format_helper.dart';
+import '../../../groups/presentation/group_picker_field.dart';
 import '../../domain/inventory_set_definition.dart';
 import '../providers/inventory_provider.dart';
 
@@ -102,6 +104,11 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   final Set<_EditableInventorySetLine> _pinnedLines =
       <_EditableInventorySetLine>{};
 
+  /// The group the set is filed under, or null for a set nobody has filed.
+  /// Stored in the entity_links graph rather than on the set, which is why the
+  /// save sends it as its own key.
+  int? _selectedGroupId;
+
   /// The set's photo, held as the read URL the upload returns — the same shape
   /// clients and vendors use, so it needs no set id and works before first save.
   String _photoUrl = '';
@@ -114,37 +121,100 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
 
   bool get _isEditMode => widget.setDefinition != null;
 
+  /// The version this form was filled from. Sent with the save, so a set that
+  /// moved on refuses the write instead of losing the other person's edit.
+  int? _expectedVersion;
+
+  /// Whether anything in this form has been changed by hand. A reload throws
+  /// the lot away, so it is only done silently while this is false.
+  bool _touched = false;
+
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(
-      text: widget.setDefinition?.name ?? '',
+    _nameController = TextEditingController();
+    _lines = <_EditableInventorySetLine>[];
+    _seedFrom(widget.setDefinition);
+    _compositionScrollController.addListener(_handleCompositionScroll);
+    // The set may have moved on since whoever opened this drew their list.
+    // Catching that here is what makes a refused save rare, and meaningful
+    // when it does happen.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refreshFromServer();
+    });
+  }
+
+  /// Fills the whole form from [set] — name, group, photo, rows and version.
+  ///
+  /// Every row is rebuilt, so this first forgets the old ones exactly as
+  /// [_removeLine] does: the listener comes off, the controllers are disposed,
+  /// and all four identity collections are purged. They hold *references* to
+  /// the row objects, and a stranded entry means an animation applied to a row
+  /// that no longer exists.
+  void _seedFrom(InventorySetDefinition? set) {
+    for (final line in _lines) {
+      line.quantityController.removeListener(_handleQuantityChanged);
+      line.dispose();
+    }
+    _lines.clear();
+    _shelfOrder.clear();
+    _departingLines.clear();
+    _awaitingScrollSettle.clear();
+    _pinnedLines.clear();
+    // The handoff is measured against rows that are all gone now.
+    _pendingCompensation = 0;
+    _compensationAnchor = 0;
+    _isCompensationScheduled = false;
+    _scrollingNotifier?.removeListener(_flushSettledDepartures);
+    _scrollingNotifier = null;
+
+    _nameController.text = set?.name ?? '';
+    _selectedGroupId = set?.groupId;
+    _photoUrl = set?.photoUrl ?? '';
+    _expectedVersion = set?.version;
+    _touched = false;
+
+    _lines.addAll(
+      set?.lines.map(
+            (line) => _EditableInventorySetLine(
+              itemId: line.itemId,
+              variationLeafNodeId: line.variationLeafNodeId,
+              selectionKey: '${line.itemId}::${line.variationLeafNodeId}',
+              itemLabel: line.itemDisplayName.trim().isEmpty
+                  ? line.itemName
+                  : line.itemDisplayName,
+              variationPathLabel: line.variationPathLabel,
+              variationPathNodeIds: line.variationPathNodeIds,
+              quantity: line.quantity.toString(),
+            ),
+          ) ??
+          <_EditableInventorySetLine>[_EditableInventorySetLine()],
     );
-    _lines =
-        widget.setDefinition?.lines
-            .map(
-              (line) => _EditableInventorySetLine(
-                itemId: line.itemId,
-                variationLeafNodeId: line.variationLeafNodeId,
-                selectionKey: '${line.itemId}::${line.variationLeafNodeId}',
-                itemLabel: line.itemDisplayName.trim().isEmpty
-                    ? line.itemName
-                    : line.itemDisplayName,
-                variationPathLabel: line.variationPathLabel,
-                variationPathNodeIds: line.variationPathNodeIds,
-                quantity: line.quantity.toString(),
-              ),
-            )
-            .toList(growable: true) ??
-        <_EditableInventorySetLine>[_EditableInventorySetLine()];
     for (final line in _lines) {
       line.quantityController.addListener(_handleQuantityChanged);
     }
-    _photoUrl = widget.setDefinition?.photoUrl ?? '';
     // An existing set opens with its older rows already shelved — no flight.
     // Reversed so the shelf starts out newest-first like every later arrival.
     _shelfOrder.addAll(_positionalDepartures().reversed);
-    _compositionScrollController.addListener(_handleCompositionScroll);
+    if (_compositionScrollController.hasClients) {
+      _compositionScrollController.jumpTo(0);
+    }
+  }
+
+  /// Re-reads the set behind this form. Silent when nothing has been typed;
+  /// otherwise the user is asked, because taking the server's copy throws away
+  /// what they have in front of them.
+  Future<void> _refreshFromServer({bool force = false}) async {
+    final id = widget.setDefinition?.id;
+    if (id == null) return;
+    final inventory = context.read<InventoryProvider>();
+    await inventory.initialize();
+    await inventory.reloadSets();
+    if (!mounted) return;
+    final fresh = inventory.sets.where((set) => set.id == id).firstOrNull;
+    if (fresh == null || fresh.version == _expectedVersion) return;
+    if (!force && _touched) return;
+    setState(() => _seedFrom(fresh));
   }
 
   @override
@@ -162,6 +232,37 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
 
   /// Uploads a picture for the set and keeps the returned read URL. Mirrors the
   /// client and vendor photo flow, so there is one upload path to reason about.
+  /// Someone else changed this set while it was open. Reloading is the only way
+  /// to save again, and it is destructive: the save replaces the name, the
+  /// photo, the group link and the lines together, so keeping half of this form
+  /// would just relocate the lost edit.
+  Future<void> _offerReload(String? message) async {
+    final name = widget.setDefinition?.name ?? 'This set';
+    if (_isUploadingPhoto) {
+      // A reload mid-upload would land the finished URL on a photo that has
+      // since been replaced.
+      showAppToast(
+        context,
+        'Wait for the picture to finish uploading, then try again.',
+        kind: AppToastKind.warning,
+      );
+      return;
+    }
+    final reload = await showConfirmDialog(
+      context,
+      title: '"$name" changed while you had it open',
+      message:
+          '${message ?? 'Someone else edited this set.'}\n\n'
+          'Reloading brings in their version and discards everything you have '
+          'typed here. Keeping your edits leaves them on screen, but this set '
+          'cannot be saved until you reload.',
+      confirmLabel: 'Discard and reload',
+      cancelLabel: 'Keep my edits',
+    );
+    if (!reload || !mounted) return;
+    await _refreshFromServer(force: true);
+  }
+
   Future<void> _pickSetPhoto() async {
     const typeGroup = XTypeGroup(
       label: 'Images',
@@ -203,7 +304,10 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       final readUrl = intent.readUrl;
       if (readUrl == null) throw Exception('Upload returned no read URL.');
       if (!mounted) return;
-      setState(() => _photoUrl = readUrl);
+      setState(() {
+        _photoUrl = readUrl;
+        _touched = true;
+      });
     } catch (error) {
       if (!mounted) return;
       showAppSnack(SnackBar(content: Text('Photo upload failed: $error')));
@@ -217,6 +321,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     if (!mounted) {
       return;
     }
+    _touched = true;
     setState(() {});
   }
 
@@ -525,6 +630,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
         children: [
           TextFormField(
             controller: _nameController,
+            onChanged: (_) => _touched = true,
             style: _inventoryInterStyle(
               color: const Color(0xFF0F172A),
               size: 14,
@@ -539,11 +645,32 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
                 value == null || value.trim().isEmpty ? 'Required' : null,
           ),
           const SizedBox(height: 16),
+          // The same scope an item files into, so a group holds a kit next to
+          // the items it is built from. Optional: a set need not be filed.
+          GroupPickerField(
+            tapTargetKey: const ValueKey<String>('set-editor-group-field'),
+            value: _selectedGroupId,
+            scope: GroupPickerScope.filable,
+            decoration: _editorFieldDecoration(
+              label: 'Group',
+              helper: 'File the set beside the items it is built from.',
+            ),
+            dialogTitle: 'Group',
+            nullOptionLabel: 'Ungrouped',
+            onChanged: (value) => setState(() {
+              _selectedGroupId = value;
+              _touched = true;
+            }),
+          ),
+          const SizedBox(height: 16),
           _SetPhotoField(
             photoUrl: _photoUrl,
             isUploading: _isUploadingPhoto,
             onPick: _pickSetPhoto,
-            onClear: () => setState(() => _photoUrl = ''),
+            onClear: () => setState(() {
+              _photoUrl = '';
+              _touched = true;
+            }),
           ),
         ],
       ),
@@ -971,6 +1098,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   }
 
   void _addLine() {
+    _touched = true;
     setState(() {
       // Starting a new row means the reopened ones are done; let them shelve.
       _pinnedLines.clear();
@@ -992,6 +1120,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   }
 
   void _removeLine(int index) {
+    _touched = true;
     final line = _lines.removeAt(index);
     _pinnedLines.remove(line);
     _shelfOrder.remove(line);
@@ -1052,6 +1181,9 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     final created = await ItemsScreen.openEditor(
       context,
       initialName: query.trim(),
+      // The Sets card inside is live: this dialog's save now carries the
+      // version it opened at, so a membership write made in there is refused
+      // here rather than silently undone.
       // Carries the pipeline builder in with it, so the new item can be given
       // a pipeline without leaving the set half-built.
       onCreatePipeline: AppFlowHooks.createPipelineFor(context),
@@ -1075,6 +1207,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     String? selectionKey,
     Map<String, _SelectableSetReference> selectableReferenceByKey,
   ) async {
+    _touched = true;
     if (selectionKey == null) {
       setState(() {
         final line = _lines[index];
@@ -1322,24 +1455,41 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       }
     }
 
-    final saved = await context.read<InventoryProvider>().saveSet(
+    final result = await context.read<InventoryProvider>().trySaveSet(
       SaveInventorySetInput(
         id: widget.setDefinition?.id,
         name: name,
         photoUrl: _photoUrl,
+        // This form owns the whole set, so it always speaks about the group —
+        // including to clear it.
+        groupId: _selectedGroupId,
+        groupIdSpecified: true,
+        // What this form was filled from. A set that has moved on since then
+        // refuses the save rather than replacing whatever happened meanwhile.
+        // Null while creating: there is nothing to conflict with.
+        expectedVersion: _expectedVersion,
         lines: merged.values.toList(growable: false)
           ..sort((a, b) => a.position.compareTo(b.position)),
       ),
     );
+    final saved = result.set;
 
     if (!mounted) {
       return;
     }
     final provider = context.read<InventoryProvider>();
+    if (result.outcome == SetSaveOutcome.conflict) {
+      await _offerReload(provider.errorMessage);
+      return;
+    }
     if (provider.errorMessage != null) {
       showAppToast(context, provider.errorMessage!, kind: AppToastKind.error);
       return;
     }
+    // The set is now one version further on, and nothing in this form is
+    // unsaved — so a host that keeps the editor open can save again.
+    _expectedVersion = saved?.version ?? _expectedVersion;
+    _touched = false;
     showAppToast(
       context,
       widget.setDefinition == null ? 'Set created' : 'Set saved',

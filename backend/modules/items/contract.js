@@ -73,6 +73,24 @@ const itemWrite = {
     // Per-item sample baseline (pen & paper yield record). Shape is owned by
     // the client's PenPaperBaseline model; the border only stores the JSON.
     penPaperBaseline: { type: 'object', nullable: true, openFields: true, fields: {} },
+    // The number this part is issued and the code read off a drawing
+    // (migrations/045). Absent means "leave whatever is stamped alone".
+    partNo: { type: 'integer', nullable: true, min: 1 },
+    partCode: { type: 'string', nullable: true },
+    // Who this part was developed for (migrations/047). Absent means "leave
+    // whatever is recorded alone"; a present block with kind 'self' clears it.
+    developedFor: {
+      type: 'object',
+      nullable: true,
+      openFields: true,
+      fields: {
+        kind: { type: 'string', nullable: true },
+        clientId: { type: 'integer', nullable: true, min: 1 },
+        subContractorId: { type: 'integer', nullable: true, min: 1 },
+        at: { type: 'string', nullable: true },
+        quotationAmount: { type: 'number', nullable: true },
+      },
+    },
   },
 };
 
@@ -100,7 +118,7 @@ const itemEgress = {
     'groupId', 'unitId', 'unitConversions', 'namingFormat', 'isArchived',
     'usageCount', 'createdAt', 'updatedAt', 'variationTree', 'propertySchema',
     'baseItemId', 'combinationGroupIds', 'photoUrl', 'availableForPurchase',
-    'penPaperBaseline',
+    'penPaperBaseline', 'partNo', 'partCode', 'developedFor',
   ],
 };
 

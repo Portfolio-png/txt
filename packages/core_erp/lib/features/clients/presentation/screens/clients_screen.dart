@@ -27,6 +27,7 @@ import 'package:core_erp/features/orders/domain/order_entry.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
+import '../widgets/designation_field.dart';
 import '../widgets/sub_contractors_sheet.dart';
 import '../providers/sub_contractors_provider.dart';
 
@@ -53,6 +54,27 @@ class ClientsScreen extends StatefulWidget {
     required ValueChanged<ClientDefinition> onSaved,
     required VoidCallback onCancel,
   }) => _ClientEditorSheet(onSaved: onSaved, onCancel: onCancel);
+
+  /// The sub-contractor editor, for a picker elsewhere that needs a
+  /// contractor created on the spot — the item editor's "For: Contractor"
+  /// does, and a part cannot wait for someone to visit this screen.
+  static Future<SubContractorDefinition?> openSubContractorEditor(
+    BuildContext context, {
+    SubContractorDefinition? subContractor,
+    int? initialClientId,
+    String? initialName,
+  }) {
+    return showErpFormDialog<SubContractorDefinition?>(
+      context,
+      maxWidth: 600,
+      maxHeight: 760,
+      child: _SubContractorEditorSheet(
+        subContractor: subContractor,
+        initialClientId: initialClientId,
+        initialName: initialName,
+      ),
+    );
+  }
 
   /// The sub-contractor editor for embedding; same contract as [editorPanel].
   static Widget subContractorEditorPanel({
@@ -265,6 +287,27 @@ class _ClientsToolbar extends StatelessWidget {
             ),
           ],
         ),
+        // Without this, archiving a client makes it vanish with no way to
+        // find it again: the provider's default filter is `active`.
+        if (provider.viewType == ClientMasterView.clients)
+          SoftSegmentedFilter<ClientStatusFilter>(
+            selected: provider.statusFilter,
+            onChanged: provider.setStatusFilter,
+            options: const [
+              SoftSegmentOption<ClientStatusFilter>(
+                value: ClientStatusFilter.active,
+                label: 'Active',
+              ),
+              SoftSegmentOption<ClientStatusFilter>(
+                value: ClientStatusFilter.archived,
+                label: 'Archived',
+              ),
+              SoftSegmentOption<ClientStatusFilter>(
+                value: ClientStatusFilter.all,
+                label: 'All',
+              ),
+            ],
+          ),
         // Cards apply to the client list; the sub-contractor view is its own
         // table and keeps the toggle out of the way.
         if (provider.viewType == ClientMasterView.clients)
@@ -456,6 +499,45 @@ class _ClientRow extends StatelessWidget {
                 label: 'Sub-contractors',
                 onTap: () => SubContractorsSheet.show(context, client),
               ),
+              // Archive before Delete, because it is the reversible one and
+              // the one people usually mean. A refusal lands in the banner
+              // above the list, which already renders provider.errorMessage.
+              SoftActionLink(
+                key: ValueKey<String>('client_archive_${client.id}'),
+                label: client.isArchived ? 'Restore' : 'Archive',
+                onTap: provider.isSaving
+                    ? null
+                    : () async {
+                        if (client.isArchived) {
+                          final ok = await provider.restoreClient(client.id);
+                          if (ok && context.mounted) {
+                            showAppToast(
+                              context,
+                              '"${client.name}" is back in use.',
+                              kind: AppToastKind.success,
+                            );
+                          }
+                          return;
+                        }
+                        final confirmed = await showConfirmDialog(
+                          context,
+                          title: 'Archive client?',
+                          message:
+                              'Take "${client.name}" out of use? Nothing is '
+                              'deleted — it moves to Archived, and Restore '
+                              'brings it back.',
+                        );
+                        if (!confirmed) return;
+                        final ok = await provider.archiveClient(client.id);
+                        if (ok && context.mounted) {
+                          showAppToast(
+                            context,
+                            '"${client.name}" archived.',
+                            kind: AppToastKind.success,
+                          );
+                        }
+                      },
+              ),
               SoftActionLink(
                 label: 'Delete',
                 onTap: provider.isSaving
@@ -507,6 +589,10 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
   late final TextEditingController _addressController;
   late final TextEditingController _logoUrlController;
   late final TextEditingController _photoUrlController;
+  late final TextEditingController _contactNameController;
+  late final TextEditingController _designationController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _emailController;
 
   bool _isSaving = false;
 
@@ -531,6 +617,14 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
     _photoUrlController = TextEditingController(
       text: widget.client?.photoUrl ?? '',
     );
+    _contactNameController = TextEditingController(
+      text: widget.client?.contactName ?? '',
+    );
+    _designationController = TextEditingController(
+      text: widget.client?.designation ?? '',
+    );
+    _phoneController = TextEditingController(text: widget.client?.phone ?? '');
+    _emailController = TextEditingController(text: widget.client?.email ?? '');
     _nameController.addListener(_handleChange);
     _aliasController.addListener(_handleChange);
     _gstController.addListener(_handleChange);
@@ -557,6 +651,10 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
     _addressController.dispose();
     _logoUrlController.dispose();
     _photoUrlController.dispose();
+    _contactNameController.dispose();
+    _designationController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -605,6 +703,42 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                     helper: 'Optional. Must stay unique when provided',
                     required: false,
                     textCapitalization: TextCapitalization.characters,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Contact',
+              subtitle:
+                  'The one person you deal with at this company. Shown on every '
+                  'part developed for them — this is not the same as their '
+                  'sub-contractors, who are parties you give work to.',
+              child: Column(
+                children: [
+                  _ClientTextField(
+                    controller: _contactNameController,
+                    label: 'Contact Name',
+                    helper: 'Optional. Who you speak to here',
+                    required: false,
+                  ),
+                  const SizedBox(height: 12),
+                  DesignationField(controller: _designationController),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _phoneController,
+                    label: 'Contact No.',
+                    helper: 'Optional phone number',
+                    required: false,
+                    textCapitalization: TextCapitalization.none,
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _emailController,
+                    label: 'Email ID',
+                    helper: 'Optional email address',
+                    required: false,
+                    textCapitalization: TextCapitalization.none,
                   ),
                 ],
               ),
@@ -750,6 +884,10 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                 address: _addressController.text.trim(),
                 logoUrl: _logoUrlController.text.trim(),
                 photoUrl: _photoUrlController.text.trim(),
+                contactName: _contactNameController.text.trim(),
+                designation: _designationController.text.trim(),
+                phone: _phoneController.text.trim(),
+                email: _emailController.text.trim(),
               ),
             )
           : await provider.updateClient(
@@ -761,6 +899,10 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                 address: _addressController.text.trim(),
                 logoUrl: _logoUrlController.text.trim(),
                 photoUrl: _photoUrlController.text.trim(),
+                contactName: _contactNameController.text.trim(),
+                designation: _designationController.text.trim(),
+                phone: _phoneController.text.trim(),
+                email: _emailController.text.trim(),
               ),
             );
 
@@ -789,12 +931,17 @@ class _SubContractorEditorSheet extends StatefulWidget {
   const _SubContractorEditorSheet({
     this.subContractor,
     this.initialClientId,
+    this.initialName,
     this.onSaved,
     this.onCancel,
   });
 
   final SubContractorDefinition? subContractor;
   final int? initialClientId;
+
+  /// What was typed into the picker that opened this. Saves retyping the name
+  /// someone has already written once.
+  final String? initialName;
 
   /// Set when embedded: replaces popping with the saved sub-contractor.
   final ValueChanged<SubContractorDefinition>? onSaved;
@@ -810,6 +957,7 @@ class _SubContractorEditorSheet extends StatefulWidget {
 class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
+  late final TextEditingController _designationController;
   late final TextEditingController _phoneController;
   late final TextEditingController _emailController;
   late final TextEditingController _notesController;
@@ -827,7 +975,10 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
     _selectedClientId =
         widget.subContractor?.clientId ?? widget.initialClientId;
     _nameController = TextEditingController(
-      text: widget.subContractor?.name ?? '',
+      text: widget.subContractor?.name ?? widget.initialName ?? '',
+    );
+    _designationController = TextEditingController(
+      text: widget.subContractor?.designation ?? '',
     );
     _phoneController = TextEditingController(
       text: widget.subContractor?.phone ?? '',
@@ -865,6 +1016,7 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
     _addressController.removeListener(_handleChange);
     _photoUrlController.removeListener(_handleChange);
     _nameController.dispose();
+    _designationController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
     _notesController.dispose();
@@ -922,6 +1074,8 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
                     label: 'Name',
                     helper: 'Required. Sub-contractor name',
                   ),
+                  const SizedBox(height: 12),
+                  DesignationField(controller: _designationController),
                   const SizedBox(height: 12),
                   _ClientTextField(
                     controller: _phoneController,
@@ -1034,22 +1188,47 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
 
     try {
       final subProvider = context.read<SubContractorsProvider>();
-      final result = widget.subContractor == null
-          ? await subProvider.create(
-              _selectedClientId!,
-              CreateSubContractorInput(
-                name: _nameController.text.trim(),
-                phone: _phoneController.text.trim(),
-                email: _emailController.text.trim(),
-                notes: _notesController.text.trim(),
-                gstNumber: ClientsProvider.normalizeGstNumber(
-                  _gstController.text,
-                ),
-                address: _addressController.text.trim(),
-                photoUrl: _photoUrlController.text.trim(),
-              ),
-            )
-          : null; // Update not fully implemented in form yet for global usage
+      SubContractorDefinition? result;
+      if (widget.subContractor == null) {
+        result = await subProvider.create(
+          _selectedClientId!,
+          CreateSubContractorInput(
+            name: _nameController.text.trim(),
+            designation: _designationController.text.trim(),
+            phone: _phoneController.text.trim(),
+            email: _emailController.text.trim(),
+            notes: _notesController.text.trim(),
+            gstNumber: ClientsProvider.normalizeGstNumber(_gstController.text),
+            address: _addressController.text.trim(),
+            photoUrl: _photoUrlController.text.trim(),
+          ),
+        );
+      } else {
+        // This branch was a literal `null` with a note saying it was not
+        // implemented, so Save Changes silently did nothing and reported
+        // success. Every field the form owns is sent, which is also what keeps
+        // the route's preserve-on-absence rule honest.
+        await subProvider.update(
+          widget.subContractor!.id,
+          UpdateSubContractorInput(
+            name: _nameController.text.trim(),
+            designation: _designationController.text.trim(),
+            phone: _phoneController.text.trim(),
+            email: _emailController.text.trim(),
+            notes: _notesController.text.trim(),
+            gstNumber: ClientsProvider.normalizeGstNumber(_gstController.text),
+            address: _addressController.text.trim(),
+            photoUrl: _photoUrlController.text.trim(),
+          ),
+        );
+        result = subProvider.allSubContractors
+            .where((entry) => entry.id == widget.subContractor!.id)
+            .firstOrNull ??
+            subProvider
+                .forClient(widget.subContractor!.clientId)
+                .where((entry) => entry.id == widget.subContractor!.id)
+                .firstOrNull;
+      }
 
       if (context.mounted && result != null && subProvider.error == null) {
         showAppToast(

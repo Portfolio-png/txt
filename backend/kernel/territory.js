@@ -42,6 +42,8 @@ const KERNEL_TABLES = new Set([
   // no business module can own it — the same reasoning that puts
   // uploaded_assets here.
   'entity_links',
+  // The generic variation tree, polymorphic for the same reason.
+  'entity_variation_nodes', 'entity_variation_versions',
 ]);
 
 function collectExpressRoutes(app) {

@@ -769,6 +769,24 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Track feed for one sitting — one opening of one window.
+  ///
+  /// **Deliberately rethrows**, unlike the two feeds above. They answer
+  /// `const []` on failure, which is survivable for a record's history tab but
+  /// not here: a refused sitting would render as "No activity tracked yet" and
+  /// tell somebody nothing happened in a window they are simply not allowed to
+  /// look into. The panel has an error state for this.
+  Future<List<TrackEvent>> getSittingTrack(String sittingId) async {
+    try {
+      return await _api.getSittingTrack(sittingId);
+    } catch (error) {
+      final message = _friendly(error, fallback: 'Failed to load this sitting.');
+      _errorMessage = message;
+      notifyListeners();
+      throw Exception(message);
+    }
+  }
+
   Future<List<AuthSession>> getUserSessions(int userId) async {
     if (!can('sessions.manage')) {
       _errorMessage = 'You do not have permission to view sessions.';
