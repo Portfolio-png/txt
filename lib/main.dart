@@ -57,6 +57,8 @@ import 'package:core_erp/features/items/data/services/item_link_options_service.
 import 'package:core_erp/core/devtools/mark_tool.dart';
 import 'package:core_erp/features/links/data/entity_link_service.dart';
 import 'package:core_erp/features/variations/data/variation_tree_service.dart';
+import 'package:core_erp/features/process_routes/data/process_route_service.dart';
+import 'package:core_erp/features/units/data/unit_family_service.dart';
 import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
@@ -617,6 +619,28 @@ class MyApp extends StatelessWidget {
         // Variations section, and whatever master grows one next.
         Provider<VariationTreeService>(
           create: (context) => VariationTreeService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // A part's process route (/api/items/:id/routes) and the factory's
+        // stage master. Separate from the pipeline designer: a route is a flat
+        // ordered list of stages belonging to a part, a pipeline is a node
+        // graph for a production run.
+        Provider<ProcessRouteService>(
+          create: (context) => ProcessRouteService(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // The units master read as FAMILIES with integer ladders
+        // (/api/units/families). Nothing in Dart could build a populated
+        // UnitFamily before this, so anything needing to know a gross is 144
+        // had to write 144 down — the thing invariant I2 exists to stop.
+        Provider<UnitFamilyService>(
+          create: (context) => UnitFamilyService(
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: _apiBaseUrl,
             useMockResponses: _effectiveDemoMode,

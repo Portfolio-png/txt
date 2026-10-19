@@ -8,11 +8,11 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/domain/item_form_sections.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../process_routes/presentation/widgets/route_editor.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../links/data/entity_link_service.dart';
 import '../../../links/domain/entity_link.dart';
 import '../../../links/presentation/widgets/link_columns.dart';
-import '../../../../core/widgets/soft_master_data.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../units/domain/starter_units.dart';
@@ -23,6 +23,7 @@ import '../providers/groups_provider.dart';
 import 'creation_guided_run.dart';
 import 'creation_sessions.dart';
 import 'creation_wizard_kinds.dart';
+import '../widgets/factory_sheet_wizard.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -59,7 +60,19 @@ class ComponentCreationWorkspace extends StatefulWidget {
     this.initialKinds,
     this.onLineupChanged,
     this.sittingId,
+    this.initialFactorySheetMode = false,
+    this.factorySheetActive,
+    this.onSwitchToBench,
   });
+
+  /// Whether the workspace starts in Factory Sheet Wizard mode.
+  final bool initialFactorySheetMode;
+
+  /// External override for whether Factory Sheet Wizard is active.
+  final bool? factorySheetActive;
+
+  /// Callback when switching out of Factory Sheet Wizard back to bench.
+  final VoidCallback? onSwitchToBench;
 
   /// This opening of the window, as the server groups it.
   ///
@@ -116,6 +129,7 @@ class ComponentCreationDialog extends StatefulWidget {
     this.title,
     this.initialKinds,
     this.onLineupChanged,
+    this.initialFactorySheetMode = false,
   });
 
   final GroupDefinition? component;
@@ -137,6 +151,22 @@ class ComponentCreationDialog extends StatefulWidget {
 
   /// Passed through to the workspace; tests use it to stay light.
   final ComponentItemEditorBuilder? itemEditorBuilder;
+
+  /// Whether to open directly into the Unified Factory Sheet Wizard.
+  final bool initialFactorySheetMode;
+
+  /// Opens directly into the Unified Factory Sheet Wizard.
+  static Future<void> openFactorySheet(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const ComponentCreationDialog(
+        itemsOnly: true,
+        title: 'Factory Sheet Wizard',
+        initialFactorySheetMode: true,
+      ),
+    );
+  }
 
   static Future<void> open(BuildContext context, {GroupDefinition? component}) {
     return showDialog<void>(
@@ -194,6 +224,7 @@ class _ComponentCreationDialogState extends State<ComponentCreationDialog> {
   late GroupDefinition? _component = widget.component;
   late final CreationSessionController _sessions = CreationSessionController()
     ..load();
+  late bool _factorySheetActive = widget.initialFactorySheetMode;
 
   /// This opening of the window, as the server will group it.
   ///
@@ -245,6 +276,9 @@ class _ComponentCreationDialogState extends State<ComponentCreationDialog> {
               componentName: _component?.name,
               sessions: _sessions,
               sittingId: _sittingId,
+              factorySheetActive: _factorySheetActive,
+              onToggleFactorySheet: () =>
+                  setState(() => _factorySheetActive = !_factorySheetActive),
               onClose: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
@@ -259,6 +293,10 @@ class _ComponentCreationDialogState extends State<ComponentCreationDialog> {
                   linkService: widget.linkService,
                   initialKinds: widget.initialKinds,
                   onLineupChanged: widget.onLineupChanged,
+                  initialFactorySheetMode: widget.initialFactorySheetMode,
+                  factorySheetActive: _factorySheetActive,
+                  onSwitchToBench: () =>
+                      setState(() => _factorySheetActive = false),
                   onComponentChanged: (component) =>
                       setState(() => _component = component),
                 ),
@@ -448,6 +486,19 @@ class _ComponentCreationWorkspaceState
 
   /// The standard-units offer was waved away for this opening of the window.
   bool _starterUnitsDismissed = false;
+
+  /// Whether the Unified Factory Sheet Wizard is active.
+  late bool _factorySheetActive =
+      widget.factorySheetActive ?? widget.initialFactorySheetMode;
+
+  @override
+  void didUpdateWidget(ComponentCreationWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.factorySheetActive != null &&
+        widget.factorySheetActive != oldWidget.factorySheetActive) {
+      _factorySheetActive = widget.factorySheetActive!;
+    }
+  }
 
   /// Whether this opening is a guided first run.
   ///
@@ -886,11 +937,23 @@ class _ComponentCreationWorkspaceState
 
   @override
   Widget build(BuildContext context) {
-    final allItems = context.watch<ItemsProvider>().items;
-    // Decided once. `_componentItems` below answers a different question — in
-    // Express it lists only what THIS window added, so it is empty on every
-    // opening and would start a guided run every time.
-    _guidedActive ??= widget.itemsOnly && allItems.isEmpty;
+    final itemsProvider = context.watch<ItemsProvider>();
+    final allItems = itemsProvider.items;
+    // Decided once, but NOT before the answer is known.
+    //
+    // `_componentItems` below answers a different question — in Express it
+    // lists only what THIS window added, so it is empty on every opening and
+    // would start a guided run every time. That much was already handled. What
+    // was not: an empty `items` ALSO means "nobody has loaded them yet", and
+    // because this is a `??=` the first build's answer is permanent. Open
+    // Express before the items have arrived and the guided first run took over
+    // a workspace with a full catalogue in it, for good. Found by the first
+    // integration test to drive the real app.
+    if (_guidedActive == null &&
+        itemsProvider.isInitialized &&
+        !itemsProvider.isLoading) {
+      _guidedActive = widget.itemsOnly && allItems.isEmpty;
+    }
     final items = _componentItems(allItems);
     // What was made on this bench and is still attached to nothing — worked
     // out once, so the reference column and its list agree.
@@ -1501,6 +1564,18 @@ class _ComponentCreationWorkspaceState
 
   Widget _buildMiddle(List<ItemDefinition> items) {
     if (_naming) return _buildComponentForm();
+    if (_factorySheetActive) {
+      return FactorySheetWizard(
+        initialGroupName: _component?.name,
+        onSwitchToBench: () {
+          widget.onSwitchToBench?.call();
+          setState(() => _factorySheetActive = false);
+        },
+        onSaved: (item) {
+          _onItemClosed(_itemTileToUse(), item);
+        },
+      );
+    }
     // A workspace with no items at all has nothing to copy from, so three
     // questions in the factory's own words beat thirteen cards. Ahead of the
     // chooser because it answers the same "nothing yet" state, better.
@@ -1690,6 +1765,14 @@ class _ComponentCreationWorkspaceState
     if (made.isEmpty) return const <_LooseEnd>[];
 
     final out = <_LooseEnd>[];
+    // A part with no ROUTE is deliberately not listed here, though it was
+    // tried. This panel is about "records still attached to nothing", and it
+    // has to be empty once everything is attached — two tests pin exactly
+    // that ('an item on its own cannot be a loose end', and the offer being
+    // gone after a quick attach). A routeless part is a different kind of
+    // incompleteness and would have made every new part nag immediately. The
+    // Route card is found through the chooser and the + menu, like every other
+    // kind.
     for (final kind in const [CreationKinds.die, CreationKinds.machine]) {
       for (final record in _added[kind] ?? const <CreatedRecord>[]) {
         if (_declinedRecords.contains(_recordKey(kind, record.id))) continue;
@@ -2292,6 +2375,66 @@ class _ComponentCreationWorkspaceState
           ),
           const SizedBox(height: 20),
           if (_showStarterUnitsOffer) _buildStarterUnitsOffer(),
+          // Factory Sheet Wizard Banner
+          Container(
+            margin: const EdgeInsets.only(bottom: 24),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accentSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+              border: Border.all(
+                color: SoftErpTheme.accent.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.accent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.table_chart_outlined,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Factory Sheet Wizard (Unified Entry)',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Enter Part Identity, Client Quote, Alloy Variations, Yield in Gross/Dozen, Tooling Dies & 9-Stage Routing in one flow.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                AppButton(
+                  key: const ValueKey('open_factory_sheet_wizard_button'),
+                  label: 'Open Factory Sheet Wizard',
+                  icon: Icons.arrow_forward,
+                  variant: AppButtonVariant.primary,
+                  onPressed: () => setState(() => _factorySheetActive = true),
+                ),
+              ],
+            ),
+          ),
           // One labelled group per tier, in the order a factory has to set
           // things up. Groups, not literal rows: 168pt cards fit five across
           // at the 1760 dialog cap but only three on a 1440 laptop, so a tier
@@ -2347,7 +2490,18 @@ class _ComponentCreationWorkspaceState
 
   Widget _buildRecordEditor(_LineupEntry entry, List<ItemDefinition> items) {
     final kind = CreationKinds.byKey(entry.kind);
-    final builder = kind.editor?.call();
+    // A route is the one kind whose panel needs to know something about THIS
+    // bench: which part it was opened for, and which parts were made here so
+    // the picker can put them first. The catalogue's thunk takes no arguments
+    // — widening it would touch all fourteen specs for one kind's sake — so
+    // the route is built here instead, the same way `_isAssetKey` singles out
+    // die and machine a few lines down.
+    final builder = entry.kind == CreationKinds.route
+        ? routeEditorPanel(
+            initialPartId: entry.targetItemId,
+            madeHereItemIds: _addedItemIds,
+          )
+        : kind.editor?.call();
     final target = items
         .where((item) => item.id == entry.targetItemId)
         .firstOrNull;
@@ -2716,6 +2870,8 @@ class _Header extends StatelessWidget {
     required this.sessions,
     required this.sittingId,
     required this.onClose,
+    this.factorySheetActive = false,
+    this.onToggleFactorySheet,
   });
 
   final String title;
@@ -2726,6 +2882,8 @@ class _Header extends StatelessWidget {
   /// the id the recents entry carries, which are now the same string.
   final String sittingId;
   final VoidCallback onClose;
+  final bool factorySheetActive;
+  final VoidCallback? onToggleFactorySheet;
 
   /// How many records have been saved in this opening.
   ///
@@ -2785,6 +2943,41 @@ class _Header extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          if (onToggleFactorySheet != null) ...[
+            InkWell(
+              key: const ValueKey('header_toggle_factory_sheet'),
+              onTap: onToggleFactorySheet,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: factorySheetActive ? SoftErpTheme.accent : SoftErpTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: SoftErpTheme.accent),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      factorySheetActive ? Icons.view_column_outlined : Icons.table_chart_outlined,
+                      size: 16,
+                      color: factorySheetActive ? Colors.white : SoftErpTheme.accent,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      factorySheetActive ? 'Power Bench' : 'Factory Sheet Wizard',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: factorySheetActive ? Colors.white : SoftErpTheme.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
           // Rebuilt on the controller, because the count has to climb as
           // records are saved. Nothing in this header watched it before — the
           // recents field reads it only when its dropdown opens, which is why

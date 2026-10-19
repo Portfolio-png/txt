@@ -90,6 +90,7 @@ class EcosystemInspectorSheet extends StatelessWidget {
     required this.subtitle,
     required this.facts,
     required this.ribbon,
+    this.extra,
     this.onEdit,
     this.missing = false,
   });
@@ -104,6 +105,13 @@ class EcosystemInspectorSheet extends StatelessWidget {
   /// The record's own `LinkedEcosystemRibbon`, so the cluster is walkable from
   /// either end.
   final Widget ribbon;
+
+  /// Anything this record has that is neither a fact nor a link — a part's
+  /// process route, for instance. Sits between the facts and the ribbon, and
+  /// null means the record has nothing of the kind. A widget that renders
+  /// `SizedBox.shrink()` is the same as null here, which is how a route the
+  /// caller may not read disappears without leaving a heading behind.
+  final Widget? extra;
 
   /// Null hides the button entirely. Editing is a deliberate second step, and
   /// a viewer with no editor behind it should not offer one.
@@ -143,6 +151,10 @@ class EcosystemInspectorSheet extends StatelessWidget {
                         _InspectorFact(label: label, value: value),
                     ],
                   ),
+                  const SizedBox(height: 18),
+                ],
+                if (extra != null) ...[
+                  extra!,
                   const SizedBox(height: 18),
                 ],
                 ribbon,

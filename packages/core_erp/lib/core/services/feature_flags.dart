@@ -194,6 +194,24 @@ class FeatureKeys {
         'Lay the creation window out as Miller columns over the item/die/machine link graph',
   )
   static const String mastersLinkColumns = 'masters.linkColumns';
+
+  /// Which lens the route editor opens in.
+  ///
+  /// Doc 10: "The view a client sees is a per-client setting, not a code
+  /// branch." Both lenses read the same route and send the same ordered list of
+  /// stage ids, so this changes only what the editing gesture is — never what
+  /// gets saved, and never which rules apply.
+  ///
+  /// OFF (the default) is Classic: one dropdown per step, which the doc names
+  /// as suiting "operators used to older desktop software". ON is List: a
+  /// palette of stages, dragged to reorder, which suits long routes.
+  @FeatureFlag(
+    category: 'Catalog & Inventory',
+    displayName: 'Route List Lens',
+    desc:
+        'Edit a part\'s process route as a draggable list instead of one dropdown per step',
+  )
+  static const String routesListLens = 'routes.listLens';
 }
 
 class FeatureFlags {

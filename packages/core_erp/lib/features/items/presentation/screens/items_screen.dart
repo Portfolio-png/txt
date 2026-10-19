@@ -333,6 +333,21 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 // that go in them, a name and a tick each.
                 Tooltip(
                   message:
+                      'Factory Sheet Wizard — 7-page blueprint unified manufacturing sheet for item trunk, commercial attribution, dies, and routing.',
+                  child: AppButton(
+                    key: const ValueKey<String>(
+                      'items_screen_factory_sheet_button',
+                    ),
+                    label: 'Factory Sheet',
+                    icon: Icons.table_chart_outlined,
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () =>
+                        ComponentCreationDialog.openFactorySheet(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Tooltip(
+                  message:
                       'Quick entry — add a group, its sets and their '
                       'items in one pass.',
                   child: AppButton(
@@ -5860,6 +5875,30 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return buffer.toString();
   }
 
+  /// The code for one spawned variant, or `''` when it cannot have one.
+  ///
+  /// The trunk comes from the base part's own stamped `partCode` rather than
+  /// being re-derived from group and set names — the editor may not have the
+  /// set loaded (it is a reverse lookup), and re-deriving could produce a
+  /// different trunk from the one the part is actually known by.
+  ///
+  /// A value's typed Code wins; otherwise one is derived from its name. So
+  /// "Mild Steel" gives MS on its own, and "Brass" gives BRAS unless somebody
+  /// typed B.
+  String _variantPartCodeFor(List<_VariantOption> combo) {
+    final base = _item?.partCode.trim() ?? '';
+    if (base.isEmpty) return '';
+    return variantCodeFromPartCode(
+      base,
+      valueCodes: [
+        for (final option in combo)
+          option.code.isNotEmpty
+              ? option.code
+              : variationValueCode(option.label),
+      ],
+    );
+  }
+
   /// Hands the base item's own fields (group, unit, conversions, media, links)
   /// down to each spawned variant. Public so the workflow window can drive
   /// spawning without duplicating this field list.
@@ -5908,6 +5947,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         availableForPurchase: _availableForPurchase,
         blankWidthMm: _blankWidthMm,
         blankHeightMm: _blankHeightMm,
+        // Each variant carries its OWN code: SADP48 plus Brass 22 is
+        // SADPB2248. This used to send nothing at all, deliberately, because
+        // every variant would otherwise have been stamped with one code and
+        // all but the first refused by the unique index on (group, part_code).
+        // A variant code is unique by construction — the value codes differ —
+        // so the reason not to send one has gone.
+        //
+        // The number is the BASE's number, not a new one: the variants of
+        // SADP48 are all still the forty-eighth Dolly patti, differing in
+        // material rather than in which part they are.
+        partNo: _variantPartCodeFor(combo).isEmpty ? null : _item?.partNo,
+        partCode: _variantPartCodeFor(combo).isEmpty
+            ? null
+            : _variantPartCodeFor(combo),
       );
       final createdItem = await itemsProvider.createItem(input);
       if (createdItem != null) {

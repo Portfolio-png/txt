@@ -157,6 +157,41 @@ void main() {
       expect(Units.format(Quantity(2000000000, massFamily)), '2 t');
     });
 
+    // The same vectors are asserted in
+    // backend/test/units-conversion-ladders.test.js. Two implementations are
+    // allowed to exist; drifting apart is not.
+    //
+    // Count is integral-only, so auto-promotion may only land on a rung that
+    // divides exactly. 228 pieces WAS rendered '1.5833 gro' — a third of a
+    // piece, which is not a quantity of anything.
+    test('An integral-only family never auto-promotes to a fraction', () {
+      const fixture = <int, String>{
+        228: '19 doz', // 228 = 19 x 12 exactly; 1.5833 gross is not a thing
+        288: '2 gro', // divides at the top rung, so it promotes
+        229: '229 Pc', // no rung above piece divides it
+        144: '1 gro',
+        143: '143 Pc',
+        12: '1 doz',
+        11: '11 Pc',
+        0: '0 Pc',
+        -24: '-2 doz',
+      };
+      fixture.forEach((base, text) {
+        expect(
+          Units.format(Quantity(base, countFamily)),
+          text,
+          reason: '$base base units',
+        );
+      });
+    });
+
+    test('A family that is not integral-only still promotes to a decimal', () {
+      // The right answer for mass: 1.25 kg is a real weight, and the fix above
+      // must not have made every family integral.
+      expect(Units.format(Quantity(1250000, massFamily)), '1.25 kg');
+      expect(massFamily.integralOnly, isFalse);
+    });
+
     test('Pinned formatting does not auto-promote', () {
       final q = Quantity(1250000, massFamily);
       expect(Units.format(q, display: const QtyDisplay.pinned(kg)), '1.25 kg');

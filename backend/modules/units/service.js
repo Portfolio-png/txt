@@ -486,9 +486,21 @@ function formatQuantity(qtyBase, unitOrFamily, options = {}) {
       .filter((u) => u.on_ladder !== 0 && u.onLadder !== false)
       .sort((a, b) => (b.factor_to_base || b.factorToBase || 1) - (a.factor_to_base || a.factorToBase || 1));
 
-    targetUnit = sortedLadder.find(
-      (u) => absQty >= (u.factor_to_base || u.factorToBase || 1),
-    );
+    // On an INTEGRAL-ONLY family the chosen unit must also divide exactly.
+    // Count is integral-only and 228 pieces is 1.5833 gross, which is not a
+    // quantity of anything: a third of a piece does not exist, so a screen
+    // must never print one. 228 comes back "19 doz", and 229 — which no rung
+    // above piece divides — comes back "229 Pc". The base always divides (its
+    // factor is 1), so there is always an answer. Mirrors Units.format.
+    const family = isFamily ? unitOrFamily : unitOrFamily?.family;
+    const integralOnly = Number(family?.integral_only ?? family?.integralOnly ?? 0) === 1;
+
+    targetUnit = sortedLadder.find((u) => {
+      const f = u.factor_to_base || u.factorToBase || 1;
+      if (absQty < f) return false;
+      if (integralOnly && qtyBase % f !== 0) return false;
+      return true;
+    });
     if (!targetUnit) {
       // Pick smallest ladder unit
       targetUnit = sortedLadder[sortedLadder.length - 1] || unitOrFamily;

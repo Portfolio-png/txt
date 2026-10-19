@@ -148,11 +148,38 @@ class GroupsProvider extends ChangeNotifier {
   void _subscribeToChanges() {
     if (_subscribed) return;
     _subscribed = true;
-    SocketService.instance.on('groups_changed', (_) => refresh());
+    SocketService.instance.on('groups_changed', _handleGroupsChanged);
     // The stream can be suspended (desktop App Nap) and drop events silently;
     // this is the signal every other provider already resyncs on.
-    SocketService.instance.on('realtime:reconnected', (_) => refresh());
+    SocketService.instance.on('realtime:reconnected', _handleReconnect);
   }
+
+  // Named rather than inline closures so [dispose] can take them off again.
+  // A closure cannot be removed: `off(event, callback)` matches by identity,
+  // and `(_) => refresh()` is a different object every time it is written.
+  void _handleGroupsChanged(dynamic _) => refresh();
+  void _handleReconnect(dynamic _) => refresh();
+
+  /// Both handlers come off, and the reconnect one **by identity**.
+  ///
+  /// `off(event)` with no callback drops every listener for that event, which
+  /// is fine for `groups_changed` (nothing else wants it) and wrong for
+  /// `realtime:reconnected` — `DeliveryChallanProvider` listens to the same
+  /// signal, and taking its handler off here would leave it silently not
+  /// resyncing after the socket came back.
+  ///
+  /// This provider had no `dispose` at all, so a `groups_changed` push after
+  /// teardown reached `refresh()` and called `notifyListeners()` on a disposed
+  /// notifier. Found by the first integration test that ran the real app.
+  @override
+  void dispose() {
+    SocketService.instance.off('groups_changed', _handleGroupsChanged);
+    SocketService.instance.off('realtime:reconnected', _handleReconnect);
+    _disposed = true;
+    super.dispose();
+  }
+
+  bool _disposed = false;
 
   /// Whether the card view has been opened, and so whether covers are wanted.
   ///
@@ -185,6 +212,11 @@ class GroupsProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    // A socket push can arrive between `dispose` and the handler being taken
+    // off, and an in-flight refresh can outlive the provider that started it.
+    // Both end at a `notifyListeners()` on a disposed notifier, so the flag
+    // guards the entry and the exit.
+    if (_disposed) return;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -210,7 +242,7 @@ class GroupsProvider extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _isLoading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 

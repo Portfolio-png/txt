@@ -115,12 +115,21 @@ abstract final class Units {
         final absQty = q.base.abs();
         final ladder = q.family.ladder;
         Unit? candidate;
-        // Search largest unit with |q.base| >= u.factorToBase
+        // Search largest unit with |q.base| >= u.factorToBase.
+        //
+        // On an INTEGRAL-ONLY family that unit must also divide exactly. Count
+        // is integral-only and 228 pieces is 1.5833 gross, which is not a
+        // quantity of anything: a third of a piece does not exist, so a screen
+        // must never print one. 228 comes back "19 doz", and 229 — which no
+        // rung above piece divides — comes back "229 Pc". The base always
+        // divides (its factor is 1), so there is always an answer.
         for (var i = ladder.length - 1; i >= 0; i--) {
-          if (absQty >= ladder[i].factorToBase) {
-            candidate = ladder[i];
-            break;
+          if (absQty < ladder[i].factorToBase) continue;
+          if (q.family.integralOnly && q.base % ladder[i].factorToBase != 0) {
+            continue;
           }
+          candidate = ladder[i];
+          break;
         }
         targetUnit = candidate ?? (ladder.isNotEmpty ? ladder.first : q.family.base);
     }

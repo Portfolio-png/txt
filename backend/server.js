@@ -2051,7 +2051,10 @@ function moduleOpForRequest(req) {
     module = 'pipelines'; // the pipeline designer is a master
   } else if (['production', 'production-runs', 'pipeline-runs', 'telemetry'].includes(seg)) {
     module = 'production';
-  } else if (['items', 'groups'].includes(seg)) {
+  } else if (['items', 'groups', 'process-stages'].includes(seg)) {
+    // process-stages is the stage master a part's route is built from.
+    // Declared here deliberately: an unmapped segment returns null, which
+    // skips the per-module CRUD check entirely.
     module = 'items';
   } else if (['clients', 'sub-contractors'].includes(seg)) {
     module = 'clients';
@@ -6222,6 +6225,9 @@ async function initDb() {
     },
     "masters": {
       "linkColumns": true
+    },
+    "routes": {
+      "listLens": false
     },
     "units": {
       "families": true
@@ -30371,6 +30377,9 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
       "masters": {
         "linkColumns": true
       },
+      "routes": {
+        "listLens": false
+      },
       "units": {
         "families": true
       }
@@ -30829,7 +30838,15 @@ async function clearAllData() {
       // Reference data, not workspace data: a density is a property of steel,
       // not of this shop's transactions. Wiping it left every sheet plan
       // unable to weigh itself until someone retyped the periodic table.
-      'material_types'
+      'material_types',
+      // Same kind of thing: which stages this factory HAS is a fact about the
+      // factory, not a transaction in it. Shearing does not stop existing
+      // because the workspace was cleared. It also could not come back on its
+      // own — the seed lives in migration 052 and `schema_migrations` is
+      // preserved two lines up, so a cleared stage master would have stayed
+      // empty. The routes BUILT from these stages are workspace data and are
+      // wiped with everything else.
+      'process_stages'
     ];
     // The custody ledger is append-only, enforced by triggers, so an ordinary
     // DELETE is refused — which is the point of it, and which stops this loop
@@ -32927,6 +32944,22 @@ const variationsModule = registerVariationsModuleRoutes({
   hasRecordPermission,
 });
 purgeEntityVariations = variationsModule.purgeVariationsFor;
+
+// An ordered list of process stages for a part — the canonical model from
+// Docs/architecture/10-design-philosophy.md's worked example. Mounted after the
+// item routes because it nests under /api/items/:id, and separate from
+// pipeline_templates on purpose: a route is a flat ordered list belonging to a
+// part, a pipeline is a node graph for a production run.
+const registerProcessRoutesModule = require('./modules/process_routes/routes');
+const processRoutesModule = registerProcessRoutesModule({
+  app,
+  get,
+  all,
+  run,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+});
 
 // Material types carry the one number that turns a sheet's volume into its
 // weight. Named apart from `materials`, which is barcoded physical stock.

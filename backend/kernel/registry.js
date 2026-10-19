@@ -146,6 +146,17 @@ const MODULES = {
     tables: ['units', 'unit_groups'],
     evacuated: true,
   },
+  process_routes: {
+    label: 'Process Routes',
+    group: 'Masters',
+    // Nested under /api/items on purpose (see modules/process_routes/routes.js),
+    // so there is no path segment of its own to declare here. Listed so the
+    // tables below have one owner rather than being nobody's.
+    pathSegments: [],
+    trackTables: {},
+    tables: ['process_stages', 'process_routes', 'process_route_steps'],
+    evacuated: true,
+  },
   machines: {
     label: 'Machines',
     group: 'Masters',

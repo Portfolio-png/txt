@@ -59,6 +59,47 @@ async function boot(prefix, email) {
 // --- the shared fixture -----------------------------------------------------
 // The same table is asserted in packages/core_erp/test/part_code_test.dart.
 // The two implementations are allowed to exist; drifting apart is not.
+// A variant's code: the same trunk, the value codes, then the number.
+// The same table is asserted in packages/core_erp/test/part_code_test.dart.
+const VARIANT_FIXTURE = [
+  // The two the factory sheet asks for.
+  { group: 'Switch Action', set: 'Dolly', item: 'Patti', values: ['B', '22'], no: 48, code: 'SADPB2248' },
+  { group: 'Switch Action', set: 'Dolly', item: 'Patti', values: ['MS', '22'], no: 48, code: 'SADPMS2248' },
+  // Order is the caller's and is kept verbatim — gauge-then-alloy is a
+  // different code, which is why the item's naming format decides it.
+  { group: 'Switch Action', set: 'Dolly', item: 'Patti', values: ['22', 'B'], no: 48, code: 'SADP22B48' },
+  // Blank and punctuation-only value codes drop out rather than leaving a gap.
+  { group: 'Switch Action', set: 'Dolly', item: 'Patti', values: ['B', '', '  ', '-'], no: 48, code: 'SADPB48' },
+  // No values at all is the plain part code, so a variant of nothing is not a
+  // second name for the part.
+  { group: 'Switch Action', set: 'Dolly', item: 'Patti', values: [], no: 48, code: 'SADP48' },
+  // Lower case and spacing inside a typed code are normalised.
+  { group: 'Ash Trays', set: '', item: 'Lid', values: ['ss 304'], no: 2, code: 'ATLSS3042' },
+  // No letters anywhere is still '', never the bare number.
+  { group: '', set: '', item: '', values: ['B'], no: 48, code: '' },
+  // The 12-letter cap applies to the trunk only: clipping a value code would
+  // make two variants collide.
+  {
+    group: 'Switch Action Assembly',
+    set: 'Mounting Plate Bracket',
+    item: 'Rear Cover Plate',
+    values: ['BRASS', '22'],
+    no: 9,
+    code: 'SAAMPBRCPBRASS229',
+  },
+];
+
+// How a value with no typed code reads.
+const VALUE_CODE_FIXTURE = [
+  { name: 'Brass', code: 'BRAS' },
+  { name: 'MS', code: 'MS' },
+  { name: 'Mild Steel', code: 'MS' },
+  { name: '22', code: '22' },
+  { name: 'Stainless Steel 304', code: 'SS304' },
+  { name: 'Aluminium', code: 'ALUM' },
+  { name: '', code: '' },
+];
+
 const CODE_FIXTURE = [
   { group: 'Switch Action', set: 'Dolly', item: 'Patti', no: 48, code: 'SADP48' },
   { group: 'Switch Action', set: '', item: 'Patti', no: 1, code: 'SAP1' },
@@ -524,5 +565,67 @@ test('an item created without an identity is stamped with the next one', async (
   } finally {
     await closeServer(ctx.server);
     await ctx.backend.closeDb();
+  }
+});
+
+test('a variant code is the trunk, the value codes, then the number', () => {
+  const { buildVariantPartCode, valueCodeFor } = require('../modules/items/part-identity');
+
+  for (const row of VARIANT_FIXTURE) {
+    assert.equal(
+      buildVariantPartCode({
+        groupName: row.group,
+        setName: row.set,
+        itemName: row.item,
+        valueCodes: row.values,
+        partNo: row.no,
+      }),
+      row.code,
+      `${row.group}/${row.set}/${row.item} [${row.values.join(',')}] #${row.no}`,
+    );
+  }
+
+  for (const row of VALUE_CODE_FIXTURE) {
+    assert.equal(valueCodeFor(row.name), row.code, row.name || '(empty)');
+  }
+
+  // Deriving from the base's OWN code, which is the safe direction. The same
+  // vectors are asserted in packages/core_erp/test/part_code_test.dart.
+  const { variantCodeFromPartCode } = require('../modules/items/part-identity');
+  const FROM_BASE_FIXTURE = [
+    ['SADP48', ['B', '22'], 'SADPB2248'],
+    ['SADP48', ['MS', '22'], 'SADPMS2248'],
+    ['ATL', ['SS'], 'ATLSS'],
+    ['W3', ['B'], 'WB3'],
+    ['SADP48', [], 'SADP48'],
+    ['SADP48', ['', ' ', '-'], 'SADP48'],
+    ['', ['B'], ''],
+    [null, ['B'], ''],
+    ['sadp48', ['ss 304'], 'SADPSS30448'],
+    // An all-digit base has no trunk to insert into and is left alone.
+    ['48', ['B'], '48'],
+  ];
+  for (const [base, values, want] of FROM_BASE_FIXTURE) {
+    assert.equal(variantCodeFromPartCode(base, values), want, `${base} + [${values}]`);
+  }
+
+  // Why this direction is preferred: re-deriving a trunk from names needs the
+  // SET as well, and omitting it is silent. 'Switch Action' + 'Patti' with no
+  // set derives SAP, so a variant of SADP48 would be stamped SAPB2248 — a code
+  // whose trunk its own parent does not share.
+  const reDerived = buildVariantPartCode({
+    groupName: 'Switch Action', itemName: 'Patti', valueCodes: ['B', '22'], partNo: 48,
+  });
+  assert.equal(reDerived, 'SAPB2248');
+  assert.notEqual(reDerived, variantCodeFromPartCode('SADP48', ['B', '22']));
+
+  // A variant code must not collide with its own part's code, or a scan could
+  // not tell the part from one of its variants.
+  const part = buildPartCode({ groupName: 'Switch Action', setName: 'Dolly', itemName: 'Patti', partNo: 48 });
+  const variants = VARIANT_FIXTURE
+    .filter((r) => r.values.length > 0 && r.code)
+    .map((r) => r.code);
+  for (const code of variants) {
+    assert.notEqual(code, part, 'a variant and its part must not share a code');
   }
 });

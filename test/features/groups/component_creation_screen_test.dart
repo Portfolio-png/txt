@@ -84,6 +84,14 @@ class _FakeItemsProvider extends ItemsProvider {
     }
   }
 
+  /// The window will not decide whether to run its guided first run until the
+  /// items provider says it has actually looked — an empty list before that
+  /// means "nobody has loaded them yet", not "there are none". A fake that
+  /// never calls `initialize()` has to answer that question itself, or the
+  /// window waits forever and `emptyWorkspace: true` stops meaning anything.
+  @override
+  bool get isInitialized => true;
+
   final List<ItemDefinition> fakeItems = [];
   final List<CreateItemInput> created = [];
   final List<String> updated = [];

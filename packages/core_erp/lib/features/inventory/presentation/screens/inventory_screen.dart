@@ -35,6 +35,7 @@ import '../../../delivery_challans/presentation/providers/delivery_challan_provi
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../../delivery_challans/presentation/widgets/challan_excel_view.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/domain/variation_code.dart';
 import '../../../items/presentation/widgets/set_overview_dialog.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
@@ -6631,7 +6632,7 @@ class _ItemGeneratedCodePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final leaves = item.leafVariationNodes;
     final codes = leaves.isEmpty
-        ? <String>[_generatedCodeForText(_itemTitle(item))]
+        ? <String>[generatedCodeForText(itemTitle(item))]
         : leaves
               .take(6)
               .map((leaf) => _generatedItemVariationCode(item, leaf))
@@ -6693,7 +6694,7 @@ String _generatedItemVariationCode(
     if (parent != null && parent.kind == ItemVariationNodeKind.property) {
       final topProperty = _topPropertyForNode(item, parent);
       if (topProperty != null) {
-        selectedByTopPropertyId[topProperty.id] = _nodeCodeOrGenerated(current);
+        selectedByTopPropertyId[topProperty.id] = nodeCodeOrGenerated(current);
       }
     }
     current = parent;
@@ -6702,7 +6703,7 @@ String _generatedItemVariationCode(
   final parts = <String>[];
   for (final token in _resolvedItemNamingTokens(item)) {
     if (token == 'name') {
-      parts.add(_generatedCodeForText(_itemTitle(item)));
+      parts.add(generatedCodeForText(itemTitle(item)));
     } else if (token.startsWith('prop_')) {
       final index = int.tryParse(token.substring(5));
       if (index != null &&
@@ -6756,35 +6757,6 @@ ItemVariationNodeDefinition? _findVariationNodeById(
   return null;
 }
 
-String _itemTitle(ItemDefinition item) {
-  return item.displayName.trim().isEmpty ? item.name : item.displayName;
-}
-
-String _nodeCodeOrGenerated(ItemVariationNodeDefinition node) {
-  final code = node.code.trim();
-  if (code.isNotEmpty) {
-    return code;
-  }
-  final source = node.name.trim().isEmpty ? node.displayName : node.name;
-  return _generatedCodeForText(source);
-}
-
-String _generatedCodeForText(String value) {
-  final words = RegExp(
-    r'[A-Za-z0-9]+',
-  ).allMatches(value).map((match) => match.group(0)!).toList();
-  if (words.isEmpty) {
-    return value.trim();
-  }
-  if (words.length == 1) {
-    final word = words.single.toUpperCase();
-    return word.length <= 4 ? word : word.substring(0, 4);
-  }
-  return words
-      .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
-      .join()
-      .toUpperCase();
-}
 
 class _StockPositionList extends StatelessWidget {
   const _StockPositionList({

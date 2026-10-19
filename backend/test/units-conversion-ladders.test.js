@@ -138,3 +138,49 @@ test('Units Contract: Seeded workspace contains canonical families and ladders',
   assert.ok(mm, 'Millimeter must be in Length group');
   assert.equal(mm.factor_to_base, 1000);
 });
+
+// --- Integral-only auto display ---------------------------------------------
+// The same vectors are asserted in packages/core_erp/test/units_contract_test
+// .dart. Two implementations are allowed to exist; drifting apart is not.
+//
+// Count is seeded integral_only, so auto-promotion may only land on a rung
+// that divides exactly. 228 pieces WAS rendered "1.5833 gro" — a third of a
+// piece, which is not a quantity of anything.
+const INTEGRAL_FIXTURE = [
+  { base: 228, text: '19 doz' },   // 228 = 19 x 12 exactly; 1.5833 gross is not
+  { base: 288, text: '2 gro' },    // divides at the top rung, so it promotes
+  { base: 229, text: '229 Pc' },   // no rung above piece divides it
+  { base: 144, text: '1 gro' },
+  { base: 143, text: '143 Pc' },
+  { base: 12, text: '1 doz' },
+  { base: 11, text: '11 Pc' },
+  { base: 0, text: '0 Pc' },
+  { base: -24, text: '-2 doz' },
+];
+
+test('Units Contract: an integral-only family never auto-promotes to a fraction', () => {
+  const countFamily = STANDARD_FAMILIES.find((f) => f.code === 'count');
+  assert.ok(countFamily);
+
+  const base = countFamily.base;
+  const ladder = [
+    { ...base, factor_to_base: 1, on_ladder: 1 },
+    ...countFamily.ladder.map((u) => ({ ...u, factor_to_base: u.factorToBase, on_ladder: 1 })),
+  ];
+  const family = { ...countFamily, units: ladder, ladder, integral_only: 1 };
+
+  for (const { base: qty, text } of INTEGRAL_FIXTURE) {
+    assert.equal(formatQuantity(qty, family), text, `${qty} base units`);
+  }
+
+  // A family that is NOT integral-only still promotes to a decimal, which is
+  // the right answer for mass: 1.25 kg is a real weight.
+  const massFamily = STANDARD_FAMILIES.find((f) => f.code === 'mass');
+  const massLadder = massFamily.ladder.map((u) => ({
+    ...u, factor_to_base: u.factorToBase, on_ladder: 1,
+  }));
+  assert.equal(
+    formatQuantity(1250000, { ...massFamily, units: massLadder, ladder: massLadder, integral_only: 0 }),
+    '1.25 kg',
+  );
+});

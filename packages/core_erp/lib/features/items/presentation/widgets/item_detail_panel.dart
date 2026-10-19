@@ -21,6 +21,10 @@ import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
+// The value-code rule, lifted out of this presentation file. Re-exported
+// because callers have always reached it through here.
+export '../../domain/variation_code.dart';
+import '../../domain/variation_code.dart';
 import 'developed_for_form.dart';
 import '../../domain/item_usage_record.dart';
 import '../providers/items_provider.dart';
@@ -1498,36 +1502,6 @@ ItemVariationNodeDefinition? findVariationNodeById(
     }
   }
   return null;
-}
-
-String itemTitle(ItemDefinition item) {
-  return item.displayName.trim().isEmpty ? item.name : item.displayName;
-}
-
-String nodeCodeOrGenerated(ItemVariationNodeDefinition node) {
-  final code = node.code.trim();
-  if (code.isNotEmpty) {
-    return code;
-  }
-  final source = node.name.trim().isEmpty ? node.displayName : node.name;
-  return generatedCodeForText(source);
-}
-
-String generatedCodeForText(String value) {
-  final words = RegExp(
-    r'[A-Za-z0-9]+',
-  ).allMatches(value).map((match) => match.group(0)!).toList();
-  if (words.isEmpty) {
-    return value.trim();
-  }
-  if (words.length == 1) {
-    final word = words.single.toUpperCase();
-    return word.length <= 4 ? word : word.substring(0, 4);
-  }
-  return words
-      .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
-      .join()
-      .toUpperCase();
 }
 
 /// Conversion factors to 3 decimal places, trailing zeros stripped

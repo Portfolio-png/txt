@@ -36,6 +36,7 @@ import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/group_picker_field.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/domain/variation_code.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 
 import '../../../items/domain/item_master_data.dart';
@@ -5782,7 +5783,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         if (selectedValue == null) {
           break;
         }
-        propIdToValueCode[currentProperty.id] = _nodeCodeOrGenerated(
+        propIdToValueCode[currentProperty.id] = nodeCodeOrGenerated(
           selectedValue,
         );
         final nextProp = selectedValue.activeChildren
@@ -5831,32 +5832,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       textDirection: direction,
     )..layout(maxWidth: maxWidth);
     return !painter.didExceedMaxLines && painter.width <= maxWidth;
-  }
-
-  String _nodeCodeOrGenerated(ItemVariationNodeDefinition node) {
-    final code = node.code.trim();
-    if (code.isNotEmpty) {
-      return code;
-    }
-    final source = node.name.trim().isEmpty ? node.displayName : node.name;
-    return _generatedCodeForText(source);
-  }
-
-  String _generatedCodeForText(String value) {
-    final words = RegExp(
-      r'[A-Za-z0-9]+',
-    ).allMatches(value).map((match) => match.group(0)!).toList();
-    if (words.isEmpty) {
-      return value.trim();
-    }
-    if (words.length == 1) {
-      final word = words.single.toUpperCase();
-      return word.length <= 4 ? word : word.substring(0, 4);
-    }
-    return words
-        .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
-        .join()
-        .toUpperCase();
   }
 
   List<ItemVariationNodeDefinition> _pathNodesForLeaf(

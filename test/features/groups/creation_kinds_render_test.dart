@@ -1,4 +1,5 @@
 import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
+import 'package:core_erp/features/process_routes/data/process_route_service.dart';
 import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
@@ -208,6 +209,13 @@ Future<void> pumpKind(WidgetTester tester, String kind) async {
               useMockResponses: true,
             ),
           ),
+        ),
+        // The Route card needs this, and without it the panel degrades to
+        // "Routing is not available in this build." — which this test would
+        // happily pass, having rendered nothing of the real card.
+        Provider<ProcessRouteService>(
+          create: (_) =>
+              ProcessRouteService(baseUrl: '', useMockResponses: true),
         ),
       ],
       child: MaterialApp(

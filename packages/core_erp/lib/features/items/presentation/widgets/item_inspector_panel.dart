@@ -5,6 +5,10 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../links/presentation/widgets/ecosystem_inspector.dart';
 import '../../../links/presentation/widgets/linked_ecosystem_ribbon.dart';
+import '../../../process_routes/data/process_route_service.dart';
+import '../../../process_routes/domain/part_route.dart';
+import '../../../process_routes/domain/process_stage.dart';
+import '../../../process_routes/presentation/widgets/route_ribbon.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../providers/items_provider.dart';
@@ -120,6 +124,7 @@ class _ItemInspectorPanelState extends State<ItemInspectorPanel> {
       title: title,
       subtitle: 'Part',
       facts: _facts(context, item),
+      extra: _RouteSection(partId: item.id),
       ribbon: LinkedEcosystemRibbon(
         type: 'item',
         id: '${item.id}',
@@ -137,4 +142,63 @@ class _ItemInspectorPanelState extends State<ItemInspectorPanel> {
       },
     );
   }
+}
+
+/// The part's active route, read-only.
+///
+/// Its own widget so one failing fetch cannot blank the whole inspector — the
+/// facts and the link ribbon are still worth showing when the route is not.
+///
+/// A route the caller may not read renders NOTHING, not "no route". The same
+/// rule the ecosystem ribbon follows: a refusal and an absence must not look
+/// alike, and a part with no route genuinely has none to show.
+///
+/// There is deliberately no equivalent on the die inspector. A die has no
+/// route of its own — it appears AT A STEP of some part's route — and the
+/// reverse lookup (which parts' routes name this die) has no endpoint. Half of
+/// that answer would read as all of it.
+class _RouteSection extends StatefulWidget {
+  const _RouteSection({required this.partId});
+
+  final int partId;
+
+  @override
+  State<_RouteSection> createState() => _RouteSectionState();
+}
+
+class _RouteSectionState extends State<_RouteSection> {
+  PartRoute? _route;
+  List<ProcessStage> _stages = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    ProcessRouteService service;
+    try {
+      service = context.read<ProcessRouteService>();
+    } catch (_) {
+      // Not registered in this build — the same degradation `_facts` makes for
+      // a missing GroupsProvider.
+      return;
+    }
+    try {
+      final route = await service.activeRoute(widget.partId);
+      final stages = route == null ? const <ProcessStage>[] : await service.stages();
+      if (!mounted) return;
+      setState(() {
+        _route = route;
+        _stages = stages;
+      });
+    } catch (_) {
+      // Refused, unreachable, or unreadable: render nothing.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      RouteRibbon(route: _route, stages: _stages);
 }

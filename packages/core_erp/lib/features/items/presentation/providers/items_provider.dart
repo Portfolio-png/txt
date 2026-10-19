@@ -99,6 +99,15 @@ class ItemsProvider extends ChangeNotifier {
   List<ItemAsset> assetsForItem(int itemId) =>
       _assetsByItemId[itemId] ?? const <ItemAsset>[];
   bool get isLoading => _isLoading;
+
+  /// Whether this provider has been asked to load at all.
+  ///
+  /// `isInitialized && !isLoading` is the only honest way to read "there are
+  /// no items": before that, an empty list means nobody has looked yet, which
+  /// is a different fact. Exposed because the creation window decides whether
+  /// to run its guided first run on exactly that question, and was reading the
+  /// empty list as an answer.
+  bool get isInitialized => _initialized;
   bool get isSaving => _isSaving;
   bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;

@@ -55,6 +55,100 @@ String buildPartCode({
   return '$capped${partNo ?? ''}';
 }
 
+/// The code for a *variant* of a part — "the brass 22-gauge forty-eighth Dolly
+/// patti in Switch Action", written `SADPB2248`.
+///
+/// The trunk is [buildPartCode]'s trunk, unchanged, so a variant of SADP48
+/// reads as one. The value codes go between the letters and the number, in the
+/// order the variation properties are declared — that order is the caller's,
+/// because it is the item's naming format, which this function cannot see.
+///
+/// `valueCodes` are what the shop typed into the variation editor's `Code`
+/// field, with [variationValueCode] as the fallback for values nobody coded.
+/// The 12-letter cap applies to the TRUNK only: clipping a value code would
+/// make two variants share one code, and the unique index would then refuse
+/// the second with no way to tell why.
+String buildVariantPartCode({
+  String? groupName,
+  String? setName,
+  String? itemName,
+  List<String> valueCodes = const [],
+  int? partNo,
+}) {
+  final letters =
+      partCodeInitials(groupName) +
+      partCodeInitials(setName) +
+      partCodeInitials(itemName);
+  final capped = letters.length <= kMaxPartCodeLetters
+      ? letters
+      : letters.substring(0, kMaxPartCodeLetters);
+  if (capped.isEmpty) return '';
+  final values = valueCodes
+      .map((code) => code.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toUpperCase())
+      .where((code) => code.isNotEmpty)
+      .join();
+  return '$capped$values${partNo ?? ''}';
+}
+
+/// The variant code for a part that already HAS a code — `SADP48` plus
+/// `['B', '22']` becomes `SADPB2248`.
+///
+/// Preferred over [buildVariantPartCode] when spawning variants of a saved
+/// part, because the trunk then comes from the part's own stamped code rather
+/// than being re-derived. Re-deriving needs the group and set names, and a
+/// part's set is a reverse lookup (`GET /api/items/:id/sets`) that the editor
+/// may not have loaded — so re-deriving could silently produce a DIFFERENT
+/// trunk from the one the part is actually known by.
+///
+/// Returns `''` when the base has no code: a variant of an unnamed part cannot
+/// be named either, and inventing a trunk here would give the variant a code
+/// its parent does not share.
+String variantCodeFromPartCode(
+  String? basePartCode, {
+  List<String> valueCodes = const [],
+}) {
+  final base = (basePartCode ?? '').trim().toUpperCase();
+  if (base.isEmpty) return '';
+  final values = valueCodes
+      .map((code) => code.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toUpperCase())
+      .where((code) => code.isNotEmpty)
+      .join();
+  if (values.isEmpty) return base;
+  // The number is the trailing digit run, and it stays last so a variant code
+  // reads the same way round as the part code it came from.
+  final match = RegExp(r'^(.*?)(\d*)$').firstMatch(base)!;
+  final trunk = match.group(1)!;
+  final number = match.group(2)!;
+  if (trunk.isEmpty) return base;
+  return '$trunk$values$number';
+}
+
+/// A code derived from a variation value's name, for values nobody has coded.
+///
+/// The same rule as `generatedCodeForText` in `variation_code.dart`, which is
+/// where it has always lived for display badges; this is the part-identity
+/// spelling of it so a variant code can be built from one import. Both are
+/// mirrored by `valueCodeFor` in `part-identity.js`.
+///
+/// "Brass" derives `BRAS`, not `B`. `B` is a decision somebody makes in the
+/// Code field; `BRAS` is the guess made when nobody did. "Mild Steel" derives
+/// `MS` on its own, because two words become their initials.
+String variationValueCode(String? value) {
+  final words = RegExp(r'[A-Za-z0-9]+')
+      .allMatches(value ?? '')
+      .map((match) => match.group(0)!)
+      .toList();
+  if (words.isEmpty) return (value ?? '').trim();
+  if (words.length == 1) {
+    final word = words.single.toUpperCase();
+    return word.length <= 4 ? word : word.substring(0, 4);
+  }
+  return words
+      .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
+      .join()
+      .toUpperCase();
+}
+
 /// What the server says the next part in a scope should be called.
 class PartIdentitySuggestion {
   const PartIdentitySuggestion({

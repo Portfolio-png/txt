@@ -73,7 +73,25 @@ class MachinesProvider extends ChangeNotifier {
     await refresh();
   }
 
+  /// True once this provider is gone, so a fetch that outlives it stops short
+  /// of notifying.
+  ///
+  /// `initialize()` is one of thirteen fired concurrently in a post-frame
+  /// callback after auth, and each one awaits HTTP. If the provider is disposed
+  /// while that request is in flight — navigating away, or an integration test
+  /// ending — the response lands on a disposed `ChangeNotifier` and throws
+  /// "A MachinesProvider was used after being disposed". Found by the first
+  /// integration test that ran the real app against a real server.
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Future<void> refresh() async {
+    if (_disposed) return;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -83,7 +101,7 @@ class MachinesProvider extends ChangeNotifier {
       _errorMessage = e.toString();
     } finally {
       _isLoading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 

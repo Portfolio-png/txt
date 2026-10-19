@@ -216,6 +216,10 @@ class _AppSidebarState extends State<AppSidebar> {
     await ComponentCreationDialog.openExpress(context);
   }
 
+  Future<void> _openFactorySheetWizard() async {
+    await ComponentCreationDialog.openFactorySheet(context);
+  }
+
   void _toggleParent(String key) {
     setState(() {
       if (!_expandedParents.remove(key)) _expandedParents.add(key);
@@ -372,9 +376,19 @@ class _AppSidebarState extends State<AppSidebar> {
                                   focusNodeForKey: _focusNodeFor,
                                   expandedParents: _expandedParents,
                                   onToggleParent: _toggleParent,
-                                  headerAction: _ExpressWizardButton(
-                                    enabled: canOpenSettings,
-                                    onTap: _openExpressWizard,
+                                  headerAction: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _FactorySheetWizardButton(
+                                        enabled: canOpenSettings,
+                                        onTap: _openFactorySheetWizard,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      _ExpressWizardButton(
+                                        enabled: canOpenSettings,
+                                        onTap: _openExpressWizard,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -1952,6 +1966,58 @@ class _SidebarTile extends StatelessWidget {
 /// It sits inside the header's own InkWell, which toggles the drawer — so the
 /// pill swallows its gesture (the chevron beside it does the same), or opening
 /// the window would fold Masters shut behind it.
+/// A direct entry to the Factory Sheet Wizard from the Masters section header.
+class _FactorySheetWizardButton extends StatelessWidget {
+  const _FactorySheetWizardButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    final labelSize = viewportWidth < 1240 ? 14.5 : 16.0;
+    final foreground = enabled
+        ? SoftErpTheme.accent
+        : SoftErpTheme.textSecondary;
+
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: enabled ? SoftErpTheme.accentSoft : const Color(0xFFEAEAEE),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.table_chart_outlined, size: 16, color: foreground),
+          const SizedBox(width: 5),
+          Text(
+            'Sheet',
+            style: TextStyle(
+              color: foreground,
+              fontWeight: FontWeight.w700,
+              fontSize: labelSize,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return GestureDetector(
+      key: const ValueKey<String>('sidebar_factory_sheet_wizard'),
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Tooltip(
+        message: enabled
+            ? 'Factory Sheet Wizard — 7-page blueprint unified manufacturing sheet'
+            : 'You do not have permission to create records (config.write).',
+        child: pill,
+      ),
+    );
+  }
+}
+
 ///
 /// Drawn whatever the permission, greyed with a tooltip when it cannot be
 /// used: a control that disappears reads as a missing feature.

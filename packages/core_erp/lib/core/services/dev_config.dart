@@ -69,4 +69,10 @@ const Map<String, dynamic> devConfig = {
     // Set false to fall back to the three-tile bento, which stays live.
     'linkColumns': true,
   },
+  'routes': {
+    // Which lens the route editor opens in. false = Classic, one dropdown per
+    // step; true = List, a stage palette dragged to reorder. Both save the
+    // same ordered list of stage ids.
+    'listLens': false,
+  },
 };

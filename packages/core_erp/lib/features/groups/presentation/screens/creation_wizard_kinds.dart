@@ -8,6 +8,7 @@ import '../../../departments/presentation/screens/employee_editor_dialog.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../inventory/presentation/widgets/inventory_set_editor_dialog.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../process_routes/presentation/widgets/route_editor.dart';
 import '../../../materials/presentation/screens/materials_screen.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../../vendors/presentation/screens/vendors_screen.dart';
@@ -34,7 +35,11 @@ enum CreationTier {
     'Materials and tooling',
     'These get attached to the parts that use them.',
   ),
-  output('What you make', 'A set is built from items, so the items come first.');
+  output(
+    'What you make',
+    'A set is built from items and a route is the stages one goes through, '
+    'so the items come first.',
+  );
 
   const CreationTier(this.label, this.reason);
 
@@ -81,6 +86,7 @@ class CreationKinds {
   static const item = 'item';
   static const die = 'die';
   static const machine = 'machine';
+  static const route = 'route';
 
   static const List<String> defaults = [item, die, machine];
 
@@ -276,6 +282,16 @@ class CreationKinds {
       label: 'Item',
       icon: Icons.inventory_2_outlined,
       tier: CreationTier.output,
+    ),
+    // The one card here that is not a master of its own: a route belongs TO a
+    // part, so its panel leads with a part picker and cannot be saved without
+    // one. It sits straight after Item for that reason.
+    CreationKindSpec(
+      key: route,
+      label: 'Route',
+      icon: Icons.conveyor_belt,
+      tier: CreationTier.output,
+      editor: () => routeEditorPanel(),
     ),
     CreationKindSpec(
       key: 'set',

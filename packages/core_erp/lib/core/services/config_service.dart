@@ -58,6 +58,8 @@ class ConfigService {
     "purchase": {"flowV2": true},
     "update": {"channel": "stable", "latest_version": "1.0.0"},
     "masters": {"linkColumns": true},
+    // Classic by default: one dropdown per step, the first client's habit.
+    "routes": {"listLens": false},
     "units": {"families": true},
   };
 

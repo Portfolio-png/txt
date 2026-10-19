@@ -175,12 +175,33 @@ class OrdersProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
-    SocketService.instance.on('orders_changed', (data) => refresh());
+    SocketService.instance.on('orders_changed', _handleOrdersChanged);
 
     await refresh();
   }
 
+  // Named rather than an inline closure so [dispose] can take it off again:
+  // `off(event, callback)` matches by identity, and `(data) => refresh()` is a
+  // different object every time it is written.
+  void _handleOrdersChanged(dynamic _) => refresh();
+
+  /// This provider had no `dispose`, so an `orders_changed` push after
+  /// teardown reached `refresh()` and called `notifyListeners()` on a disposed
+  /// notifier. The same omission as `GroupsProvider`'s; the other five
+  /// socket-listening providers already did this.
+  @override
+  void dispose() {
+    SocketService.instance.off('orders_changed', _handleOrdersChanged);
+    _disposed = true;
+    super.dispose();
+  }
+
+  bool _disposed = false;
+
   Future<void> refresh() async {
+    // A push can arrive between `dispose` and the handler coming off, and an
+    // in-flight refresh can outlive the provider that started it.
+    if (_disposed) return;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -191,8 +212,9 @@ class OrdersProvider extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _isLoading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
+    if (_disposed) return;
     // Anything that moves the order book can also move production: starting a
     // run, issuing a challan, completing a stage. Once insights has been opened
     // its figures must track those, not stay frozen at first load.
