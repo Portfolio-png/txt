@@ -15,7 +15,13 @@
 /// So correcting a phone number is one edit in the client editor, not an edit
 /// per part — and a part developed for a contractor still names the company,
 /// because the backend derives the contractor's parent client.
+///
+/// Since migration 056 a company holds many people and the part ticks which of
+/// them the deal involved: [contactIds] is stored by the part, [contacts] is
+/// those people as read back.
 library;
+
+import '../../clients/domain/party_contact.dart';
 
 /// Who the part was made for. [none] is not [self]: "developed in-house" is a
 /// fact someone recorded, and "nobody has said yet" is the absence of one. No
@@ -57,6 +63,8 @@ class DevelopedFor {
     this.clientName = '',
     this.subContractorId,
     this.subContractorName = '',
+    this.contactIds,
+    this.contacts = const [],
     this.companyName = '',
     this.contactName = '',
     this.designation = '',
@@ -64,6 +72,7 @@ class DevelopedFor {
     this.email = '',
     this.at,
     this.quotationAmount,
+    this.costAmount,
   });
 
   static const DevelopedFor empty = DevelopedFor();
@@ -79,6 +88,25 @@ class DevelopedFor {
   final int? subContractorId;
   final String subContractorName;
 
+  /// WHICH of the company's people this deal was done with — any number.
+  ///
+  /// A deal happens with whoever picks up the phone, and more than one person
+  /// may have been involved, so the part ticks them. **Null says nothing**:
+  /// the save leaves whatever is ticked alone (the wizard and item editor,
+  /// which never show people, rely on that). An empty list clears.
+  ///
+  /// Always empty for a contractor or self — a sub-contractor IS the person,
+  /// and in-house work had no customer to speak to. The backend refuses a
+  /// tick on either.
+  ///
+  /// The quotation is NOT per contact. A part is quoted once however many
+  /// people were spoken to.
+  final List<int>? contactIds;
+
+  /// The ticked people as read back, primary first. Read-only, like the
+  /// resolved fields below — writing goes through [contactIds].
+  final List<PartyContact> contacts;
+
   // --- read-only, resolved from the party on every read ---------------------
   final String companyName;
   final String contactName;
@@ -92,7 +120,33 @@ class DevelopedFor {
   final DateTime? at;
 
   /// Rupees. Null means never quoted, which is not the same as quoted at zero.
+  ///
+  /// What was quoted for MAKING THIS PART'S DIES — the development job, not a
+  /// price per piece and not the value of a production run.
   final double? quotationAmount;
+
+  /// Rupees. What that die making cost us — the counterpart to
+  /// [quotationAmount], and the other half of the only question anybody asks
+  /// of a quotation.
+  ///
+  /// Null means never costed. That is emphatically not zero: a margin reading
+  /// zero cost would show 100% on every part nobody has priced yet, which is
+  /// the most dangerous possible default for a figure somebody might quote
+  /// against. [hasMargin] is the guard.
+  final double? costAmount;
+
+  /// Whether a margin can honestly be shown: both halves present, and a
+  /// quotation above zero to divide by.
+  bool get hasMargin =>
+      quotationAmount != null && costAmount != null && quotationAmount! > 0;
+
+  /// The development margin as a percentage, or null when it cannot be known.
+  ///
+  /// Null rather than 0 on purpose — "we do not know" and "we broke even" are
+  /// different answers and must not render alike.
+  double? get marginPercent => hasMargin
+      ? ((quotationAmount! - costAmount!) / quotationAmount!) * 100
+      : null;
 
   /// Nothing has been recorded. A block with only a date in it is not empty:
   /// someone opened the form and put something in.
@@ -101,7 +155,8 @@ class DevelopedFor {
       clientId == null &&
       subContractorId == null &&
       at == null &&
-      quotationAmount == null;
+      quotationAmount == null &&
+      costAmount == null;
 
   bool get isNotEmpty => !isEmpty;
 
@@ -136,7 +191,15 @@ class DevelopedFor {
     bool clearAt = false,
     double? quotationAmount,
     bool clearQuotationAmount = false,
+    double? costAmount,
+    bool clearCostAmount = false,
+    List<int>? contactIds,
+    bool clearContactIds = false,
   }) {
+    // Moving the part to another company retires the old company's people:
+    // they would be strangers at the new one, and the backend refuses that.
+    final clientMoved =
+        clearClientId || (clientId != null && clientId != this.clientId);
     return DevelopedFor(
       kind: kind ?? this.kind,
       // Explicit clear flags, because every nullable field here has a null that
@@ -154,6 +217,11 @@ class DevelopedFor {
       at: clearAt ? null : (at ?? this.at),
       quotationAmount:
           clearQuotationAmount ? null : (quotationAmount ?? this.quotationAmount),
+      costAmount: clearCostAmount ? null : (costAmount ?? this.costAmount),
+      contactIds: clearContactIds
+          ? null
+          : contactIds ?? (clientMoved ? null : this.contactIds),
+      contacts: clientMoved && contactIds == null ? const [] : this.contacts,
     );
   }
 
@@ -169,6 +237,7 @@ class DevelopedFor {
         return copyWith(
           kind: next,
           clearClientId: true,
+          contactIds: const [],
           clientName: '',
           clearSubContractorId: true,
           subContractorName: '',
@@ -188,16 +257,31 @@ class DevelopedFor {
           subContractorName: '',
         );
       case DevelopedForKind.contractor:
-        return copyWith(kind: next);
+        // The contractor is the person; nobody at the company is ticked.
+        return copyWith(kind: next, contactIds: const []);
     }
   }
 
   factory DevelopedFor.fromJson(Map<String, dynamic> json) {
     final rawAt = json['at'] as String?;
     final rawQuotation = json['quotationAmount'];
+    final rawCost = json['costAmount'];
     return DevelopedFor(
       kind: DevelopedForKind.fromWire(json['kind'] as String?),
       clientId: json['clientId'] as int?,
+      // Absent stays null — "unknown", which a save turns into "say nothing".
+      // Reading it as [] would let a reply from an older server clear every
+      // tick on the next save.
+      contactIds: json['contactIds'] is List
+          ? [
+              for (final id in json['contactIds'] as List)
+                (id as num).toInt(),
+            ]
+          : null,
+      contacts: [
+        for (final row in (json['contacts'] as List? ?? const []))
+          PartyContact.fromJson(row as Map<String, dynamic>),
+      ],
       clientName: json['clientName'] as String? ?? '',
       subContractorId: json['subContractorId'] as int?,
       subContractorName: json['subContractorName'] as String? ?? '',
@@ -210,6 +294,7 @@ class DevelopedFor {
       // timestamp would be printed as if someone had entered it.
       at: (rawAt == null || rawAt.isEmpty) ? null : DateTime.tryParse(rawAt),
       quotationAmount: rawQuotation == null ? null : (rawQuotation as num).toDouble(),
+      costAmount: rawCost == null ? null : (rawCost as num).toDouble(),
     );
   }
 
@@ -222,9 +307,12 @@ class DevelopedFor {
   Map<String, dynamic> toJson() => {
         'kind': kind.wire,
         'clientId': clientId,
+        // Absent when null, so a save that never showed people keeps them.
+        if (contactIds != null) 'contactIds': contactIds,
         'subContractorId': subContractorId,
         'at': at?.toUtc().toIso8601String(),
         'quotationAmount': quotationAmount,
+        'costAmount': costAmount,
       };
 
   @override
@@ -241,7 +329,27 @@ class DevelopedFor {
       other.phone == phone &&
       other.email == email &&
       other.at == at &&
-      other.quotationAmount == quotationAmount;
+      other.quotationAmount == quotationAmount &&
+      other.costAmount == costAmount &&
+      _sameIds(other.contactIds, contactIds) &&
+      _sameContacts(other.contacts, contacts);
+
+  static bool _sameIds(List<int>? a, List<int>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  static bool _sameContacts(List<PartyContact> a, List<PartyContact> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
   int get hashCode => Object.hash(
@@ -257,5 +365,8 @@ class DevelopedFor {
         email,
         at,
         quotationAmount,
+        costAmount,
+        contactIds == null ? null : Object.hashAll(contactIds!),
+        Object.hashAll(contacts),
       );
 }

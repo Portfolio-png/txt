@@ -62,7 +62,6 @@ import '../widgets/developed_for_form.dart';
 import '../widgets/item_card.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../widgets/catalog_quick_entry_dialog.dart';
-import '../../../groups/presentation/screens/component_creation_screen.dart';
 import '../widgets/item_detail_panel.dart';
 
 import 'package:file_selector/file_selector.dart';
@@ -73,6 +72,7 @@ import 'package:collection/collection.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 import '../widgets/membership_chrome.dart';
+import 'item_master_sheet_screen.dart';
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key, this.onCreatePipeline});
@@ -333,21 +333,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 // that go in them, a name and a tick each.
                 Tooltip(
                   message:
-                      'Factory Sheet Wizard — 7-page blueprint unified manufacturing sheet for item trunk, commercial attribution, dies, and routing.',
-                  child: AppButton(
-                    key: const ValueKey<String>(
-                      'items_screen_factory_sheet_button',
-                    ),
-                    label: 'Factory Sheet',
-                    icon: Icons.table_chart_outlined,
-                    variant: AppButtonVariant.secondary,
-                    onPressed: () =>
-                        ComponentCreationDialog.openFactorySheet(context),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Tooltip(
-                  message:
                       'Quick entry — add a group, its sets and their '
                       'items in one pass.',
                   child: AppButton(
@@ -359,14 +344,16 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 ),
                 const SizedBox(width: 12),
                 AppButton(
+                  key: const ValueKey<String>('items_screen_add_item_button'),
                   label: 'Add Item',
                   icon: Icons.add,
                   isLoading: items.isSaving,
-                  // The creation window: the item workflow in the middle, the
-                  // items added so far on the left, and dies and machines one
-                  // click away for each of them.
-                  onPressed: () =>
-                      ComponentCreationDialog.openForItems(context),
+                  // The item master as a sheet: the identity chain and the
+                  // recipe columns across, a rail beside it, several parts down
+                  // the rows. This replaced the Express creation window and the
+                  // Factory Sheet wizard, which were two doors onto the same
+                  // in-memory prototype.
+                  onPressed: () => ItemMasterSheetScreen.open(context),
                 ),
               ],
             ),

@@ -149,6 +149,38 @@ String variationValueCode(String? value) {
       .toUpperCase();
 }
 
+/// One value's contribution to a part code: **numbers whole, letters first**.
+///
+/// `Brass` → `B`, `Nickel` → `N`, `Mild Steel` → `MS`, and `22 Gauge` → `22G`.
+///
+/// The digits are kept whole deliberately. Taking strictly the first character
+/// would turn both `22 Gauge` and `24 Gauge` into `2`, so the two parts a press
+/// shop most needs to tell apart would share a code and the unique index would
+/// refuse the second with nothing to explain why. Gauge is the distinction;
+/// it cannot be the thing that gets dropped.
+///
+/// Distinct from [variationValueCode], which is the fallback for a value in a
+/// VARIANT code and keeps a short single word whole (`Brass` → `BRAS`). This is
+/// the properties rule for the sheet's own derived code, where every top-level
+/// property contributes and four letters each would not fit on a drawing.
+String partPropertyCode(String? value) {
+  // Split on the digit/letter boundary too, not only on punctuation and
+  // spaces. "22 Gauge" was already two words and came out 22G, but "22G"
+  // typed without the space was ONE word, was not all digits, and so took its
+  // first character — giving 2, exactly what this rule exists to prevent, and
+  // colliding with 24G. A gauge cell takes typed values verbatim, so that
+  // spelling is the normal one.
+  final tokens = RegExp(r'\d+|[A-Za-z]+')
+      .allMatches(value ?? '')
+      .map((match) => match.group(0)!)
+      .toList();
+  if (tokens.isEmpty) return '';
+  return tokens
+      .map((token) => RegExp(r'^\d+$').hasMatch(token) ? token : token[0])
+      .join()
+      .toUpperCase();
+}
+
 /// What the server says the next part in a scope should be called.
 class PartIdentitySuggestion {
   const PartIdentitySuggestion({

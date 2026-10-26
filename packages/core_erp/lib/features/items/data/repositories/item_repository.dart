@@ -13,6 +13,10 @@ abstract class ItemRepository {
   Future<ItemDefinition?> getItem(int id);
   Future<ItemDefinition> createItem(CreateItemInput input);
   Future<ItemDefinition> updateItem(UpdateItemInput input);
+
+  /// Saves how the part's item sheet is nested (section → parent). The server
+  /// re-links the part's client, dies and machines to match (migration 057).
+  Future<ItemDefinition> saveSectionTree(int itemId, Map<String, String> tree);
   Future<ItemDefinition> updateShortCode(int id, String shortCode);
 
   /// Which sets hold this part, one row per line.

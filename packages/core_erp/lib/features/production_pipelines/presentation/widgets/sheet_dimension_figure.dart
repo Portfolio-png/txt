@@ -16,7 +16,14 @@ import '../../domain/pen_paper_baseline.dart' show SheetCutAxis;
 /// the wrong shape rather than as two swapped numbers. The gauge recedes at 45°
 /// and half scale, which is what makes the projection cabinet rather than
 /// cavalier: a receding axis drawn full length reads far too long.
-class SheetDimensionFigure extends StatelessWidget {
+///
+/// The plan is animated rather than swapped, because a cut plan changing is the
+/// thing being reasoned about: a strip added slides out of the plan's end and
+/// grows into place, one removed shrinks back into it, and every change redraws
+/// the cut lines one after another before the pieces and the offcut wash in —
+/// the order the shop would score, cut and set aside. [animate] off (or the
+/// platform asking for reduced motion) draws the finished state straight away.
+class SheetDimensionFigure extends StatefulWidget {
   const SheetDimensionFigure({
     super.key,
     required this.widthInches,
@@ -30,6 +37,7 @@ class SheetDimensionFigure extends StatelessWidget {
     this.rowPlanEndInches = 0,
     this.regionCuts = const <SheetRegionCuts>[],
     this.primaryIsColumns = true,
+    this.animate = true,
   });
 
   final double widthInches;
@@ -71,39 +79,276 @@ class SheetDimensionFigure extends StatelessWidget {
   /// grid needs kept clear.
   final String materialLabel;
 
+  /// Whether changes move. Off, every change lands in its final state on the
+  /// frame it arrives — for a thumbnail, a print, or a test that wants the
+  /// finished drawing. The platform's reduced-motion setting does the same
+  /// whatever this says.
+  final bool animate;
+
+  /// How long a strip takes to slide from where it was to where it now falls.
+  static const Duration slideDuration = Duration(milliseconds: 450);
+
+  /// How long one pass of drawing the cut plan in takes, from the first score
+  /// line to the offcut.
+  static const Duration cutDuration = Duration(milliseconds: 900);
+
+  @override
+  State<SheetDimensionFigure> createState() => SheetDimensionFigureState();
+}
+
+/// The figure's moving parts: the strips' slide and the cut plan's draw-in.
+///
+/// Public only so a test can read where the drawing is mid-flight; nothing
+/// else should reach in.
+class SheetDimensionFigureState extends State<SheetDimensionFigure>
+    with TickerProviderStateMixin {
+  late final AnimationController _slide;
+  late final CurvedAnimation _slideCurve;
+  late final AnimationController _cut;
+
+  late _BandListTween _columnTween;
+  late _BandListTween _rowTween;
+
+  /// Read from the platform in [didChangeDependencies], because that is where
+  /// an inherited value may be read; [didUpdateWidget] then trusts it.
+  bool _reduceMotion = false;
+  bool _started = false;
+
+  bool get _moves => widget.animate && !_reduceMotion;
+
+  /// Where the column strips are drawn this frame, mid-slide included.
+  @visibleForTesting
+  List<SheetFigureBand> get debugColumnBands =>
+      _columnTween.transform(_slideCurve.value);
+
+  /// Where the row strips are drawn this frame, mid-slide included.
+  @visibleForTesting
+  List<SheetFigureBand> get debugRowBands =>
+      _rowTween.transform(_slideCurve.value);
+
+  /// How far the cut plan has been drawn in, 0 to 1.
+  @visibleForTesting
+  double get debugCutProgress => _cut.value;
+
+  @override
+  void initState() {
+    super.initState();
+    _slide = AnimationController(
+      vsync: this,
+      duration: SheetDimensionFigure.slideDuration,
+      value: 1,
+    );
+    _slideCurve = CurvedAnimation(parent: _slide, curve: Curves.easeOutCubic);
+    _cut = AnimationController(
+      vsync: this,
+      duration: SheetDimensionFigure.cutDuration,
+      value: 1,
+    );
+    _columnTween = _BandListTween.at(
+      widget.columnBands,
+      widget.columnPlanEndInches,
+    );
+    _rowTween = _BandListTween.at(widget.rowBands, widget.rowPlanEndInches);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (!_started) {
+      _started = true;
+      // A plan the window opens on draws itself in once, the same way a
+      // change does, so the first look already reads in cutting order.
+      if (_moves) _cut.forward(from: 0);
+    } else if (!_moves) {
+      _settle();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SheetDimensionFigure oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final old = oldWidget;
+    final w = widget;
+    final bandsMoved =
+        !listEquals(old.columnBands, w.columnBands) ||
+        !listEquals(old.rowBands, w.rowBands) ||
+        old.columnPlanEndInches != w.columnPlanEndInches ||
+        old.rowPlanEndInches != w.rowPlanEndInches;
+    final planChanged =
+        bandsMoved ||
+        !_sameCuts(old.regionCuts, w.regionCuts) ||
+        old.trimInches != w.trimInches ||
+        old.primaryIsColumns != w.primaryIsColumns;
+
+    if (!_moves) {
+      _columnTween = _BandListTween.at(w.columnBands, w.columnPlanEndInches);
+      _rowTween = _BandListTween.at(w.rowBands, w.rowPlanEndInches);
+      _settle();
+      return;
+    }
+
+    if (bandsMoved) {
+      // From wherever the strips are drawn right now, not from where the last
+      // change meant them to end up: a second edit mid-slide carries on from
+      // the picture on screen instead of jumping back to finish the first.
+      final t = _slideCurve.value;
+      _columnTween = _BandListTween(
+        begin: _columnTween.transform(t),
+        end: w.columnBands,
+        beginPlanEnd: _columnTween.planEndAt(t),
+        endPlanEnd: w.columnPlanEndInches,
+      );
+      _rowTween = _BandListTween(
+        begin: _rowTween.transform(t),
+        end: w.rowBands,
+        beginPlanEnd: _rowTween.planEndAt(t),
+        endPlanEnd: w.rowPlanEndInches,
+      );
+      _slide.forward(from: 0);
+    }
+    if (planChanged) _cut.forward(from: 0);
+  }
+
+  /// Whether two sets of region cuts are the same cuts. Which region is
+  /// highlighted is left out on purpose: opening a strip in the panel changes
+  /// what is emphasised, not what is cut, and redrawing the whole plan every
+  /// time someone looks at a different strip would be motion that says nothing.
+  static bool _sameCuts(List<SheetRegionCuts> a, List<SheetRegionCuts> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].fromInches != b[i].fromInches ||
+          a[i].toInches != b[i].toInches ||
+          !listEquals(a[i].bands, b[i].bands)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Both animations straight to their end, for when nothing should move.
+  void _settle() {
+    _slide.value = 1;
+    _cut.value = 1;
+  }
+
+  @override
+  void dispose() {
+    _slideCurve.dispose();
+    _slide.dispose();
+    _cut.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // The measurements travel as one value, so a change to two of them does not
-    // run two tweens out of step and skew the solid mid-flight.
-    return TweenAnimationBuilder<_SheetShape>(
-      tween: _SheetShapeTween(
-        end: _SheetShape(
-          width: widthInches,
-          height: heightInches,
-          thickness: thicknessMm,
-        ),
-      ),
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-      builder: (context, shape, _) {
+    final w = widget;
+    final target = _SheetShape(
+      width: w.widthInches,
+      height: w.heightInches,
+      thickness: w.thicknessMm,
+    );
+
+    Widget paint(_SheetShape shape) => AnimatedBuilder(
+      animation: Listenable.merge(<Listenable>[_slide, _cut]),
+      builder: (context, _) {
+        final t = _slideCurve.value;
         return CustomPaint(
           painter: _SheetPainter(
             shape: shape,
-            hasFace: widthInches > 0 && heightInches > 0,
-            materialLabel: materialLabel,
-            trimInches: trimInches,
-            columnBands: columnBands,
-            rowBands: rowBands,
-            columnPlanEndInches: columnPlanEndInches,
-            rowPlanEndInches: rowPlanEndInches,
-            regionCuts: regionCuts,
-            primaryIsColumns: primaryIsColumns,
+            hasFace: w.widthInches > 0 && w.heightInches > 0,
+            materialLabel: w.materialLabel,
+            trimInches: w.trimInches,
+            columnBands: _columnTween.transform(t),
+            rowBands: _rowTween.transform(t),
+            columnPlanEndInches: _columnTween.planEndAt(t),
+            rowPlanEndInches: _rowTween.planEndAt(t),
+            regionCuts: w.regionCuts,
+            primaryIsColumns: w.primaryIsColumns,
+            cutProgress: _cut.value,
             textDirection: Directionality.of(context),
           ),
           child: const SizedBox.expand(),
         );
       },
     );
+
+    if (!_moves) return paint(target);
+
+    // The measurements travel as one value, so a change to two of them does not
+    // run two tweens out of step and skew the solid mid-flight.
+    return TweenAnimationBuilder<_SheetShape>(
+      tween: _SheetShapeTween(end: target),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      builder: (context, shape, _) => paint(shape),
+    );
+  }
+}
+
+/// A band list in motion, paired by position.
+///
+/// The two lists rarely match in length — a strip was just added or taken
+/// away — so the shorter is padded with collapsed bands sitting at its own
+/// plan's end. A strip that is new therefore starts as nothing where the old
+/// plan stopped and grows out of it; one that is gone shrinks back into where
+/// the new plan stops. At either end of the run the real list is returned
+/// untouched, so a settled drawing is the plan exactly, with no padding left
+/// in it to draw a stray edge line.
+class _BandListTween extends Tween<List<SheetFigureBand>> {
+  _BandListTween({
+    required List<SheetFigureBand> begin,
+    required List<SheetFigureBand> end,
+    required this.beginPlanEnd,
+    required this.endPlanEnd,
+  }) : super(begin: begin, end: end);
+
+  /// A tween that is already where it is going.
+  _BandListTween.at(List<SheetFigureBand> bands, double planEnd)
+    : beginPlanEnd = planEnd,
+      endPlanEnd = planEnd,
+      super(begin: bands, end: bands);
+
+  final double beginPlanEnd;
+  final double endPlanEnd;
+
+  double planEndAt(double t) {
+    if (t >= 1) return endPlanEnd;
+    if (t <= 0) return beginPlanEnd;
+    return beginPlanEnd + (endPlanEnd - beginPlanEnd) * t;
+  }
+
+  static SheetFigureBand _collapsed(double at, SheetFigureBand like) =>
+      SheetFigureBand(
+        startInches: at,
+        endInches: at,
+        sizeInches: 0,
+        count: like.count,
+        colourIndex: like.colourIndex,
+      );
+
+  @override
+  List<SheetFigureBand> lerp(double t) {
+    final from = begin!;
+    final to = end!;
+    if (t >= 1 || identical(from, to)) return to;
+    if (t <= 0) return from;
+    double mix(double a, double b) => a + (b - a) * t;
+    final length = math.max(from.length, to.length);
+    return <SheetFigureBand>[
+      for (var i = 0; i < length; i++)
+        () {
+          final b = i < to.length ? to[i] : _collapsed(endPlanEnd, from[i]);
+          final a = i < from.length ? from[i] : _collapsed(beginPlanEnd, b);
+          return SheetFigureBand(
+            startInches: mix(a.startInches, b.startInches),
+            endInches: mix(a.endInches, b.endInches),
+            sizeInches: mix(a.sizeInches, b.sizeInches),
+            count: b.count,
+            colourIndex: b.colourIndex,
+          );
+        }(),
+    ];
   }
 }
 
@@ -232,6 +477,7 @@ class _SheetPainter extends CustomPainter {
     this.rowPlanEndInches = 0,
     this.regionCuts = const <SheetRegionCuts>[],
     this.primaryIsColumns = true,
+    this.cutProgress = 1,
   });
 
   final _SheetShape shape;
@@ -245,6 +491,37 @@ class _SheetPainter extends CustomPainter {
   final double rowPlanEndInches;
   final List<SheetRegionCuts> regionCuts;
   final bool primaryIsColumns;
+
+  /// How far the cut plan has been drawn in, 0 to 1.
+  ///
+  /// The score lines come first, one after another along their length, over
+  /// the first [_linesShare] of the run; the pieces wash in over the rest; the
+  /// offcut greys in last of all, because it is what is left once everything
+  /// else has been taken. At 1 the drawing is exactly the finished plan.
+  final double cutProgress;
+
+  /// The share of the run spent drawing score lines.
+  static const double _linesShare = 0.7;
+
+  /// Where in the run the offcut starts to grey in.
+  static const double _offcutFrom = 0.85;
+
+  /// The pieces' wash, 0 to 1 — nothing while the lines are still going in.
+  double get _fillProgress => cutProgress >= 1
+      ? 1
+      : ((cutProgress - _linesShare) / (1 - _linesShare)).clamp(0.0, 1.0);
+
+  double get _offcutProgress => cutProgress >= 1
+      ? 1
+      : ((cutProgress - _offcutFrom) / (1 - _offcutFrom)).clamp(0.0, 1.0);
+
+  /// The score lines walked so far this paint, and how many there are in all.
+  /// Counted in a dry pass first, because a line's turn depends on how many
+  /// come after it, and drawn in the same order the finished plan is drawn so
+  /// nothing is stacked differently once it settles.
+  int _lineIndex = 0;
+  int _lineCount = 0;
+  bool _counting = false;
 
   /// A cut line every pixel would be a solid block of ink, so past this the
   /// drawing shows the first lines and the panel's readout carries the count.
@@ -423,18 +700,45 @@ class _SheetPainter extends CustomPainter {
 
     if (columnBands.isEmpty && rowBands.isEmpty) return;
 
+    if (cutProgress < 1) {
+      // The dry pass: walk the plan without touching the canvas, to learn how
+      // many score lines there are before handing each one its turn.
+      _counting = true;
+      _lineIndex = 0;
+      _planBands(canvas, at, scale, trim, usableRight, usableBottom);
+      _lineCount = _lineIndex;
+      _counting = false;
+    }
+    _lineIndex = 0;
+
     // Each axis leaves its own offcut beyond where its plan stops.
     final takenX = columnBands.isEmpty ? usableRight : columnPlanEndInches;
     final takenY = rowBands.isEmpty ? usableBottom : rowPlanEndInches;
-    final waste = Paint()
-      ..color = SoftErpTheme.warningText.withValues(alpha: 0.20);
-    if (takenX < usableRight - 0.0001) {
-      _quad(canvas, at, takenX, trim, usableRight, usableBottom, waste);
-    }
-    if (takenY < usableBottom - 0.0001) {
-      _quad(canvas, at, trim, takenY, takenX, usableBottom, waste);
+    final offcut = _offcutProgress;
+    if (offcut > 0) {
+      final waste = Paint()
+        ..color = SoftErpTheme.warningText.withValues(alpha: 0.20 * offcut);
+      if (takenX < usableRight - 0.0001) {
+        _quad(canvas, at, takenX, trim, usableRight, usableBottom, waste);
+      }
+      if (takenY < usableBottom - 0.0001) {
+        _quad(canvas, at, trim, takenY, takenX, usableBottom, waste);
+      }
     }
 
+    _planBands(canvas, at, scale, trim, usableRight, usableBottom);
+  }
+
+  /// Every band of the plan, in drawing order: the sheet-wide split, then each
+  /// region's own cuts.
+  void _planBands(
+    Canvas canvas,
+    Offset Function(double, double, double) at,
+    double scale,
+    double trim,
+    double usableRight,
+    double usableBottom,
+  ) {
     // The shear first: it runs the full sheet.
     for (final band in columnBands) {
       _band(
@@ -490,7 +794,83 @@ class _SheetPainter extends CustomPainter {
   }) {
     if (acrossTo <= acrossFrom) return;
     final colour = sheetBandColour(band.colourIndex);
-    final fill = Paint()..color = colour.withValues(alpha: 0.14 * emphasis);
+    final fillProgress = _fillProgress;
+    if (!_counting && fillProgress > 0) {
+      final fill = Paint()
+        ..color = colour.withValues(alpha: 0.14 * emphasis * fillProgress);
+      _bandFill(canvas, at, band, acrossFrom, acrossTo, vertical, fill);
+    }
+
+    // Where this band ends and the next begins: always drawn, because it is the
+    // boundary between one part and a different part.
+    final edge = Paint()
+      ..strokeWidth = 1.1
+      ..color = colour.withValues(alpha: 0.9 * emphasis);
+    for (final offset in <double>[band.startInches, band.endInches]) {
+      final a = vertical
+          ? at(offset, acrossFrom, 0)
+          : at(acrossFrom, offset, 0);
+      final b = vertical ? at(offset, acrossTo, 0) : at(acrossTo, offset, 0);
+      _scoreLine(canvas, a, b, edge, dashed: false);
+    }
+
+    // The pieces inside it, only while they are far enough apart to be counted
+    // by eye. Below that the wash already says where the band is, and drawing
+    // the cuts would only turn it into a texture.
+    final pitchPx = band.sizeInches * scale;
+    if (pitchPx < 6 || band.count < 2) return;
+    final dash = Paint()
+      ..strokeWidth = 0.7
+      ..color = colour.withValues(alpha: 0.55 * emphasis);
+    for (var i = 1; i < band.count; i++) {
+      final offset = band.startInches + band.sizeInches * i;
+      if (offset >= band.endInches - 0.0001) break;
+      final a = vertical
+          ? at(offset, acrossFrom, 0)
+          : at(acrossFrom, offset, 0);
+      final b = vertical ? at(offset, acrossTo, 0) : at(acrossTo, offset, 0);
+      _scoreLine(canvas, a, b, dash, dashed: true);
+    }
+  }
+
+  /// One score line, drawn as far along its length as its turn has reached.
+  ///
+  /// The lines take turns in plan order across the first part of the run, so
+  /// the plan reads in the order it would be cut rather than all at once. A
+  /// line whose turn is over is drawn whole, to the exact end point the
+  /// finished drawing uses.
+  void _scoreLine(
+    Canvas canvas,
+    Offset a,
+    Offset b,
+    Paint paint, {
+    required bool dashed,
+  }) {
+    final index = _lineIndex++;
+    if (_counting) return;
+    var to = b;
+    if (cutProgress < 1 && _lineCount > 0) {
+      final phase = (cutProgress / _linesShare).clamp(0.0, 1.0) * _lineCount;
+      final local = (phase - index).clamp(0.0, 1.0);
+      if (local <= 0) return;
+      if (local < 1) to = Offset.lerp(a, b, local)!;
+    }
+    if (dashed) {
+      _dashedLine(canvas, a, to, paint);
+    } else {
+      canvas.drawLine(a, to, paint);
+    }
+  }
+
+  void _bandFill(
+    Canvas canvas,
+    Offset Function(double, double, double) at,
+    SheetFigureBand band,
+    double acrossFrom,
+    double acrossTo,
+    bool vertical,
+    Paint fill,
+  ) {
     if (vertical) {
       _quad(
         canvas,
@@ -511,37 +891,6 @@ class _SheetPainter extends CustomPainter {
         band.endInches,
         fill,
       );
-    }
-
-    // Where this band ends and the next begins: always drawn, because it is the
-    // boundary between one part and a different part.
-    final edge = Paint()
-      ..strokeWidth = 1.1
-      ..color = colour.withValues(alpha: 0.9 * emphasis);
-    for (final offset in <double>[band.startInches, band.endInches]) {
-      final a = vertical
-          ? at(offset, acrossFrom, 0)
-          : at(acrossFrom, offset, 0);
-      final b = vertical ? at(offset, acrossTo, 0) : at(acrossTo, offset, 0);
-      canvas.drawLine(a, b, edge);
-    }
-
-    // The pieces inside it, only while they are far enough apart to be counted
-    // by eye. Below that the wash already says where the band is, and drawing
-    // the cuts would only turn it into a texture.
-    final pitchPx = band.sizeInches * scale;
-    if (pitchPx < 6 || band.count < 2) return;
-    final dash = Paint()
-      ..strokeWidth = 0.7
-      ..color = colour.withValues(alpha: 0.55 * emphasis);
-    for (var i = 1; i < band.count; i++) {
-      final offset = band.startInches + band.sizeInches * i;
-      if (offset >= band.endInches - 0.0001) break;
-      final a = vertical
-          ? at(offset, acrossFrom, 0)
-          : at(acrossFrom, offset, 0);
-      final b = vertical ? at(offset, acrossTo, 0) : at(acrossTo, offset, 0);
-      _dashedLine(canvas, a, b, dash);
     }
   }
 
@@ -873,7 +1222,8 @@ class _SheetPainter extends CustomPainter {
       !listEquals(old.columnBands, columnBands) ||
       !listEquals(old.rowBands, rowBands) ||
       old.hasFace != hasFace ||
-      old.materialLabel != materialLabel;
+      old.materialLabel != materialLabel ||
+      old.cutProgress != cutProgress;
 }
 
 enum _Align { left, centre }

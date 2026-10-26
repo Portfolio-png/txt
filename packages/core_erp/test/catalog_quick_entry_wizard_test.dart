@@ -2061,7 +2061,7 @@ void _manyDiesTests() {
 
       expect(dieRow('70'), findsOneWidget);
       // What tells them apart, not just the code.
-      expect(find.textContaining('Cutting · Atul Mestry'), findsOneWidget);
+      expect(find.textContaining('Atul Mestry'), findsOneWidget);
       expect(find.textContaining('F206 · Rack 23-4'), findsOneWidget);
 
       await _tapVisible(tester, find.text('Bending'));
@@ -2155,7 +2155,7 @@ void _manyDiesTests() {
 
       await _tapVisible(
         tester,
-        find.descendant(of: dieRow('70'), matching: find.byType(IconButton)),
+        find.descendant(of: dieRow('70'), matching: find.byIcon(Icons.link_off_rounded)),
       );
 
       // One update, with that die gone from the list — and no delete anywhere.
@@ -2428,12 +2428,20 @@ void _machineSectionTests() {
       await pickType(tester, 'Power Press');
       await _tapVisible(tester, addMachine());
 
-      // What tells them apart, not just the number.
+      // What tells them apart, not just the number. The row is aligned columns
+      // now rather than one joined sentence, so each fact is asserted where it
+      // sits.
       expect(machineRow('90'), findsOneWidget);
-      expect(
-        find.textContaining('Power Press · Mayank · 35 Ton · 110/min'),
-        findsOneWidget,
-      );
+      for (final fact in ['Power Press', 'Mayank', '35 Ton', '110']) {
+        expect(
+          find.descendant(
+            of: machineRow('90'),
+            matching: find.textContaining(fact),
+          ),
+          findsOneWidget,
+          reason: fact,
+        );
+      }
 
       await _tapVisible(tester, addMachine());
       expect(drafts, hasLength(2));
@@ -2458,7 +2466,7 @@ void _machineSectionTests() {
       // And the ✕ takes it off the part without touching the machine.
       await _tapVisible(
         tester,
-        find.descendant(of: machineRow('91'), matching: find.byType(IconButton)),
+        find.descendant(of: machineRow('91'), matching: find.byIcon(Icons.link_off_rounded)),
       );
       expect(harness.itemRepo.updated.last.machineIds, isNot(contains('91')));
       expect(find.textContaining('still in the machines master'), findsOneWidget);
@@ -2548,7 +2556,7 @@ void _stagedCreateTests() {
       expect(dieDrafts, isEmpty);
       expect(harness.itemRepo.created, isEmpty);
       // And the row says so rather than looking saved.
-      expect(find.textContaining('held until the part is made'), findsWidgets);
+      expect(find.textContaining('held for the part'), findsWidgets);
       expect(find.text('CDATP48'), findsOneWidget);
     });
 
@@ -2642,8 +2650,8 @@ void _stagedCreateTests() {
       expect(dieDrafts, hasLength(1));
       // Still held — and the rows no longer claim to be waiting on a part
       // that now exists.
-      expect(find.textContaining('held — not written yet'), findsNWidgets(2));
-      expect(find.textContaining('held until the part is made'), findsNothing);
+      expect(find.text('held'), findsNWidgets(2));
+      expect(find.textContaining('held for the part'), findsNothing);
     });
 
     testWidgets('a held machine counts the other held ones', (tester) async {
@@ -2691,7 +2699,7 @@ void _stagedCreateTests() {
       // Written once. And it has stopped being held, so it cannot be made a
       // second time for whatever part is created next.
       expect(dieDrafts.where((d) => d.toolCode == 'CDATP48'), hasLength(2));
-      expect(find.textContaining('held — not written yet'), findsOneWidget);
+      expect(find.text('held'), findsOneWidget);
       expect(find.text('CDATP48'), findsOneWidget);
     });
 

@@ -162,6 +162,7 @@ class ItemDefinition {
     this.developedForClientId,
     this.developedForClientName = '',
     this.developedFor = DevelopedFor.empty,
+    this.sectionTree,
     this.machines = const <ItemMachineLink>[],
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
@@ -242,6 +243,12 @@ class ItemDefinition {
   /// Who this part was developed for, when, and what was quoted.
   final DevelopedFor developedFor;
 
+  /// How this part's item sheet is nested: section → parent section, rooted
+  /// at `group_item`. Null is the default chain (Item › Client › Die ›
+  /// Machines). The nesting is data, not layout — the server links each
+  /// section's records to its parent's (migration 057).
+  final Map<String, String>? sectionTree;
+
   /// The pre-047 shape of the same fact, kept as aliases of
   /// [developedFor]: the local replica holds item payloads on disk that were
   /// written with only these two keys in them.
@@ -305,6 +312,7 @@ class ItemDefinition {
       developedForClientId: developedForClientId,
       developedForClientName: developedForClientName,
       developedFor: developedFor,
+      sectionTree: sectionTree,
       machines: machines,
       dies: dies,
       combinationGroupIds: combinationGroupIds,
@@ -426,7 +434,9 @@ class ItemDieLink {
     required this.toolCode,
     this.photoUrl,
     this.dieType = '',
+    this.dieTypeLabel = '',
     this.madeBy = '',
+    this.dieMakerId,
     this.poAt,
     this.dateInAt,
     this.linerSizeNm,
@@ -440,13 +450,43 @@ class ItemDieLink {
   final String toolCode;
   final String? photoUrl;
 
-  /// '' | 'cutting' | 'bending'.
+  /// '' | 'cutting' | 'bending', or a slug the shop's own words reduced to.
   final String dieType;
-  final String madeBy;
 
-  /// UTC instants. Render through `partStamp`, never by reading their fields.
+  /// The words, for a type that was typed rather than picked. Empty for the
+  /// four built-ins, whose label is looked up from the slug.
+  final String dieTypeLabel;
+
+  /// Who made it, as text. Kept beside [dieMakerId] rather than replaced by
+  /// it: a die made before the die maker master has a name and no id, and
+  /// that is a legal state rather than a backlog.
+  final String madeBy;
+  final int? dieMakerId;
+
+  /// When the die was **ordered** from whoever makes it.
+  ///
+  /// The paper sheet's "PO-Date / Time". Its counterpart is [dateInAt], and the
+  /// gap between them is the tooling lead time — which is the metric the die
+  /// sheet exists to answer ("PO-to-date-in lead time", design philosophy §5).
+  ///
+  /// A UTC instant. Render through `partStamp`, never by reading its fields:
+  /// an Indian shop would see 11.30 AM as 6.00 AM the same day.
   final DateTime? poAt;
+
+  /// When the made die **arrived**.
+  ///
+  /// The paper sheet's "Date in / Time" — receipt, not creation and not the
+  /// order. Same UTC rule as [poAt].
   final DateTime? dateInAt;
+
+  /// How long the die took to arrive after it was ordered.
+  ///
+  /// Null until both ends are known; negative is left as it is rather than
+  /// clamped, because a die recorded as arriving before it was ordered is a
+  /// data problem to see, not to hide.
+  Duration? get leadTime => (poAt == null || dateInAt == null)
+      ? null
+      : dateInAt!.difference(poAt!);
 
   /// An integer count of nanometres; the unit beside it is how it was read.
   final int? linerSizeNm;

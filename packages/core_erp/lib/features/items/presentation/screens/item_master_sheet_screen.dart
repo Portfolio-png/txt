@@ -1,0 +1,2233 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../../core/network/sitting_scope.dart';
+import '../../../../core/services/socket_service.dart';
+import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../sheet/sheet.dart';
+import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../groups/presentation/providers/groups_provider.dart';
+import '../../../materials/presentation/providers/materials_provider.dart';
+import '../../../process_routes/presentation/widgets/route_creation_panel.dart';
+import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../../production_pipelines/domain/sheet_part.dart';
+import '../../../production_pipelines/presentation/widgets/master_data_dialog.dart';
+import '../../data/item_sheet_binding.dart';
+import '../../domain/developed_for.dart';
+import '../../domain/item_definition.dart';
+import '../providers/items_provider.dart';
+import '../widgets/margin_health_badge.dart';
+import '../widgets/part_die_section.dart';
+import '../widgets/part_machine_section.dart';
+import '../widgets/deal_people_form.dart';
+import '../../../../core/app_flow_hooks.dart';
+
+/// The item master as a sheet — the real screen behind the PM prototype.
+///
+/// The prototype (`PMItemMasterDetailScreen`) is the UI reference and stays as
+/// one: it holds its records in four in-memory lists, seeds five groups and
+/// four companies nobody created, and its save toasted a hardcoded part code.
+/// This screen is the same layout over the real masters, through
+/// [ItemSheetBinding].
+///
+/// Four sections down one scroll, with a rail that jumps between them. The
+/// Client / Vendor section is only shown for a part developed for someone else
+/// — but its draft is kept either way, so unticking the box and changing your
+/// mind does not lose what was typed.
+class ItemMasterSheetScreen extends StatefulWidget {
+  const ItemMasterSheetScreen({
+    super.key,
+    this.initialItems = const [],
+    this.title = 'New part',
+  });
+
+  /// Parts to open for editing. Empty means a new part.
+  final List<ItemDefinition> initialItems;
+
+  /// The last breadcrumb.
+  final String title;
+
+  /// Opens the sheet as a full-screen route.
+  ///
+  /// A route and not a dialog: Express was a dialog, and a dialog over the
+  /// masters list meant the sheet could never be as wide as the sheet wants to
+  /// be — it is a spreadsheet with a rail beside it, not a form.
+  static Future<void> open(
+    BuildContext context, {
+    List<ItemDefinition> initialItems = const [],
+    String title = 'New part',
+  }) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ItemMasterSheetScreen(
+          initialItems: initialItems,
+          title: title,
+        ),
+      ),
+    );
+  }
+
+  @override
+  State<ItemMasterSheetScreen> createState() => _ItemMasterSheetScreenState();
+}
+
+class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
+  late final ItemMasterController _controller;
+  late final ItemSheetBinding _binding;
+
+  /// This window's sitting, so everything saved here is attributable to one
+  /// opening of one screen. Begun in `initState` and ended on dispose by id,
+  /// because disposal order is not guaranteed to reverse opening order.
+  String? _sittingId;
+
+  final ScrollController _scroll = ScrollController();
+  final Map<String, GlobalKey> _sectionKeys = {
+    'group_item': GlobalKey(),
+    'client_vendor': GlobalKey(),
+    'die_master': GlobalKey(),
+    'machine_master': GlobalKey(),
+  };
+
+  bool _showRoutePanel = false;
+
+  /// Sections folded shut. Folding one hides everything nested under it, the
+  /// way a closed folder hides its subfolders.
+  final Set<String> _collapsed = <String>{};
+
+  /// How this part's sections are nested: section → parent. Data, not layout —
+  /// saving it re-links the part's client, dies and machines (migration 057).
+  static const Map<String, String> _defaultTree = {
+    'client_vendor': 'group_item',
+    'die_master': 'client_vendor',
+    'machine_master': 'die_master',
+  };
+  Map<String, String> _parentOf = Map<String, String>.of(_defaultTree);
+
+  /// What is stored, so a change can be seen and undone.
+  Map<String, String> _savedTree = Map<String, String>.of(_defaultTree);
+  int? _treeLoadedFor;
+  bool _savingTree = false;
+  bool get _treeDirty => !mapEquals(_parentOf, _savedTree);
+
+  /// The raw sheet & strips panel on the right: open (null = decide from the
+  /// window width), being edited, and a counter that resets it on Cancel.
+  bool? _rawPanelOpen;
+  bool _rawEditing = false;
+  int _rawEpoch = 0;
+  static const double _rawPanelWidth = 520;
+
+  /// The left rail folded to an icon strip (remembered on this device).
+  bool _railCollapsed = false;
+  static const _railPrefKey = 'item_sheet.rail_collapsed';
+
+
+  /// Dies and machines entered before the part exists. Written once it does.
+  final List<DieSheetDraft> _stagedDies = [];
+  final List<MachineSheetDraft> _stagedMachines = [];
+  final Set<int> _madeHere = <int>{};
+
+  static const _sections = [
+    SheetSection(
+      id: 'group_item',
+      title: 'Group Item',
+      subtitle: 'Identity, hierarchy & properties',
+      icon: Icons.table_rows_rounded,
+    ),
+    SheetSection(
+      id: 'client_vendor',
+      title: 'Client / Vendor',
+      subtitle: 'Party, contact & the development deal',
+      icon: Icons.storefront_rounded,
+    ),
+    SheetSection(
+      id: 'die_master',
+      title: 'Die Process Master',
+      subtitle: 'Press tooling & progressive dies',
+      icon: Icons.precision_manufacturing_rounded,
+    ),
+    SheetSection(
+      id: 'machine_master',
+      title: 'Machines & Routing',
+      subtitle: 'Shop floor routing & specs',
+      icon: Icons.settings_suggest_rounded,
+    ),
+  ];
+
+  /// The masters the pickers are built from. Watched, not read once.
+  ItemsProvider? _items;
+  GroupsProvider? _groups;
+  MaterialsProvider? _materials;
+  ClientsProvider? _clients;
+
+  @override
+  void initState() {
+    super.initState();
+    _sittingId = SittingScope.begin();
+
+    _controller = ItemMasterController.live(binding: _buildBinding());
+    _controller.addListener(_onControllerChanged);
+
+    // Reference data is loaded again whenever the masters change, not once at
+    // open. The screen can be opened before the providers have finished their
+    // first fetch — and it was, in the running app: the Group picker opened
+    // offering nothing at all, for a workspace with three groups in it. A
+    // single post-frame load has no way to recover from that.
+    //
+    // This also keeps the running numbers and taken codes current after a
+    // save, since `ItemsProvider` notifies on one.
+    _items = context.read<ItemsProvider>()..addListener(_onMastersChanged);
+    _groups = context.read<GroupsProvider>()..addListener(_onMastersChanged);
+
+    // The Alloy column offers the materials master, and the master is lazy:
+    // nothing in this screen or the app warm-up ever loaded it, so the picker
+    // was empty on a cold launch and full only if the user had happened to
+    // open Masters → Materials earlier in the same session. The listener is the
+    // load-bearing half — `ensureLoaded` is a future, and reference data built
+    // before it lands has to be rebuilt when it does.
+    _materials = _maybeRead<MaterialsProvider>()
+      ?..addListener(_onMastersChanged);
+
+    // The Company dropdown is the clients master. Without this a company added
+    // anywhere else — the Clients screen, another window — did not appear here
+    // until the sheet was reopened.
+    _clients = _maybeRead<ClientsProvider>()?..addListener(_onMastersChanged);
+
+    // Saves show up in real time. Items and clients patch themselves from the
+    // server's events already; dies and machines had no listener at all, so a
+    // die edited elsewhere stayed stale on an open part.
+    for (final event in _remoteEvents) {
+      SocketService.instance.on(event, _onRemoteChange);
+    }
+
+    // Commit whichever row the cursor leaves, however it left — a click, Tab
+    // or Enter past the end, or Add row.
+    _controller.groupItemController.onRowLeft =
+        (row) => unawaited(_commitOnLeave(row));
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      unawaited(_materials?.ensureLoaded());
+      final clients = _clients;
+      if (clients != null && clients.clients.isEmpty && !clients.isLoading) {
+        unawaited(clients.refresh());
+      }
+      await _controller.loadReferenceData();
+      if (!mounted) return;
+      unawaited(_loadRailPreference());
+      if (widget.initialItems.isNotEmpty) {
+        _controller.loadItems(widget.initialItems);
+      }
+    });
+  }
+
+  /// Dies and machines changed somewhere — this window, another one, another
+  /// person. The part's lists come from the item, so re-read it.
+  void _onRemoteChange(dynamic _) {
+    if (!mounted) return;
+    unawaited(context.read<ItemsProvider>().refresh());
+  }
+
+  bool _mastersReloadScheduled = false;
+
+  void _onMastersChanged() {
+    if (!mounted || _mastersReloadScheduled) return;
+    // One save notifies three or four times, and each notification rebuilt
+    // every option and re-validated every row. Collapsed to one per frame.
+    _mastersReloadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mastersReloadScheduled = false;
+      if (!mounted) return;
+      // A saved part changed elsewhere: show it in the rows that are closed —
+      // never in one somebody is typing in.
+      final items = _items;
+      if (items != null) _controller.refreshLockedRows(items.items);
+      _controller.loadReferenceData();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  ItemSheetBinding _buildBinding() {
+    _binding = ItemSheetBinding(
+      items: context.read<ItemsProvider>(),
+      groups: context.read<GroupsProvider>(),
+      clients: _maybeRead<ClientsProvider>(),
+      materials: _maybeRead<MaterialsProvider>(),
+      itemSheet: SheetDef(
+        id: 1,
+        key: 'item',
+        title: 'Group Item',
+        columns: itemSheetColumns,
+      ),
+      // The controller's copy is the one a + adds properties to.
+      liveItemSheet: () => _controller.groupItemController.sheetDef,
+      partySheet: SheetDef(
+        id: 2,
+        key: 'item_party',
+        title: 'Client / Vendor',
+        columns: dealSheetColumns,
+      ),
+      // The deal is one record for the screen, and the binding reads it live
+      // at each save rather than being handed a copy taken at build time —
+      // which is what the old `partyDraft: null` here amounted to: the deal
+      // was drawn, typed into, and never once saved.
+      dealDraft: () => _controller.dealDraftForSave(),
+      dealContactIds: () => _controller.dealContactIdsForSave(),
+      peopleSheet: SheetDef(
+        id: 3,
+        key: 'item_people',
+        title: 'People',
+        columns: peopleSheetColumns,
+      ),
+    );
+    return _binding;
+  }
+
+  /// A provider the host may not have registered. The binding takes both as
+  /// optional, so a missing materials master means an empty Alloy picker
+  /// rather than a crash on open.
+  T? _maybeRead<T>() {
+    try {
+      return Provider.of<T>(context, listen: false);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller.groupItemController.onRowLeft = null;
+    _items?.removeListener(_onMastersChanged);
+    _groups?.removeListener(_onMastersChanged);
+    _materials?.removeListener(_onMastersChanged);
+    _clients?.removeListener(_onMastersChanged);
+    for (final event in _remoteEvents) {
+      SocketService.instance.off(event, _onRemoteChange);
+    }
+    _controller.removeListener(_onControllerChanged);
+    _controller.dispose();
+    _scroll.dispose();
+    final sitting = _sittingId;
+    if (sitting != null) SittingScope.end(sitting);
+    super.dispose();
+  }
+
+  /// Commits every row that is ready.
+  ///
+  /// Rows normally commit on their own as the cursor leaves them; this is the
+  /// explicit pass, and the only way the row still under the cursor gets
+  /// written without moving off it.
+  Future<void> _handleSave() async {
+    // Ctrl+S is not disabled the way the button is, and a second pass while
+    // the first runs would count every busy row as "nothing to do".
+    if (_controller.isSavingNow) {
+      _toast('Still saving — one moment.');
+      return;
+    }
+    final written = await _controller.commitAllRows();
+    if (!mounted) return;
+    for (final id in _controller.savedItemIds) {
+      _madeHere.add(id);
+    }
+    // Held dies and machines go with the part. Only leaving a row wrote them
+    // before, so a part saved with Ctrl+S and closed lost them.
+    await _flushStaged();
+    if (!mounted) return;
+    // The nesting rides along with a save once there is a part to save it on.
+    if (_treeDirty && _livePart != null) await _saveTree();
+    if (!mounted) return;
+    _toast(_controller.statusBarMessage, isError: written == 0);
+  }
+
+  /// Commits [row] as the cursor leaves it.
+  ///
+  /// A row is written when it is complete and you move on, which is the whole
+  /// of "catalogue at speed": fifty parts are fifty independent writes, and a
+  /// refusal costs only the row it refused.
+  Future<void> _commitOnLeave(int row) async {
+    if (!_controller.savedRows.contains(row)) {
+      final ok = await _controller.commitRow(row);
+      if (!mounted) return;
+      if (ok) {
+        final id = _controller.savedItemId;
+        if (id != null) _madeHere.add(id);
+        await _flushStaged();
+        // A nesting arranged before the part existed is saved with it now.
+        if (mounted && _treeDirty) await _saveTree();
+      }
+    }
+  }
+
+  /// Writes the dies and machines held while the part did not exist.
+  ///
+  /// Two calls, because each list is a full replace on the item. Held records
+  /// are created first and only then linked, so a create that succeeded but a
+  /// link that failed leaves the record in its master rather than losing it.
+  Future<void> _flushStaged() async {
+    final part = _livePart;
+    if (part == null) return;
+    if (_stagedDies.isEmpty && _stagedMachines.isEmpty) return;
+    if (!AppFlowHooks.canCreateDieFromSheet &&
+        !AppFlowHooks.canCreateMachineFromSheet) {
+      return;
+    }
+
+    final dieIds = <String>[for (final d in part.dies) d.id];
+    for (final draft in List<DieSheetDraft>.from(_stagedDies)) {
+      if (!mounted) return;
+      final outcome = await AppFlowHooks.createDieFromSheet?.call(context, draft);
+      final id = outcome?.record?.id;
+      if (id == null) continue;
+      dieIds.add(id);
+      if (mounted) setState(() => _stagedDies.remove(draft));
+    }
+
+    final machineIds = <String>[for (final m in part.machines) m.id];
+    for (final draft in List<MachineSheetDraft>.from(_stagedMachines)) {
+      if (!mounted) return;
+      final outcome =
+          await AppFlowHooks.createMachineFromSheet?.call(context, draft);
+      final id = outcome?.record?.id;
+      if (id == null) continue;
+      machineIds.add(id);
+      if (mounted) setState(() => _stagedMachines.remove(draft));
+    }
+
+    if (!mounted) return;
+    if (dieIds.isNotEmpty) await _setDies(dieIds);
+    if (machineIds.isNotEmpty) await _setMachines(machineIds);
+  }
+
+  void _toast(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontSize: 14)),
+        backgroundColor:
+            isError ? const Color(0xFFDC2626) : const Color(0xFF059669),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  bool get _hasUnsavedWork =>
+      _controller.hasUnsavedWork ||
+      _stagedDies.isNotEmpty ||
+      _stagedMachines.isNotEmpty;
+
+  /// Back with something unwritten. Rows commit as the cursor leaves them,
+  /// but the row under the cursor, an edit to a saved row and held dies were
+  /// all dropped without a word when the screen closed.
+  Future<void> _confirmLeave() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave with unsaved work?', style: TextStyle(fontSize: 18)),
+        content: const Text(
+          'Some rows, edits or held dies and machines have not been saved yet.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('stay'),
+            child: const Text('Keep editing', style: TextStyle(fontSize: 14)),
+          ),
+          TextButton(
+            key: const ValueKey<String>('leave_discard'),
+            onPressed: () => Navigator.of(dialogContext).pop('discard'),
+            child: const Text('Discard', style: TextStyle(fontSize: 14)),
+          ),
+          FilledButton(
+            key: const ValueKey<String>('leave_save'),
+            onPressed: () => Navigator.of(dialogContext).pop('save'),
+            child: const Text('Save and close', style: TextStyle(fontSize: 14)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || choice == 'stay') return;
+    if (choice == 'save') {
+      await _handleSave();
+      if (!mounted || _hasUnsavedWork) return;
+    }
+    _leaving = true;
+    Navigator.of(context).pop();
+  }
+
+  /// Set once the user has chosen to go, so the pop is not intercepted again.
+  bool _leaving = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _leaving || !_hasUnsavedWork,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_confirmLeave());
+      },
+      child: _buildScaffold(context),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+              _handleSave,
+          const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+              _handleSave,
+        },
+        child: Focus(
+          autofocus: true,
+          child: Column(
+            children: [
+              _topBar(),
+              Expanded(
+                child: Row(
+                  children: [
+                    if (_railCollapsed)
+                      _collapsedRail()
+                    else
+                      Stack(
+                        children: [
+                          SheetSidebar(
+                      controller: _controller.groupItemController,
+                      sections: [
+                        for (final section in _sections)
+                          if (section.id != 'client_vendor' ||
+                              _controller.isExternal)
+                            section,
+                      ],
+                      activeSection: _controller.activeSection,
+                      onSelectSection: _goTo,
+                      // The part is pinned above the content now, so the
+                      // sidebar naming it too would say it twice.
+                      showIdentity: false,
+                    ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: IconButton(
+                              key: const ValueKey<String>('rail_collapse'),
+                              tooltip: 'Fold the side column to icons',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _setRailCollapsed(true),
+                              icon: const Icon(
+                                Icons.keyboard_double_arrow_left_rounded,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    Expanded(child: _body()),
+                    _rawSheetPanel(),
+                  ],
+                ),
+              ),
+              SheetStatusBar(
+                isEditing: _controller.isEditing,
+                location: _controller.activeSection,
+                message: _controller.statusBarMessage,
+                isError: false,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Who the part was developed for, named only when a party is actually
+  /// chosen. The prototype's sidebar read
+  /// `draft.get(20)?.optionLabel ?? 'Gold Medal'`, so a part developed for
+  /// nobody claimed a real company.
+  String? _developedForLine() {
+    if (!_controller.isExternal) return 'Developed for: Self';
+    final sheet = _controller.clientVendorController.sheetDef;
+    final column = sheet.columnBoundTo(SheetBindsTo.developedForParty);
+    if (column == null) return null;
+    final value = _controller.clientVendorController.draft.get(column.id);
+    final name = value?.optionLabel ?? value?.textValue;
+    if (name == null || name.trim().isEmpty) {
+      return 'Developed for: not chosen yet';
+    }
+    return 'Developed for: $name';
+  }
+
+  Widget _topBar() {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+        boxShadow: [
+          BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2)),
+        ],
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back_rounded, size: 20),
+              tooltip: 'Back',
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+            const SizedBox(width: 8),
+            _crumb('Masters'),
+            _crumbSep(),
+            _crumb('Items'),
+            _crumbSep(),
+            _crumb(widget.title, isLast: true),
+            const SizedBox(width: 20),
+            if (_controller.isLoading)
+              const Padding(
+                padding: EdgeInsets.only(right: 12),
+                child: SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: _controller.isExternal,
+                  activeColor: SoftErpTheme.accent,
+                  onChanged: (val) {
+                    if (val != null) _controller.setExternal(val);
+                  },
+                ),
+                const Text(
+                  'Developed for an external party',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            AppButton(
+              key: const ValueKey('save_item_sheet_btn'),
+              label: _controller.isSavingNow
+                  ? 'Saving…'
+                  : (_controller.isSaved ? 'Save changes (Ctrl+S)' : 'Save part (Ctrl+S)'),
+              icon: _controller.isSaved
+                  ? Icons.check_circle_rounded
+                  : Icons.save_rounded,
+              isLoading: _controller.isSavingNow,
+              onPressed: _controller.isSavingNow ? null : _handleSave,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _crumb(String text, {bool isLast = false}) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: isLast ? FontWeight.w800 : FontWeight.w600,
+          color: isLast ? SoftErpTheme.textPrimary : const Color(0xFF5A6A80),
+        ),
+      );
+
+  Widget _crumbSep() => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 6),
+        child: Text('›', style: TextStyle(fontSize: 14, color: Color(0xFF94A3B8))),
+      );
+
+  /// The section the rail has selected, and only that one.
+  ///
+  /// This was all four stacked down one scroll, which is what made the screen
+  /// feel cramped: four sections competing for one width, every grid truncating
+  /// its headers, and 320px of card spent to show 92px of content. The rail
+  /// already drove `activeSection` — it only ever scrolled to it.
+  // --- raw sheet & strips (right-hand panel) ---------------------------------
+
+  /// The raw material a part is cut from — sheet size, gauge, the strips laid
+  /// across it, the cut plan, yields and weights — drawn as the animated sheet
+  /// from the old Master Data dialog. The last step after item → client → die
+  /// → machine, so it sits to the right of them. Stored on the part
+  /// (`pen_paper_baseline`), so it opens once the part exists.
+  Widget _rawSheetPanel() {
+    final open = _rawPanelOpen ?? MediaQuery.sizeOf(context).width >= 1500;
+    if (!open) {
+      return Container(
+        key: const ValueKey<String>('raw_panel_closed'),
+        width: 44,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(left: BorderSide(color: Color(0xFFE2E8F0))),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            IconButton(
+              key: const ValueKey<String>('raw_panel_open'),
+              tooltip: 'Open the raw sheet & strips',
+              onPressed: () => setState(() => _rawPanelOpen = true),
+              icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
+            ),
+            const SizedBox(height: 8),
+            const RotatedBox(
+              quarterTurns: 1,
+              child: Text(
+                'Raw sheet & strips',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final part = _livePart;
+    final baseline = part?.penPaperBaseline ?? PenPaperBaseline.createDefault();
+    final panel = MasterDataPanel(
+      // Bumped on Cancel, so the edits are thrown away with the old state.
+      key: ValueKey<String>('raw_${part?.id ?? 0}_$_rawEpoch'),
+      baseline: baseline,
+      embedded: true,
+      showHeader: false,
+      readOnly: part == null || !_rawEditing,
+      itemName: _partLabelNow,
+      parts: _plannableParts(),
+      materials: _materials?.materials ?? const [],
+      onSave: (saved) => unawaited(_saveRawSheet(saved)),
+      onCancel: _rawEditing
+          ? () => setState(() {
+                _rawEditing = false;
+                _rawEpoch += 1;
+              })
+          : null,
+    );
+
+    return Container(
+      key: const ValueKey<String>('raw_panel'),
+      width: _rawPanelWidth,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(left: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+            child: Row(
+              children: [
+                const Icon(Icons.grid_on_rounded, size: 20, color: SoftErpTheme.accent),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Raw sheet & strips',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                if (part != null && !_rawEditing)
+                  OutlinedButton.icon(
+                    key: const ValueKey<String>('raw_edit'),
+                    onPressed: () => setState(() => _rawEditing = true),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit', style: TextStyle(fontSize: 14)),
+                  ),
+                IconButton(
+                  key: const ValueKey<String>('raw_panel_close'),
+                  tooltip: 'Fold the raw sheet panel',
+                  onPressed: () => setState(() => _rawPanelOpen = false),
+                  icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
+                ),
+              ],
+            ),
+          ),
+          if (part == null)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'Opens once the part is saved — the raw sheet is stored on the part.',
+                style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+              ),
+            ),
+          const Divider(height: 1),
+          Expanded(
+            child: part == null
+                // Drawn so the shape of the step is visible, but not usable
+                // until there is a part to store it on.
+                ? IgnorePointer(child: Opacity(opacity: 0.5, child: panel))
+                : panel,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveRawSheet(PenPaperBaseline baseline) async {
+    final part = _livePart;
+    if (part == null) return;
+    final items = context.read<ItemsProvider>();
+    final saved = await items.setItemPenPaperBaseline(part.id, baseline);
+    if (!mounted) return;
+    setState(() {
+      if (saved != null) _rawEditing = false;
+    });
+    _toast(
+      saved == null
+          ? (items.errorMessage ?? 'The raw sheet did not save.')
+          : 'Raw sheet saved on ${saved.displayName.isEmpty ? saved.name : saved.displayName}.',
+      isError: saved == null,
+    );
+  }
+
+  /// Parts with a blank size, this one first — what the cut plan can be laid
+  /// out for. The items screen offers the same list.
+  List<SheetPart>? _plannableCache;
+  List<ItemDefinition>? _plannableFrom;
+  int? _plannableFor;
+
+  List<SheetPart> _plannableParts() {
+    final current = _livePart?.id;
+    // Built on every rebuild — every keystroke — from the whole catalogue.
+    // The provider swaps its list on any change, so identity says when.
+    final all = context.read<ItemsProvider>().items;
+    final cached = _plannableCache;
+    if (cached != null &&
+        identical(all, _plannableFrom) &&
+        current == _plannableFor) {
+      return cached;
+    }
+    _plannableFrom = all;
+    _plannableFor = current;
+    final parts = [
+      for (final item in all)
+        if (!item.isArchived && item.hasBlankSize)
+          SheetPart(
+            id: item.id,
+            name: item.displayName.trim().isEmpty ? item.name : item.displayName,
+            widthMm: item.blankWidthMm,
+            heightMm: item.blankHeightMm,
+          ),
+    ];
+    parts.sort((a, b) {
+      if (a.id == current) return -1;
+      if (b.id == current) return 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return _plannableCache = parts;
+  }
+
+  Future<void> _loadRailPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final collapsed = prefs.getBool(_railPrefKey) ?? false;
+      if (mounted && collapsed != _railCollapsed) {
+        setState(() => _railCollapsed = collapsed);
+      }
+    } catch (_) {
+      // No preferences store (a test host): the rail simply starts open.
+    }
+  }
+
+  Future<void> _setRailCollapsed(bool collapsed) async {
+    setState(() => _railCollapsed = collapsed);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_railPrefKey, collapsed);
+    } catch (_) {}
+  }
+
+  /// The rail folded to a strip of section icons: hover for the name, tap to
+  /// go there, the chevron at the top opens it again.
+  Widget _collapsedRail() {
+    final sections = [
+      for (final section in _sections)
+        if (section.id != 'client_vendor' || _controller.isExternal) section,
+    ];
+    return Container(
+      key: const ValueKey<String>('rail_collapsed'),
+      width: 56,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(right: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          IconButton(
+            key: const ValueKey<String>('rail_expand'),
+            tooltip: 'Open the side column',
+            onPressed: () => _setRailCollapsed(false),
+            icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
+          ),
+          const Divider(height: 16),
+          for (final section in sections)
+            Tooltip(
+              message: section.title,
+              child: IconButton(
+                key: ValueKey<String>('rail_icon_${section.id}'),
+                onPressed: () => _goTo(section.id),
+                isSelected: _controller.activeSection == section.id,
+                icon: Icon(
+                  section.icon,
+                  color: _controller.activeSection == section.id
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.textSecondary,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _body() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _pinnedPart(),
+        Expanded(
+          child: SingleChildScrollView(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            child: _tree(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static const List<String> _remoteEvents = [
+    'dies_changed',
+    'machines_changed',
+    'realtime:reconnected',
+  ];
+
+  static const List<String> _sectionIds = [
+    'group_item',
+    'client_vendor',
+    'die_master',
+    'machine_master',
+  ];
+
+  /// Every section on one page, nested like a file tree. The nesting is the
+  /// part's own (loaded from it, re-arranged by drag and drop or the indent
+  /// buttons) and it is data: Die under Client links that client to these
+  /// dies, Machine under Die links the machines to the dies, and so on.
+  ///
+  /// Client / Vendor is left out for an in-house part; whatever was nested
+  /// under it shows under its parent, so the tree never has a gap.
+  bool _visible(String id) => id != 'client_vendor' || _controller.isExternal;
+
+  /// Where [id] shows: its parent, or the nearest visible ancestor.
+  String _shownParentOf(String id) {
+    var at = _parentOf[id] ?? 'group_item';
+    while (at != 'group_item' && !_visible(at)) {
+      at = _parentOf[at] ?? 'group_item';
+    }
+    return at;
+  }
+
+  List<String> _childrenOf(String id) => [
+        for (final child in _sectionIds)
+          if (child != 'group_item' && _visible(child) && _shownParentOf(child) == id)
+            child,
+      ];
+
+  /// [id] and everything nested under it.
+  Set<String> _subtree(String id) {
+    final out = <String>{id};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final child in _sectionIds) {
+        if (child == 'group_item' || out.contains(child)) continue;
+        if (out.contains(_parentOf[child])) {
+          out.add(child);
+          grew = true;
+        }
+      }
+    }
+    return out;
+  }
+
+  bool _canNest(String child, String parent) =>
+      child != 'group_item' &&
+      child != parent &&
+      _parentOf[child] != parent &&
+      !_subtree(child).contains(parent);
+
+  void _nest(String child, String parent) {
+    if (!_canNest(child, parent)) return;
+    setState(() {
+      _parentOf = {..._parentOf, child: parent};
+      _collapsed.remove(parent);
+    });
+  }
+
+  /// One level out: becomes a sibling of its parent.
+  void _outdent(String id) {
+    final parent = _parentOf[id];
+    if (parent == null || parent == 'group_item') return;
+    _nest(id, _parentOf[parent] ?? 'group_item');
+  }
+
+  /// One level in: becomes a child of the sibling just above it.
+  String? _siblingAbove(String id) {
+    final siblings = _childrenOf(_shownParentOf(id));
+    final at = siblings.indexOf(id);
+    return at > 0 ? siblings[at - 1] : null;
+  }
+
+  /// Loads the part's stored nesting once it exists, unless a change is
+  /// waiting to be saved.
+  void _syncTreeFromPart() {
+    final part = _livePart;
+    if (part == null || part.id == _treeLoadedFor || _treeDirty) return;
+    final stored = {..._defaultTree, ...?part.sectionTree};
+    _treeLoadedFor = part.id;
+    _parentOf = Map<String, String>.of(stored);
+    _savedTree = Map<String, String>.of(stored);
+  }
+
+  Future<void> _saveTree() async {
+    final part = _livePart;
+    if (part == null || _savingTree) return;
+    setState(() => _savingTree = true);
+    final items = context.read<ItemsProvider>();
+    final saved = await items.saveSectionTree(part.id, Map.of(_parentOf));
+    if (!mounted) return;
+    setState(() {
+      _savingTree = false;
+      if (saved != null) {
+        _savedTree = Map<String, String>.of(_parentOf);
+        _treeLoadedFor = saved.id;
+      }
+    });
+    _toast(
+      saved == null
+          ? (items.errorMessage ?? 'The nesting did not save.')
+          : 'Nesting saved — the part\'s records are re-linked to match.',
+      isError: saved == null,
+    );
+  }
+
+  Widget _tree() {
+    _syncTreeFromPart();
+    final nodes = <Widget>[];
+    void visit(String id, int depth, List<bool> continues, bool isLast) {
+      final collapsed = _collapsed.contains(id);
+      nodes.add(_TreeNode(
+        depth: depth,
+        continues: continues,
+        isLast: isLast,
+        child: _dropTarget(id, _sectionFor(id, collapsed: collapsed)),
+      ));
+      // Folding a section folds only that section: what is nested under it
+      // stays on the page.
+      final kids = _childrenOf(id);
+      for (var i = 0; i < kids.length; i += 1) {
+        visit(
+          kids[i],
+          depth + 1,
+          // Below the root, a line keeps running for every ancestor that still
+          // has a sibling to come — the `│` in a file tree.
+          depth == 0 ? const [] : [...continues, !isLast],
+          i == kids.length - 1,
+        );
+      }
+    }
+
+    visit('group_item', 0, const [], true);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_treeDirty) _treeDirtyBar(),
+        ...nodes,
+      ],
+    );
+  }
+
+  Widget _treeDirtyBar() {
+    final saved = _livePart != null;
+    return Container(
+      key: const ValueKey<String>('tree_dirty_bar'),
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.account_tree_outlined, size: 18, color: Color(0xFF92400E)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              saved
+                  ? 'Nesting changed — save to re-link this part\'s client, dies and machines to match.'
+                  : 'Nesting changed — it is saved with the part.',
+              style: const TextStyle(fontSize: 14, color: Color(0xFF92400E)),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey<String>('tree_undo'),
+            onPressed: () => setState(() => _parentOf = Map.of(_savedTree)),
+            child: const Text('Undo', style: TextStyle(fontSize: 14)),
+          ),
+          if (saved)
+            FilledButton.icon(
+              key: const ValueKey<String>('tree_save'),
+              onPressed: _savingTree ? null : _saveTree,
+              icon: const Icon(Icons.save_outlined, size: 18),
+              label: const Text('Save nesting', style: TextStyle(fontSize: 14)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Every section is somewhere another can be dropped — "nest under this".
+  Widget _dropTarget(String id, Widget child) {
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => _canNest(details.data, id),
+      onAcceptWithDetails: (details) => _nest(details.data, id),
+      builder: (context, candidates, rejected) {
+        final hovering = candidates.isNotEmpty;
+        final refused = rejected.isNotEmpty;
+        if (!hovering && !refused) return child;
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: hovering ? SoftErpTheme.accent : const Color(0xFFDC2626),
+              width: 2,
+            ),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  void _toggle(String id) => setState(() {
+        if (!_collapsed.remove(id)) _collapsed.add(id);
+      });
+
+  /// The rail is a table of contents: open the section (and every one it is
+  /// nested in) and bring it into view.
+  void _goTo(String id) {
+    // A folded section no longer hides what is nested under it, so only the
+    // one asked for needs opening.
+    setState(() => _collapsed.remove(id));
+    _controller.setActiveSection(id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _sectionKeys[id]?.currentContext;
+      if (target == null || !mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  // --- per-section edit / save / clear ---------------------------------------
+
+  Future<void> _clearSection(String id) async {
+    final part = _livePart;
+    final (title, detail) = switch (id) {
+      'client_vendor' => (
+          'Clear who this part was developed for?',
+          'Removes the company, the quotation and the people ticked on this part. '
+              'The company and its people stay in the clients master.',
+        ),
+      'die_master' => (
+          'Take every die off this part?',
+          'The dies stay in the die master — only their link to this part goes.',
+        ),
+      _ => (
+          'Take every machine off this part?',
+          'The machines stay in the machine master. The route is left as it is.',
+        ),
+    };
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontSize: 17)),
+        content: Text(detail, style: const TextStyle(fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep', style: TextStyle(fontSize: 14)),
+          ),
+          FilledButton(
+            key: const ValueKey<String>('section_clear_confirm'),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Clear', style: TextStyle(fontSize: 14)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    String? error;
+    if (id == 'client_vendor') {
+      if (part == null) {
+        _controller.clearDeal();
+      } else {
+        final items = context.read<ItemsProvider>();
+        final saved = await items.setItemDevelopedFor(part.id, DevelopedFor.empty);
+        if (!mounted) return;
+        if (saved == null) {
+          error = items.errorMessage ?? 'That did not clear.';
+        } else {
+          _controller.dealClearedOnServer();
+        }
+      }
+    } else if (id == 'die_master') {
+      if (part == null) {
+        setState(_stagedDies.clear);
+      } else {
+        error = await _setDies(const []);
+      }
+    } else {
+      if (part == null) {
+        setState(_stagedMachines.clear);
+      } else {
+        error = await _setMachines(const []);
+      }
+    }
+    if (!mounted) return;
+    _toast(error ?? 'Cleared.', isError: error != null);
+  }
+
+  /// What a folded section shows instead of its body: what was entered, on
+  /// one line.
+  String _sectionSummary(String id) {
+    String join(Iterable<String> parts) =>
+        parts.where((p) => p.trim().isNotEmpty).join('  ·  ');
+    switch (id) {
+      case 'client_vendor':
+        final company = _controller.dealPartyName;
+        if (company.isEmpty) return 'No company chosen yet';
+        final deal = _controller.clientVendorController;
+        final q = deal.sheetDef.columnBoundTo(SheetBindsTo.developedForQuotation);
+        final quotation = q == null ? '' : (deal.draft.get(q.id)?.textValue ?? '').trim();
+        final people = _controller.peopleController;
+        final tick = people.sheetDef.columnBoundTo(SheetBindsTo.personDealtWith);
+        final name = people.sheetDef.columnBoundTo(SheetBindsTo.personName);
+        final ticked = <String>[
+          for (final d in people.drafts)
+            if (tick != null && name != null && d.get(tick.id)?.intValue == 1)
+              (d.get(name.id)?.textValue ?? '').trim(),
+        ].where((n) => n.isNotEmpty).toList();
+        return join([
+          company,
+          if (quotation.isNotEmpty) '₹$quotation',
+          if (ticked.isNotEmpty) 'Dealt with ${ticked.join(', ')}',
+        ]);
+      case 'die_master':
+        final codes = [
+          for (final d in _livePart?.dies ?? const <ItemDieLink>[]) d.toolCode,
+          for (final d in _stagedDies) '${d.toolCode} (held)',
+        ].where((c) => c.trim().isNotEmpty).toList();
+        if (codes.isEmpty) return 'No dies yet';
+        return '${codes.length} ${codes.length == 1 ? 'die' : 'dies'}: ${codes.join(', ')}';
+      case 'machine_master':
+        final names = [
+          for (final m in _livePart?.machines ?? const <ItemMachineLink>[])
+            m.name.isNotEmpty ? m.name : m.assetId,
+          for (final m in _stagedMachines)
+            '${m.name.isNotEmpty ? m.name : m.assetId} (held)',
+        ].where((n) => n.trim().isNotEmpty).toList();
+        if (names.isEmpty) return 'No machines yet';
+        return '${names.length} ${names.length == 1 ? 'machine' : 'machines'}: ${names.join(', ')}';
+      default:
+        final sheet = _controller.groupItemController.sheetDef;
+        final draft = _controller.groupItemController.draft;
+        final nameColumn = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
+        final path = nameColumn == null
+            ? ''
+            : SheetEngine.groupPathString(sheet, draft, nameColumn.id);
+        final properties = [
+          for (final column in sheet.columns)
+            if (SheetBindsTo.isVariation(column.bindsTo))
+              (draft.get(column.id)?.optionLabel ?? draft.get(column.id)?.textValue ?? '').trim(),
+        ].where((v) => v.isNotEmpty);
+        final summary = join([path, _partCodeNow, ...properties]);
+        return summary.isEmpty ? 'Nothing entered yet' : summary;
+    }
+  }
+
+  /// The header controls of a section: move it, edit it, clear it.
+  List<Widget> _sectionActions(String id, String heading) {
+    final root = id == 'group_item';
+    final above = root ? null : _siblingAbove(id);
+    final canOutdent = !root && (_parentOf[id] ?? 'group_item') != 'group_item';
+    Widget action({
+      required String key,
+      required IconData icon,
+      required String tip,
+      VoidCallback? onPressed,
+      Color? color,
+    }) =>
+        IconButton(
+          key: ValueKey<String>(key),
+          tooltip: tip,
+          visualDensity: VisualDensity.compact,
+          onPressed: onPressed,
+          icon: Icon(icon, size: 20, color: onPressed == null ? null : color),
+        );
+
+    return [
+      if (!root) ...[
+        action(
+          key: 'section_outdent_$id',
+          icon: Icons.format_indent_decrease_rounded,
+          tip: canOutdent ? 'Move $heading one level out' : 'Already directly under the part',
+          onPressed: canOutdent ? () => _outdent(id) : null,
+        ),
+        action(
+          key: 'section_indent_$id',
+          icon: Icons.format_indent_increase_rounded,
+          tip: above == null
+              ? 'Nothing above it at this level to nest under'
+              : 'Nest $heading under the section above',
+          onPressed: above == null ? null : () => _nest(id, above),
+        ),
+      ],
+      action(
+        key: 'section_clear_$id',
+        icon: Icons.delete_outline_rounded,
+        tip: root ? 'The part itself is deleted from the Items list' : 'Clear $heading for this part',
+        onPressed: root ? null : () => _clearSection(id),
+        color: const Color(0xFFDC2626),
+      ),
+    ];
+  }
+
+  Widget _sectionFor(String id, {required bool collapsed}) {
+    switch (id) {
+      case 'client_vendor':
+        return _section(
+          id: 'client_vendor',
+          icon: Icons.storefront_rounded,
+          heading: 'Client / Vendor',
+          blurb:
+              'The party this part was developed for, and what the die job was worth',
+          collapsed: collapsed,
+          trailing: MarginHealthBadge(
+            quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
+            cost: _moneyBoundTo(SheetBindsTo.developedForCost),
+          ),
+          child: _partySheet(),
+        );
+      case 'die_master':
+        return _section(
+          id: 'die_master',
+          icon: Icons.precision_manufacturing_rounded,
+          heading: 'Die Process Master',
+          blurb: 'Press tooling and progressive dies for this part',
+          collapsed: collapsed,
+          child: _dieSheet(),
+        );
+      case 'machine_master':
+        return _section(
+          id: 'machine_master',
+          icon: Icons.settings_suggest_rounded,
+          heading: 'Machines & Routing',
+          blurb: 'Which stages this part runs through, in order',
+          collapsed: collapsed,
+          child: _machinesAndRouting(),
+        );
+      default:
+        return _section(
+          id: 'group_item',
+          icon: Icons.inventory_2_rounded,
+          heading: 'Item Master',
+          blurb:
+              'Group path, part identity, the recipe columns and creation stamps',
+          collapsed: collapsed,
+          trailing: _identityChip(),
+          child: _groupItemSheet(),
+        );
+    }
+  }
+
+  /// The part, kept in view whichever section the rail is on.
+  ///
+  /// Switching to Dies has to keep saying which part they belong to. It also
+  /// retires the strip's own pinned badge, which faked a frozen first column by
+  /// jumping the scroll padding 0 to 190 mid-scroll and shoving every table
+  /// sideways.
+  Widget _pinnedPart() {
+    final sheet = _controller.groupItemController.sheetDef;
+    final draft = _controller.groupItemController.draft;
+    final nameColumn =
+        sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
+    final value = nameColumn == null ? null : draft.get(nameColumn.id);
+    final name = value?.optionLabel ?? value?.textValue;
+    final path = nameColumn == null
+        ? ''
+        : SheetEngine.groupPathString(sheet, draft, nameColumn.id);
+    final codeColumn = sheet.columnBoundTo(SheetBindsTo.partCode);
+    final code =
+        codeColumn == null ? null : draft.get(codeColumn.id)?.textValue;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: _controller.isSaved
+                  ? const Color(0xFFD1FAE5)
+                  : const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              _controller.isSaved
+                  ? 'SAVED #${_controller.savedItemId}'
+                  : 'NEW RECORD',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: _controller.isSaved
+                    ? const Color(0xFF065F46)
+                    : const Color(0xFF92400E),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (path.isNotEmpty) ...[
+            Flexible(
+              child: Text(
+                path,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF5A6A80),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: Text('›', style: TextStyle(color: Color(0xFF94A3B8))),
+            ),
+          ],
+          Flexible(
+            child: Text(
+              (name == null || name.trim().isEmpty) ? 'Unnamed' : name,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+                color: (name == null || name.trim().isEmpty)
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFF0F172A),
+              ),
+            ),
+          ),
+          if (code != null && code.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Text(
+              code,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: SoftErpTheme.accent,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Adds a top-level property to the sheet.
+  ///
+  /// Properties ARE the variation tree, so a column added here becomes a
+  /// top-level property on every part the sheet writes — and is folded into
+  /// the part code beside it, which is why a new one lands before the code
+  /// rather than after.
+  Future<void> _addProperty() async {
+    final result = await showDialog<_NewProperty>(
+      context: context,
+      builder: (ctx) => const _AddPropertyDialog(),
+    );
+
+    if (!mounted || result == null) return;
+    _controller.groupItemController
+        .addPropertyColumn(result.name, kind: result.kind);
+  }
+
+  /// The part this screen is working on, as stored — null until it is saved.
+  ///
+  /// The die and machine sections key everything off this: with no part they
+  /// hold what you enter and write it once the part exists.
+  ItemDefinition? get _livePart {
+    final id = _controller.savedItemId;
+    if (id == null) return null;
+    for (final item in context.read<ItemsProvider>().items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  String get _partCodeNow {
+    final sheet = _controller.groupItemController.sheetDef;
+    final column = sheet.columnBoundTo(SheetBindsTo.partCode);
+    if (column == null) return '';
+    return _controller.groupItemController.draft.get(column.id)?.textValue ?? '';
+  }
+
+  String get _partLabelNow {
+    final sheet = _controller.groupItemController.sheetDef;
+    final column = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
+    if (column == null) return 'this part';
+    final value = _controller.groupItemController.draft.get(column.id);
+    final name = value?.optionLabel ?? value?.textValue;
+    return (name == null || name.trim().isEmpty) ? 'this part' : name;
+  }
+
+  /// The floor's die sheet, as it already exists.
+  ///
+  /// `PartDieSection` is migrations 048's eleven columns column for column —
+  /// PO date, made by, type, liner size, code, sets, store area, rack — with a
+  /// die code derived from the part's own and a collision-avoiding suggestion
+  /// behind it. It was written for the quick-entry dialog and mounted nowhere
+  /// else; this section was a note saying it was not wired.
+  Widget _dieSheet() {
+    return PartDieSection(
+      part: _livePart,
+      partCode: _partCodeNow,
+      partLabel: _partLabelNow,
+      busy: _controller.isSavingNow,
+      staged: _stagedDies,
+      onStage: (draft) => setState(() => _stagedDies.add(draft)),
+      onUnstage: (index) => setState(() => _stagedDies.removeAt(index)),
+      onDiesChanged: _setDies,
+    );
+  }
+
+  Widget _machinesAndRouting() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PartMachineSection(
+          part: _livePart,
+          partCode: _partCodeNow,
+          partLabel: _partLabelNow,
+          busy: _controller.isSavingNow,
+          staged: _stagedMachines,
+          onStage: (draft) => setState(() => _stagedMachines.add(draft)),
+          onUnstage: (index) => setState(() => _stagedMachines.removeAt(index)),
+          onMachinesChanged: _setMachines,
+        ),
+        const SizedBox(height: 20),
+        _routing(),
+      ],
+    );
+  }
+
+  /// Dies and machines are written as two calls, not one.
+  ///
+  /// Each list is a full replace on the item, so sending only one of them in a
+  /// single write would clear the other.
+  Future<String?> _setDies(List<String> dieIds) async {
+    final part = _livePart;
+    if (part == null) return 'Save the part first.';
+    final items = context.read<ItemsProvider>();
+    final saved = await items.setItemLinks(part.id, dieIds: dieIds);
+    return saved == null ? (items.errorMessage ?? 'That did not save.') : null;
+  }
+
+  Future<String?> _setMachines(List<String> machineIds) async {
+    final part = _livePart;
+    if (part == null) return 'Save the part first.';
+    final items = context.read<ItemsProvider>();
+    final saved =
+        await items.setItemLinks(part.id, machineIds: machineIds);
+    return saved == null ? (items.errorMessage ?? 'That did not save.') : null;
+  }
+
+  /// The identity chip. Shows only what the sheet holds — the prototype's read
+  /// `activeItem?.variantCode ?? 'SADPB2248'`, printing a variant code for a
+  /// part that had none.
+  Widget _identityChip() {
+    final sheet = _controller.groupItemController.sheetDef;
+    final column = sheet.columnBoundTo(SheetBindsTo.partCode);
+    final code = column == null
+        ? null
+        : _controller.groupItemController.draft.get(column.id)?.textValue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Identity: ',
+              style: TextStyle(fontSize: 13, color: Color(0xFF5A6A80))),
+          Text(
+            (code == null || code.isEmpty) ? 'stamped on save' : code,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: (code == null || code.isEmpty)
+                  ? const Color(0xFF94A3B8)
+                  : SoftErpTheme.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double? _moneyBoundTo(String binds) {
+    final sheet = _controller.clientVendorController.sheetDef;
+    final column = sheet.columnBoundTo(binds);
+    if (column == null) return null;
+    final value = _controller.clientVendorController.draft.get(column.id);
+    if (value == null) return null;
+    // Whole rupees, as typed (`updateTextValue` keeps the digits) and as the
+    // binding saves them. This divided by 100 — reading the figure as paise —
+    // so the badge showed ₹850 for a quotation saved as ₹85,000.
+    if (value.intValue != null) return value.intValue!.toDouble();
+    final cleaned = (value.textValue ?? '').replaceAll(RegExp(r'[^0-9.]'), '');
+    return cleaned.isEmpty ? null : double.tryParse(cleaned);
+  }
+
+  Widget _groupItemSheet() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _rowToolbar(
+          label: 'Parts on this sheet',
+          count: _controller.groupItemController.rowCount,
+          onAdd: () => _controller.groupItemController.addRow(),
+          onRemove: _controller.groupItemController.rowCount > 1
+              ? () => _controller.groupItemController.removeRow(
+                    _controller.groupItemController.row,
+                  )
+              : null,
+        ),
+        const SizedBox(height: 8),
+        // No fixed height: the strip is as tall as the rows it holds, so the
+        // box cannot drift from the cells the way `96 + 50n` did against a
+        // real 46px row.
+        TableRowStrip(
+          sheetDef: _controller.groupItemController.sheetDef,
+          controller: _controller.groupItemController,
+          selectedRowIndex: _controller.groupItemController.row,
+          onRowSelected: _controller.groupItemController.selectRow,
+          rowStatusBuilder: _rowStatus,
+          onAddPropertyColumn: _addProperty,
+        ),
+      ],
+    );
+  }
+
+  /// What a row's gutter chip says.
+  ///
+  /// Rows commit one at a time, so without this a typist cannot tell which of
+  /// fifty rows landed — every other signal on screen describes the sheet.
+  /// Each part row's own Save, or its Edit once saved.
+  ///
+  /// A row is still written when the cursor leaves it (catalogue at speed);
+  /// this is the explicit way, and the only way to reopen a saved row: saved
+  /// rows are closed — they show their values and take no input — until their
+  /// Edit.
+  Widget? _rowStatus(int row) {
+    final sheet = _controller.groupItemController;
+    final error = _controller.rowError(row);
+    final saved = _controller.savedRows.contains(row);
+    final locked = sheet.isRowLocked(row);
+    Widget button({
+      required String key,
+      required IconData icon,
+      required String tip,
+      required Color color,
+      VoidCallback? onPressed,
+    }) =>
+        Tooltip(
+          message: tip,
+          child: IconButton(
+            key: ValueKey<String>(key),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            iconSize: 18,
+            onPressed: onPressed,
+            icon: Icon(icon, color: color),
+          ),
+        );
+
+    if (saved && locked) {
+      final id = sheet.draftAt(row).entityId;
+      return button(
+        key: 'row_edit_$row',
+        icon: Icons.edit_outlined,
+        tip: 'Saved as item #$id — Edit',
+        color: SoftErpTheme.accent,
+        onPressed: () {
+          sheet.setRowLocked(row, false);
+          sheet.selectRow(row);
+        },
+      );
+    }
+    if (sheet.isRowBlank(row) && !saved) return null;
+    return button(
+      key: 'row_save_$row',
+      icon: error != null ? Icons.error_outline_rounded : Icons.save_outlined,
+      tip: error ?? (saved ? 'Save the changes to this part' : 'Save this part'),
+      color: error != null ? const Color(0xFFDC2626) : const Color(0xFF059669),
+      onPressed: _controller.isSavingNow ? null : () => _saveRow(row),
+    );
+  }
+
+  /// One row's Save: write it, carry the held dies and machines and the
+  /// nesting with it, then close it until its Edit.
+  Future<void> _saveRow(int row) async {
+    final sheet = _controller.groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return;
+    final before = sheet.draftAt(row);
+    final ok = await _controller.commitRow(row);
+    if (!mounted) return;
+    // Where that row is NOW: the index passed in can name a different row by
+    // the time the save answers, and locking that one closed the wrong part.
+    final at = ok
+        ? (_controller.lastCommittedRow ?? -1)
+        : sheet.indexOfDraft(before);
+    if (ok) {
+      final id = _controller.savedItemId;
+      if (id != null) _madeHere.add(id);
+      await _flushStaged();
+      if (mounted && _treeDirty) await _saveTree();
+    }
+    if (!mounted) return;
+    final error = at < 0 ? null : _controller.rowError(at);
+    // Saved — or already saved with nothing changed — closes the row. Not
+    // while it holds an edit made during the save; that is still to write.
+    if (at >= 0 &&
+        error == null &&
+        _controller.savedRows.contains(at) &&
+        !sheet.draftAt(at).isDirtySinceSave) {
+      sheet.setRowLocked(at, true);
+    }
+    setState(() {});
+    _toast(error ?? _controller.statusBarMessage, isError: error != null);
+  }
+
+  /// The deal line's Save on a saved part: the deal travels with the part row,
+  /// so re-commit it.
+  Future<bool> _saveDeal() async {
+    await _handleSave();
+    if (!mounted) return false;
+    return _controller.rowError(0) == null;
+  }
+
+  String _pinnedPartName() {
+    final sheet = _controller.groupItemController.sheetDef;
+    final column = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
+    if (column == null) return '';
+    final value = _controller.groupItemController.draft.get(column.id);
+    return value?.optionLabel ?? value?.textValue ?? '';
+  }
+
+  /// The deal and the people at that company, as ordinary text fields. The
+  /// spreadsheet cells here ate keystrokes (each rebuild re-selected the cell,
+  /// so 85000 became 0) and were cramped pills; see [DealPeopleForm].
+  Widget _partySheet() => DealPeopleForm(
+        controller: _controller,
+        partSaved: _livePart != null,
+        onSaveDeal: _saveDeal,
+      );
+
+  Widget _routing() {
+    if (_showRoutePanel) {
+      return RouteCreationPanel(
+        initialPartId: _controller.savedItemId,
+        madeHereItemIds: _madeHere,
+        onSaved: (record) {
+          setState(() => _showRoutePanel = false);
+          _toast('Route saved for ${record.title}.');
+        },
+        onCancel: () => setState(() => _showRoutePanel = false),
+      );
+    }
+
+    final hasPart = _controller.savedItemId != null;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            hasPart
+                ? 'This part can be routed through the process stages.'
+                : 'Save the part first — a route attaches to a part, so there '
+                    'is nothing to attach one to yet.',
+            style: const TextStyle(fontSize: 14, color: Color(0xFF475569)),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Drawn disabled with the reason rather than hidden: a control that
+        // appears only once its precondition holds reads as a missing feature.
+        Tooltip(
+          message: hasPart
+              ? 'Author the stage order for this part'
+              : 'Available once the part is saved',
+          child: AppButton(
+            label: 'Author route',
+            icon: Icons.route_rounded,
+            variant: AppButtonVariant.secondary,
+            onPressed:
+                hasPart ? () => setState(() => _showRoutePanel = true) : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _rowToolbar({
+    required String label,
+    required int count,
+    required VoidCallback onAdd,
+    VoidCallback? onRemove,
+    String addLabel = 'Add row',
+    String removeLabel = 'Remove',
+    String removeDisabledReason = 'A sheet always keeps one row',
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Flexible(
+            child: Text(
+              '$label: $count',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF475569),
+              ),
+            ),
+          ),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: Text(addLabel, style: const TextStyle(fontSize: 14)),
+          ),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: onRemove == null
+                ? removeDisabledReason
+                : 'Remove the selected row',
+            child: TextButton.icon(
+              onPressed: onRemove,
+              icon: const Icon(Icons.remove_rounded, size: 18),
+              label: Text(removeLabel, style: const TextStyle(fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notYetWired(String heading, String detail) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            heading,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF92400E),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            detail,
+            style: const TextStyle(fontSize: 14, color: Color(0xFF92400E)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _section({
+    required String id,
+    required IconData icon,
+    required String heading,
+    required String blurb,
+    required Widget child,
+    Widget? trailing,
+    bool collapsed = false,
+  }) {
+    // Saving and editing are per row now (each row's own Save, then Edit), so
+    // the section itself is never locked.
+    final body = child;
+    return Container(
+      key: _sectionKeys[id],
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // The part itself is the root and stays put; everything else can
+              // be dragged onto another section to nest under it.
+              if (id != 'group_item')
+                Draggable<String>(
+                  data: id,
+                  feedback: Material(
+                    elevation: 6,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Text(
+                        heading,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                  child: Tooltip(
+                    message: 'Drag onto another section to nest $heading under it',
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.grab,
+                      child: Icon(
+                        Icons.drag_indicator_rounded,
+                        key: ValueKey<String>('section_drag_$id'),
+                        size: 22,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              // Fold / unfold, like a folder in a file tree.
+              IconButton(
+                key: ValueKey<String>('section_toggle_$id'),
+                tooltip: collapsed ? 'Open $heading' : 'Fold $heading',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _toggle(id),
+                icon: Icon(
+                  collapsed
+                      ? Icons.chevron_right_rounded
+                      : Icons.expand_more_rounded,
+                  size: 22,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, size: 18, color: SoftErpTheme.accent),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      heading,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      blurb,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF5A6A80),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                trailing,
+              ],
+              const SizedBox(width: 8),
+              ..._sectionActions(id, heading),
+            ],
+          ),
+          if (collapsed)
+            // Folded: one row of what is in it. Tap to open.
+            InkWell(
+              key: ValueKey<String>('section_summary_$id'),
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _toggle(id),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
+                child: Text(
+                  _sectionSummary(id),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+          if (!collapsed) ...[
+            const SizedBox(height: 12),
+            body,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One level of the section tree: indented by [depth], with the guides a file
+/// tree draws — `├─` / `└─` into this section, and a `│` for each ancestor
+/// that still has a sibling to come.
+class _TreeNode extends StatelessWidget {
+  const _TreeNode({
+    required this.depth,
+    required this.continues,
+    required this.isLast,
+    required this.child,
+  });
+
+  static const double indent = 28;
+
+  final int depth;
+  final List<bool> continues;
+  final bool isLast;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (depth == 0) return child;
+    // A Stack rather than a Row with IntrinsicHeight: the sections hold
+    // LayoutBuilders, which cannot answer intrinsic sizes.
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _TreeGuidePainter(depth: depth, continues: continues, isLast: isLast),
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.only(left: depth * indent),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
+class _TreeGuidePainter extends CustomPainter {
+  _TreeGuidePainter({required this.depth, required this.continues, required this.isLast});
+
+  final int depth;
+  final List<bool> continues;
+  final bool isLast;
+
+  static const double _offset = 22;
+  static const double _elbowY = 34;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFB8C2D3)
+      ..strokeWidth = 1.6
+      ..style = PaintingStyle.stroke;
+    // Ancestors with siblings still to come keep their line running past.
+    for (var level = 0; level < continues.length; level += 1) {
+      if (!continues[level]) continue;
+      final x = level * _TreeNode.indent + _offset;
+      canvas.drawLine(Offset(x, -18), Offset(x, size.height), paint);
+    }
+    // This node: down from the parent, across into the card; on past it when
+    // a sibling follows (├), stopping at the elbow when it is the last (└).
+    final x = (depth - 1) * _TreeNode.indent + _offset;
+    canvas.drawLine(Offset(x, -18), Offset(x, isLast ? _elbowY : size.height), paint);
+    canvas.drawLine(Offset(x, _elbowY), Offset(depth * _TreeNode.indent, _elbowY), paint);
+  }
+
+  @override
+  bool shouldRepaint(_TreeGuidePainter old) =>
+      old.depth != depth || old.isLast != isLast || !listEquals(old.continues, continues);
+}
+
+/// What [_AddPropertyDialog] answers with.
+class _NewProperty {
+  const _NewProperty(this.name, this.kind);
+
+  final String name;
+  final ColumnKind kind;
+}
+
+/// Names a new property and says what kind of answer it takes.
+///
+/// A `StatefulWidget` rather than a `StatefulBuilder` because of the text
+/// controller. The caller used to make one, `await showDialog`, then dispose it
+/// on the next line — but a dialog keeps rebuilding through its **exit**
+/// transition, so `_AnimatedState.didUpdateWidget` called `addListener` on a
+/// controller that had already been disposed. That threw, and the half-built
+/// frame surfaced as `A RenderFlex overflowed by 99284 pixels on the bottom`
+/// and `Tried to build dirty widget in the wrong build scope` — none of which
+/// name the controller. Owning it here ties its life to the route's.
+class _AddPropertyDialog extends StatefulWidget {
+  const _AddPropertyDialog();
+
+  @override
+  State<_AddPropertyDialog> createState() => _AddPropertyDialogState();
+}
+
+class _AddPropertyDialogState extends State<_AddPropertyDialog> {
+  final TextEditingController _name = TextEditingController();
+  ColumnKind _kind = ColumnKind.list;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+    Navigator.of(context).pop(_NewProperty(name, _kind));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text(
+        'Add a property',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+      ),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'A property is what varies between one part and the next — '
+              'the alloy it is pressed from, the gauge, the finish. Every '
+              'one you add shows in the part code.',
+              style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _name,
+              autofocus: true,
+              style: const TextStyle(fontSize: 15),
+              decoration: const InputDecoration(
+                labelText: 'Property name',
+                hintText: 'Plating, Temper, Coating…',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'What kind of answer does it take?',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF475569),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final option in const [
+                  (ColumnKind.list, 'A list of values'),
+                  (ColumnKind.material, 'A material'),
+                  (ColumnKind.gauge, 'A gauge'),
+                  (ColumnKind.text, 'Free text'),
+                ])
+                  ChoiceChip(
+                    label: Text(
+                      option.$2,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    selected: _kind == option.$1,
+                    onSelected: (_) => setState(() => _kind = option.$1),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel', style: TextStyle(fontSize: 14)),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Add', style: TextStyle(fontSize: 14)),
+        ),
+      ],
+    );
+  }
+}

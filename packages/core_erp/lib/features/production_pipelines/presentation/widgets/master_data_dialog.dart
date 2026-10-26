@@ -1,3 +1,4 @@
+import 'dart:convert' show jsonEncode;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -35,31 +36,66 @@ Future<PenPaperBaseline?> showMasterDataDialog(
   return showDialog<PenPaperBaseline>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => _MasterDataDialog(
-      baseline: baseline,
-      pipelineId: pipelineId,
-      pipelineName: pipelineName,
-      itemName: itemName,
-      stageNodes: stageNodes,
-      parts: parts,
-      materials: materials,
-      readOnly: readOnly,
+    // The dialog is only the frame now: the editing lives in [MasterDataPanel]
+    // so the same panel can sit in a side panel without a route around it.
+    // Popping with the saved value (or null) keeps every caller's contract
+    // exactly what it was when the editor was private to this function.
+    builder: (dialogContext) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
+      child: MasterDataPanel(
+        baseline: baseline,
+        pipelineId: pipelineId,
+        pipelineName: pipelineName,
+        itemName: itemName,
+        stageNodes: stageNodes,
+        parts: parts,
+        materials: materials,
+        readOnly: readOnly,
+        onSave: (saved) => Navigator.of(dialogContext).pop(saved),
+        onCancel: () => Navigator.of(dialogContext).pop(),
+      ),
     ),
   );
 }
 
-class _MasterDataDialog extends StatefulWidget {
-  const _MasterDataDialog({
+/// The Master Data editor itself, with no route of its own.
+///
+/// It used to exist only inside [showMasterDataDialog], which meant the one
+/// place a baseline could be read was a modal that covered the screen it was
+/// about. Pulled out, it can sit beside the thing it describes: [embedded]
+/// drops the dialog's card and sizes itself from the space it is given rather
+/// than from the window, so a narrow side panel gets the stacked layout instead
+/// of a squeezed side-by-side one.
+///
+/// The panel never pops anything. It reports through [onSave] with the
+/// baseline as it will be recorded (blank typing rows stripped) and through
+/// [onCancel] when the person backs out; whoever hosts it decides what that
+/// means — closing a dialog, collapsing a panel, or nothing at all.
+class MasterDataPanel extends StatefulWidget {
+  const MasterDataPanel({
+    super.key,
     required this.baseline,
-    required this.pipelineId,
-    required this.pipelineName,
-    required this.itemName,
-    required this.stageNodes,
-    required this.parts,
-    required this.materials,
-    required this.readOnly,
+    required this.onSave,
+    this.onCancel,
+    this.pipelineId,
+    this.pipelineName = '',
+    this.itemName = '',
+    this.stageNodes = const <PipelineStageNode>[],
+    this.parts = const <SheetPart>[],
+    this.materials = const <MaterialDefinition>[],
+    this.readOnly = false,
+    this.showHeader = true,
+    this.embedded = false,
   });
 
+  /// The baseline the panel opens on. Edits are made to a working copy, so the
+  /// caller's value is only replaced when [onSave] says so.
+  ///
+  /// While [readOnly] the panel follows this value: a save made somewhere else
+  /// shows up here live instead of the panel sitting on what it was opened
+  /// with. While editing it does not — swapping the record out from under
+  /// someone mid-sentence would throw their typing away.
   final PenPaperBaseline baseline;
   final String? pipelineId;
   final String pipelineName;
@@ -76,8 +112,25 @@ class _MasterDataDialog extends StatefulWidget {
   final List<MaterialDefinition> materials;
   final bool readOnly;
 
+  /// Called with the baseline as it will be recorded, without the blank rows
+  /// the editor keeps at the end of every region for typing into.
+  final ValueChanged<PenPaperBaseline> onSave;
+
+  /// Called by Close and Cancel. When null there is nothing to back out of —
+  /// an always-open side panel — so neither control is drawn.
+  final VoidCallback? onCancel;
+
+  /// Whether the title strip is drawn. A host that already names the record
+  /// in its own chrome turns it off rather than saying it twice.
+  final bool showHeader;
+
+  /// No dialog card, and sized from the parent's constraints rather than the
+  /// window. The host must give it a bounded height: the step body takes
+  /// whatever is left between the step bar and the footer.
+  final bool embedded;
+
   @override
-  State<_MasterDataDialog> createState() => _MasterDataDialogState();
+  State<MasterDataPanel> createState() => _MasterDataPanelState();
 }
 
 /// The steps Master Data is captured in. Sheet planning comes first because
@@ -93,7 +146,7 @@ enum _MasterStep {
   final String caption;
 }
 
-class _MasterDataDialogState extends State<_MasterDataDialog> {
+class _MasterDataPanelState extends State<MasterDataPanel> {
   late PenPaperBaseline _baseline;
   late final TextEditingController _widthController;
   late final TextEditingController _heightController;
@@ -134,31 +187,72 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
 
   /// Below this the two halves stop being side by side and stack, so the sheet
   /// keeps a readable drawing area instead of being squeezed into a sliver.
-  static const double _sideBySideWidth = 940;
+  /// Measured against the space the panel is actually given — the window for
+  /// the dialog, the parent's constraints when embedded.
+  static const double _sideBySideWidth = 900;
+
+  /// Below this the step bar drops its caption and lets the chips scroll, so a
+  /// side panel gets three readable steps instead of an overflow stripe.
+  static const double _compactStepBarWidth = 640;
 
   @override
   void initState() {
     super.initState();
     _baseline = widget.baseline;
-    _widthController = TextEditingController(
-      text: _faceText(_baseline.sheetWidthInches, _baseline.faceUnit),
+    _widthController = TextEditingController();
+    _heightController = TextEditingController();
+    _thicknessController = TextEditingController();
+    _kerfController = TextEditingController();
+    _trimController = TextEditingController();
+    _writeFields();
+  }
+
+  /// Writes every field from [_baseline] — the dimensions, the machine row and
+  /// each region's bands — so what is typed and what is drawn start agreeing.
+  void _writeFields() {
+    _widthController.text = _faceText(
+      _baseline.sheetWidthInches,
+      _baseline.faceUnit,
     );
-    _heightController = TextEditingController(
-      text: _faceText(_baseline.sheetHeightInches, _baseline.faceUnit),
+    _heightController.text = _faceText(
+      _baseline.sheetHeightInches,
+      _baseline.faceUnit,
     );
-    _thicknessController = TextEditingController(
-      text: _showUnit(
-        _baseline.sheetThicknessMm,
-        lengthUnitBySymbol(_baseline.gaugeUnit),
-      ),
+    _thicknessController.text = _showUnit(
+      _baseline.sheetThicknessMm,
+      lengthUnitBySymbol(_baseline.gaugeUnit),
     );
-    _kerfController = TextEditingController(text: _initial(_baseline.kerfMm));
-    _trimController = TextEditingController(
-      text: _initial(_baseline.edgeTrimMm),
-    );
+    _kerfController.text = _initial(_baseline.kerfMm);
+    _trimController.text = _initial(_baseline.edgeTrimMm);
     _seedControllers();
     _ensureTrailingBlank(_primaryRegion);
   }
+
+  @override
+  void didUpdateWidget(covariant MasterDataPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only a panel nobody is typing into follows its input. A read-only panel
+    // is a view of the record, so a save made elsewhere belongs on it the
+    // moment it lands; an editing panel holds a working copy that is the
+    // person's, and replacing it would discard what they typed.
+    if (!widget.readOnly) return;
+    if (identical(oldWidget.baseline, widget.baseline)) return;
+    if (_sameRecord(widget.baseline, _baseline)) return;
+    _baseline = widget.baseline;
+    // Region units are a typing convenience, not part of the record, and the
+    // incoming plan may not have the regions they were set for.
+    _regionUnit.clear();
+    if (_openRegion != null && _baseline.subCutsFor(_openRegion!).isEmpty) {
+      _openRegion = null;
+    }
+    _writeFields();
+  }
+
+  /// Whether two baselines record the same thing. The baseline has no value
+  /// equality of its own, and its JSON is exactly what gets stored, so two
+  /// that serialise alike are the same record whatever object holds them.
+  static bool _sameRecord(PenPaperBaseline a, PenPaperBaseline b) =>
+      jsonEncode(a.toJson()) == jsonEncode(b.toJson());
 
   /// Builds a controller pair for every band the baseline holds — the
   /// sheet-wide split, then each strip's own blanking.
@@ -523,45 +617,100 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      // Sized by the host, not the window: a 520 px side panel on a 1600 px
+      // screen is a narrow editor, and reading the window would hand it the
+      // side-by-side layout it has no room for.
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.hasBoundedWidth
+              ? constraints.maxWidth
+              : _sideBySideWidth;
+          return ColoredBox(color: Colors.white, child: _body(width));
+        },
+      );
+    }
+
     final media = MediaQuery.of(context);
     final width = (media.size.width * 0.94).clamp(360.0, 1440.0);
     final height = (media.size.height * 0.92).clamp(420.0, 980.0);
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(20),
-      child: Container(
-        width: width,
-        height: height,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: SoftErpTheme.border),
-          boxShadow: SoftErpTheme.raisedShadow,
-        ),
-        child: Column(
-          children: [
-            _header(),
-            _stepBar(),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                child: switch (_step) {
-                  _MasterStep.sheet => _sheetStep(width),
-                  _MasterStep.material => _materialStep(),
-                  _MasterStep.review => _reviewStep(),
-                },
-              ),
-            ),
-            _footer(),
-          ],
-        ),
+    return Container(
+      width: width,
+      height: height,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: SoftErpTheme.border),
+        boxShadow: SoftErpTheme.raisedShadow,
       ),
+      child: _body(width),
     );
   }
 
-  Widget _stepBar() {
+  /// Everything inside the frame: title, steps, the step itself, and the
+  /// buttons. [width] is the room the panel has, which picks the layout.
+  Widget _body(double width) {
+    final narrow = width < _sideBySideWidth;
+    return Column(
+      children: [
+        if (widget.showHeader) _header(),
+        _stepBar(width),
+        Expanded(
+          child: Padding(
+            padding: narrow && widget.embedded
+                ? const EdgeInsets.fromLTRB(16, 14, 16, 8)
+                : const EdgeInsets.fromLTRB(20, 14, 20, 8),
+            child: switch (_step) {
+              _MasterStep.sheet => _sheetStep(width),
+              _MasterStep.material => _materialStep(),
+              _MasterStep.review => _reviewStep(),
+            },
+          ),
+        ),
+        _footer(width),
+      ],
+    );
+  }
+
+  Widget _stepBar(double width) {
+    final compact = width < _compactStepBarWidth;
+    final chips = <Widget>[
+      for (final step in _MasterStep.values) ...[
+        if (step.index > 0)
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 8),
+            child: const Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+        _StepChip(
+          index: step.index + 1,
+          label: step.title,
+          selected: step == _step,
+          onTap: () => setState(() => _step = step),
+        ),
+      ],
+    ];
+    if (compact) {
+      // No caption: in a side panel the chips are the whole bar, and they
+      // scroll rather than overflow if the panel is narrower still.
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: const BoxDecoration(
+          color: Color(0xFFFDFDFD),
+          border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: chips),
+        ),
+      );
+    }
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 10, 22, 10),
@@ -613,9 +762,9 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
   /// Step one. The drawing takes the room now rather than sitting in a band:
   /// it is the thing being reasoned about, and a plan you cannot see the shape
   /// of is just a column of numbers again.
-  Widget _sheetStep(double dialogWidth) {
+  Widget _sheetStep(double panelWidth) {
     const controlsWidth = 392.0;
-    if (dialogWidth < 900) {
+    if (panelWidth < _sideBySideWidth) {
       return ListView(
         children: [
           SizedBox(height: 320, child: _sheetPanel()),
@@ -737,16 +886,17 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Close',
-            onPressed: () => Navigator.of(context).pop(),
-            style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFFF8FAFC),
-              foregroundColor: const Color(0xFF334155),
-              side: const BorderSide(color: Color(0xFFD9E2F2)),
+          if (widget.onCancel != null)
+            IconButton(
+              tooltip: 'Close',
+              onPressed: widget.onCancel,
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFFF8FAFC),
+                foregroundColor: const Color(0xFF334155),
+                side: const BorderSide(color: Color(0xFFD9E2F2)),
+              ),
+              icon: const Icon(Icons.close_rounded),
             ),
-            icon: const Icon(Icons.close_rounded),
-          ),
         ],
       ),
     );
@@ -1856,14 +2006,62 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
     );
   }
 
-  Widget _footer() {
+  Widget _footer(double width) {
+    final buttons = <Widget>[
+      if (widget.onCancel != null)
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.secondary,
+          onPressed: widget.onCancel,
+        ),
+      AppButton(
+        label: 'Save Master Data',
+        icon: Icons.check_rounded,
+        onPressed: widget.readOnly
+            ? null
+            // Without the blank rows the editor keeps for typing into.
+            : () => widget.onSave(_baseline.withoutEmptyBands),
+      ),
+    ];
+    const decoration = BoxDecoration(
+      color: Color(0xFFFBFBFB),
+      border: Border(top: BorderSide(color: SoftErpTheme.border)),
+    );
+
+    if (widget.embedded && width < _compactStepBarWidth) {
+      // A side panel has no room for the hint beside two buttons, so it goes,
+      // and the buttons wrap onto a second line rather than overflow when the
+      // panel is narrower than both. Read only still says so: a disabled Save
+      // with no reason beside it reads as broken.
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        decoration: decoration,
+        child: Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            if (widget.readOnly)
+              const Text(
+                'Read only.',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ...buttons,
+          ],
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 12, 22, 14),
-      decoration: const BoxDecoration(
-        color: Color(0xFFFBFBFB),
-        border: Border(top: BorderSide(color: SoftErpTheme.border)),
-      ),
+      decoration: decoration,
       child: Row(
         children: [
           Expanded(
@@ -1878,20 +2076,10 @@ class _MasterDataDialogState extends State<_MasterDataDialog> {
               ),
             ),
           ),
-          AppButton(
-            label: 'Cancel',
-            variant: AppButtonVariant.secondary,
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          const SizedBox(width: 10),
-          AppButton(
-            label: 'Save Master Data',
-            icon: Icons.check_rounded,
-            onPressed: widget.readOnly
-                ? null
-                // Without the blank rows the editor keeps for typing into.
-                : () => Navigator.of(context).pop(_baseline.withoutEmptyBands),
-          ),
+          for (final (index, button) in buttons.indexed) ...[
+            if (index > 0) const SizedBox(width: 10),
+            button,
+          ],
         ],
       ),
     );

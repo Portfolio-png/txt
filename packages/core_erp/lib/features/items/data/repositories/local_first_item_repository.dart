@@ -78,6 +78,10 @@ class LocalFirstItemRepository implements ItemRepository {
   Future<ItemDefinition> updateItem(UpdateItemInput input) => _remote.updateItem(input);
 
   @override
+  Future<ItemDefinition> saveSectionTree(int itemId, Map<String, String> tree) =>
+      _remote.saveSectionTree(itemId, tree);
+
+  @override
   Future<ItemDefinition> updateShortCode(int id, String shortCode) =>
       _remote.updateShortCode(id, shortCode);
 

@@ -283,6 +283,64 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
+  Future<ItemDefinition> saveSectionTree(
+    int itemId,
+    Map<String, String> tree,
+  ) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockItems.indexWhere((item) => item.id == itemId);
+      if (index == -1) throw ItemApiException('Item not found.');
+      final current = _mockItems[index];
+      final updated = ItemDefinition(
+        id: current.id,
+        name: current.name,
+        alias: current.alias,
+        displayName: current.displayName,
+        quantity: current.quantity,
+        groupId: current.groupId,
+        unitId: current.unitId,
+        unitConversions: current.unitConversions,
+        namingFormat: current.namingFormat,
+        isArchived: current.isArchived,
+        usageCount: current.usageCount,
+        createdAt: current.createdAt,
+        updatedAt: DateTime.now(),
+        variationTree: current.variationTree,
+        baseItemId: current.baseItemId,
+        photoUrl: current.photoUrl,
+        cadFileKey: current.cadFileKey,
+        cadFileName: current.cadFileName,
+        attachments: current.attachments,
+        machines: current.machines,
+        dies: current.dies,
+        developedForClientId: current.developedForClientId,
+        developedFor: current.developedFor,
+        availableForPurchase: current.availableForPurchase,
+        sectionTree: Map<String, String>.from(tree),
+      );
+      _mockItems[index] = updated;
+      return updated;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$itemId/section-tree');
+    final response = await _client.put(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'tree': tree}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    final parsed = ItemResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.item == null) {
+      throw ItemApiException(parsed.error ?? 'Failed to save the nesting.');
+    }
+    return parsed.item!.toDomain();
+  }
+
+  @override
   Future<Uri> createCadFileReadUrl(int itemId) async {
     if (useMockResponses) {
       final item = _mockItems.firstWhere(

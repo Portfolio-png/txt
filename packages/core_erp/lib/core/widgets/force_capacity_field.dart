@@ -235,9 +235,13 @@ class ForceCapacityField extends StatelessWidget {
                         )
                       : null,
                 ),
-                const Text(
-                  'Free hand — no rated capacity',
-                  style: TextStyle(fontSize: 13.5),
+                // Flexible so a narrow host wraps the words rather than
+                // overflowing them.
+                const Flexible(
+                  child: Text(
+                    'Free hand — no rated capacity',
+                    style: TextStyle(fontSize: 14),
+                  ),
                 ),
               ],
             ),

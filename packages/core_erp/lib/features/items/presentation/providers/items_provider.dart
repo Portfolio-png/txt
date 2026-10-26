@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../../domain/part_code.dart';
 import 'package:flutter/material.dart';
 
@@ -80,9 +81,22 @@ class ItemsProvider extends ChangeNotifier {
   /// nothing is held past the point the replica can answer for it.
   final Map<int, ItemDefinition> _writtenHere = <int, ItemDefinition>{};
 
+  /// Items this session deleted that a read may not have caught up with.
+  final Set<int> _deletedHere = <int>{};
+
   final Map<int, List<ItemAsset>> _assetsByItemId = <int, List<ItemAsset>>{};
   bool _isLoading = false;
   bool _isSaving = false;
+
+  /// Completed when a save ends, for the writes that wait their turn.
+  Completer<void>? _saveIdle;
+
+  void _endSave() {
+    _isSaving = false;
+    final idle = _saveIdle;
+    _saveIdle = null;
+    idle?.complete();
+  }
   bool _isAssetUploading = false;
   String? _errorMessage;
   String? _errorCode;
@@ -157,6 +171,18 @@ class ItemsProvider extends ChangeNotifier {
   /// the replica no faster than an edit does, and dropping it would make the
   /// new item vanish until the next read.
   List<ItemDefinition> _withLocalWrites(List<ItemDefinition> incoming) {
+    if (_deletedHere.isNotEmpty) {
+      // A delete reaches the replica no faster than an edit does, so a read
+      // straight after one still lists the row. Hidden until a read agrees.
+      final listed = {for (final item in incoming) item.id};
+      _deletedHere.removeWhere((id) => !listed.contains(id));
+      if (_deletedHere.isNotEmpty) {
+        incoming = [
+          for (final item in incoming)
+            if (!_deletedHere.contains(item.id)) item,
+        ];
+      }
+    }
     if (_writtenHere.isEmpty) return incoming;
     final merged = <ItemDefinition>[];
     final seen = <int>{};
@@ -723,6 +749,7 @@ class ItemsProvider extends ChangeNotifier {
     List<String>? machineIds,
     List<String>? dieIds,
     DevelopedFor? developedFor,
+    PenPaperBaseline? penPaperBaseline,
   }) {
     return UpdateItemInput(
       id: current.id,
@@ -764,7 +791,7 @@ class ItemsProvider extends ChangeNotifier {
       // needs: clearing this one is `DevelopedFor.empty`, a value that is
       // present, so null here can only ever mean "leave it alone".
       developedFor: developedFor ?? current.developedFor,
-      penPaperBaseline: current.penPaperBaseline,
+      penPaperBaseline: penPaperBaseline ?? current.penPaperBaseline,
       blankWidthMm: current.blankWidthMm,
       blankHeightMm: current.blankHeightMm,
       // Carried, not defaulted. The request omits these when they are null, so
@@ -887,7 +914,7 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     } finally {
-      _isSaving = false;
+      _endSave();
       notifyListeners();
     }
   }
@@ -978,7 +1005,7 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     } finally {
-      _isSaving = false;
+      _endSave();
       notifyListeners();
     }
   }
@@ -991,6 +1018,8 @@ class ItemsProvider extends ChangeNotifier {
     try {
       await _repository.deleteItem(id);
       _writtenHere.remove(id);
+      _deletedHere.add(id);
+      _items = _items.where((i) => i.id != id).toList();
       await refresh();
       return true;
     } catch (error) {
@@ -998,7 +1027,7 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     } finally {
-      _isSaving = false;
+      _endSave();
       notifyListeners();
     }
   }
@@ -1058,10 +1087,46 @@ class ItemsProvider extends ChangeNotifier {
     );
   }
 
+  /// Records the raw sheet a part is cut from — its size, gauge, the strips
+  /// laid on it and the cut plan — leaving everything else as it is. The item
+  /// sheet's right-hand panel writes this; the old Master Data dialog wrote the
+  /// same field through a full-item save.
+  Future<ItemDefinition?> setItemPenPaperBaseline(
+    int itemId,
+    PenPaperBaseline baseline,
+  ) {
+    return _updateOneField(
+      itemId,
+      (current) => _preservingInput(
+        current,
+        penPaperBaseline: baseline,
+        variationTree: current.variationTree
+            .map(_toInput)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  /// Saves how the part's item sheet is nested. The server re-links the
+  /// part's client, dies and machines to match, so this is a data write, not
+  /// a layout preference.
+  Future<ItemDefinition?> saveSectionTree(int itemId, Map<String, String> tree) {
+    return _save(() => _repository.saveSectionTree(itemId, tree));
+  }
+
   Future<ItemDefinition?> _updateOneField(
     int itemId,
     UpdateItemInput Function(ItemDefinition current) build,
   ) async {
+    // Waits its turn rather than answering null. These are "set this one
+    // field" writes that follow another save — the sheet links dies and saves
+    // its nesting right after a row commits — and refusing them made the NEXT
+    // row's commit fail with "another one was still finishing". Waiting is
+    // safe here because each is idempotent, and `current` is read only after
+    // the wait so the full replace carries what that earlier save wrote.
+    while (_isSaving) {
+      await (_saveIdle ??= Completer<void>()).future;
+    }
     final current = _items.where((item) => item.id == itemId).firstOrNull;
     if (current == null) {
       _errorMessage = 'Item not found.';
@@ -1209,7 +1274,7 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     } finally {
-      _isSaving = false;
+      _endSave();
       notifyListeners();
     }
   }
@@ -1271,7 +1336,7 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     } finally {
-      _isSaving = false;
+      _endSave();
       notifyListeners();
     }
   }
@@ -1296,6 +1361,14 @@ class ItemsProvider extends ChangeNotifier {
 
   static String normalizeValue(String value) => _normalize(value);
 
+  /// A stored variation node back into an input, WHOLE.
+  ///
+  /// This used to copy seven fields and drop five: `inputType`, `nameJoin`,
+  /// both numeric bounds and `materialTypeId`. Every write that preserves a
+  /// tree goes through here — including [setItemLinks] — so attaching a die to
+  /// a part silently reset each of its Gauge and Material properties to Text,
+  /// and lost the bounds on a Numeric one. The part looked unchanged until
+  /// somebody opened its variations.
   ItemVariationNodeInput _toInput(ItemVariationNodeDefinition node) {
     return ItemVariationNodeInput(
       id: node.id,
@@ -1304,6 +1377,11 @@ class ItemsProvider extends ChangeNotifier {
       name: node.name,
       code: node.code,
       displayName: node.displayName,
+      inputType: node.inputType,
+      nameJoin: node.nameJoin,
+      numericMin: node.numericMin,
+      numericMax: node.numericMax,
+      materialTypeId: node.materialTypeId,
       children: node.children.map(_toInput).toList(growable: false),
     );
   }

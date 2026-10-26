@@ -6,6 +6,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/force_capacity_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/fit_to_text.dart';
 import '../../../groups/domain/group_inputs.dart';
 import '../../../groups/presentation/group_picker_field.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
@@ -486,7 +487,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
           if (AppFlowHooks.createMachineFromSheet == null)
             const Text(
               'Machines cannot be added from here in this build.',
-              style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+              style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             )
           else ...[
             if (holding) ...[
@@ -494,7 +495,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 'Fill this in now — each machine is held until you create the '
                 'part, then written with it.',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   color: SoftErpTheme.textSecondary,
                 ),
               ),
@@ -502,47 +503,65 @@ class _PartMachineSectionState extends State<PartMachineSection> {
             ],
             _machineList(enabled),
             const SizedBox(height: 12),
-            GroupPickerField(
-              key: const ValueKey<String>('quick-entry-machine-type-field'),
-              value: _groupId,
-              groupType: 'machine',
-              scope: GroupPickerScope.all,
-              fieldEnabled: enabled,
-              dialogTitle: 'Machine Type',
-              searchHintText: 'Search or type a new machine type',
-              decoration: const InputDecoration(
-                labelText: 'Machine Type',
-                // There are no machine groups on a fresh system, so this is
-                // not a convenience — it is the only way the list ever fills.
-                helperText: 'Power Press, Punching M… type a new one to add it',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (id) => setState(() {
-                _groupId = id;
-                _rederiveNo();
-              }),
-              canCreateOption: (query, _) => query.trim().isNotEmpty,
-              createOptionLabelBuilder: (query) => 'Add type "$query"',
-              onCreateOption: (query) async {
-                final groups = context.read<GroupsProvider>();
-                final created = await groups.createGroup(
-                  CreateGroupInput(
-                    name: query.trim(),
-                    groupType: 'machine',
-                    groupStructure: 'hierarchical',
-                  ),
-                );
-                if (created == null) return null;
-                return SearchableSelectOption<int?>(
-                  value: created.id,
-                  label: created.name,
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            Row(
+            // Each field as wide as what it holds, side by side, wrapping only
+            // when the row is full — a stack of page-wide bars for answers
+            // like "2011" and "60" was most of this card's height.
+            Wrap(
+              spacing: 10,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.start,
               children: [
-                Expanded(
+                FitToText(
+                  texts: ['Machine Type', _typeNameFor(_groupId)],
+                  helper: 'Power Press, Punching M… type a new one to add it',
+                  minWidth: 220,
+                  chrome: 72,
+                  child: GroupPickerField(
+                    key: const ValueKey<String>('quick-entry-machine-type-field'),
+                    value: _groupId,
+                    groupType: 'machine',
+                    scope: GroupPickerScope.all,
+                    fieldEnabled: enabled,
+                    dialogTitle: 'Machine Type',
+                    searchHintText: 'Search or type a new machine type',
+                    decoration: const InputDecoration(
+                      labelText: 'Machine Type',
+                      // There are no machine groups on a fresh system, so this
+                      // is not a convenience — it is the only way the list
+                      // ever fills.
+                      helperText:
+                          'Power Press, Punching M… type a new one to add it',
+                      helperMaxLines: 2,
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (id) => setState(() {
+                      _groupId = id;
+                      _rederiveNo();
+                    }),
+                    canCreateOption: (query, _) => query.trim().isNotEmpty,
+                    createOptionLabelBuilder: (query) => 'Add type "$query"',
+                    onCreateOption: (query) async {
+                      final groups = context.read<GroupsProvider>();
+                      final created = await groups.createGroup(
+                        CreateGroupInput(
+                          name: query.trim(),
+                          groupType: 'machine',
+                          groupStructure: 'hierarchical',
+                        ),
+                      );
+                      if (created == null) return null;
+                      return SearchableSelectOption<int?>(
+                        value: created.id,
+                        label: created.name,
+                      );
+                    },
+                  ),
+                ),
+                FitToText(
+                  controller: _noController,
+                  texts: const ['Machine No.'],
+                  helper: _noHelper(),
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-no-field'),
                     controller: _noController,
@@ -556,12 +575,16 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     decoration: InputDecoration(
                       labelText: 'Machine No.',
                       helperText: _noHelper(),
+                      helperMaxLines: 2,
+                      isDense: true,
                       border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
+                FitToText(
+                  controller: _nameController,
+                  texts: const ['Name'],
+                  helper: 'Optional — the number is used if blank',
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-name-field'),
                     controller: _nameController,
@@ -570,26 +593,31 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     decoration: const InputDecoration(
                       labelText: 'Name',
                       helperText: 'Optional — the number is used if blank',
+                      helperMaxLines: 2,
+                      isDense: true,
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _SuggestingField(
-              fieldKey: const ValueKey<String>('quick-entry-machine-make-field'),
-              controller: _makeController,
-              enabled: enabled,
-              label: 'Machine Make',
-              helper: 'Who built it',
-              suggestions: _suggestions.makes,
-              onChanged: () => setState(() {}),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
+                FitToText(
+                  controller: _makeController,
+                  texts: const ['Machine Make'],
+                  helper: 'Who built it',
+                  child: _SuggestingField(
+                    fieldKey: const ValueKey<String>('quick-entry-machine-make-field'),
+                    controller: _makeController,
+                    enabled: enabled,
+                    label: 'Machine Make',
+                    helper: 'Who built it',
+                    suggestions: _suggestions.makes,
+                    onChanged: () => setState(() {}),
+                  ),
+                ),
+                FitToText(
+                  controller: _yearController,
+                  texts: const ['D.O.M.', '2011'],
+                  helper: 'Year it was built',
+                  minWidth: 120,
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-dom-field'),
                     controller: _yearController,
@@ -602,12 +630,17 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       // A year, because that is what anyone knows about a
                       // machine this old.
                       helperText: 'Year it was built',
+                      helperMaxLines: 2,
+                      isDense: true,
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
+                FitToText(
+                  controller: _hoursController,
+                  texts: const ['Running Hrs'],
+                  helper: 'The meter now',
+                  minWidth: 120,
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-hours-field'),
                     controller: _hoursController,
@@ -617,12 +650,16 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     decoration: const InputDecoration(
                       labelText: 'Running Hrs',
                       helperText: 'The meter now',
+                      helperMaxLines: 2,
+                      isDense: true,
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
+                FitToText(
+                  controller: _strokesController,
+                  texts: const ['Stroke / Min'],
+                  minWidth: 120,
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-strokes-field'),
                     controller: _strokesController,
@@ -631,64 +668,76 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     style: const TextStyle(fontSize: 14),
                     decoration: const InputDecoration(
                       labelText: 'Stroke / Min',
+                      isDense: true,
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ),
+                // A figure, a unit and a "free hand" tick: one compact block.
+                SizedBox(
+                  width: 340,
+                  child: ForceCapacityField(
+                    fieldKey: const ValueKey<String>('quick-entry-machine-capacity-field'),
+                    freeHandKey: const ValueKey<String>('quick-entry-machine-free-hand'),
+                    controller: _capacityController,
+                    unitSymbol: _capacityUnit,
+                    kind: _capacityKind,
+                    enabled: enabled,
+                    errorText: _capacityError,
+                    onUnitChanged: (symbol) => setState(() {
+                      _capacityUnit = symbol;
+                      _capacityError = null;
+                    }),
+                    onKindChanged: (kind) => setState(() {
+                      _capacityKind = kind;
+                      _capacityError = null;
+                    }),
+                    onChanged: () {
+                      if (_capacityError != null) {
+                        setState(() => _capacityError = null);
+                      }
+                    },
+                  ),
+                ),
+                FitToText(
+                  controller: _feederController,
+                  texts: const ['Feeder make'],
+                  helper: 'The feeder on this machine, if it has one',
+                  child: _SuggestingField(
+                    fieldKey: const ValueKey<String>('quick-entry-machine-feeder-field'),
+                    controller: _feederController,
+                    enabled: enabled,
+                    label: 'Feeder make',
+                    // Named "make" because everywhere else in this system a
+                    // feeder is an upstream node in a pipeline, and the sheet
+                    // uses the word for both.
+                    helper: 'The feeder on this machine, if it has one',
+                    suggestions: _suggestions.feederMakes,
+                    onChanged: () => setState(() {}),
+                  ),
+                ),
+                FitToText(
+                  controller: _feedTypeController,
+                  texts: const ['Die Type'],
+                  helper: 'What tooling it takes — Manual, Semi Prog, Progressive',
+                  child: _SuggestingField(
+                    fieldKey: const ValueKey<String>('quick-entry-machine-feed-field'),
+                    controller: _feedTypeController,
+                    enabled: enabled,
+                    label: 'Die Type',
+                    helper: 'What tooling it takes — Manual, Semi Prog, Progressive',
+                    suggestions: _suggestions.dieFeedTypes,
+                    onChanged: () => setState(() {}),
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 10),
-            ForceCapacityField(
-              fieldKey: const ValueKey<String>('quick-entry-machine-capacity-field'),
-              freeHandKey: const ValueKey<String>('quick-entry-machine-free-hand'),
-              controller: _capacityController,
-              unitSymbol: _capacityUnit,
-              kind: _capacityKind,
-              enabled: enabled,
-              errorText: _capacityError,
-              onUnitChanged: (symbol) => setState(() {
-                _capacityUnit = symbol;
-                _capacityError = null;
-              }),
-              onKindChanged: (kind) => setState(() {
-                _capacityKind = kind;
-                _capacityError = null;
-              }),
-              onChanged: () {
-                if (_capacityError != null) {
-                  setState(() => _capacityError = null);
-                }
-              },
-            ),
-            const SizedBox(height: 10),
-            _SuggestingField(
-              fieldKey: const ValueKey<String>('quick-entry-machine-feeder-field'),
-              controller: _feederController,
-              enabled: enabled,
-              label: 'Feeder make',
-              // Named "make" because everywhere else in this system a feeder is
-              // an upstream node in a pipeline, and the sheet uses the word for
-              // both.
-              helper: 'The feeder on this machine, if it has one',
-              suggestions: _suggestions.feederMakes,
-              onChanged: () => setState(() {}),
-            ),
-            const SizedBox(height: 10),
-            _SuggestingField(
-              fieldKey: const ValueKey<String>('quick-entry-machine-feed-field'),
-              controller: _feedTypeController,
-              enabled: enabled,
-              label: 'Die Type',
-              helper: 'What tooling it takes — Manual, Semi Prog, Progressive',
-              suggestions: _suggestions.dieFeedTypes,
-              onChanged: () => setState(() {}),
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(
                 _error!,
                 style: const TextStyle(
-                  fontSize: 13.5,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFB45309),
                 ),
@@ -699,7 +748,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               Text(
                 _notice!,
                 style: const TextStyle(
-                  fontSize: 13.5,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: SoftErpTheme.textSecondary,
                 ),
@@ -715,7 +764,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     onPressed: enabled ? () => setState(_resetSheet) : null,
                     child: const Text(
                       'Cancel',
-                      style: TextStyle(fontSize: 13.5),
+                      style: TextStyle(fontSize: 14),
                     ),
                   ),
                 const SizedBox(width: 8),
@@ -787,12 +836,14 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       return const Text(
         'No machines on this part yet. Fill the sheet below and add one — a '
         'part can run on as many as it needs.',
-        style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+        style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _MachineHeaderStrip(),
+        const SizedBox(height: 4),
         // Held first: they are what this screen is about to write.
         for (var i = 0; i < widget.staged.length; i += 1)
           _MachineRow(
@@ -863,6 +914,8 @@ class _SuggestingField extends StatelessWidget {
           decoration: InputDecoration(
             labelText: label,
             helperText: helper,
+            helperMaxLines: 2,
+            isDense: true,
             border: const OutlineInputBorder(),
           ),
         ),
@@ -874,7 +927,7 @@ class _SuggestingField extends StatelessWidget {
             children: [
               for (final name in offered)
                 ActionChip(
-                  label: Text(name, style: const TextStyle(fontSize: 13)),
+                  label: Text(name, style: const TextStyle(fontSize: 14)),
                   onPressed: !enabled
                       ? null
                       : () {
@@ -925,16 +978,6 @@ class _MachineRow extends StatelessWidget {
       machine.capacityKgf,
       'Ton',
     );
-    final facts = <String>[
-      if (machine.machineType.isNotEmpty) machine.machineType,
-      if (machine.machineMake.isNotEmpty) machine.machineMake,
-      if (capacity.isNotEmpty) capacity,
-      if (machine.strokesPerMinute != null) '${machine.strokesPerMinute}/min',
-      if (machine.dieFeedType.isNotEmpty) machine.dieFeedType,
-      if (pending)
-        partExists ? 'held — not written yet' : 'held until the part is made',
-    ];
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
@@ -954,35 +997,47 @@ class _MachineRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        machine.assetId.isEmpty
-                            ? machine.name
-                            : machine.assetId,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: selected
-                              ? FontWeight.w800
-                              : FontWeight.w700,
-                          color: SoftErpTheme.textPrimary,
-                        ),
-                      ),
-                      if (facts.isNotEmpty)
-                        Text(
-                          facts.join(' · '),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: SoftErpTheme.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                    ],
+                // Aligned under the strip above, rather than one joined
+                // sentence that stops being readable past a machine or two.
+                _MachineCell(
+                  machine.assetId.isEmpty ? machine.name : machine.assetId,
+                  flex: _kMachineFlex[0],
+                  strong: true,
+                  selected: selected,
+                ),
+                _MachineCell(machine.machineType, flex: _kMachineFlex[1]),
+                _MachineCell(machine.machineMake, flex: _kMachineFlex[2]),
+                _MachineCell(capacity, flex: _kMachineFlex[3]),
+                _MachineCell(
+                  machine.strokesPerMinute == null
+                      ? ''
+                      : '${machine.strokesPerMinute}',
+                  flex: _kMachineFlex[4],
+                ),
+                _MachineCell(machine.dieFeedType, flex: _kMachineFlex[5]),
+                if (pending)
+                  _MachineCell(
+                    partExists ? 'held' : 'held for the part',
+                    flex: _kMachineFlex[6],
+                    muted: true,
+                  )
+                else
+                  Spacer(flex: _kMachineFlex[6]),
+                const SizedBox(width: 6),
+                // Its Edit, said out loud: a saved row opens in the form above,
+                // whose button is then this row's Save.
+                Tooltip(
+                  message: selected
+                      ? 'Being edited above — Save there'
+                      : 'Edit this machine',
+                  child: IconButton(
+                    key: ValueKey<String>('machine_row_edit_${machine.name}'),
+                    icon: const Icon(Icons.edit_outlined, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    color: SoftErpTheme.accent,
+                    onPressed: selected ? null : onTap,
                   ),
                 ),
-                const SizedBox(width: 6),
                 Tooltip(
                   // Said in full, because "remove" reads as "destroy" and this
                   // one does not.
@@ -1002,6 +1057,84 @@ class _MachineRow extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Column weights shared by the header strip and every row, so they line up.
+const List<int> _kMachineFlex = [24, 20, 22, 18, 10, 18, 16];
+const List<String> _kMachineHeads = [
+  'Machine No',
+  'Type',
+  'Make',
+  'Capacity',
+  'Str/min',
+  'Feed',
+  '',
+];
+
+class _MachineHeaderStrip extends StatelessWidget {
+  const _MachineHeaderStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 44, 4),
+      child: Row(
+        children: [
+          for (var i = 0; i < _kMachineHeads.length; i += 1)
+            Expanded(
+              flex: _kMachineFlex[i],
+              child: Text(
+                _kMachineHeads[i],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MachineCell extends StatelessWidget {
+  const _MachineCell(
+    this.text, {
+    required this.flex,
+    this.strong = false,
+    this.selected = false,
+    this.muted = false,
+  });
+
+  final String text;
+  final int flex;
+  final bool strong;
+  final bool selected;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        text.isEmpty ? '—' : text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: strong ? 15 : 14,
+          fontWeight: strong
+              ? (selected ? FontWeight.w800 : FontWeight.w700)
+              : FontWeight.w600,
+          color: muted || text.isEmpty
+              ? SoftErpTheme.textSecondary
+              : (strong ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary),
         ),
       ),
     );

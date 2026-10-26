@@ -145,6 +145,7 @@ class ItemDto {
     this.developedForClientId,
     this.developedForClientName = '',
     this.developedFor = DevelopedFor.empty,
+    this.sectionTree,
     this.machines = const <ItemMachineLink>[],
     this.dies = const <ItemDieLink>[],
     this.combinationGroupIds = const <int>[],
@@ -184,6 +185,7 @@ class ItemDto {
   final int? developedForClientId;
   final String developedForClientName;
   final DevelopedFor developedFor;
+  final Map<String, String>? sectionTree;
   final List<int> combinationGroupIds;
   final bool availableForPurchase;
 
@@ -284,7 +286,9 @@ class ItemDto {
               toolCode: entry['toolCode'] as String? ?? '',
               photoUrl: entry['photoUrl'] as String?,
               dieType: entry['dieType'] as String? ?? '',
+              dieTypeLabel: entry['dieTypeLabel'] as String? ?? '',
               madeBy: entry['madeBy'] as String? ?? '',
+              dieMakerId: (entry['dieMakerId'] as num?)?.toInt(),
               poAt: _dieInstant(entry['poAt']),
               dateInAt: _dieInstant(entry['dateInAt']),
               linerSizeNm: entry['linerSizeNm'] as int?,
@@ -309,6 +313,12 @@ class ItemDto {
               clientName: json['developedForClientName'] as String? ?? '',
               companyName: json['developedForClientName'] as String? ?? '',
             ),
+      sectionTree: json['sectionTree'] is Map
+          ? {
+              for (final entry in (json['sectionTree'] as Map).entries)
+                '${entry.key}': '${entry.value}',
+            }
+          : null,
       combinationGroupIds:
           (json['combinationGroupIds'] as List<dynamic>? ?? const [])
               .map((e) => e as int)
@@ -362,6 +372,7 @@ class ItemDto {
       developedForClientId: developedForClientId,
       developedForClientName: developedForClientName,
       developedFor: developedFor,
+      sectionTree: sectionTree,
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
       blankWidthMm: blankWidthMm,
