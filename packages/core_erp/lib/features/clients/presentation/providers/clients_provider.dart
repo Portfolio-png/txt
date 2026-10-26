@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/client_repository.dart';
 import '../../domain/client_definition.dart';
+import '../../domain/party_contact.dart';
 import '../../data/models/client_api_models.dart';
 import '../../domain/client_inputs.dart';
 import '../../../../core/services/socket_service.dart';
@@ -268,6 +269,60 @@ class ClientsProvider extends ChangeNotifier {
     } finally {
       _isSaving = false;
       notifyListeners();
+    }
+  }
+
+  /// Adds a person at [clientId], or null with [errorMessage] set.
+  ///
+  /// Refreshes afterwards so every picker reading this provider sees the new
+  /// person without being told. A caller writing several people at once
+  /// passes `refreshAfter: false` and calls [refresh] once at the end.
+  Future<PartyContact?> addContact(
+    int clientId,
+    PartyContact contact, {
+    bool refreshAfter = true,
+  }) =>
+      _contactWrite(
+        () => _repository.addContact(clientId, contact),
+        refreshAfter,
+      );
+
+  /// Saves a change to a person already on file, or null with [errorMessage].
+  Future<PartyContact?> updateContact(
+    int clientId,
+    PartyContact contact, {
+    bool refreshAfter = true,
+  }) =>
+      _contactWrite(
+        () => _repository.updateContact(clientId, contact),
+        refreshAfter,
+      );
+
+  /// Archives a person (never deletes), or null with [errorMessage].
+  Future<PartyContact?> archiveContact(
+    int clientId,
+    int contactId, {
+    bool archived = true,
+    bool refreshAfter = true,
+  }) =>
+      _contactWrite(
+        () => _repository.archiveContact(clientId, contactId, archived: archived),
+        refreshAfter,
+      );
+
+  Future<PartyContact?> _contactWrite(
+    Future<PartyContact> Function() write,
+    bool refreshAfter,
+  ) async {
+    _errorMessage = null;
+    try {
+      final saved = await write();
+      if (refreshAfter) await refresh();
+      return saved;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
     }
   }
 

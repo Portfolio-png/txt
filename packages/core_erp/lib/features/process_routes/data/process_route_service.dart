@@ -58,14 +58,17 @@ class ProcessRouteService {
     ProcessStage(id: 3, code: 'cutting', name: 'Cutting', position: 3),
     ProcessStage(id: 4, code: 'riveting', name: 'Riveting', position: 4),
     ProcessStage(id: 5, code: 'assembly', name: 'Assembly', position: 5),
-    ProcessStage(id: 6, code: 'barcode', name: 'Barcode', position: 6),
-    ProcessStage(id: 7, code: 'packing', name: 'Packing', position: 7),
+    ProcessStage(id: 7, code: 'packing', name: 'Packing', position: 6),
+    ProcessStage(id: 6, code: 'barcode', name: 'Barcode', position: 7),
     ProcessStage(id: 8, code: 'billing', name: 'Billing', position: 8),
     ProcessStage(id: 9, code: 'delivery', name: 'Delivery', position: 9),
   ];
 
+  /// The demo master, which grows when someone adds a stage.
+  late final List<ProcessStage> _mockStageList = [..._mockStages];
+
   Future<List<ProcessStage>> stages({bool includeInactive = false}) async {
-    if (useMockResponses) return _mockStages;
+    if (useMockResponses) return List.unmodifiable(_mockStageList);
     final payload = await _get(
       '/api/process-stages${includeInactive ? '?includeInactive=true' : ''}',
     );
@@ -73,6 +76,42 @@ class ProcessRouteService {
       for (final entry in (payload['stages'] as List?) ?? const [])
         if (entry is Map<String, dynamic>) ?ProcessStage.fromJson(entry),
     ];
+  }
+
+  /// Adds a stage to the factory's master by name alone, and answers it.
+  ///
+  /// A name already in the master (in any case) answers THAT stage — the
+  /// server says 409 `stage_exists` and hands it back — so typing a stage that
+  /// somebody already made never makes a second one.
+  Future<ProcessStage> createStage(String name) async {
+    final clean = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (clean.isEmpty) {
+      throw ProcessRouteException('A stage needs a name.', code: 'stage_name_required');
+    }
+    if (useMockResponses) {
+      for (final stage in _mockStageList) {
+        if (stage.name.toLowerCase() == clean.toLowerCase()) return stage;
+      }
+      final made = ProcessStage(
+        id: _mockStageList.fold<int>(0, (max, s) => s.id > max ? s.id : max) + 1,
+        code: clean.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
+        name: clean,
+        position: _mockStageList.fold<int>(
+              0,
+              (max, s) => s.position > max ? s.position : max,
+            ) +
+            1,
+      );
+      _mockStageList.add(made);
+      return made;
+    }
+    final payload = await _post('/api/process-stages', {'name': clean});
+    final raw = payload['stage'];
+    final stage = raw is Map<String, dynamic> ? ProcessStage.fromJson(raw) : null;
+    if (stage == null) {
+      throw ProcessRouteException('The server did not send the stage back.');
+    }
+    return stage;
   }
 
   /// Every version of a part's route, active first then newest.
@@ -175,12 +214,12 @@ class ProcessRouteService {
           RouteStep(
             stageId: steps[i].stageId,
             seq: i + 1,
-            stageCode: _mockStages
+            stageCode: _mockStageList
                 .where((s) => s.id == steps[i].stageId)
                 .map((s) => s.code)
                 .firstOrNull ??
                 '',
-            stageName: _mockStages
+            stageName: _mockStageList
                 .where((s) => s.id == steps[i].stageId)
                 .map((s) => s.name)
                 .firstOrNull ??
@@ -244,6 +283,13 @@ class ProcessRouteService {
         routeId: (payload?['routeId'] as num?)?.toInt() ?? 0,
         version: (payload?['version'] as num?)?.toInt() ?? 0,
       );
+    }
+    // Not a failure: the stage the caller wanted already exists, and the body
+    // carries it.
+    if (response.statusCode == 409 &&
+        code == 'stage_exists' &&
+        payload?['stage'] is Map<String, dynamic>) {
+      return payload!;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ProcessRouteException(

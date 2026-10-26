@@ -80,6 +80,34 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
     _partId = widget.initialPartId;
     _resolveService();
     _loadStages();
+    // A part handed in at open needs its existing route loaded, exactly as one
+    // picked from the field does. `_loadRoute` ran only from `onChanged`, so a
+    // panel opened pointed at a part that already had a route did not know —
+    // `_active` stayed null, the button said "Save route" rather than "Save as
+    // new version", and the save tried to lay a second v1 over the first.
+    final initial = widget.initialPartId;
+    if (initial != null) _loadRoute(initial);
+  }
+
+  /// Adds a stage to the master and to this panel's list, so every step box
+  /// offers it from now on. Null (with the reason shown) when it failed.
+  Future<ProcessStage?> _createStage(String name) async {
+    final service = _service;
+    if (service == null) return null;
+    try {
+      final stage = await service.createStage(name);
+      if (!mounted) return stage;
+      setState(() {
+        _error = null;
+        if (!_stages.any((known) => known.id == stage.id)) {
+          _stages = [..._stages, stage];
+        }
+      });
+      return stage;
+    } on ProcessRouteException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+      return null;
+    }
   }
 
   void _resolveService() {
@@ -346,6 +374,7 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
             lockedVersion: _active?.version,
             onDeclareVersion: _active == null ? null : _unlockForVersion,
             onChanged: (steps) => setState(() => _steps = steps),
+            onCreateStage: _service == null ? null : _createStage,
           ),
         const SizedBox(height: 18),
         Row(

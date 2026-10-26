@@ -425,7 +425,9 @@ class ApiDieRepository implements DieRepository {
       // correct what the wizard wrote — and so a save from the editor cannot
       // blank it by leaving it out.
       dieType: json['dieType'] as String? ?? '',
+      dieTypeLabel: json['dieTypeLabel'] as String? ?? '',
       madeBy: json['madeBy'] as String? ?? '',
+      dieMakerId: (json['dieMakerId'] as num?)?.toInt(),
       poAt: _utcFromJson(json['poAt']),
       dateInAt: _utcFromJson(json['dateInAt']),
       linerSizeNm: json['linerSizeNm'] as int?,
@@ -467,7 +469,9 @@ class ApiDieRepository implements DieRepository {
       'reportNotes': d.reportNotes,
       'physicalSpecs': d.physicalSpecs.map(_propertyToJson).toList(),
       'dieType': d.dieType,
+      'dieTypeLabel': d.dieTypeLabel,
       'madeBy': d.madeBy,
+      'dieMakerId': d.dieMakerId,
       'poAt': d.poAt?.toUtc().toIso8601String(),
       'dateInAt': d.dateInAt?.toUtc().toIso8601String(),
       'linerSizeNm': d.linerSizeNm,

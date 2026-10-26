@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../domain/part_route.dart';
 import '../../domain/process_stage.dart';
 import 'route_creation_panel.dart';
@@ -75,7 +76,13 @@ class RouteEditor extends StatefulWidget {
     this.lockedVersion,
     this.onDeclareVersion,
     this.enabled = true,
+    this.onCreateStage,
   });
+
+  /// Adds a stage to the factory's master by name and answers it, or null
+  /// when it could not (the creator shows its own error). Null means this
+  /// host cannot add stages, and the New stage box is drawn disabled saying so.
+  final Future<ProcessStage?> Function(String name)? onCreateStage;
 
   final List<ProcessStage> stages;
   final List<RouteStep> steps;
@@ -164,6 +171,27 @@ class _RouteEditorState extends State<RouteEditor> {
     ];
   }
 
+  Widget _newStageBox() => _NewStageBox(
+        enabled: _editable,
+        disabledReason: widget.locked
+            ? 'This route is active — declare a new version to change it'
+            : 'Pick a part first',
+        available: _available(),
+        allStages: widget.stages,
+        onCreate: widget.onCreateStage,
+        onPick: (stage) {
+          // A stage the server handed back for a name it already had may be
+          // one this route goes through; adding it twice is only refused later.
+          if (!stage.repeatable && _steps.any((s) => s.stageId == stage.id)) {
+            return;
+          }
+          _emit([
+            ..._steps,
+            RouteStep(stageId: stage.id, stageCode: stage.code, stageName: stage.name),
+          ]);
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
     final lens = widget.lens ?? RouteLens.fromFlags();
@@ -183,6 +211,7 @@ class _RouteEditorState extends State<RouteEditor> {
               editable: _editable,
               onEmit: _emit,
               canAdd: _available().isNotEmpty,
+              newStage: _newStageBox(),
             ),
           RouteLens.list => _ListLens(
               steps: _steps,
@@ -190,6 +219,7 @@ class _RouteEditorState extends State<RouteEditor> {
               stageOf: _stage,
               editable: _editable,
               onEmit: _emit,
+              newStage: _newStageBox(),
             ),
         },
       ],
@@ -197,7 +227,13 @@ class _RouteEditorState extends State<RouteEditor> {
   }
 }
 
-/// Classic: one dropdown per step.
+/// Classic: one box per step, flowing left to right like the pipeline it is.
+///
+/// Each box picks its stage from a dropdown listing every stage still
+/// available. It used to be one full-width row per step stacked down the page,
+/// which spent a screen of height and a scroll on what is one short sequence;
+/// as boxes a whole route sits on one line and wraps only when it runs out of
+/// width. Deliberately a plain [Wrap], no LayoutBuilder (see the list lens).
 class _ClassicLens extends StatelessWidget {
   const _ClassicLens({
     required this.steps,
@@ -206,6 +242,7 @@ class _ClassicLens extends StatelessWidget {
     required this.editable,
     required this.onEmit,
     required this.canAdd,
+    required this.newStage,
   });
 
   final List<RouteStep> steps;
@@ -214,88 +251,49 @@ class _ClassicLens extends StatelessWidget {
   final bool editable;
   final ValueChanged<List<RouteStep>> onEmit;
   final bool canAdd;
+  final Widget newStage;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Wrap(
+      spacing: 4,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        for (var i = 0; i < steps.length; i += 1)
-          Padding(
+        for (var i = 0; i < steps.length; i += 1) ...[
+          _StepBox(
             key: ValueKey<String>('route_step_$i'),
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 28,
-                  child: Text(
-                    '${i + 1}.',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: SoftErpTheme.textSecondary,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: DropdownButtonFormField<int>(
-                    key: ValueKey<String>('route_step_dropdown_$i'),
-                    initialValue: steps[i].stageId,
-                    isDense: true,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: SoftErpTheme.textPrimary,
-                    ),
-                    items: [
-                      for (final stage in optionsFor(steps[i].stageId))
-                        DropdownMenuItem<int>(
-                          value: stage.id,
-                          child: Text(stage.name, style: const TextStyle(fontSize: 14)),
-                        ),
-                    ],
-                    onChanged: editable
-                        ? (value) {
-                            if (value == null) return;
-                            final next = [...steps];
-                            final stage = stageOf(value);
-                            next[i] = RouteStep(
-                              stageId: value,
-                              seq: steps[i].seq,
-                              stageCode: stage?.code ?? '',
-                              stageName: stage?.name ?? '',
-                              notes: steps[i].notes,
-                              machineId: steps[i].machineId,
-                              dieId: steps[i].dieId,
-                            );
-                            onEmit(next);
-                          }
-                        : null,
-                  ),
-                ),
-                // Drawn disabled rather than hidden: a control that vanishes
-                // when its precondition fails costs more to explain than one
-                // that is visibly unavailable.
-                IconButton(
-                  key: ValueKey<String>('route_step_remove_$i'),
-                  tooltip: editable
-                      ? 'Remove this step'
-                      : 'This route is active — declare a new version to change it',
-                  onPressed: editable
-                      ? () => onEmit([...steps]..removeAt(i))
-                      : null,
-                  icon: const Icon(Icons.close, size: 18),
-                ),
-              ],
-            ),
+            index: i,
+            step: steps[i],
+            options: optionsFor(steps[i].stageId),
+            editable: editable,
+            onPick: (value) {
+              final next = [...steps];
+              final stage = stageOf(value);
+              next[i] = RouteStep(
+                stageId: value,
+                seq: steps[i].seq,
+                stageCode: stage?.code ?? '',
+                stageName: stage?.name ?? '',
+                notes: steps[i].notes,
+                machineId: steps[i].machineId,
+                dieId: steps[i].dieId,
+              );
+              onEmit(next);
+            },
+            onRemove: () => onEmit([...steps]..removeAt(i)),
           ),
-        Align(
-          alignment: Alignment.centerLeft,
+          const Icon(
+            Icons.chevron_right,
+            size: 20,
+            color: SoftErpTheme.textSecondary,
+          ),
+        ],
+        SizedBox(
+          height: _StepBox.height,
           child: OutlinedButton.icon(
             key: const ValueKey<String>('route_add_step'),
+            style: _boxButtonStyle,
             onPressed: editable && canAdd
                 ? () {
                     final stage = optionsFor(null).first;
@@ -313,7 +311,220 @@ class _ClassicLens extends StatelessWidget {
             label: const Text('Add step', style: TextStyle(fontSize: 14)),
           ),
         ),
+        const SizedBox(width: 4),
+        newStage,
       ],
+    );
+  }
+}
+
+final ButtonStyle _boxButtonStyle = OutlinedButton.styleFrom(
+  padding: const EdgeInsets.symmetric(horizontal: 14),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+  ),
+);
+
+/// One step: its number, its stage, and a way to take it out.
+class _StepBox extends StatelessWidget {
+  const _StepBox({
+    super.key,
+    required this.index,
+    required this.step,
+    required this.options,
+    required this.editable,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  static const double width = 184;
+  static const double height = 52;
+
+  final int index;
+  final RouteStep step;
+  final List<ProcessStage> options;
+  final bool editable;
+  final ValueChanged<int> onPick;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    // The step's own stage must be among the items or the dropdown asserts —
+    // a stage retired since this route was made is still what it holds.
+    final items = [
+      for (final stage in options)
+        DropdownMenuItem<int>(
+          value: stage.id,
+          child: Text(
+            stage.name,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      if (!options.any((stage) => stage.id == step.stageId))
+        DropdownMenuItem<int>(
+          value: step.stageId,
+          child: Text(
+            step.stageName.isEmpty ? 'Stage #${step.stageId}' : step.stageName,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+    ];
+
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.only(left: 8),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accent.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '${index + 1}',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: SoftErpTheme.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                key: ValueKey<String>('route_step_dropdown_$index'),
+                value: step.stageId,
+                isExpanded: true,
+                isDense: true,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: SoftErpTheme.textPrimary,
+                ),
+                items: items,
+                onChanged: editable
+                    ? (value) {
+                        if (value != null) onPick(value);
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          // Drawn disabled rather than hidden: a control that vanishes when
+          // its precondition fails costs more to explain than one that is
+          // visibly unavailable.
+          IconButton(
+            key: ValueKey<String>('route_step_remove_$index'),
+            tooltip: editable
+                ? 'Remove this step'
+                : 'This route is active — declare a new version to change it',
+            visualDensity: VisualDensity.compact,
+            onPressed: editable ? onRemove : null,
+            icon: const Icon(Icons.close, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Finds a stage, or adds one the master does not have yet — by name alone.
+///
+/// Opens the house searchable dropdown anchored to the box: it lists the
+/// stages this route can still take, filters as you type, and when nothing is
+/// called what you typed offers to add it as a new stage. One control for both,
+/// so nobody has to know whether a stage exists before reaching for it.
+class _NewStageBox extends StatelessWidget {
+  const _NewStageBox({
+    required this.enabled,
+    required this.disabledReason,
+    required this.available,
+    required this.allStages,
+    required this.onCreate,
+    required this.onPick,
+  });
+
+  final bool enabled;
+  final String disabledReason;
+
+  /// What this route may still take — the options listed.
+  final List<ProcessStage> available;
+
+  /// Every stage, so a name already in the master is never offered as new.
+  final List<ProcessStage> allStages;
+
+  /// Null means this host cannot add stages; the dropdown then only finds.
+  final Future<ProcessStage?> Function(String name)? onCreate;
+  final ValueChanged<ProcessStage> onPick;
+
+  static String _norm(String value) =>
+      value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+  Future<void> _open(BuildContext anchor) async {
+    ProcessStage? created;
+    final create = onCreate;
+    final picked = await showSearchableSelectDialog<int>(
+      context: anchor,
+      searchHintText: 'Find a stage, or type a new one',
+      emptyText: create == null
+          ? 'No stage by that name'
+          : 'Already in this route — each stage goes through once',
+      options: [
+        for (final stage in available)
+          SearchableSelectOption<int>(value: stage.id, label: stage.name),
+      ],
+      // A name the master already has — even one this route has used up — is
+      // that stage, never a second one.
+      canCreateOption: (query, _) =>
+          !allStages.any((stage) => _norm(stage.name) == _norm(query)),
+      onCreateOption: create == null
+          ? null
+          : (query) async {
+              final stage = await create(query);
+              if (stage == null) return null; // the host has said why
+              created = stage;
+              return SearchableSelectOption<int>(value: stage.id, label: stage.name);
+            },
+      createOptionLabelBuilder: (query) => 'Add “${query.trim()}” as a new stage',
+    );
+    if (picked == null) return;
+    final stage = created?.id == picked.value
+        ? created
+        : available.where((s) => s.id == picked.value).firstOrNull;
+    if (stage != null) onPick(stage);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: enabled
+          ? 'Find a stage, or add one that is not in the list — just its name'
+          : disabledReason,
+      child: SizedBox(
+        height: _StepBox.height,
+        // A Builder so the dropdown anchors to this box, not to the editor.
+        child: Builder(
+          builder: (anchor) => OutlinedButton.icon(
+            key: const ValueKey<String>('route_new_stage'),
+            style: _boxButtonStyle,
+            onPressed: enabled ? () => _open(anchor) : null,
+            icon: const Icon(Icons.search, size: 18),
+            label: const Text('Find or add stage', style: TextStyle(fontSize: 14)),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -326,8 +537,10 @@ class _ListLens extends StatelessWidget {
     required this.stageOf,
     required this.editable,
     required this.onEmit,
+    required this.newStage,
   });
 
+  final Widget newStage;
   final List<RouteStep> steps;
   final List<ProcessStage> palette;
   final ProcessStage? Function(int id) stageOf;
@@ -418,6 +631,7 @@ class _ListLens extends StatelessWidget {
                         ])
                     : null,
               ),
+            newStage,
           ],
         ),
       ],

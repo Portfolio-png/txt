@@ -1,3 +1,4 @@
+import '../../domain/party_contact.dart';
 import '../../domain/client_definition.dart';
 import '../../domain/client_inputs.dart';
 
@@ -18,6 +19,7 @@ class ClientDto {
     this.designation = '',
     this.phone = '',
     this.email = '',
+    this.contacts = const [],
   });
 
   final int id;
@@ -35,6 +37,7 @@ class ClientDto {
   final String designation;
   final String phone;
   final String email;
+  final List<PartyContact> contacts;
 
   factory ClientDto.fromJson(Map<String, dynamic> json) {
     return ClientDto(
@@ -57,6 +60,10 @@ class ClientDto {
       designation: json['designation'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       email: json['email'] as String? ?? '',
+      contacts: [
+        for (final row in (json['contacts'] as List? ?? const []))
+          PartyContact.fromJson(row as Map<String, dynamic>),
+      ],
     );
   }
 
@@ -77,6 +84,7 @@ class ClientDto {
       designation: designation,
       phone: phone,
       email: email,
+      contacts: contacts,
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'party_contact.dart';
+
 class ClientDefinition {
   const ClientDefinition({
     required this.id,
@@ -15,6 +17,7 @@ class ClientDefinition {
     this.designation = '',
     this.phone = '',
     this.email = '',
+    this.contacts = const [],
   });
 
   final int id;
@@ -29,10 +32,21 @@ class ClientDefinition {
   final String logoUrl;
   final String photoUrl;
 
-  /// The company's primary contact — one person, answered here and shown on
-  /// every part developed for this client. Distinct from this client's
-  /// sub-contractors, who are parties you give work TO; the same human may
-  /// legitimately appear in both.
+  /// Everyone on file at this company, primary first, archived last.
+  ///
+  /// A deal is done with whoever picks up the phone, so this list is what a
+  /// picker offers. Migration 056 backfilled one primary row per client that
+  /// had a person, so nothing that existed reads as blank.
+  final List<PartyContact> contacts;
+
+  /// The people not archived — what a picker or a sheet offers.
+  List<PartyContact> get activeContacts =>
+      [for (final contact in contacts) if (!contact.isArchived) contact];
+
+  /// The company's primary contact — the person to ring first. Since 056 the
+  /// server keeps these four as a mirror of the primary row in [contacts].
+  /// Distinct from this client's sub-contractors, who are parties you give
+  /// work TO; the same human may legitimately appear in both.
   final String contactName;
   final String designation;
   final String phone;
@@ -64,6 +78,7 @@ class ClientDefinition {
     String? designation,
     String? phone,
     String? email,
+    List<PartyContact>? contacts,
   }) {
     return ClientDefinition(
       id: id ?? this.id,
@@ -81,6 +96,7 @@ class ClientDefinition {
       designation: designation ?? this.designation,
       phone: phone ?? this.phone,
       email: email ?? this.email,
+      contacts: contacts ?? this.contacts,
     );
   }
 

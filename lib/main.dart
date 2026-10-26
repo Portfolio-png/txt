@@ -26,6 +26,8 @@ import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart
 import 'package:core_erp/features/auth/presentation/screens/login_screen.dart';
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/clients/presentation/providers/sub_contractors_provider.dart';
+import 'package:core_erp/features/die_makers/data/die_maker_repository.dart';
+import 'package:core_erp/features/die_makers/presentation/providers/die_makers_provider.dart';
 import 'package:paper/core/services/activation_service.dart';
 import 'package:paper/features/auth/presentation/screens/activation_screen.dart';
 import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
@@ -685,6 +687,21 @@ class MyApp extends StatelessWidget {
               MachinesProvider(repository: context.read<MachineRepository>()),
           update: (context, repository, previous) =>
               previous ?? MachinesProvider(repository: repository),
+        ),
+        // The die maker master, behind a die's "made by". Registered above the
+        // Navigator so the die sheet on a pushed route can read it.
+        Provider<DieMakerRepository>(
+          create: (context) => ApiDieMakerRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        ChangeNotifierProxyProvider<DieMakerRepository, DieMakersProvider>(
+          create: (context) =>
+              DieMakersProvider(repository: context.read<DieMakerRepository>()),
+          update: (context, repository, previous) =>
+              previous ?? DieMakersProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<DieRepository, DiesProvider>(
           create: (context) =>

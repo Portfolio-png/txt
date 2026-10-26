@@ -211,6 +211,32 @@ void main() {
       expect(tooltip.message, contains('stage'));
     });
 
+    testWidgets('a stage made here is saved in the route like any other',
+        (tester) async {
+      final service = _SpyRouteService();
+      await _pump(
+        tester,
+        items: [_item(1, 'Patti', partCode: 'SADP48')],
+        service: service,
+        initialPartId: 1,
+      );
+
+      await _addStep(tester); // die
+      await tester.tap(find.byKey(const ValueKey('route_new_stage')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Bending');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add “Bending” as a new stage'));
+      await tester.pumpAndSettle();
+
+      final made = (await service.stages()).firstWhere((s) => s.name == 'Bending');
+      expect(find.text('Bending'), findsOneWidget);
+
+      await tester.tap(find.textContaining('Save'));
+      await tester.pumpAndSettle();
+      expect(service.calls.single.$3, [1, made.id]);
+    });
+
     testWidgets('sends the ordered stage ids and hands back a record', (tester) async {
       final service = _SpyRouteService();
       CreatedRecord? saved;

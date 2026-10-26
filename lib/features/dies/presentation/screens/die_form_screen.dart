@@ -88,6 +88,9 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   String _linerSizeUnit = 'mm';
   String? _linerSizeError;
   DieType? _dieType;
+  // A typed type ("Deep Draw") has no chip here, so _dieType reads null for
+  // it; until a chip is touched the stored type is kept rather than cleared.
+  bool _dieTypeTouched = false;
   DateTime? _poAt;
   DateTime? _dateInAt;
   late final TextEditingController _numberOfCavitiesController;
@@ -1179,7 +1182,10 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                       ),
                       selected: _dieType == type,
                       onSelected: (selected) =>
-                          setState(() => _dieType = selected ? type : null),
+                          setState(() {
+                        _dieType = selected ? type : null;
+                        _dieTypeTouched = true;
+                      }),
                     ),
                 ],
               ),
@@ -1355,6 +1361,8 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     }
 
     final id = widget.die?.id ?? '';
+    final keepTypedType =
+        !_dieTypeTouched && _dieType == null && widget.die != null;
 
     final newDie = Die(
       id: id,
@@ -1376,8 +1384,11 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       status: _status,
       ownership: _ownership,
       clientId: _clientId,
-      dieType: _dieType?.slug ?? '',
+      dieType: keepTypedType ? widget.die!.dieType : (_dieType?.slug ?? ''),
+      dieTypeLabel: keepTypedType ? widget.die!.dieTypeLabel : '',
       madeBy: _madeByController.text.trim(),
+      // Not edited on this form; the upsert stores what it is sent.
+      dieMakerId: widget.die?.dieMakerId,
       poAt: _poAt,
       dateInAt: _dateInAt,
       linerSizeNm: parseLengthToNanometres(

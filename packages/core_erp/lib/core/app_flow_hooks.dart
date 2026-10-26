@@ -39,7 +39,9 @@ class DieSheetDraft {
     this.dieId,
     required this.toolCode,
     required this.dieType,
+    this.dieTypeLabel = '',
     this.madeBy = '',
+    this.dieMakerId,
     this.poAt,
     this.dateInAt,
     this.linerSizeNm,
@@ -59,9 +61,20 @@ class DieSheetDraft {
   /// Already derived or typed over, never empty.
   final String toolCode;
 
-  /// `cutting` | `bending`.
+  /// `cutting` | `bending`, or a slug the shop's own words were reduced to.
   final String dieType;
+
+  /// The words, for a type that was typed rather than picked. Empty for the
+  /// four built-ins, whose label is looked up from the slug on both sides.
+  /// Without it a typed type derives no code at all.
+  final String dieTypeLabel;
+
+  /// Who made it, as text. Survives beside [dieMakerId] rather than being
+  /// replaced by it: every die made before the master has a name and no id.
   final String madeBy;
+
+  /// The die maker master row, when the name resolved to one.
+  final int? dieMakerId;
 
   /// UTC instants: when the die was ordered, and when it came into store.
   final DateTime? poAt;
@@ -87,7 +100,9 @@ class DieSheetDraft {
     if (dieId != null) 'id': dieId,
     'toolCode': toolCode,
     'dieType': dieType,
+    'dieTypeLabel': dieTypeLabel,
     'madeBy': madeBy,
+    'dieMakerId': dieMakerId,
     'poAt': poAt?.toUtc().toIso8601String(),
     'dateInAt': dateInAt?.toUtc().toIso8601String(),
     'linerSizeNm': linerSizeNm,

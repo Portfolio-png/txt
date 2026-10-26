@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/client_definition.dart';
+import '../../domain/party_contact.dart';
 import '../../domain/client_inputs.dart';
 import '../models/client_api_models.dart';
 import 'client_repository.dart';
@@ -245,6 +246,141 @@ class ApiClientRepository implements ClientRepository {
         !parsed.success) {
       throw ClientApiException(parsed.error ?? 'Failed to delete client.');
     }
+  }
+
+  @override
+  Future<PartyContact> addContact(int clientId, PartyContact contact) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockClients.indexWhere((c) => c.id == clientId);
+      if (index < 0) throw ClientApiException('No such client.');
+      if (contact.name.trim().isEmpty) {
+        throw ClientApiException('A person needs a name.');
+      }
+      final client = _mockClients[index];
+      final made = contact.copyWith(
+        id: DateTime.now().microsecondsSinceEpoch % 1000000,
+        partyType: 'client',
+        partyId: clientId,
+        name: contact.name.trim(),
+        isPrimary: client.activeContacts.isEmpty,
+        isArchived: false,
+      );
+      _mockClients[index] = _withMirroredPrimary(
+        client.copyWith(contacts: [...client.contacts, made]),
+      );
+      return made;
+    }
+
+    // Nested under the client on purpose: the route inherits the clients
+    // module's permissions AND its per-record grants, which a flat
+    // /party-contacts/:id would get wrong — see modules/parties/contacts.js.
+    final uri = Uri.parse('$baseUrl/api/clients/$clientId/contacts');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(contact.toJson()),
+    );
+    return _contactFrom(response, 'Failed to add the person.');
+  }
+
+  @override
+  Future<PartyContact> updateContact(int clientId, PartyContact contact) async {
+    final id = contact.id;
+    if (id == null) throw ClientApiException('That person is not saved yet.');
+    if (contact.name.trim().isEmpty) {
+      throw ClientApiException('A person needs a name.');
+    }
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      return _mockReplaceContact(
+        clientId,
+        id,
+        (stored) => stored.copyWith(
+          name: contact.name.trim(),
+          designation: contact.designation,
+          phone: contact.phone,
+          email: contact.email,
+          notes: contact.notes,
+        ),
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl/api/clients/$clientId/contacts/$id');
+    final response = await _client.patch(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(contact.toJson()),
+    );
+    return _contactFrom(response, 'Failed to save the person.');
+  }
+
+  @override
+  Future<PartyContact> archiveContact(
+    int clientId,
+    int contactId, {
+    bool archived = true,
+  }) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      return _mockReplaceContact(
+        clientId,
+        contactId,
+        (stored) => stored.copyWith(
+          isArchived: archived,
+          isPrimary: archived ? false : stored.isPrimary,
+        ),
+      );
+    }
+
+    final uri =
+        Uri.parse('$baseUrl/api/clients/$clientId/contacts/$contactId/archive');
+    final response = await _client.patch(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'isArchived': archived}),
+    );
+    return _contactFrom(response, 'Failed to archive the person.');
+  }
+
+  PartyContact _contactFrom(http.Response response, String fallback) {
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw ClientApiException(payload['error'] as String? ?? fallback);
+    }
+    return PartyContact.fromJson(payload['contact'] as Map<String, dynamic>);
+  }
+
+  PartyContact _mockReplaceContact(
+    int clientId,
+    int contactId,
+    PartyContact Function(PartyContact stored) change,
+  ) {
+    final index = _mockClients.indexWhere((c) => c.id == clientId);
+    if (index < 0) throw ClientApiException('No such client.');
+    final client = _mockClients[index];
+    final at = client.contacts.indexWhere((c) => c.id == contactId);
+    if (at < 0) throw ClientApiException('No such person at this client.');
+    final changed = change(client.contacts[at]);
+    final contacts = [...client.contacts]..[at] = changed;
+    _mockClients[index] = _withMirroredPrimary(client.copyWith(contacts: contacts));
+    return changed;
+  }
+
+  /// The flat fields follow the primary, as the server's mirror does.
+  ClientDefinition _withMirroredPrimary(ClientDefinition client) {
+    PartyContact? primary;
+    for (final contact in client.contacts) {
+      if (contact.isPrimary && !contact.isArchived) primary = contact;
+    }
+    return client.copyWith(
+      contactName: primary?.name ?? '',
+      designation: primary?.designation ?? '',
+      phone: primary?.phone ?? '',
+      email: primary?.email ?? '',
+    );
   }
 
   void _assertNoDuplicate({

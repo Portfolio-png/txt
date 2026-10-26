@@ -15,13 +15,16 @@ import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
-import 'package:core_erp/features/groups/presentation/screens/component_creation_screen.dart';
+import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/widgets/item_form_sections_dialog.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/features/die_makers/presentation/providers/die_makers_provider.dart';
+import '../../features/dies/presentation/providers/die_provider.dart';
+import '../../features/machines/presentation/providers/machine_provider.dart';
 import 'navigation_provider.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -57,7 +60,7 @@ class _AppSidebarState extends State<AppSidebar> {
     debugLabel: 'app_sidebar_scope',
   );
   final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
-  bool _isHovered = false;
+  final ValueNotifier<bool> _hovered = ValueNotifier<bool>(false);
 
   static const List<_SidebarItemData> _moduleItems = <_SidebarItemData>[
     _SidebarItemData('dashboard', 'Dashboard', Icons.dashboard_outlined),
@@ -133,6 +136,7 @@ class _AppSidebarState extends State<AppSidebar> {
       focusNode.dispose();
     }
     _focusScopeNode.dispose();
+    _hovered.dispose();
     super.dispose();
   }
 
@@ -143,6 +147,14 @@ class _AppSidebarState extends State<AppSidebar> {
     );
   }
 
+  /// The Masters entries this workspace can reach. Pipelines belongs to
+  /// Production, so with Production off its tile highlighted while the content
+  /// showed the Dashboard.
+  static List<_SidebarItemData> get _visibleConfiguratorItems => [
+    for (final item in _configuratorItems)
+      if (ConfigService.instance.isNavKeyAllowed(item.key)) item,
+  ];
+
   List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
     final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     return <String>[
@@ -151,7 +163,7 @@ class _AppSidebarState extends State<AppSidebar> {
           .map((item) => item.key),
       if (mastersOn) 'configurator',
       if (mastersOn && isConfiguratorExpanded)
-        ..._configuratorItems.expand(
+        ..._visibleConfiguratorItems.expand(
           (item) => <String>[
             item.key,
             if (_expandedParents.contains(item.key))
@@ -198,26 +210,34 @@ class _AppSidebarState extends State<AppSidebar> {
     if (selectedKey == _lastSelectedKey) return;
     _lastSelectedKey = selectedKey;
     final parent = _parentKeyOf(selectedKey);
-    if (parent == null || _expandedParents.contains(parent)) return;
+    // The Masters drawer too, not just Items: arriving at Item Sets from the
+    // Items toolbar with Masters folded lit a row nobody could see.
+    final openMasters =
+        kConfiguratorNavigationKeys.contains(selectedKey) &&
+        !_isConfiguratorExpanded;
+    final openParent = parent != null && !_expandedParents.contains(parent);
+    if (!openMasters && !openParent) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
-        _expandedParents.add(parent);
+        if (openMasters) _isConfiguratorExpanded = true;
+        if (openParent) _expandedParents.add(parent);
       });
     });
   }
 
-  /// The Masters header's Express: one window holding a form for each master
-  /// the person is entering, side by side.
-  ///
-  /// The window itself is the item master's creation workspace — this is a
-  /// second door to it, opened on the tiles that were left there last time.
-  Future<void> _openExpressWizard() async {
-    await ComponentCreationDialog.openExpress(context);
-  }
+  bool _openingItemSheet = false;
 
-  Future<void> _openFactorySheetWizard() async {
-    await ComponentCreationDialog.openFactorySheet(context);
+  /// The Masters header's door to the item sheet. Guarded: a double-click
+  /// during the route animation pushed two sheets, each its own sitting.
+  Future<void> _openItemSheet() async {
+    if (_openingItemSheet) return;
+    _openingItemSheet = true;
+    try {
+      await ItemMasterSheetScreen.open(context);
+    } finally {
+      _openingItemSheet = false;
+    }
   }
 
   void _toggleParent(String key) {
@@ -310,21 +330,27 @@ class _AppSidebarState extends State<AppSidebar> {
         isConfiguratorExpanded: isConfiguratorExpanded,
       ),
       child: MouseRegion(
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: widget.transparentBackground
-                ? Colors.transparent
-                : (_isHovered
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.8)),
-            borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
-            boxShadow: widget.transparentBackground
-                ? const <BoxShadow>[]
-                : SoftErpTheme.subtleShadow,
+        // Only the panel's background reacts to hover. setState here rebuilt
+        // every tile in the sidebar on each enter and exit.
+        onEnter: (_) => _hovered.value = true,
+        onExit: (_) => _hovered.value = false,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _hovered,
+          builder: (context, isHovered, child) => AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: widget.transparentBackground
+                  ? Colors.transparent
+                  : (isHovered
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.8)),
+              borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
+              boxShadow: widget.transparentBackground
+                  ? const <BoxShadow>[]
+                  : SoftErpTheme.subtleShadow,
+            ),
+            child: child,
           ),
           child: Padding(
             padding: EdgeInsets.fromLTRB(
@@ -361,7 +387,7 @@ class _AppSidebarState extends State<AppSidebar> {
                                 _SidebarSection(
                                   title: 'Configurator',
                                   compact: widget.compact,
-                                  children: _configuratorItems,
+                                  children: _visibleConfiguratorItems,
                                   selectedKey: selectedKey,
                                   isExpandable: true,
                                   isExpanded: isConfiguratorExpanded,
@@ -376,19 +402,9 @@ class _AppSidebarState extends State<AppSidebar> {
                                   focusNodeForKey: _focusNodeFor,
                                   expandedParents: _expandedParents,
                                   onToggleParent: _toggleParent,
-                                  headerAction: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _FactorySheetWizardButton(
-                                        enabled: canOpenSettings,
-                                        onTap: _openFactorySheetWizard,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      _ExpressWizardButton(
-                                        enabled: canOpenSettings,
-                                        onTap: _openExpressWizard,
-                                      ),
-                                    ],
+                                  headerAction: _ItemSheetButton(
+                                    enabled: canOpenSettings,
+                                    onTap: _openItemSheet,
                                   ),
                                 ),
                               ],
@@ -750,10 +766,7 @@ class _SidebarExpandableHeader extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (action != null) ...[
-                      action!,
-                      const SizedBox(width: 10),
-                    ],
+                    if (action != null) ...[action!, const SizedBox(width: 10)],
                     GestureDetector(
                       key: const ValueKey<String>(
                         'sidebar_configurator_chevron',
@@ -998,6 +1011,11 @@ class _SettingsPreferencesDialogState
       context.read<OrdersProvider>().refresh(),
       context.read<InventoryProvider>().refresh(),
       context.read<DeliveryChallanProvider>().refresh(),
+      // The die masters too: their providers stay "loaded" across a reset,
+      // so the maker picker kept offering makers that no longer exist.
+      context.read<DiesProvider>().refresh(),
+      context.read<MachinesProvider>().refresh(),
+      context.read<DieMakersProvider>().refresh(),
     ]);
 
     if (!mounted) {
@@ -1114,6 +1132,11 @@ class _SettingsPreferencesDialogState
       context.read<OrdersProvider>().refresh(),
       context.read<InventoryProvider>().refresh(),
       context.read<DeliveryChallanProvider>().refresh(),
+      // The die masters too: their providers stay "loaded" across a reset,
+      // so the maker picker kept offering makers that no longer exist.
+      context.read<DiesProvider>().refresh(),
+      context.read<MachinesProvider>().refresh(),
+      context.read<DieMakersProvider>().refresh(),
     ]);
 
     if (!mounted) {
@@ -1961,68 +1984,22 @@ class _SidebarTile extends StatelessWidget {
   }
 }
 
-/// Express, in the Masters header.
+/// The item sheet, in the Masters header.
 ///
 /// It sits inside the header's own InkWell, which toggles the drawer — so the
 /// pill swallows its gesture (the chevron beside it does the same), or opening
-/// the window would fold Masters shut behind it.
-/// A direct entry to the Factory Sheet Wizard from the Masters section header.
-class _FactorySheetWizardButton extends StatelessWidget {
-  const _FactorySheetWizardButton({required this.enabled, required this.onTap});
-
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final viewportWidth = MediaQuery.sizeOf(context).width;
-    final labelSize = viewportWidth < 1240 ? 14.5 : 16.0;
-    final foreground = enabled
-        ? SoftErpTheme.accent
-        : SoftErpTheme.textSecondary;
-
-    final pill = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: enabled ? SoftErpTheme.accentSoft : const Color(0xFFEAEAEE),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.table_chart_outlined, size: 16, color: foreground),
-          const SizedBox(width: 5),
-          Text(
-            'Sheet',
-            style: TextStyle(
-              color: foreground,
-              fontWeight: FontWeight.w700,
-              fontSize: labelSize,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return GestureDetector(
-      key: const ValueKey<String>('sidebar_factory_sheet_wizard'),
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? onTap : null,
-      child: Tooltip(
-        message: enabled
-            ? 'Factory Sheet Wizard — 7-page blueprint unified manufacturing sheet'
-            : 'You do not have permission to create records (config.write).',
-        child: pill,
-      ),
-    );
-  }
-}
-
+/// the screen would fold Masters shut behind it.
+///
+/// One pill where there were two. The Masters header carried an **Express**
+/// pill and a **Factory Sheet** pill, which were two doors onto the same
+/// in-memory prototype: Express held its records in four lists and seeded
+/// groups and companies nobody created, and the Factory Sheet wizard's save
+/// toasted a hardcoded part code. Both are gone; this opens the real sheet.
 ///
 /// Drawn whatever the permission, greyed with a tooltip when it cannot be
 /// used: a control that disappears reads as a missing feature.
-class _ExpressWizardButton extends StatelessWidget {
-  const _ExpressWizardButton({required this.enabled, required this.onTap});
+class _ItemSheetButton extends StatelessWidget {
+  const _ItemSheetButton({required this.enabled, required this.onTap});
 
   final bool enabled;
   final VoidCallback onTap;
@@ -2038,7 +2015,7 @@ class _ExpressWizardButton extends StatelessWidget {
         : SoftErpTheme.textSecondary;
 
     final pill = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
       decoration: BoxDecoration(
         // The chevron's own fill, so the two read as a pair of controls.
         color: enabled ? const Color(0xFFE3E6FB) : const Color(0xFFEAEAEE),
@@ -2047,10 +2024,10 @@ class _ExpressWizardButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.auto_fix_high_outlined, size: 16, color: foreground),
+          Icon(Icons.table_chart_outlined, size: 16, color: foreground),
           const SizedBox(width: 6),
           Text(
-            'Express',
+            'Sheet',
             style: TextStyle(
               color: foreground,
               fontWeight: FontWeight.w700,
@@ -2062,12 +2039,12 @@ class _ExpressWizardButton extends StatelessWidget {
     );
 
     return GestureDetector(
-      key: const ValueKey<String>('sidebar_express_wizard'),
+      key: const ValueKey<String>('sidebar_item_sheet'),
       behavior: HitTestBehavior.opaque,
       onTap: enabled ? onTap : null,
       child: Tooltip(
         message: enabled
-            ? 'Express entry — add several masters in one window'
+            ? 'Item sheet — enter parts, their identity and their recipe'
             : 'You do not have permission to create records (config.write).',
         child: pill,
       ),

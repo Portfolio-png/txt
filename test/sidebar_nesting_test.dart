@@ -1,4 +1,10 @@
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
+import 'package:core_erp/features/groups/domain/group_definition.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/items/data/repositories/item_repository.dart';
+import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,7 +26,7 @@ const String _itemsTile = 'sidebar_tile_configurator_items';
 const String _groupsTile = 'sidebar_tile_configurator_groups';
 const String _setsTile = 'sidebar_tile_configurator_sets';
 const String _itemsChevron = 'sidebar_chevron_configurator_items';
-const String _express = 'sidebar_express_wizard';
+const String _sheetPill = 'sidebar_item_sheet';
 
 Finder _byTileKey(String key) => find.byKey(ValueKey<String>(key));
 
@@ -33,6 +39,30 @@ class _FakeAuth extends AuthProvider {
 
   @override
   bool can(String permission) => allowed;
+}
+
+/// Empty masters. `noSuchMethod` so adding to either interface stays free.
+class _FakeItemRepository implements ItemRepository {
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<ItemDefinition>> getItems() async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeGroupRepository implements GroupRepository {
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<GroupDefinition>> getGroups({bool withCovers = false}) async =>
+      const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<NavigationProvider> _pumpSidebar(
@@ -52,6 +82,16 @@ Future<NavigationProvider> _pumpSidebar(
         ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => _FakeAuth(allowed: canWrite),
+        ),
+        // The Sheet pill pushes ItemMasterSheetScreen, which reads these two.
+        // Present so the tap runs the real path — the point of the test below
+        // is that the pill swallows its gesture, and a tap that throws on the
+        // way out proves nothing about the drawer.
+        ChangeNotifierProvider<ItemsProvider>(
+          create: (_) => ItemsProvider(repository: _FakeItemRepository()),
+        ),
+        ChangeNotifierProvider<GroupsProvider>(
+          create: (_) => GroupsProvider(repository: _FakeGroupRepository()),
         ),
       ],
       child: MaterialApp(
@@ -168,6 +208,30 @@ void main() {
     expect(_isTileSelected(tester, _groupsTile), isTrue);
   });
 
+  testWidgets('arriving from elsewhere opens a folded Masters drawer too', (
+    tester,
+  ) async {
+    final navigation = await _pumpSidebar(tester);
+
+    // Fold the whole Masters drawer, not just Items.
+    final header = _byTileKey('sidebar_tile_configurator');
+    // At its left edge: the middle of the header is the Sheet pill, which
+    // opens the sheet over the sidebar rather than folding anything.
+    await tester.tapAt(tester.getTopLeft(header) + const Offset(24, 20));
+    await tester.pumpAndSettle();
+    expect(_byTileKey(_itemsTile), findsNothing);
+
+    navigation.select('configurator_sets');
+    await tester.pumpAndSettle();
+
+    expect(
+      _byTileKey(_setsTile),
+      findsOneWidget,
+      reason: 'Item Sets lit inside a folded drawer is a selection nobody sees',
+    );
+    expect(_isTileSelected(tester, _setsTile), isTrue);
+  });
+
   testWidgets('a child opens when the sidebar starts on it', (tester) async {
     await _pumpSidebar(tester, initialKey: 'configurator_sets');
 
@@ -195,12 +259,12 @@ void main() {
     expect(navigation.selectedKey, 'configurator_groups');
   });
 
-  group('the Express pill', () {
+  group('the Sheet pill', () {
     testWidgets('sits in the Masters header', (tester) async {
       await _pumpSidebar(tester);
 
-      expect(_byTileKey(_express), findsOneWidget);
-      expect(find.text('Express'), findsOneWidget);
+      expect(_byTileKey(_sheetPill), findsOneWidget);
+      expect(find.text('Sheet'), findsOneWidget);
       // Beside the title, not instead of it.
       expect(find.text('Masters'), findsOneWidget);
     });
@@ -209,7 +273,7 @@ void main() {
       await _pumpSidebar(tester);
       expect(_byTileKey(_itemsTile), findsOneWidget);
 
-      await tester.tap(_byTileKey(_express));
+      await tester.tap(_byTileKey(_sheetPill));
       await tester.pump();
 
       // The header's own InkWell toggles Masters, so a pill that did not
@@ -226,14 +290,21 @@ void main() {
 
       // Hiding a control until its precondition holds reads as a missing
       // feature; this says why instead.
-      expect(_byTileKey(_express), findsOneWidget);
+      expect(_byTileKey(_sheetPill), findsOneWidget);
       expect(
-        tester.widget<GestureDetector>(_byTileKey(_express)).onTap,
+        tester.widget<GestureDetector>(_byTileKey(_sheetPill)).onTap,
         isNull,
       );
+      // Scoped to the pill rather than counted. There used to be two pills
+      // here — Express and Factory Sheet — both gated on config.write, so the
+      // message appeared twice and a count broke when the pair changed.
       expect(
-        find.byTooltip(
-          'You do not have permission to create records (config.write).',
+        find.descendant(
+          of: _byTileKey(_sheetPill),
+          matching: find.byTooltip(
+            'You do not have permission to create records (config.write).',
+          ),
+          matchRoot: true,
         ),
         findsOneWidget,
       );
@@ -245,7 +316,7 @@ void main() {
       await tester.tap(_byTileKey(_itemsChevron));
       await tester.pumpAndSettle();
       // Folding Items is not folding Masters — the pill is in the header.
-      expect(_byTileKey(_express), findsOneWidget);
+      expect(_byTileKey(_sheetPill), findsOneWidget);
     });
 
     testWidgets('the header still reads at the narrowest width', (
@@ -274,6 +345,6 @@ void main() {
     expect(_byTileKey(_itemsChevron), findsNothing);
     // The compact header is one icon with no label beside it, so there is
     // nowhere for a labelled pill to go.
-    expect(_byTileKey(_express), findsNothing);
+    expect(_byTileKey(_sheetPill), findsNothing);
   });
 }

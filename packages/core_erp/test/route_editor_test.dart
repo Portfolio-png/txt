@@ -71,6 +71,129 @@ void main() {
       expect(list.map((s) => s.seq), [1, 2, 3]);
     });
 
+    testWidgets('classic draws the steps as boxes in one row, not stacked rows',
+        (tester) async {
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [
+          RouteStep(stageId: 1, seq: 1),
+          RouteStep(stageId: 2, seq: 2),
+          RouteStep(stageId: 3, seq: 3),
+        ],
+        lens: RouteLens.classic,
+        onChanged: (_) {},
+      )));
+
+      final first = tester.getRect(find.byKey(const ValueKey('route_step_0')));
+      final third = tester.getRect(find.byKey(const ValueKey('route_step_2')));
+      expect(third.top, first.top, reason: 'a short route fits on one line');
+      expect(third.left, greaterThan(first.right));
+      expect(first.width, lessThan(260), reason: 'a box, not a full-width row');
+      expect(find.byIcon(Icons.chevron_right), findsNWidgets(3));
+    });
+
+    testWidgets('the stage box finds an existing stage as you type', (tester) async {
+      List<RouteStep> steps = const [];
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [RouteStep(stageId: 1, seq: 1)],
+        lens: RouteLens.classic,
+        onChanged: (next) => steps = next,
+        onCreateStage: (_) async => fail('nothing new was asked for'),
+      )));
+
+      await tester.tap(find.byKey(const ValueKey('route_new_stage')));
+      await tester.pumpAndSettle();
+      // Die is in the route already and Hand Lapping is retired: neither is offered.
+      expect(find.text('Shearing'), findsOneWidget);
+      expect(find.text('Hand Lapping'), findsNothing);
+
+      await tester.enterText(find.byType(TextField).last, 'deliv');
+      await tester.pumpAndSettle();
+      expect(find.text('Shearing'), findsNothing, reason: 'the list filters');
+      await tester.tap(find.text('Delivery'));
+      await tester.pumpAndSettle();
+
+      expect(steps.map((s) => s.stageId), [1, 9]);
+    });
+
+    testWidgets('a name nobody has made is offered as a new stage, and added',
+        (tester) async {
+      final asked = <String>[];
+      List<RouteStep> steps = const [];
+      var stages = [..._stages];
+      await tester.pumpWidget(_host(StatefulBuilder(
+        builder: (context, setState) => RouteEditor(
+          stages: stages,
+          steps: const [RouteStep(stageId: 1, seq: 1)],
+          lens: RouteLens.classic,
+          onChanged: (next) => steps = next,
+          onCreateStage: (name) async {
+            asked.add(name);
+            const made = ProcessStage(id: 40, code: 'bending', name: 'Bending', position: 10);
+            setState(() => stages = [...stages, made]);
+            return made;
+          },
+        ),
+      )));
+
+      await tester.tap(find.byKey(const ValueKey('route_new_stage')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Bending');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add “Bending” as a new stage'));
+      await tester.pumpAndSettle();
+
+      expect(asked, ['Bending']);
+      expect(steps.map((s) => s.stageId), [1, 40]);
+      expect(steps.map((s) => s.seq), [1, 2]);
+      expect(find.text('Bending'), findsOneWidget, reason: 'the second box shows it');
+    });
+
+    testWidgets('a stage already in this route is neither listed nor offered as new',
+        (tester) async {
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [RouteStep(stageId: 1, seq: 1)],
+        lens: RouteLens.classic,
+        onChanged: (_) {},
+        onCreateStage: (_) async => fail('Die exists; it must not be made again'),
+      )));
+      await tester.tap(find.byKey(const ValueKey('route_new_stage')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'die');
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('as a new stage'), findsNothing);
+      expect(find.textContaining('Already in this route'), findsOneWidget);
+    });
+
+    testWidgets('a locked route draws New stage disabled, saying why',
+        (tester) async {
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [RouteStep(stageId: 1, seq: 1)],
+        lens: RouteLens.classic,
+        locked: true,
+        lockedVersion: 2,
+        onChanged: (_) {},
+        onCreateStage: (_) async => null,
+      )));
+      final button = tester.widget<ButtonStyleButton>(
+        find.byKey(const ValueKey('route_new_stage')),
+      );
+      expect(button.onPressed, isNull);
+      final tip = tester.widget<Tooltip>(find.ancestor(
+        of: find.byKey(const ValueKey('route_new_stage')),
+        matching: find.byType(Tooltip),
+      ).first);
+      expect(tip.message, contains('declare a new version'));
+    });
+
     testWidgets('seq is renumbered from 1 on every change', (tester) async {
       // Contiguity is a property of the structure, not something a user has to
       // maintain — the backend refuses a gap, so the editor cannot make one.

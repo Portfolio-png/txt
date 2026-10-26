@@ -11,6 +11,10 @@ import '../widgets/pm_entity_color_section.dart';
 import '../widgets/pm_pipeline_ux_exploration.dart';
 import '../widgets/pm_node_configurator_section.dart';
 import '../widgets/pm_item_expression_section.dart';
+import '../widgets/pm_group_item_cascade_section.dart';
+import 'pm_item_master_detail_screen.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 
 class PMScreen extends StatefulWidget {
   const PMScreen({super.key});
@@ -61,6 +65,10 @@ class _PMScreenState extends State<PMScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const PMHero(),
+            const SizedBox(height: 24),
+            _buildItemMasterNavBanner(context),
+            const SizedBox(height: 24),
+            const PMGroupItemCascadeSection(),
             const SizedBox(height: 24),
             const PMNodeConfiguratorSection(),
             const SizedBox(height: 24),
@@ -230,5 +238,67 @@ class _PMScreenState extends State<PMScreen> {
       _sandboxAddItem = true;
       _sandboxItem = 'New Inline Item';
     });
+  }
+
+  Widget _buildItemMasterNavBanner(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.table_chart_rounded, color: SoftErpTheme.accent, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Item Master 1: Alloy, Form, Thickness & Process Tooling Lab',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: SoftErpTheme.textPrimary),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'View complete spreadsheet fidelity tables for Item Details (SADPB2248), Item Alloy & Die yields, 3+ Process Dies (+ Add), and 3+ Machine Master tables (+ Add).',
+                  style: TextStyle(fontSize: 12, color: SoftErpTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          AppButton(
+            key: const ValueKey('open_item_master_detail_screen_btn'),
+            label: 'Open Item Master 1 Screen ➔',
+            icon: Icons.open_in_new_rounded,
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PMItemMasterDetailScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

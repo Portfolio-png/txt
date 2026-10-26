@@ -107,8 +107,12 @@ class _AppShellState extends State<AppShell> {
           });
         }
 
-        final navProvider = showcaseContext.watch<NavigationProvider>();
-        final isSidebarVisible = navProvider.isSidebarVisible;
+        // Only the one flag: watching the whole provider rebuilt the shell,
+        // the Scaffold and the sidebar on every notify — including each
+        // keystroke typed into the top-strip search.
+        final isSidebarVisible = showcaseContext.select<NavigationProvider, bool>(
+          (nav) => nav.isSidebarVisible,
+        );
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -312,8 +316,10 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
 
   @override
   Widget build(BuildContext context) {
-    final navProvider = context.watch<NavigationProvider>();
-    final currentTab = navProvider.currentTabIndex;
+    final navProvider = context.read<NavigationProvider>();
+    final currentTab = context.select<NavigationProvider, int>(
+      (nav) => nav.currentTabIndex,
+    );
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -650,6 +656,12 @@ void _registerAppFlowHooks() {
       MachineInspectorPanel(machineId: machineId);
   AppFlowHooks.itemInspector ??= (context, itemId) =>
       ItemInspectorPanel(itemId: itemId);
+  // NOTE: `dieEditor` and `machineEditor` have no reader at the moment. Their
+  // only consumer was `creation_wizard_kinds.dart`, which went with Express.
+  // They are kept rather than swept because the item sheet's Die Process
+  // Master and Machines & Routing sections are what will read them next, and
+  // these eight lines would only be written again. Registered-but-unread is
+  // not live wiring — do not take their presence as evidence a section works.
   AppFlowHooks.dieEditor ??= (context, {required onSaved, required onCancel}) =>
       DieEditorSheet(
         onSaved: (die) => onSaved(
@@ -696,7 +708,11 @@ void _registerAppFlowHooks() {
         clientId: existing?.clientId,
         storageLocation: existing?.storageLocation,
         dieType: draft.dieType,
+        // Both sent: the upsert stores what it is given, so leaving these at
+        // their defaults would refuse a typed type and unlink the maker.
+        dieTypeLabel: draft.dieTypeLabel,
         madeBy: draft.madeBy,
+        dieMakerId: draft.dieMakerId,
         poAt: draft.poAt,
         dateInAt: draft.dateInAt,
         linerSizeNm: draft.linerSizeNm,
@@ -828,6 +844,7 @@ void _registerAppFlowHooks() {
       dieFeedTypes: distinct((machine) => machine.dieFeedType),
     );
   };
+  // Unread today — see the note on `dieEditor` above.
   AppFlowHooks.machineEditor ??=
       (context, {required onSaved, required onCancel}) => MachineEditorSheet(
         onSaved: (machine) => onSaved(

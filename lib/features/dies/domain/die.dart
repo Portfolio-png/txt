@@ -24,7 +24,9 @@ class Die {
     this.reportNotes = '',
     this.physicalSpecs = const [],
     this.dieType = '',
+    this.dieTypeLabel = '',
     this.madeBy = '',
+    this.dieMakerId,
     this.poAt,
     this.dateInAt,
     this.linerSizeNm,
@@ -56,11 +58,22 @@ class Die {
 
   // --- the die sheet (migrations/048) ---------------------------------------
 
-  /// '' | 'cutting' | 'bending'. What the code's initials come from.
+  /// '' | 'cutting' | 'bending', or a slug the shop's own words reduced to.
+  /// What the code's initials come from.
   final String dieType;
 
-  /// Whoever cut it — a fitter here, or an outside toolroom. Free text.
+  /// The words, for a type that was typed rather than picked. Empty for the
+  /// four built-ins, whose label is looked up from the slug on both sides.
+  /// Without it a typed type derives no code at all.
+  final String dieTypeLabel;
+
+  /// Whoever cut it — a fitter here, or an outside toolroom.
+  ///
+  /// Still free text, and still the fallback. [dieMakerId] names the master
+  /// row when the name resolved to one; a die made before that master has a
+  /// name and no id, which is legal rather than a backlog.
   final String madeBy;
+  final int? dieMakerId;
 
   /// UTC instants: ordered, and came into store. Render with .toLocal().
   final DateTime? poAt;
@@ -101,7 +114,9 @@ class Die {
     String? reportNotes,
     List<CustomProperty>? physicalSpecs,
     String? dieType,
+    String? dieTypeLabel,
     String? madeBy,
+    Object? dieMakerId = _dieAbsent,
     Object? poAt = _dieAbsent,
     Object? dateInAt = _dieAbsent,
     Object? linerSizeNm = _dieAbsent,
@@ -138,7 +153,11 @@ class Die {
       reportNotes: reportNotes ?? this.reportNotes,
       physicalSpecs: physicalSpecs ?? this.physicalSpecs,
       dieType: dieType ?? this.dieType,
+      dieTypeLabel: dieTypeLabel ?? this.dieTypeLabel,
       madeBy: madeBy ?? this.madeBy,
+      dieMakerId: dieMakerId == _dieAbsent
+          ? this.dieMakerId
+          : dieMakerId as int?,
       poAt: poAt == _dieAbsent ? this.poAt : poAt as DateTime?,
       dateInAt: dateInAt == _dieAbsent ? this.dateInAt : dateInAt as DateTime?,
       linerSizeNm: linerSizeNm == _dieAbsent

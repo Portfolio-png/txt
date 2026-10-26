@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
+import 'package:core_erp/core/services/config_service.dart';
 
+/// Ctrl+Tab's walk, in the sidebar's own order. Every key here has a tile:
+/// this used to list Telemetry and Machine Groups (no tile, so Ctrl+Tab landed
+/// on screens the sidebar cannot show) and leave out People entirely.
 const List<String> kSidebarNavigationOrder = <String>[
   'dashboard',
   'orders',
@@ -9,9 +13,9 @@ const List<String> kSidebarNavigationOrder = <String>[
   'production',
   'insights',
   'jobs',
-  'telemetry',
   'pm',
-  'configurator',
+  'action_center',
+  'configurator_employees',
   'configurator_clients',
   'configurator_vendors',
   'configurator_items',
@@ -20,14 +24,13 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_units',
   'configurator_materials',
   'configurator_machines',
-  'configurator_machine_groups',
   'configurator_dies',
   'production_pipelines',
-  'action_center',
 ];
 
 const Set<String> kConfiguratorNavigationKeys = <String>{
   'configurator',
+  'configurator_employees',
   'configurator_clients',
   'configurator_vendors',
   'configurator_items',
@@ -122,13 +125,21 @@ class NavigationProvider extends ChangeNotifier implements AppNavigation {
   }
 
   void selectRelativeSidebarItem({bool reverse = false}) {
-    final currentIndex = kSidebarNavigationOrder.indexOf(_selectedKey);
+    const order = kSidebarNavigationOrder;
+    final currentIndex = order.indexOf(_selectedKey);
     final safeCurrentIndex = currentIndex == -1 ? 0 : currentIndex;
     final delta = reverse ? -1 : 1;
-    final nextIndex =
-        (safeCurrentIndex + delta + kSidebarNavigationOrder.length) %
-        kSidebarNavigationOrder.length;
-    select(kSidebarNavigationOrder[nextIndex], skipTransition: true);
+    // Skips what this workspace has switched off, the way the sidebar hides
+    // it — landing there showed the Dashboard under a tile nobody could see.
+    for (var step = 1; step <= order.length; step += 1) {
+      final key =
+          order[(safeCurrentIndex + delta * step + order.length * step) %
+              order.length];
+      if (ConfigService.instance.isNavKeyAllowed(key)) {
+        select(key, skipTransition: true);
+        return;
+      }
+    }
   }
 
   void setTab(int index, {bool skipTransition = false}) {
