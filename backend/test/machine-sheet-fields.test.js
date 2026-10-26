@@ -361,3 +361,31 @@ test('a part carries the whole sheet of every machine it runs on', async () => {
     await closeServer(ctx.server);
   }
 });
+
+test('capabilities are stored, and a save that leaves them out keeps them', async () => {
+  // The form's Capabilities section was sent on every save and read nowhere:
+  // there was no column, so it was empty on the next load.
+  const ctx = await boot('paper-machine-capabilities-', 'machine-caps@paper.local');
+  try {
+    const type = await makeType(ctx, 'Hydraulic Press');
+    const capabilities = [{ name: 'Blanking', maxThicknessMm: 3 }];
+    const created = await saveMachine(ctx, {
+      name: 'Press 9',
+      groupId: type.id,
+      status: 'active',
+      capabilities,
+    });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    assert.deepEqual(created.body.machine.capabilities, capabilities);
+
+    const quiet = await saveMachine(ctx, {
+      id: created.body.machine.id,
+      name: 'Press 9',
+      groupId: type.id,
+      status: 'active',
+    });
+    assert.deepEqual(quiet.body.machine.capabilities, capabilities);
+  } finally {
+    await closeServer(ctx.server);
+  }
+});

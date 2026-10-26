@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
+import 'package:core_erp/core/widgets/confirm_dialog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -222,31 +224,14 @@ class _DieCardState extends State<_DieCard> {
   Die get die => widget.die;
 
   void _duplicate(BuildContext context) {
-    final cloned = Die(
-      id: '',
-      name: '${die.name} (Copy)',
-      toolCode: '${die.toolCode} (Copy)',
-      photoUrls: List.from(die.photoUrls),
-      operationalNotes: die.operationalNotes,
-      compatibleMachineGroupIds: List.from(die.compatibleMachineGroupIds),
-      storageLocation: die.storageLocation,
-      numberOfCavities: die.numberOfCavities,
-      strokeCount: 0,
-      maxStrokes: die.maxStrokes,
-      physicalSpecs: List.from(die.physicalSpecs),
-      status: die.status,
-      ownership: die.ownership,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
+    final cloned = duplicateOfDie(die);
     DiesScreen.openDieEditor(context, die: cloned);
   }
 
   void _edit(BuildContext context) =>
       DiesScreen.openDieEditor(context, die: die);
 
-  void _delete(BuildContext context) =>
-      context.read<DiesProvider>().deleteDie(die.id);
+  void _delete(BuildContext context) => confirmAndDeleteDie(context, die);
 
   @override
   Widget build(BuildContext context) {
@@ -562,7 +547,6 @@ class _DieRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<DiesProvider>();
     final statusColors = _dieStatusColors(die.status);
 
     return SoftMasterRow(
@@ -638,25 +622,7 @@ class _DieRow extends StatelessWidget {
               SoftActionLink(
                 label: 'Duplicate',
                 onTap: () {
-                  final cloned = Die(
-                    id: '',
-                    name: '${die.name} (Copy)',
-                    toolCode: '${die.toolCode} (Copy)',
-                    photoUrls: List.from(die.photoUrls),
-                    operationalNotes: die.operationalNotes,
-                    compatibleMachineGroupIds: List.from(
-                      die.compatibleMachineGroupIds,
-                    ),
-                    storageLocation: die.storageLocation,
-                    numberOfCavities: die.numberOfCavities,
-                    strokeCount: 0,
-                    maxStrokes: die.maxStrokes,
-                    physicalSpecs: List.from(die.physicalSpecs),
-                    status: die.status,
-                    ownership: die.ownership,
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                  );
+                  final cloned = duplicateOfDie(die);
                   DiesScreen.openDieEditor(context, die: cloned);
                 },
               ),
@@ -666,7 +632,7 @@ class _DieRow extends StatelessWidget {
               ),
               SoftActionLink(
                 label: 'Delete',
-                onTap: () async => provider.deleteDie(die.id),
+                onTap: () => confirmAndDeleteDie(context, die),
               ),
             ],
           ),
@@ -768,4 +734,47 @@ class _StrokeBar extends StatelessWidget {
       ],
     );
   }
+}
+
+
+/// A copy to open in the editor as a new die: every field carried, the code
+/// marked as a copy, and the stroke count back at zero.
+///
+/// The copy used to be built by hand, appending " (Copy)" to `name` — which is
+/// the produced part numbers joined, so "P-100, P-200" became a die producing
+/// "P-200 (Copy)" — and leaving out the whole die sheet: type, maker, liner,
+/// sets, store and rack.
+Die duplicateOfDie(Die die) {
+  final now = DateTime.now();
+  return die.copyWith(
+    id: '',
+    toolCode: '${die.toolCode} (Copy)',
+    strokeCount: 0,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+/// Deletes [die] after asking, and says so if it did not go.
+///
+/// It was one click: the die was gone, permanently, from every part that used
+/// it, and a refusal was set on the provider where nothing showed it.
+Future<void> confirmAndDeleteDie(BuildContext context, Die die) async {
+  final label = die.toolCode.trim().isEmpty ? 'this die' : die.toolCode;
+  final ok = await showConfirmDialog(
+    context,
+    title: 'Delete $label?',
+    message:
+        'It comes off every part that uses it. This cannot be undone.',
+  );
+  if (!ok || !context.mounted) return;
+  final provider = context.read<DiesProvider>();
+  await provider.deleteDie(die.id);
+  if (!context.mounted) return;
+  final error = provider.errorMessage;
+  showAppToast(
+    context,
+    error ?? 'Deleted $label.',
+    kind: error == null ? AppToastKind.success : AppToastKind.error,
+  );
 }

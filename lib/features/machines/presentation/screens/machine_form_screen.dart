@@ -11,6 +11,7 @@ import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/force_capacity_field.dart';
 import 'package:core_erp/core/widgets/erp_form_dialog.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
+import 'package:core_erp/sheet/sheet_engine.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 import '../../domain/machine.dart';
@@ -287,18 +288,52 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   }
 
   double? _optionalDouble(TextEditingController controller) {
-    final value = controller.text.trim();
+    final value = controller.text.trim().replaceAll(',', '');
     if (value.isEmpty) return null;
     return double.tryParse(value);
   }
 
   /// A whole number, or null. Empty is not zero — a meter nobody has read and
   /// a meter reading zero are different answers.
-  int? _optionalInt(TextEditingController controller) {
-    final value = controller.text.trim();
-    if (value.isEmpty) return null;
-    return int.tryParse(value);
+  int? _optionalInt(TextEditingController controller) =>
+      SheetEngine.parseWhole(controller.text);
+
+  /// The first number field holding something that is not a number, or a
+  /// capacity that did not parse. Either used to go out as null and replace
+  /// what was stored — "35.0005" Ton made a rated press "capacity unknown".
+  String? _numberProblem() {
+    final whole = <String, TextEditingController>{
+      'Year of manufacture': _manufacturedYearController,
+      'Running hours': _runningHoursController,
+      'Strokes per minute': _strokesPerMinuteController,
+    };
+    for (final entry in whole.entries) {
+      final text = entry.value.text.trim();
+      if (text.isNotEmpty && SheetEngine.parseWhole(text) == null) {
+        return '${entry.key} takes a whole number.';
+      }
+    }
+    final decimals = <String, TextEditingController>{
+      'Output per hour': _reportOutputPerHourController,
+      'Setup minutes': _setupMinutesController,
+      'Labour count': _laborCountController,
+      'Power (kW)': _powerKwController,
+    };
+    for (final entry in decimals.entries) {
+      if (entry.value.text.trim().isNotEmpty &&
+          _optionalDouble(entry.value) == null) {
+        return '${entry.key} takes a number.';
+      }
+    }
+    if (_capacityError != null) return 'Capacity: $_capacityError';
+    return null;
   }
+
+  /// True while a save is in flight, so a second click does not post twice.
+  bool _isSaving = false;
+
+  /// A photo needs the machine's real id; a new or duplicated one has none.
+  bool get _canUploadPhotos => (widget.machine?.id ?? '').trim().isNotEmpty;
 
   void _addCustomProperty() {
     setState(() {
@@ -1085,7 +1120,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
             ),
             AppButton(
               label: widget.machine == null ? 'Create Machine' : 'Save Changes',
-              isLoading: isLoading,
+              isLoading: isLoading || _isSaving,
               onPressed: _submit,
             ),
           ],
@@ -1596,8 +1631,22 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   }
 
   void _submit() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
+    final problem = _numberProblem();
+    if (problem != null) {
+      showAppToast(context, problem, kind: AppToastKind.error);
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      await _save();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
+  Future<void> _save() async {
     // Construct Custom Properties list
     final customPropsList = <CustomProperty>[];
     for (var prop in _customProperties) {
@@ -1779,11 +1828,18 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           const SizedBox(height: 12),
           const Text('Upload Photo'),
           const SizedBox(height: 8),
-          AppButton(
-            label: 'Select Image',
-            variant: AppButtonVariant.secondary,
-            isLoading: _isUploading,
-            onPressed: _pickAndUploadImage,
+          // Filed against the machine's id, which a new or duplicated machine
+          // does not have yet — the upload was refused every time.
+          Tooltip(
+            message: _canUploadPhotos
+                ? ''
+                : 'Save the machine first, then add a photo.',
+            child: AppButton(
+              label: 'Select Image',
+              variant: AppButtonVariant.secondary,
+              isLoading: _isUploading,
+              onPressed: _canUploadPhotos ? _pickAndUploadImage : null,
+            ),
           ),
         ],
       ),

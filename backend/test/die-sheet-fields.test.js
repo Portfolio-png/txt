@@ -357,3 +357,42 @@ test('a part reads its dies’ typed type and maker; a bad maker is a 400', asyn
     await closeServer(ctx.server);
   }
 });
+
+test('a die remembers the client it was picked for', async () => {
+  // The die form's Client picker was sent and stored nowhere — dies have no
+  // client column — so the choice was gone on reload. It is a die↔client link.
+  const ctx = await boot('paper-die-client-', 'die-client@paper.local');
+  try {
+    const client = await fetch(`${ctx.baseUrl}/api/clients`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({ name: 'Die Client Co' }),
+    }).then((r) => r.json());
+
+    const created = await saveDie(ctx, {
+      dieType: 'cutting',
+      partCode: 'DCC1',
+      clientId: client.client.id,
+      status: 'ready',
+      ownership: 'inHouse',
+    });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    assert.equal(created.body.die.clientId, client.client.id);
+    const id = String(created.body.die.id);
+
+    const listed = await fetch(`${ctx.baseUrl}/api/dies`, { headers: ctx.headers }).then((r) =>
+      r.json(),
+    );
+    assert.equal(listed.dies.find((d) => d.id === id).clientId, client.client.id);
+
+    // Not mentioned: kept. Null: cleared. Unknown: refused.
+    const quiet = await saveDie(ctx, { id, rackNo: 'R1' });
+    assert.equal(quiet.body.die.clientId, client.client.id);
+    const cleared = await saveDie(ctx, { id, clientId: null });
+    assert.equal(cleared.body.die.clientId, null);
+    const unknown = await saveDie(ctx, { id, clientId: 999999 });
+    assert.equal(unknown.status, 400);
+  } finally {
+    await closeServer(ctx.server);
+  }
+});

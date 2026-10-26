@@ -386,7 +386,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       if (!mounted) return;
       final outcome = await AppFlowHooks.createDieFromSheet?.call(context, draft);
       final id = outcome?.record?.id;
-      if (id == null) continue;
+      if (id == null) {
+        // Still held, so it is tried again on the next save — but say why it
+        // did not go, or it just sits in the list looking pending forever.
+        if (mounted) {
+          _toast(
+            'Die ${draft.toolCode} was not made: '
+            '${outcome?.message ?? 'no reason given'}.',
+            isError: true,
+          );
+        }
+        continue;
+      }
       dieIds.add(id);
       if (mounted) setState(() => _stagedDies.remove(draft));
     }
@@ -397,7 +408,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       final outcome =
           await AppFlowHooks.createMachineFromSheet?.call(context, draft);
       final id = outcome?.record?.id;
-      if (id == null) continue;
+      if (id == null) {
+        if (mounted) {
+          _toast(
+            'Machine ${draft.assetId} was not made: '
+            '${outcome?.message ?? 'no reason given'}.',
+            isError: true,
+          );
+        }
+        continue;
+      }
       machineIds.add(id);
       if (mounted) setState(() => _stagedMachines.remove(draft));
     }
@@ -1622,12 +1642,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (column == null) return null;
     final value = _controller.clientVendorController.draft.get(column.id);
     if (value == null) return null;
-    // Whole rupees, as typed (`updateTextValue` keeps the digits) and as the
-    // binding saves them. This divided by 100 — reading the figure as paise —
-    // so the badge showed ₹850 for a quotation saved as ₹85,000.
-    if (value.intValue != null) return value.intValue!.toDouble();
-    final cleaned = (value.textValue ?? '').replaceAll(RegExp(r'[^0-9.]'), '');
-    return cleaned.isEmpty ? null : double.tryParse(cleaned);
+    // Rupees as typed, paise included — the text is the figure, and intValue
+    // is only there for a whole amount. Stripping to digits and dots read
+    // "Rs. 85,000" as 0.85 (the dot of "Rs." led).
+    return SheetEngine.parseMoney(value.textValue) ?? value.intValue?.toDouble();
   }
 
   Widget _groupItemSheet() {

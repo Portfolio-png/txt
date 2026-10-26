@@ -1,5 +1,7 @@
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
+import 'package:core_erp/core/widgets/confirm_dialog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -262,21 +264,7 @@ class _MachineCardState extends State<_MachineCard> {
   Machine get machine => widget.machine;
 
   void _duplicate(BuildContext context) {
-    final cloned = Machine(
-      id: '',
-      name: '${machine.name} (Copy)',
-      assetId: '',
-      primaryPhotoUrl: machine.primaryPhotoUrl,
-      groupId: machine.groupId,
-      makeModel: machine.makeModel,
-      serialNumber: '',
-      location: machine.location,
-      installationDate: machine.installationDate,
-      status: machine.status,
-      customProperties: List.from(machine.customProperties),
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
+    final cloned = duplicateOfMachine(machine);
     MachinesScreen.openMachineEditor(context, machine: cloned);
   }
 
@@ -284,7 +272,7 @@ class _MachineCardState extends State<_MachineCard> {
       MachinesScreen.openMachineEditor(context, machine: machine);
 
   void _delete(BuildContext context) =>
-      context.read<MachinesProvider>().deleteMachine(machine.id);
+      confirmAndDeleteMachine(context, machine);
 
   @override
   Widget build(BuildContext context) {
@@ -1070,7 +1058,6 @@ class _MachineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<MachinesProvider>();
     final groups = context.watch<GroupsProvider>();
     final groupName = machine.groupId != null
         ? (groups.findById(machine.groupId!)?.name ?? 'Unknown Group')
@@ -1173,21 +1160,7 @@ class _MachineRow extends StatelessWidget {
               SoftActionLink(
                 label: 'Duplicate',
                 onTap: () {
-                  final cloned = Machine(
-                    id: '',
-                    name: '${machine.name} (Copy)',
-                    assetId: '',
-                    primaryPhotoUrl: machine.primaryPhotoUrl,
-                    groupId: machine.groupId,
-                    makeModel: machine.makeModel,
-                    serialNumber: '',
-                    location: machine.location,
-                    installationDate: machine.installationDate,
-                    status: machine.status,
-                    customProperties: List.from(machine.customProperties),
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                  );
+                  final cloned = duplicateOfMachine(machine);
                   MachinesScreen.openMachineEditor(context, machine: cloned);
                 },
               ),
@@ -1198,7 +1171,7 @@ class _MachineRow extends StatelessWidget {
               ),
               SoftActionLink(
                 label: 'Delete',
-                onTap: () async => provider.deleteMachine(machine.id),
+                onTap: () => confirmAndDeleteMachine(context, machine),
               ),
             ],
           ),
@@ -1223,4 +1196,43 @@ class _MachineRow extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// A copy to open in the editor as a new machine: every field carried, with
+/// the identity cleared. Built by hand before, it dropped the machine sheet
+/// (make, year, feeder, hours, strokes, capacity, die feed) and capabilities.
+Machine duplicateOfMachine(Machine machine) {
+  final now = DateTime.now();
+  return machine.copyWith(
+    id: '',
+    name: '${machine.name} (Copy)',
+    assetId: '',
+    barcode: '',
+    serialNumber: '',
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+/// Deletes [machine] after asking, and says so if it did not go. It was one
+/// click, permanent, and off every part — with any refusal shown nowhere.
+Future<void> confirmAndDeleteMachine(BuildContext context, Machine machine) async {
+  final label = machine.assetId.trim().isEmpty ? machine.name : machine.assetId;
+  final ok = await showConfirmDialog(
+    context,
+    title: 'Delete $label?',
+    message:
+        'It comes off every part that uses it. This cannot be undone.',
+  );
+  if (!ok || !context.mounted) return;
+  final provider = context.read<MachinesProvider>();
+  await provider.deleteMachine(machine.id);
+  if (!context.mounted) return;
+  final error = provider.errorMessage;
+  showAppToast(
+    context,
+    error ?? 'Deleted $label.',
+    kind: error == null ? AppToastKind.success : AppToastKind.error,
+  );
 }

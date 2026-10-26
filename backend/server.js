@@ -2764,6 +2764,8 @@ function rowToClientDto(row) {
     // Hung on the row by attachClientContacts — one query for any number of
     // clients. A row read without it lists nobody rather than failing.
     contacts: Array.isArray(row.contacts) ? row.contacts : [],
+    logoUrl: row.logo_url || '',
+    photoUrl: row.photo_url || '',
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -2785,6 +2787,8 @@ function rowToVendorDto(row) {
     contactName: row.contact_name || '',
     phone: row.phone || '',
     email: row.email || '',
+    logoUrl: row.logo_url || '',
+    photoUrl: row.photo_url || '',
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -9192,9 +9196,10 @@ async function findClientDuplicate({ name, gstNumber = '', excludeId = null }) {
 // to '' meant a PATCH about a phone number blanked the address — exactly the
 // photo_url bug, one table over.
 //
-// logoUrl and photoUrl are accepted and still dropped, as before; the clients
-// table has no column for either. Left alone deliberately rather than fixed in
-// passing, so the change that adds them can say so.
+// logoUrl and photoUrl are stored in clients.logo_url / photo_url (migration
+// 030). They used to be accepted and dropped under a comment saying the table
+// had no column for either — it has had both since 030, so a logo uploaded in
+// the editor showed "saved" and was blank on reopen.
 async function saveClient({
   name,
   alias,
@@ -9230,6 +9235,8 @@ async function saveClient({
   const trimmedDesignation = kept(designation, 'designation');
   const trimmedPhone = kept(phone, 'phone');
   const trimmedEmail = kept(email, 'email');
+  const trimmedLogoUrl = kept(logoUrl, 'logo_url');
+  const trimmedPhotoUrl = kept(photoUrl, 'photo_url');
   const trimmedGstNumber =
     gstNumber !== undefined
       ? normalizeGstNumber(gstNumber)
@@ -9287,8 +9294,8 @@ async function saveClient({
     const newId = await together(async () => {
     const result = await run(
       `
-      INSERT INTO clients (name, alias, gst_number, address, contact_name, designation, phone, email, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO clients (name, alias, gst_number, address, contact_name, designation, phone, email, logo_url, photo_url, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
       [
         trimmedName,
@@ -9299,6 +9306,8 @@ async function saveClient({
         trimmedDesignation,
         trimmedPhone,
         trimmedEmail,
+        trimmedLogoUrl,
+        trimmedPhotoUrl,
         now,
         now,
       ],
@@ -9346,7 +9355,7 @@ async function saveClient({
 
   await together(async () => {
   await run(
-    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, designation = ?, phone = ?, email = ?, updated_at = ? WHERE id = ?',
+    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, designation = ?, phone = ?, email = ?, logo_url = ?, photo_url = ?, updated_at = ? WHERE id = ?',
     [
       trimmedName,
       trimmedAlias,
@@ -9356,6 +9365,8 @@ async function saveClient({
       trimmedDesignation,
       trimmedPhone,
       trimmedEmail,
+      trimmedLogoUrl,
+      trimmedPhotoUrl,
       now,
       id,
     ],
@@ -9514,6 +9525,9 @@ async function saveVendor({
   contactName = '',
   phone = '',
   email = '',
+  // Absent keeps what is stored (the update reads it below); '' clears.
+  logoUrl,
+  photoUrl,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -9545,9 +9559,9 @@ async function saveVendor({
     const result = await run(
       `
       INSERT INTO vendors (
-        name, alias, gst_number, address, contact_name, phone, email, is_archived, created_at, updated_at
+        name, alias, gst_number, address, contact_name, phone, email, logo_url, photo_url, is_archived, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
       [
         trimmedName,
@@ -9557,6 +9571,8 @@ async function saveVendor({
         trimmedContactName,
         trimmedPhone,
         trimmedEmail,
+        String(logoUrl || '').trim(),
+        String(photoUrl || '').trim(),
         now,
         now,
       ],
@@ -9575,7 +9591,7 @@ async function saveVendor({
   await run(
     `
     UPDATE vendors
-    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?
+    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, logo_url = ?, photo_url = ?, updated_at = ?
     WHERE id = ?
     `,
     [
@@ -9586,6 +9602,8 @@ async function saveVendor({
       trimmedContactName,
       trimmedPhone,
       trimmedEmail,
+      logoUrl !== undefined ? String(logoUrl || '').trim() : (existing.logo_url || ''),
+      photoUrl !== undefined ? String(photoUrl || '').trim() : (existing.photo_url || ''),
       now,
       id,
     ],
@@ -23519,6 +23537,7 @@ function machineRowToDto(r) {
     powerKw: r.power_kw,
     reportNotes: r.report_notes || '',
     customProperties: JSON.parse(r.custom_properties || '[]'),
+    capabilities: parseJson(r.capabilities_json, []),
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
   };
@@ -23540,6 +23559,22 @@ function dieJsonList(value) {
   if (parsed && typeof parsed === 'object') return [parsed];
   const text = String(value ?? '').trim();
   return text ? [text] : [];
+}
+
+/// Dies with the client each belongs to, resolved in one pass for the list.
+///
+/// The die form's Client picker was sent on every save and stored nowhere —
+/// dies have no client column — so the choice vanished on reload. It lives in
+/// entity_links as a single die↔client link and is read back here.
+async function diesWithClients(rows) {
+  const present = rows.filter(Boolean);
+  const clients = present.length
+    ? await requireLinkResolver()('die', present.map((row) => String(row.id)), 'client')
+    : new Map();
+  return present.map((row) => {
+    const link = clients.get(String(row.id));
+    return { ...dieRowToDto(row), clientId: link ? Number(link.id) : null };
+  });
 }
 
 function dieRowToDto(r) {
@@ -23628,6 +23663,8 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
       powerKw,
       reportNotes,
       customProperties,
+      // What the machine can do (migrations/059). Absent keeps them.
+      capabilities,
       // The machine sheet (migrations/049).
       machineMake,
       manufacturedYear,
@@ -23746,18 +23783,21 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
       // and keeping the old number beside that kind would be two answers.
       normalizedCapacityKind === 'rated' ? keptInt(capacityKgf, 'capacity_kgf') : null,
       keptText(dieFeedType, 'die_feed_type').trim(),
+      capabilities !== undefined
+        ? JSON.stringify(Array.isArray(capabilities) ? capabilities : [])
+        : (beforeRow?.capabilities_json ?? '[]'),
     ];
 
     let resultId = id;
     try {
       if (isUpdate) {
         await run(
-          `UPDATE machines SET name = ?, asset_id = ?, barcode = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, machine_make = ?, manufactured_year = ?, feeder_make = ?, running_hours = ?, strokes_per_minute = ?, capacity_kind = ?, capacity_kgf = ?, die_feed_type = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE machines SET name = ?, asset_id = ?, barcode = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, machine_make = ?, manufactured_year = ?, feeder_make = ?, running_hours = ?, strokes_per_minute = ?, capacity_kind = ?, capacity_kgf = ?, die_feed_type = ?, capabilities_json = ?, updated_at = ? WHERE id = ?`,
           [...columns, now, Number(id)],
         );
       } else {
         const info = await run(
-          `INSERT INTO machines (name, asset_id, barcode, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, machine_make, manufactured_year, feeder_make, running_hours, strokes_per_minute, capacity_kind, capacity_kgf, die_feed_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO machines (name, asset_id, barcode, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, machine_make, manufactured_year, feeder_make, running_hours, strokes_per_minute, capacity_kind, capacity_kgf, die_feed_type, capabilities_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [...columns, now, now],
         );
         resultId = String(info.lastID);
@@ -23850,7 +23890,7 @@ app.post('/api/machines/:id/assets/upload-complete', requirePermission('config.w
 app.get('/api/dies', requirePermission('config.read'), cacheMasterData, async (req, res) => {
   try {
     const rows = await all('SELECT * FROM dies ORDER BY created_at DESC');
-    const dies = rows.map(dieRowToDto);
+    const dies = await diesWithClients(rows);
     res.json({ success: true, dies, error: null });
   } catch (error) {
     res.status(500).json({ success: false, dies: [], error: error.message });
@@ -23863,7 +23903,7 @@ app.get('/api/dies/:id', requirePermission('config.read'), async (req, res) => {
     if (!r) {
       return res.status(404).json({ success: false, die: null, error: 'Die not found' });
     }
-    const die = dieRowToDto(r);
+    const [die] = await diesWithClients([r]);
     res.json({ success: true, die, error: null });
   } catch (error) {
     res.status(500).json({ success: false, die: null, error: error.message });
@@ -23904,7 +23944,17 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
       // Accepted for DERIVATION ONLY and never stored: which part a die makes
       // is item_dies, not a column here.
       partCode,
+      // Which client the die belongs to. There is no column: it is a single
+      // die↔client link (entity_links), as a set's group is. Absent keeps it.
+      clientId,
     } = req.body || {};
+
+    if (clientId !== undefined && clientId !== null && clientId !== '') {
+      const client = await get('SELECT id FROM clients WHERE id = ?', [Number(clientId)]);
+      if (!client) {
+        return res.status(400).json({ success: false, die: null, error: 'That client does not exist.' });
+      }
+    }
 
     const now = new Date().toISOString();
     const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
@@ -24076,8 +24126,16 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
       throw error;
     }
 
+    if (clientId !== undefined) {
+      await requireLinkWriter()(
+        'die',
+        String(resultId),
+        'client',
+        clientId === null || clientId === '' ? null : String(clientId),
+      );
+    }
     const r = await get('SELECT * FROM dies WHERE id = ?', [resultId]);
-    const die = dieRowToDto(r);
+    const [die] = await diesWithClients([r]);
     if (isUpdate) {
       trackUpdate('dies', resultId, beforeRow, r, req);
     } else {
@@ -28728,10 +28786,41 @@ app.patch('/api/clients/:id/unarchive', requirePermission('config.write'), async
   }
 });
 
+/// What still names this party, as "3 order lines" phrases. Delete skipped the
+/// check archive makes, and trashAndDelete runs with foreign keys off — so a
+/// deleted client left order lines, sub-contractors and parts pointing at a
+/// row that was gone.
+async function partyDeleteBlockers(table, id) {
+  const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+  const checks = table === 'clients'
+    ? [
+        ['SELECT COUNT(*) AS c FROM order_items WHERE client_id = ?', 'order line'],
+        ['SELECT COUNT(*) AS c FROM sub_contractors WHERE client_id = ?', 'sub-contractor'],
+        ['SELECT COUNT(*) AS c FROM items WHERE developed_for_client_id = ?', 'part'],
+      ]
+    : [['SELECT COUNT(*) AS c FROM delivery_challans WHERE vendor_id = ?', 'challan']];
+  const blockers = [];
+  for (const [sql, word] of checks) {
+    const row = await get(sql, [id]);
+    const count = Number(row?.c || 0);
+    if (count > 0) blockers.push(plural(count, word));
+  }
+  return blockers;
+}
+
 app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    const blockers = await partyDeleteBlockers('clients', id);
+    if (blockers.length > 0) {
+      return res.status(409).json({
+        success: false,
+        code: 'client_in_use',
+        error: `"${before?.name || 'This client'}" is still named on ${blockers.join(' and ')}. `
+          + 'Archive it instead, or move those first.',
+      });
+    }
     await trashAndDelete('clients', id, req);
     trackDelete('clients', id, before, req);
     if (io) {
@@ -28860,6 +28949,15 @@ app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, re
   try {
     const id = Number(req.params.id);
     const before = await get('SELECT * FROM vendors WHERE id = ?', [id]);
+    const blockers = await partyDeleteBlockers('vendors', id);
+    if (blockers.length > 0) {
+      return res.status(409).json({
+        success: false,
+        code: 'vendor_in_use',
+        error: `"${before?.name || 'This vendor'}" is still named on ${blockers.join(' and ')}. `
+          + 'Archive it instead.',
+      });
+    }
     await trashAndDelete('vendors', id, req);
     trackDelete('vendors', id, before, req);
     if (io) {

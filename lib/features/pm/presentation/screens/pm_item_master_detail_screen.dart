@@ -1895,8 +1895,11 @@ class _PMItemMasterDetailScreenState extends State<PMItemMasterDetailScreen> {
   Widget _buildMarginHealthIndicator(SavedPartyRecord? activeParty, SavedItemRecord? activeItem) {
     // 1. Quoted Amount (Cell #25)
     final rawQuote = activeParty?.quoteAmount ?? '85000/-';
-    final quoteDigits = rawQuote.replaceAll(RegExp(r'[^0-9]'), '');
-    final double quotedAmount = double.tryParse(quoteDigits) ?? 85000.0;
+    // Paise kept: dropping every non-digit read "85000.50/-" as 8500050.
+    final double quotedAmount = SheetEngine.parseMoney(
+          rawQuote.replaceAll(RegExp(r'[^0-9.,]'), ''),
+        ) ??
+        85000.0;
 
     // 2. Material Cost (Cells #6 & #7)
     final alloy = activeItem?.alloy ?? 'Brass';

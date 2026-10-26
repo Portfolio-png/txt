@@ -456,12 +456,21 @@ class _ClientRow extends StatelessWidget {
         ),
         Expanded(
           flex: 1,
-          child: SoftStatusPill(
-            label: 'Active',
-            background: const Color(0xFFECFDF5),
-            textColor: const Color(0xFF0F766E),
-            borderColor: const Color(0xFFBFEAD8),
-          ),
+          // The client's own status — this read "Active" for every row, so
+          // the Archived filter listed archived clients as active.
+          child: client.isArchived
+              ? const SoftStatusPill(
+                  label: 'Archived',
+                  background: Color(0xFFF1F5F9),
+                  textColor: Color(0xFF475569),
+                  borderColor: Color(0xFFCBD5E1),
+                )
+              : const SoftStatusPill(
+                  label: 'Active',
+                  background: Color(0xFFECFDF5),
+                  textColor: Color(0xFF0F766E),
+                  borderColor: Color(0xFFBFEAD8),
+                ),
         ),
         Expanded(
           flex: 2,
@@ -1064,7 +1073,22 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
                     items: clientsProvider.clients.map((c) {
                       return DropdownMenuItem(value: c.id, child: Text(c.name));
                     }).toList(),
-                    onChanged: (val) => setState(() => _selectedClientId = val),
+                    // Fixed once saved: the update has no client to send,
+                    // and every part routed through this contractor derives
+                    // its client from it — so a change here was silently
+                    // dropped. Drawn locked rather than looking editable.
+                    onChanged: widget.subContractor != null
+                        ? null
+                        : (val) => setState(() => _selectedClientId = val),
+                    disabledHint: widget.subContractor == null
+                        ? null
+                        : Text(
+                            clientsProvider.clients
+                                    .where((c) => c.id == _selectedClientId)
+                                    .firstOrNull
+                                    ?.name ??
+                                'Client',
+                          ),
                     validator: (val) =>
                         val == null ? 'Client is required' : null,
                   ),
@@ -1737,8 +1761,12 @@ class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
 
   Future<void> _loadData() async {
     try {
+      // Read before the first await: the sheet can be closed while the items
+      // load, and the context is not to be used after that.
+      final clients = context.read<ClientsProvider>();
       await context.read<ItemsProvider>().initialize();
-      final itemIds = await context.read<ClientsProvider>().getPortalCatalog(
+      if (!mounted) return;
+      final itemIds = await clients.getPortalCatalog(
         widget.client.id,
       );
       if (mounted) {

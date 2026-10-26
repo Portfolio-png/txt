@@ -140,3 +140,40 @@ test('archiving a client that is not there is a 404, not a 500', async () => {
     await closeServer(ctx.server);
   }
 });
+
+test('a client keeps its logo, and one still in use cannot be deleted', async () => {
+  const ctx = await boot('paper-client-delete-', 'client-delete@paper.local');
+  try {
+    const { call } = ctx;
+    // The editor uploads a logo and saves; the server used to accept it and
+    // store nothing, so it was blank on reopen.
+    const made = await call('POST', '/api/clients', {
+      name: 'Logo Papers',
+      logoUrl: 'https://cdn.example/logo.png',
+      photoUrl: 'https://cdn.example/photo.png',
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const client = made.body.client;
+    assert.equal(client.logoUrl, 'https://cdn.example/logo.png');
+    assert.equal(client.photoUrl, 'https://cdn.example/photo.png');
+
+    // A PATCH about something else keeps it.
+    const patched = await call('PATCH', `/api/clients/${client.id}`, { address: 'Pune' });
+    assert.equal(patched.body.client.logoUrl, 'https://cdn.example/logo.png');
+
+    // Named on a sub-contractor: delete refuses and says why, as archive does.
+    const sub = await call('POST', `/api/clients/${client.id}/sub-contractors`, { name: 'Ashok Dies' });
+    assert.ok(sub.status < 300, JSON.stringify(sub.body));
+    const refused = await call('DELETE', `/api/clients/${client.id}`);
+    assert.equal(refused.status, 409, JSON.stringify(refused.body));
+    assert.equal(refused.body.code, 'client_in_use');
+    assert.match(refused.body.error, /sub-contractor/);
+
+    // Nothing holding it: it goes.
+    const free = await call('POST', '/api/clients', { name: 'Unused Papers' });
+    const gone = await call('DELETE', `/api/clients/${free.body.client.id}`);
+    assert.equal(gone.status, 200, JSON.stringify(gone.body));
+  } finally {
+    await new Promise((resolve) => ctx.server.close(resolve));
+  }
+});

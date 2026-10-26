@@ -679,7 +679,11 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
         DieSheetDraft(
           toolCode: draft.toolCode,
           dieType: draft.dieType,
+          // Both carried: a typed type without its label is refused, and the
+          // upsert stores a missing maker id as "no maker".
+          dieTypeLabel: draft.dieTypeLabel,
           madeBy: draft.madeBy,
+          dieMakerId: draft.dieMakerId,
           poAt: draft.poAt,
           dateInAt: draft.dateInAt,
           linerSizeNm: draft.linerSizeNm,

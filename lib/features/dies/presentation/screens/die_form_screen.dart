@@ -14,6 +14,7 @@ import 'package:core_erp/core/utils/stamp_format.dart';
 import 'package:core_erp/core/widgets/length_unit_field.dart';
 import 'package:core_erp/features/dies/domain/die_code.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
+import 'package:core_erp/sheet/sheet_engine.dart';
 import '../../domain/die.dart';
 import '../providers/die_provider.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -218,16 +219,44 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   }
 
   double? _optionalDouble(TextEditingController controller) {
-    final value = controller.text.trim();
+    final value = controller.text.trim().replaceAll(',', '');
     if (value.isEmpty) return null;
     return double.tryParse(value);
   }
 
-  int? _optionalInt(TextEditingController controller) {
-    final value = controller.text.trim();
-    if (value.isEmpty) return null;
-    return int.tryParse(value);
+  int? _optionalInt(TextEditingController controller) =>
+      SheetEngine.parseWhole(controller.text);
+
+  /// The first number field that holds something that is not a number.
+  ///
+  /// A blank is "not known" and is fine. A typo is not: it used to parse to
+  /// null, go out as present-null, and replace the stored figure — "1,2OO"
+  /// silently erased a die's stroke count.
+  String? _numberProblem() {
+    final whole = <String, TextEditingController>{
+      'Number of cavities': _numberOfCavitiesController,
+      'Max strokes': _maxStrokesController,
+      'No. of Sets': _noOfSetController,
+    };
+    for (final entry in whole.entries) {
+      final text = entry.value.text.trim();
+      if (text.isNotEmpty && SheetEngine.parseWhole(text) == null) {
+        return '${entry.key} takes a whole number.';
+      }
+    }
+    final setup = _setupMinutesController.text.trim();
+    if (setup.isNotEmpty && _optionalDouble(_setupMinutesController) == null) {
+      return 'Setup minutes takes a number.';
+    }
+    if (_linerSizeError != null) return 'Liner size: $_linerSizeError';
+    return null;
   }
+
+  /// True while a save is in flight, so a second click does not post twice.
+  bool _isSaving = false;
+
+  /// Photos need the die's real id; a new or duplicated die has none yet.
+  bool get _canUploadPhotos => (widget.die?.id ?? '').trim().isNotEmpty;
 
   void _addCustomProperty() {
     setState(() {
@@ -1013,11 +1042,21 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                 color: Color(0xFF94A3B8),
                               ),
                               const SizedBox(height: 8),
-                              AppButton(
-                                label: 'Upload New Photo',
-                                variant: AppButtonVariant.secondary,
-                                isLoading: _isUploading,
-                                onPressed: _pickAndUploadImage,
+                              // A photo is filed against the die's id, and a
+                              // die not saved yet has none — the upload was
+                              // refused every time. Drawn off, with why.
+                              Tooltip(
+                                message: _canUploadPhotos
+                                    ? ''
+                                    : 'Save the die first, then add photos.',
+                                child: AppButton(
+                                  label: 'Upload New Photo',
+                                  variant: AppButtonVariant.secondary,
+                                  isLoading: _isUploading,
+                                  onPressed: _canUploadPhotos
+                                      ? _pickAndUploadImage
+                                      : null,
+                                ),
                               ),
                             ],
                           ),
@@ -1130,7 +1169,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
             ),
             AppButton(
               label: widget.die == null ? 'Create Die' : 'Save Changes',
-              isLoading: isLoading,
+              isLoading: isLoading || _isSaving,
               onPressed: _submit,
             ),
           ],
@@ -1210,6 +1249,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                 label: 'No. of Sets',
                 helper: 'How many sets were made',
                 required: false,
+                keyboardType: TextInputType.number,
               ),
             ),
           ],
@@ -1342,7 +1382,22 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   }
 
   void _submit() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
+    final problem = _numberProblem();
+    if (problem != null) {
+      showAppToast(context, problem, kind: AppToastKind.error);
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      await _save();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _save() async {
 
     // Construct Custom Properties list
     final customPropsList = <CustomProperty>[];
@@ -1387,8 +1442,14 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       dieType: keepTypedType ? widget.die!.dieType : (_dieType?.slug ?? ''),
       dieTypeLabel: keepTypedType ? widget.die!.dieTypeLabel : '',
       madeBy: _madeByController.text.trim(),
-      // Not edited on this form; the upsert stores what it is sent.
-      dieMakerId: widget.die?.dieMakerId,
+      // The linked maker is kept only while the text still names them. This
+      // form has no maker picker, so retyping "Made by" is the only way to
+      // say it was someone else — and the link would otherwise keep pointing
+      // at the old maker, whose name every reader prefers to the text.
+      dieMakerId: _madeByController.text.trim() ==
+              (widget.die?.madeBy ?? '').trim()
+          ? widget.die?.dieMakerId
+          : null,
       poAt: _poAt,
       dateInAt: _dateInAt,
       linerSizeNm: parseLengthToNanometres(

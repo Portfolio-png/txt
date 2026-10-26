@@ -2122,6 +2122,12 @@ void _manyDiesTests() {
         updatesBefore,
         reason: 'the die is already on the part',
       );
+
+      // Opened again straight away it shows the correction, though the part's
+      // own read still holds the old die — loading that would have the next
+      // save write "Atul Mestry" back over it.
+      await _tapVisible(tester, dieRow('70'));
+      expect(_textIn(tester, 'die-made-by'), 'Suresh Amb');
     });
 
     testWidgets('Cancel leaves the die alone and goes back to a blank sheet', (

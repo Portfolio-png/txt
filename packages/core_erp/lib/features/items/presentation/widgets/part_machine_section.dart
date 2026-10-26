@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../../sheet/sheet_engine.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -121,9 +123,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   void didUpdateWidget(PartMachineSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.part?.id != widget.part?.id) {
+      _corrected.clear();
       _resetSheet();
       return;
     }
+    _forgetCaughtUp();
     if (oldWidget.staged.length != widget.staged.length) _rederiveNo();
     // The machines on the part changed under us. The suggested number counts
     // them, so it has to be recomputed: the second press cannot be offered the
@@ -155,8 +159,62 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     setState(() => _suggestions = suggestions);
   }
 
-  List<ItemMachineLink> get _machines =>
-      widget.part?.machines ?? const <ItemMachineLink>[];
+  List<ItemMachineLink> get _machines {
+    final stored = widget.part?.machines ?? const <ItemMachineLink>[];
+    if (_corrected.isEmpty) return stored;
+    return [for (final m in stored) _corrected[m.id] ?? m];
+  }
+
+  /// Machines corrected here that the part's own read has not caught up
+  /// with. The list is a snapshot: opening a machine again straight after
+  /// correcting it loaded the old values, and saving wrote them back.
+  final Map<String, ItemMachineLink> _corrected = {};
+
+  void _rememberCorrection(String id, MachineSheetDraft sent) {
+    final before = (widget.part?.machines ?? const <ItemMachineLink>[])
+        .where((m) => m.id == id)
+        .firstOrNull;
+    final shaped = _linkFromDraft(sent);
+    _corrected[id] = ItemMachineLink(
+      id: id,
+      name: shaped.name,
+      assetId: shaped.assetId,
+      photoUrl: before?.photoUrl,
+      groupId: shaped.groupId,
+      machineType: shaped.machineType,
+      machineMake: shaped.machineMake,
+      manufacturedYear: shaped.manufacturedYear,
+      feederMake: shaped.feederMake,
+      runningHours: shaped.runningHours,
+      strokesPerMinute: shaped.strokesPerMinute,
+      capacityKind: shaped.capacityKind,
+      capacityKgf: shaped.capacityKgf,
+      dieFeedType: shaped.dieFeedType,
+    );
+  }
+
+  /// Drops corrections the part now reads back itself.
+  void _forgetCaughtUp() {
+    if (_corrected.isEmpty) return;
+    final stored = {
+      for (final m in widget.part?.machines ?? const <ItemMachineLink>[])
+        m.id: m,
+    };
+    _corrected.removeWhere((id, mine) {
+      final fresh = stored[id];
+      return fresh == null ||
+          (fresh.name == mine.name &&
+              fresh.assetId == mine.assetId &&
+              fresh.machineMake == mine.machineMake &&
+              fresh.manufacturedYear == mine.manufacturedYear &&
+              fresh.feederMake == mine.feederMake &&
+              fresh.runningHours == mine.runningHours &&
+              fresh.strokesPerMinute == mine.strokesPerMinute &&
+              fresh.capacityKind == mine.capacityKind &&
+              fresh.capacityKgf == mine.capacityKgf &&
+              fresh.dieFeedType == mine.dieFeedType);
+    });
+  }
 
   /// Back to a blank sheet for the next machine.
   ///
@@ -269,8 +327,29 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _noController.text = _suggestedNo();
   }
 
+  /// A year, hours or strokes field holding something that is not a whole
+  /// number. Each used to parse to null and replace what was stored.
+  String? get _numberProblem {
+    final fields = <String, TextEditingController>{
+      'Year of manufacture': _yearController,
+      'Running hours': _hoursController,
+      'Strokes per minute': _strokesController,
+    };
+    for (final entry in fields.entries) {
+      final text = entry.value.text.trim();
+      if (text.isNotEmpty && SheetEngine.parseWhole(text) == null) {
+        return '${entry.key} takes a whole number.';
+      }
+    }
+    return null;
+  }
+
   /// What the sheet currently describes, or null with [_error] set.
   MachineSheetDraft? _draftFromSheet({String? machineId}) {
+    if (_numberProblem != null) {
+      setState(() => _error = _numberProblem);
+      return null;
+    }
     final capacity = parseCapacityToKgf(
       _capacityController.text,
       _capacityUnit,
@@ -297,10 +376,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
           : _nameController.text.trim(),
       groupId: _groupId,
       machineMake: _makeController.text.trim(),
-      manufacturedYear: int.tryParse(_yearController.text.trim()),
+      manufacturedYear: SheetEngine.parseWhole(_yearController.text),
       feederMake: _feederController.text.trim(),
-      runningHours: int.tryParse(_hoursController.text.trim()),
-      strokesPerMinute: int.tryParse(_strokesController.text.trim()),
+      runningHours: SheetEngine.parseWhole(_hoursController.text),
+      strokesPerMinute: SheetEngine.parseWhole(_strokesController.text),
       capacityKind: kind.wire,
       capacityKgf: kind == CapacityKind.rated ? capacity.kgf : null,
       dieFeedType: _feedTypeController.text.trim(),
@@ -332,6 +411,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       return;
     }
 
+    if (_numberProblem != null) {
+      setState(() => _error = _numberProblem);
+      return;
+    }
     final capacity = parseCapacityToKgf(
       _capacityController.text,
       _capacityUnit,
@@ -363,26 +446,26 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       final kind = _capacityKind == CapacityKind.freeHand
           ? CapacityKind.freeHand
           : (capacity.kgf == null ? CapacityKind.unknown : CapacityKind.rated);
-      final outcome = await hook(
-        context,
-        MachineSheetDraft(
-          machineId: editing,
-          assetId: assetId,
-          name: _nameController.text.trim().isEmpty
-              ? assetId
-              : _nameController.text.trim(),
-          groupId: _groupId,
-          machineMake: _makeController.text.trim(),
-          manufacturedYear: int.tryParse(_yearController.text.trim()),
-          feederMake: _feederController.text.trim(),
-          runningHours: int.tryParse(_hoursController.text.trim()),
-          strokesPerMinute: int.tryParse(_strokesController.text.trim()),
-          capacityKind: kind.wire,
-          capacityKgf: kind == CapacityKind.rated ? capacity.kgf : null,
-          dieFeedType: _feedTypeController.text.trim(),
-        ),
+      final sent = MachineSheetDraft(
+        machineId: editing,
+        assetId: assetId,
+        name: _nameController.text.trim().isEmpty
+            ? assetId
+            : _nameController.text.trim(),
+        groupId: _groupId,
+        machineMake: _makeController.text.trim(),
+        manufacturedYear: SheetEngine.parseWhole(_yearController.text),
+        feederMake: _feederController.text.trim(),
+        runningHours: SheetEngine.parseWhole(_hoursController.text),
+        strokesPerMinute: SheetEngine.parseWhole(_strokesController.text),
+        capacityKind: kind.wire,
+        capacityKgf: kind == CapacityKind.rated ? capacity.kgf : null,
+        dieFeedType: _feedTypeController.text.trim(),
       );
+      final outcome = await hook(context, sent);
       if (!mounted) return;
+      if (outcome.isCreated && editing != null)
+        _rememberCorrection(editing, sent);
       if (!outcome.isCreated) {
         setState(() {
           _saving = false;
@@ -517,7 +600,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   minWidth: 220,
                   chrome: 72,
                   child: GroupPickerField(
-                    key: const ValueKey<String>('quick-entry-machine-type-field'),
+                    key: const ValueKey<String>(
+                      'quick-entry-machine-type-field',
+                    ),
                     value: _groupId,
                     groupType: 'machine',
                     scope: GroupPickerScope.all,
@@ -586,7 +671,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   texts: const ['Name'],
                   helper: 'Optional — the number is used if blank',
                   child: TextField(
-                    key: const ValueKey<String>('quick-entry-machine-name-field'),
+                    key: const ValueKey<String>(
+                      'quick-entry-machine-name-field',
+                    ),
                     controller: _nameController,
                     enabled: enabled,
                     style: const TextStyle(fontSize: 14),
@@ -604,7 +691,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   texts: const ['Machine Make'],
                   helper: 'Who built it',
                   child: _SuggestingField(
-                    fieldKey: const ValueKey<String>('quick-entry-machine-make-field'),
+                    fieldKey: const ValueKey<String>(
+                      'quick-entry-machine-make-field',
+                    ),
                     controller: _makeController,
                     enabled: enabled,
                     label: 'Machine Make',
@@ -619,7 +708,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   helper: 'Year it was built',
                   minWidth: 120,
                   child: TextField(
-                    key: const ValueKey<String>('quick-entry-machine-dom-field'),
+                    key: const ValueKey<String>(
+                      'quick-entry-machine-dom-field',
+                    ),
                     controller: _yearController,
                     enabled: enabled,
                     keyboardType: TextInputType.number,
@@ -642,7 +733,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   helper: 'The meter now',
                   minWidth: 120,
                   child: TextField(
-                    key: const ValueKey<String>('quick-entry-machine-hours-field'),
+                    key: const ValueKey<String>(
+                      'quick-entry-machine-hours-field',
+                    ),
                     controller: _hoursController,
                     enabled: enabled,
                     keyboardType: TextInputType.number,
@@ -661,7 +754,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   texts: const ['Stroke / Min'],
                   minWidth: 120,
                   child: TextField(
-                    key: const ValueKey<String>('quick-entry-machine-strokes-field'),
+                    key: const ValueKey<String>(
+                      'quick-entry-machine-strokes-field',
+                    ),
                     controller: _strokesController,
                     enabled: enabled,
                     keyboardType: TextInputType.number,
@@ -677,8 +772,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 SizedBox(
                   width: 340,
                   child: ForceCapacityField(
-                    fieldKey: const ValueKey<String>('quick-entry-machine-capacity-field'),
-                    freeHandKey: const ValueKey<String>('quick-entry-machine-free-hand'),
+                    fieldKey: const ValueKey<String>(
+                      'quick-entry-machine-capacity-field',
+                    ),
+                    freeHandKey: const ValueKey<String>(
+                      'quick-entry-machine-free-hand',
+                    ),
                     controller: _capacityController,
                     unitSymbol: _capacityUnit,
                     kind: _capacityKind,
@@ -704,7 +803,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   texts: const ['Feeder make'],
                   helper: 'The feeder on this machine, if it has one',
                   child: _SuggestingField(
-                    fieldKey: const ValueKey<String>('quick-entry-machine-feeder-field'),
+                    fieldKey: const ValueKey<String>(
+                      'quick-entry-machine-feeder-field',
+                    ),
                     controller: _feederController,
                     enabled: enabled,
                     label: 'Feeder make',
@@ -719,13 +820,17 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 FitToText(
                   controller: _feedTypeController,
                   texts: const ['Die Type'],
-                  helper: 'What tooling it takes — Manual, Semi Prog, Progressive',
+                  helper:
+                      'What tooling it takes — Manual, Semi Prog, Progressive',
                   child: _SuggestingField(
-                    fieldKey: const ValueKey<String>('quick-entry-machine-feed-field'),
+                    fieldKey: const ValueKey<String>(
+                      'quick-entry-machine-feed-field',
+                    ),
                     controller: _feedTypeController,
                     enabled: enabled,
                     label: 'Die Type',
-                    helper: 'What tooling it takes — Manual, Semi Prog, Progressive',
+                    helper:
+                        'What tooling it takes — Manual, Semi Prog, Progressive',
                     suggestions: _suggestions.dieFeedTypes,
                     onChanged: () => setState(() {}),
                   ),
@@ -762,10 +867,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   TextButton(
                     key: const ValueKey<String>('quick-entry-machine-cancel'),
                     onPressed: enabled ? () => setState(_resetSheet) : null,
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(fontSize: 14),
-                    ),
+                    child: const Text('Cancel', style: TextStyle(fontSize: 14)),
                   ),
                 const SizedBox(width: 8),
                 AppButton(
@@ -1134,7 +1236,9 @@ class _MachineCell extends StatelessWidget {
               : FontWeight.w600,
           color: muted || text.isEmpty
               ? SoftErpTheme.textSecondary
-              : (strong ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary),
+              : (strong
+                    ? SoftErpTheme.textPrimary
+                    : SoftErpTheme.textSecondary),
         ),
       ),
     );

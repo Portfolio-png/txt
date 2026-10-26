@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../../../sheet/sheet_engine.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -160,9 +162,11 @@ class _PartDieSectionState extends State<PartDieSection> {
     // A different part means a different code, and a half-filled sheet that
     // belonged to the part being left behind.
     if (oldWidget.part?.id != widget.part?.id) {
+      _corrected.clear();
       _resetSheet();
       return;
     }
+    _forgetCaughtUp();
     // The part's code is still being typed, and the die's is built from it.
     if (oldWidget.partCode != widget.partCode && _editingDieId == null) {
       _rederiveCode();
@@ -196,7 +200,63 @@ class _PartDieSectionState extends State<PartDieSection> {
     setState(() => _madeByNames = names);
   }
 
-  List<ItemDieLink> get _dies => widget.part?.dies ?? const <ItemDieLink>[];
+  List<ItemDieLink> get _dies {
+    final stored = widget.part?.dies ?? const <ItemDieLink>[];
+    if (_corrected.isEmpty) return stored;
+    return [for (final die in stored) _corrected[die.id] ?? die];
+  }
+
+  /// Dies corrected here that the part's own read has not caught up with.
+  ///
+  /// The part's die list is a snapshot, so opening a die again straight after
+  /// correcting it loaded the OLD values — and saving that wrote them back
+  /// over the correction. Held until the part reads the same, the way
+  /// `ItemsProvider` holds its own writes over a lagging read.
+  final Map<String, ItemDieLink> _corrected = {};
+
+  void _rememberCorrection(String id, DieSheetDraft sent) {
+    final before = (widget.part?.dies ?? const <ItemDieLink>[])
+        .where((die) => die.id == id)
+        .firstOrNull;
+    _corrected[id] = ItemDieLink(
+      id: id,
+      toolCode: sent.toolCode,
+      photoUrl: before?.photoUrl,
+      dieType: sent.dieType,
+      dieTypeLabel: sent.dieTypeLabel,
+      madeBy: sent.madeBy,
+      dieMakerId: sent.dieMakerId,
+      poAt: sent.poAt,
+      dateInAt: sent.dateInAt,
+      linerSizeNm: sent.linerSizeNm,
+      linerSizeUnit: sent.linerSizeUnit,
+      noOfSet: sent.noOfSet,
+      storeArea: sent.storeArea,
+      rackNo: sent.rackNo,
+    );
+  }
+
+  /// Drops corrections the part now reads back itself.
+  void _forgetCaughtUp() {
+    if (_corrected.isEmpty) return;
+    final stored = {
+      for (final die in widget.part?.dies ?? const <ItemDieLink>[]) die.id: die,
+    };
+    _corrected.removeWhere((id, mine) {
+      final fresh = stored[id];
+      return fresh == null ||
+          (fresh.toolCode == mine.toolCode &&
+              fresh.dieType == mine.dieType &&
+              fresh.madeBy == mine.madeBy &&
+              fresh.dieMakerId == mine.dieMakerId &&
+              fresh.linerSizeNm == mine.linerSizeNm &&
+              fresh.noOfSet == mine.noOfSet &&
+              fresh.storeArea == mine.storeArea &&
+              fresh.rackNo == mine.rackNo &&
+              fresh.poAt == mine.poAt &&
+              fresh.dateInAt == mine.dateInAt);
+    });
+  }
 
   // --- the sheet's two jobs --------------------------------------------------
 
@@ -345,8 +405,21 @@ class _PartDieSectionState extends State<PartDieSection> {
 
   // --- writes ----------------------------------------------------------------
 
+  /// "No. of Sets" holding something that is not a whole number. It used to
+  /// parse to null and replace the stored count.
+  String? get _setsProblem {
+    final text = _setsController.text.trim();
+    return text.isNotEmpty && SheetEngine.parseWhole(text) == null
+        ? 'No. of sets takes a whole number.'
+        : null;
+  }
+
   /// What the sheet currently describes, or null with [_error] set.
   DieSheetDraft? _draftFromSheet({String? dieId, required String partCode}) {
+    if (_setsProblem != null) {
+      setState(() => _error = _setsProblem);
+      return null;
+    }
     final liner = parseLengthToNanometres(_linerController.text, _linerUnit);
     if (liner.isFailure) {
       setState(() => _linerError = liner.error);
@@ -377,7 +450,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       dateInAt: _dateInAt,
       linerSizeNm: liner.nanometres,
       linerSizeUnit: _linerUnit,
-      noOfSet: int.tryParse(_setsController.text.trim()),
+      noOfSet: SheetEngine.parseWhole(_setsController.text),
       storeArea: _storeAreaController.text.trim(),
       rackNo: _rackController.text.trim(),
       partCode: partCode,
@@ -410,6 +483,10 @@ class _PartDieSectionState extends State<PartDieSection> {
       return;
     }
 
+    if (_setsProblem != null) {
+      setState(() => _error = _setsProblem);
+      return;
+    }
     final liner = parseLengthToNanometres(_linerController.text, _linerUnit);
     if (liner.isFailure) {
       setState(() => _linerError = liner.error);
@@ -434,29 +511,29 @@ class _PartDieSectionState extends State<PartDieSection> {
     var dieId = _unlinkedDieId;
     final editing = _editingDieId;
     if (dieId == null) {
-      final outcome = await hook(
-        context,
-        DieSheetDraft(
-          dieId: editing,
-          toolCode: code,
-          dieType: _type!.slug,
-          dieTypeLabel: _type!.storedLabel,
-          madeBy: _madeByController.text.trim(),
-          dieMakerId: _dieMakerId,
-          poAt: _poAt,
-          dateInAt: _dateInAt,
-          linerSizeNm: liner.nanometres,
-          linerSizeUnit: _linerUnit,
-          noOfSet: int.tryParse(_setsController.text.trim()),
-          storeArea: _storeAreaController.text.trim(),
-          rackNo: _rackController.text.trim(),
-          partCode: part.partCode,
-          partName: part.displayName.trim().isEmpty
-              ? part.name
-              : part.displayName,
-        ),
+      final sent = DieSheetDraft(
+        dieId: editing,
+        toolCode: code,
+        dieType: _type!.slug,
+        dieTypeLabel: _type!.storedLabel,
+        madeBy: _madeByController.text.trim(),
+        dieMakerId: _dieMakerId,
+        poAt: _poAt,
+        dateInAt: _dateInAt,
+        linerSizeNm: liner.nanometres,
+        linerSizeUnit: _linerUnit,
+        noOfSet: SheetEngine.parseWhole(_setsController.text),
+        storeArea: _storeAreaController.text.trim(),
+        rackNo: _rackController.text.trim(),
+        partCode: part.partCode,
+        partName: part.displayName.trim().isEmpty
+            ? part.name
+            : part.displayName,
       );
+      final outcome = await hook(context, sent);
       if (!mounted) return;
+      if (outcome.isCreated && editing != null)
+        _rememberCorrection(editing, sent);
       if (!outcome.isCreated) {
         setState(() {
           _saving = false;
@@ -603,7 +680,10 @@ class _PartDieSectionState extends State<PartDieSection> {
                     enabled: enabled,
                     textCapitalization: TextCapitalization.characters,
                     onChanged: (_) => setState(() => _codePinned = true),
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Die Code',
                       helperText: _codeHelper(),
@@ -616,7 +696,8 @@ class _PartDieSectionState extends State<PartDieSection> {
                 FitToText(
                   controller: _madeByController,
                   texts: const ['Die Made By'],
-                  helper: 'Whoever cut it — a fitter here, or an outside toolroom',
+                  helper:
+                      'Whoever cut it — a fitter here, or an outside toolroom',
                   minWidth: 240,
                   chrome: 72,
                   child: _madeByField(enabled),
@@ -624,7 +705,9 @@ class _PartDieSectionState extends State<PartDieSection> {
                 SizedBox(
                   width: 280,
                   child: LengthUnitField(
-                    fieldKey: const ValueKey<String>('quick-entry-die-liner-field'),
+                    fieldKey: const ValueKey<String>(
+                      'quick-entry-die-liner-field',
+                    ),
                     controller: _linerController,
                     unitSymbol: _linerUnit,
                     enabled: enabled,
@@ -636,7 +719,8 @@ class _PartDieSectionState extends State<PartDieSection> {
                       _linerError = null;
                     }),
                     onChanged: () {
-                      if (_linerError != null) setState(() => _linerError = null);
+                      if (_linerError != null)
+                        setState(() => _linerError = null);
                     },
                   ),
                 ),
@@ -745,10 +829,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                   TextButton(
                     key: const ValueKey<String>('quick-entry-die-cancel'),
                     onPressed: enabled ? () => setState(_resetSheet) : null,
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(fontSize: 14),
-                    ),
+                    child: const Text('Cancel', style: TextStyle(fontSize: 14)),
                   ),
                 const SizedBox(width: 8),
                 AppButton(
@@ -889,10 +970,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             children: [
               for (final type in DieType.values)
                 ChoiceChip(
-                  label: Text(
-                    type.label,
-                    style: const TextStyle(fontSize: 14),
-                  ),
+                  label: Text(type.label, style: const TextStyle(fontSize: 14)),
                   selected: _type?.slug == type.slug,
                   onSelected: !enabled
                       ? null
@@ -1166,7 +1244,7 @@ class _DieRow extends StatelessWidget {
                   die.linerSizeNm == null
                       ? ''
                       : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} '
-                          '${die.linerSizeUnit}',
+                            '${die.linerSizeUnit}',
                   flex: _kDieFlex[5],
                 ),
                 _DieCell(
@@ -1392,7 +1470,7 @@ class _CustomDieTypeDialogState extends State<_CustomDieTypeDialog> {
               preview == null
                   ? 'The die code is built from the first letter of each word.'
                   : 'A die of this type is coded '
-                      '${partCodeInitials(preview.label)}D + the part code.',
+                        '${partCodeInitials(preview.label)}D + the part code.',
               style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
           ],
