@@ -15,8 +15,13 @@
 // ---------------------------------------------------------------------------
 
 const contracts = require('./contract');
-const { buildPartCode, nextPartNo } = require('./part-identity');
+const {
+  buildVariantPartCode,
+  propertyCodeFor,
+  nextPartNo,
+} = require('./part-identity');
 const { buildGroupOverview } = require('./group-overview');
+const { validateSectionTree, reconcileSectionLinks } = require('./section-tree');
 const {
   coversByGroup,
   itemCountsByGroup,
@@ -264,18 +269,38 @@ module.exports = function registerItemsModuleRoutes(ctx) {
           ? await get('SELECT name FROM inventory_sets WHERE id = ?', [setId])
           : null;
 
-        const partNo = await nextPartNo({ groupId, setId, setPending }, { get });
-        const partCode = buildPartCode({
+        // The property values, in declared order, so the suggestion matches
+        // what the save will stamp. Absent means a caller with no properties —
+        // the quick-entry dialog — and the answer is then what it always was.
+        const rawValues = req.query.values;
+        const values = Array.isArray(rawValues)
+          ? rawValues
+          : typeof rawValues === 'string' && rawValues.length
+            ? rawValues.split('|')
+            : [];
+        const valueCodes = values
+          .map((value) => propertyCodeFor(value))
+          .filter((code) => code.length > 0);
+
+        const itemName = req.query.name || '';
+        const partNo = await nextPartNo(
+          { groupId, setId, setPending, itemName },
+          { get, all },
+        );
+        const partCode = buildVariantPartCode({
           groupName: groupRow.name,
           setName: req.query.setName || setRow?.name || '',
-          itemName: req.query.name || '',
+          itemName,
+          valueCodes,
           partNo,
         });
         res.json({
           success: true,
           partNo,
           partCode,
-          scope: setPending ? 'pending-set' : setId ? 'set' : 'group-unfiled',
+          // The number counts parts of this NAME in the group now, so the old
+          // set/group-unfiled distinction no longer describes what was counted.
+          scope: itemName ? 'group-name' : 'group',
           error: null,
         });
       } catch (error) {
@@ -299,6 +324,20 @@ module.exports = function registerItemsModuleRoutes(ctx) {
           developed_for_contractor.designation AS developed_for_sub_contractor_designation,
           developed_for_contractor.phone AS developed_for_sub_contractor_phone,
           developed_for_contractor.email AS developed_for_sub_contractor_email,
+          -- The people this part's deal was done with (056), as one JSON column so
+          -- the list read stays one statement per page however many parts it has.
+          (
+            SELECT json_group_array(json_object(
+              'id', c.id, 'name', c.name, 'designation', c.designation,
+              'phone', c.phone, 'email', c.email, 'isArchived', c.is_archived
+            ))
+            FROM (
+              SELECT pc.* FROM item_deal_contacts idc
+              JOIN party_contacts pc ON pc.id = idc.contact_id
+              WHERE idc.item_id = items.id
+              ORDER BY pc.is_primary DESC, pc.name COLLATE NOCASE ASC
+            ) c
+          ) AS developed_for_contacts_json,
           (
             (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
             (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -398,6 +437,47 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     }
   });
 
+  // How the part's item sheet is nested, and therefore which of its records
+  // are linked to which (migration 057). One validator, one writer: the tree
+  // is checked here and the links are made by reconcileSectionLinks only.
+  app.put('/api/items/:id/section-tree', requirePermission('config.write'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const before = await get('SELECT * FROM items WHERE id = ?', [id]);
+      if (!before) {
+        return res.status(404).json({ success: false, item: null, error: 'Item not found.' });
+      }
+      const tree = validateSectionTree(req.body?.tree);
+      await run('BEGIN TRANSACTION');
+      try {
+        await run('UPDATE items SET section_tree_json = ?, updated_at = ? WHERE id = ?', [
+          JSON.stringify(tree),
+          new Date().toISOString(),
+          id,
+        ]);
+        const links = await reconcileSectionLinks({ get, all, run }, id);
+        await logChange('items', id, 'UPDATE');
+        await run('COMMIT');
+        const after = await get('SELECT * FROM items WHERE id = ?', [id]);
+        trackUpdate('items', id, before, after, req);
+        const itemDto = await rowToItemDto(await getItemRowById(id));
+        const io = getIo();
+        if (io) io.emit('item_updated', itemDto);
+        res.json({ success: true, item: itemDto, links, error: null });
+      } catch (error) {
+        await run('ROLLBACK');
+        throw error;
+      }
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        item: null,
+        code: error.code || null,
+        error: error.message,
+      });
+    }
+  });
+
   app.patch('/api/items/:id/archive', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -475,6 +555,17 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       const updated = await getItemRowById(id);
       res.json({ success: true, item: await rowToItemDto(updated), error: null });
     } catch (error) {
+      // A part code is unique per group, so moving a part into a group that
+      // already has its code is a conflict to show, not a server fault.
+      if (/UNIQUE constraint failed: items\.group_id, items\.part_code/.test(String(error?.message || ''))) {
+        res.status(409).json({
+          success: false,
+          item: null,
+          code: 'part_code_duplicate',
+          error: 'That group already has a part with this part code. Change the code first.',
+        });
+        return;
+      }
       res.status(error.statusCode || 500).json({ success: false, item: null, error: error.message });
     }
   });

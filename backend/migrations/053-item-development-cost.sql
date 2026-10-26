@@ -1,0 +1,28 @@
+-- What developing a part's tooling COST us, beside what we quoted for it.
+--
+-- `developed_for_quotation_amount` (migration 047) records what was quoted to
+-- a client for making this part's dies. It has never had a counterpart, so the
+-- one question anybody actually asks of it — did we make anything on that job —
+-- could not be answered. Two halves of one fact, so they live together on the
+-- part rather than in a costing module of their own.
+--
+--   WHAT THIS IS NOT. Not a material rate, and not a cost of production. The
+--   quotation is for the DIE MAKING, so its counterpart is what the toolmaker
+--   charged. Raw material for a production run is a different number against a
+--   different quantity, and mixing the two is how a margin ends up comparing a
+--   per-job price with a per-batch cost. There is deliberately no rate master
+--   anywhere: a rate is not a property of brass the way density is, and this
+--   sheet takes the per-die figure as typed input.
+--
+-- Rupees, REAL, like every other amount here (`orders.unit_price`,
+-- `invoice_headers.total_amount`, and the quotation column this mirrors).
+--
+-- NULLABLE, for exactly the reason 047 gives for the quotation: "cost us
+-- nothing" and "never costed" are different facts. NOT NULL DEFAULT 0 would
+-- make every uncosted part in the catalogue read as 100% margin, which is the
+-- worst possible default for a number somebody might price against.
+--
+-- One idempotent ALTER: two runners execute this file on every boot, and
+-- `migrate.js` tolerates only /duplicate column name/i.
+
+ALTER TABLE items ADD COLUMN developed_for_cost_amount REAL;

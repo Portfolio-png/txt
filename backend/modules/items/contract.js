@@ -89,6 +89,10 @@ const itemWrite = {
         subContractorId: { type: 'integer', nullable: true, min: 1 },
         at: { type: 'string', nullable: true },
         quotationAmount: { type: 'number', nullable: true },
+        costAmount: { type: 'number', nullable: true },
+        // The client's people the deal was done with (056). Checked against
+        // the client in normalizeDevelopedFor; absent keeps what is ticked.
+        contactIds: { type: 'array', nullable: true },
       },
     },
   },
@@ -118,7 +122,7 @@ const itemEgress = {
     'groupId', 'unitId', 'unitConversions', 'namingFormat', 'isArchived',
     'usageCount', 'createdAt', 'updatedAt', 'variationTree', 'propertySchema',
     'baseItemId', 'combinationGroupIds', 'photoUrl', 'availableForPurchase',
-    'penPaperBaseline', 'partNo', 'partCode', 'developedFor',
+    'penPaperBaseline', 'partNo', 'partCode', 'developedFor', 'sectionTree',
   ],
 };
 

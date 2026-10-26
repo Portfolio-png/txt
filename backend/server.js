@@ -18,7 +18,18 @@ const crypto = require('crypto');
 const barcodes = require('./kernel/barcodes');
 // The part number and code rule, shared with GET /api/items/next-part-identity
 // so a form's suggestion and what saveItem stamps cannot drift.
-const { buildPartCode, nextPartNo } = require('./modules/items/part-identity');
+const {
+  buildPartCode,
+  buildVariantPartCode,
+  propertyCodeFor,
+  groupLineage,
+  nextPartNo,
+} = require('./modules/items/part-identity');
+// The people at a company (056). Required up here, not beside its routes,
+// because saveClient and the client DTO reads use its helpers.
+const partyContacts = require('./modules/parties/contacts');
+// A part's section tree and the entity_links it stands for (057).
+const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
 const { EventEmitter } = require('events');
 const { imageSize } = require('image-size');
@@ -117,6 +128,9 @@ const TRIGGER_LOGGED_TABLES = new Set([
   'delivery_challan_items', 'delivery_challans', 'items', 'units',
   'groups', 'pipeline_templates', 'pipeline_runs', 'machines',
   'dies', 'clients', 'vendors', 'departments', 'inventory_stock_positions',
+  // 058: the masters added since, which had no triggers and so never reached
+  // a replica or another session until it reloaded.
+  'die_makers', 'process_stages', 'party_contacts', 'item_deal_contacts',
 ]);
 
 /// The highest changelog row already pushed to connected clients.
@@ -219,16 +233,22 @@ async function restoreChangelogTriggers() {
     // row that change is visible on. Restoring one without the other leaves
     // derived values — an item's variation tree, an order line's status —
     // silently stale after the first factory reset.
-    for (const file of [
-      '040-changelog-triggers.sql',
-      '041-derived-field-triggers.sql',
-      '042-challan-status-order-lines.sql',
-    ]) {
-      const sql = fs.readFileSync(path.join(__dirname, 'migrations', file), 'utf8');
+    //
+    // Every migration that defines one, found by scanning — not a list. The
+    // list stopped at 042, so a reset left entity_links (043), the variation
+    // nodes (044), process routes (052) and everything after them replicating
+    // nothing until the next restart. Only the two families the wipe drops
+    // are recreated; the guard triggers (027, 038) are never dropped.
+    const dir = path.join(__dirname, 'migrations');
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+    for (const file of files) {
+      const sql = fs.readFileSync(path.join(dir, file), 'utf8');
+      if (!sql.includes('CREATE TRIGGER')) continue;
       for (const statement of sql.split('END;')) {
         const trimmed = statement.trim();
         if (!trimmed || !trimmed.includes('CREATE TRIGGER')) continue;
         const body = trimmed.slice(trimmed.indexOf('CREATE TRIGGER'));
+        if (!/CREATE TRIGGER\s+(IF NOT EXISTS\s+)?trg_(changelog|derived)_/.test(body)) continue;
         await run(`${body}\nEND;`).catch(() => {});
       }
     }
@@ -2064,7 +2084,10 @@ function moduleOpForRequest(req) {
     module = 'units';
   } else if (seg === 'machines') {
     module = 'machines';
-  } else if (seg === 'dies') {
+  } else if (['dies', 'die-makers'].includes(seg)) {
+    // die-makers is the master behind a die's "made by". Declared here
+    // deliberately: an unmapped segment returns null, which skips the
+    // per-module CRUD check entirely rather than failing closed.
     module = 'dies';
   } else if (seg === 'jobs') {
     module = 'jobs';
@@ -2086,6 +2109,11 @@ function moduleOpForRequest(req) {
   // Signing a download link for a file that already exists is a read, even
   // though the route is a POST (the id goes in the path, not a query string).
   if (op === 'create' && /\/read-url$/.test(path)) op = 'read';
+  // Adding a person to a client changes THAT client — its primary contact
+  // and the phone and email it shows — so it is an update to the record, and
+  // a per-record update grant covers it. As a create it let someone with only
+  // clients.create rewrite any existing client's contact details.
+  if (op === 'create' && /^\/clients\/[^/]+\/contacts\/?$/.test(path)) op = 'update';
   return { module, op, key: `${module}.${op}` };
 }
 
@@ -2578,6 +2606,12 @@ async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_dies WHERE item_id = ?', [id]);
   await run('DELETE FROM item_property_schema WHERE item_id = ?', [id]);
   await run('DELETE FROM item_bom_lines WHERE item_id = ?', [id]);
+  // The part's sheet nesting (057) is client↔die and die↔machine links that
+  // carry the part only in their relation, so the purge below — which matches
+  // an item at either END — never touched them, and no reconcile ever runs
+  // for this id again. Its deal ticks (056) likewise.
+  await run('DELETE FROM entity_links WHERE relation = ?', [`part_tree:${id}`]);
+  await run('DELETE FROM item_deal_contacts WHERE item_id = ?', [id]);
   if (purgeEntityLinks) await purgeEntityLinks('item', id);
   if (purgeEntityVariations) await purgeEntityVariations('item', id);
   await trashAndDelete('items', id, req);
@@ -2718,14 +2752,18 @@ function rowToClientDto(row) {
     alias: row.alias || '',
     gstNumber: row.gst_number || '',
     address: row.address || '',
-    // The person you ring about this company, mirroring rowToVendorDto —
-    // answered once here rather than retyped on every part developed for them.
+    // The person you ring FIRST about this company. Since 056 these four are a
+    // mirror of the primary row in party_contacts, kept by
+    // modules/parties/contacts.js — `contacts` below is everyone.
     // Distinct from this client's sub-contractors, who are parties you give
     // work TO; the same human may legitimately appear in both.
     contactName: row.contact_name || '',
     designation: row.designation || '',
     phone: row.phone || '',
     email: row.email || '',
+    // Hung on the row by attachClientContacts — one query for any number of
+    // clients. A row read without it lists nobody rather than failing.
+    contacts: Array.isArray(row.contacts) ? row.contacts : [],
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -2910,25 +2948,52 @@ function developedForDto(row) {
   const kind = kindColumn || (clientId ? 'client' : '');
   const fromContractor = kind === 'contractor' && subContractorId;
 
+  // Who at the company the deal was done with (056) — any number of them,
+  // from the JSON column the item SELECTs carry. A read that did not select
+  // it lists nobody rather than failing.
+  let contacts = [];
+  try {
+    const parsed = row.developed_for_contacts_json
+      ? JSON.parse(row.developed_for_contacts_json)
+      : [];
+    contacts = (Array.isArray(parsed) ? parsed : [])
+      .filter((contact) => contact && contact.id != null)
+      .map((contact) => ({
+        id: Number(contact.id),
+        name: contact.name || '',
+        designation: contact.designation || '',
+        phone: contact.phone || '',
+        email: contact.email || '',
+        isArchived: Number(contact.isArchived || 0) === 1,
+      }));
+  } catch (_) {
+    contacts = [];
+  }
+  // The single person the older surfaces print: the first one ticked, else
+  // the company's primary (which the flat client columns mirror).
+  const lead = !fromContractor && contacts.length ? contacts[0] : null;
+
   return {
     kind,
     clientId,
     clientName: row.developed_for_client_name || '',
     subContractorId,
     subContractorName: row.developed_for_sub_contractor_name || '',
+    contactIds: contacts.map((contact) => contact.id),
+    contacts,
     companyName: row.developed_for_client_name || '',
     contactName: fromContractor
       ? row.developed_for_sub_contractor_name || ''
-      : row.developed_for_contact_name || '',
+      : lead ? lead.name : row.developed_for_contact_name || '',
     designation: fromContractor
       ? row.developed_for_sub_contractor_designation || ''
-      : row.developed_for_designation || '',
+      : lead ? lead.designation : row.developed_for_designation || '',
     phone: fromContractor
       ? row.developed_for_sub_contractor_phone || ''
-      : row.developed_for_phone || '',
+      : lead ? lead.phone : row.developed_for_phone || '',
     email: fromContractor
       ? row.developed_for_sub_contractor_email || ''
-      : row.developed_for_email || '',
+      : lead ? lead.email : row.developed_for_email || '',
     // Full ISO in UTC. The client converts with .toLocal() before showing it.
     at: row.developed_for_at || null,
     // Rupees. Null rather than 0, so "never quoted" is not printed as the
@@ -2938,6 +3003,13 @@ function developedForDto(row) {
       row.developed_for_quotation_amount === undefined
         ? null
         : Number(row.developed_for_quotation_amount),
+    // What the die making cost us. Null is "never costed", which a margin must
+    // treat as unknown rather than as zero cost — zero would read as 100%.
+    costAmount:
+      row.developed_for_cost_amount === null ||
+      row.developed_for_cost_amount === undefined
+        ? null
+        : Number(row.developed_for_cost_amount),
   };
 }
 
@@ -2997,7 +3069,8 @@ async function rowToItemDto(row) {
   const dieLinkRows = await all(
     `
     SELECT dies.id, dies.tool_code, dies.photo_urls,
-           dies.die_type, dies.made_by, dies.po_at, dies.date_in_at,
+           dies.die_type, dies.die_type_label, dies.made_by, dies.die_maker_id,
+           dies.po_at, dies.date_in_at,
            dies.liner_size_nm, dies.liner_size_unit, dies.no_of_set,
            dies.store_area, dies.rack_no
     FROM item_dies
@@ -3084,7 +3157,11 @@ async function rowToItemDto(row) {
         toolCode: entry.tool_code || '',
         photoUrl: urls.length > 0 ? urls[0] : null,
         dieType: entry.die_type || '',
+        // Both carried so a die corrected from beside its part does not send
+        // back a bare slug and no maker — the upsert would store exactly that.
+        dieTypeLabel: entry.die_type_label || '',
         madeBy: entry.made_by || '',
+        dieMakerId: entry.die_maker_id == null ? null : Number(entry.die_maker_id),
         poAt: entry.po_at || null,
         dateInAt: entry.date_in_at || null,
         linerSizeNm: entry.liner_size_nm == null ? null : Number(entry.liner_size_nm),
@@ -3095,6 +3172,15 @@ async function rowToItemDto(row) {
       };
     }),
     developedFor: developedForDto(row),
+    // How the part's item sheet is nested (057); null = the default chain.
+    sectionTree: (() => {
+      if (!row.section_tree_json) return null;
+      try {
+        return JSON.parse(row.section_tree_json);
+      } catch (_) {
+        return null;
+      }
+    })(),
     // Kept as aliases of the block above: the local replica has these two
     // cached in payloads it already wrote, and an older client still reads them.
     developedForClientId: row.developed_for_client_id || null,
@@ -8713,6 +8799,20 @@ async function getItemRowById(id) {
       developed_for_contractor.designation AS developed_for_sub_contractor_designation,
       developed_for_contractor.phone AS developed_for_sub_contractor_phone,
       developed_for_contractor.email AS developed_for_sub_contractor_email,
+      -- The people this part's deal was done with (056), as one JSON column so
+      -- the list read stays one statement per page however many parts it has.
+      (
+        SELECT json_group_array(json_object(
+          'id', c.id, 'name', c.name, 'designation', c.designation,
+          'phone', c.phone, 'email', c.email, 'isArchived', c.is_archived
+        ))
+        FROM (
+          SELECT pc.* FROM item_deal_contacts idc
+          JOIN party_contacts pc ON pc.id = idc.contact_id
+          WHERE idc.item_id = items.id
+          ORDER BY pc.is_primary DESC, pc.name COLLATE NOCASE ASC
+        ) c
+      ) AS developed_for_contacts_json,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -8744,6 +8844,20 @@ async function getItemsWithUsage() {
       developed_for_contractor.designation AS developed_for_sub_contractor_designation,
       developed_for_contractor.phone AS developed_for_sub_contractor_phone,
       developed_for_contractor.email AS developed_for_sub_contractor_email,
+      -- The people this part's deal was done with (056), as one JSON column so
+      -- the list read stays one statement per page however many parts it has.
+      (
+        SELECT json_group_array(json_object(
+          'id', c.id, 'name', c.name, 'designation', c.designation,
+          'phone', c.phone, 'email', c.email, 'isArchived', c.is_archived
+        ))
+        FROM (
+          SELECT pc.* FROM item_deal_contacts idc
+          JOIN party_contacts pc ON pc.id = idc.contact_id
+          WHERE idc.item_id = items.id
+          ORDER BY pc.is_primary DESC, pc.name COLLATE NOCASE ASC
+        ) c
+      ) AS developed_for_contacts_json,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -9153,7 +9267,24 @@ async function saveClient({
   }
 
   const now = new Date().toISOString();
+  // The client row and its primary contact land together or not at all. A
+  // SAVEPOINT rather than BEGIN, because this also runs inside callers that
+  // already hold a transaction, where BEGIN would fail.
+  const together = async (work) => {
+    await run('SAVEPOINT save_client');
+    try {
+      const out = await work();
+      await run('RELEASE save_client');
+      return out;
+    } catch (error) {
+      await run('ROLLBACK TO save_client').catch(() => {});
+      await run('RELEASE save_client').catch(() => {});
+      throw error;
+    }
+  };
+
   if (id == null) {
+    const newId = await together(async () => {
     const result = await run(
       `
       INSERT INTO clients (name, alias, gst_number, address, contact_name, designation, phone, email, is_archived, created_at, updated_at)
@@ -9172,8 +9303,17 @@ async function saveClient({
         now,
       ],
     );
-    await logChange('clients', result.lastID, 'INSERT');
-    return getClientRowById(result.lastID);
+    // The form's one person lands on the company's primary contact (056).
+    await partyContacts.syncPrimaryFromFlat({ get, all, run }, result.lastID, {
+      contactName,
+      designation,
+      phone,
+      email,
+    });
+    return result.lastID;
+    });
+    await logChange('clients', newId, 'INSERT');
+    return getClientRowById(newId);
   }
 
   if ((existing.usage_count || 0) > 0) {
@@ -9204,6 +9344,7 @@ async function saveClient({
     }
   }
 
+  await together(async () => {
   await run(
     'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, designation = ?, phone = ?, email = ?, updated_at = ? WHERE id = ?',
     [
@@ -9219,6 +9360,15 @@ async function saveClient({
       id,
     ],
   );
+  // Only the fields the caller sent: a PATCH about the address leaves the
+  // primary contact exactly as it was.
+  await partyContacts.syncPrimaryFromFlat({ get, all, run }, id, {
+    contactName,
+    designation,
+    phone,
+    email,
+  });
+  });
   await logChange('clients', id, 'UPDATE');
   return getClientRowById(id);
 }
@@ -16635,10 +16785,62 @@ function buildVariationPathLabel(segments = []) {
 // saveOrder does it: without that, "For: Contractor" has no company name to
 // print, and a future "parts for this client" would silently exclude every
 // part made through one of their contractors.
+// Which of the client's people the deal was done with (056).
+//
+// Absent → undefined, and saveItem keeps what is ticked unless the client
+// itself changed. Present → the whole list, replacing what was there. Every id
+// must be a person at THIS client: a tick from another company would put a
+// stranger on the part. Archived people are allowed, the way an archived
+// client is — a part dealt with someone who has since left still records it.
+async function normalizeDealContactIds(raw, clientId) {
+  if (raw === undefined) return undefined;
+  if (raw === null) return [];
+  if (!Array.isArray(raw)) {
+    const error = new Error('contactIds must be a list of contact ids.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const ids = [];
+  for (const value of raw) {
+    const id = Number(value);
+    if (!Number.isInteger(id) || id <= 0) {
+      const error = new Error('contactIds must be a list of contact ids.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!ids.includes(id)) ids.push(id);
+  }
+  if (!ids.length) return ids;
+  if (!clientId) {
+    const error = new Error("Only a client's people can be marked on the deal.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const found = await all(
+    `SELECT id FROM party_contacts
+     WHERE party_type = 'client' AND party_id = ? AND id IN (${ids.map(() => '?').join(', ')})`,
+    [clientId, ...ids],
+  );
+  if (found.length !== ids.length) {
+    const error = new Error('Every person marked on the deal must work at its client.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return ids;
+}
+
 async function normalizeDevelopedFor(developedFor) {
   if (developedFor === undefined) return undefined;
   if (developedFor === null) {
-    return { kind: '', clientId: null, subContractorId: null, at: null, quotationAmount: null };
+    return {
+      kind: '',
+      clientId: null,
+      subContractorId: null,
+      at: null,
+      quotationAmount: null,
+      costAmount: null,
+      contactIds: [],
+    };
   }
 
   const kind = String(developedFor.kind || '').trim();
@@ -16666,11 +16868,33 @@ async function normalizeDevelopedFor(developedFor) {
     quotationAmount = parsed;
   }
 
+  const costRaw = developedFor.costAmount;
+  // Absent = keep what is stored, the contactIds rule: the cost is entered
+  // somewhere other than every screen that sends this block, so a save from
+  // one of those must not wipe it. An explicit null still clears.
+  let costAmount = Object.prototype.hasOwnProperty.call(developedFor, 'costAmount')
+    ? null
+    : undefined;
+  if (costRaw !== null && costRaw !== undefined && costRaw !== '') {
+    const parsed = Number(costRaw);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      const error = new Error('Development cost must be an amount of zero or more.');
+      error.statusCode = 400;
+      throw error;
+    }
+    costAmount = parsed;
+  }
+
   // 'self' means developed in-house, so no party at all — and that is a
   // different fact from '' (nobody has filled this in yet), which is why the
   // kind is stored rather than inferred from which id happens to be set.
   if (kind === 'self') {
-    return { kind, clientId: null, subContractorId: null, at, quotationAmount };
+    // No party, so nobody to have dealt with. A tick sent anyway is refused.
+    await normalizeDealContactIds(developedFor.contactIds, null);
+    return {
+      kind, clientId: null, subContractorId: null, at, quotationAmount, costAmount,
+      contactIds: [],
+    };
   }
 
   if (kind === 'contractor') {
@@ -16695,12 +16919,16 @@ async function normalizeDevelopedFor(developedFor) {
       error.statusCode = 400;
       throw error;
     }
+    // A contractor IS the person, so there is nobody else there to tick.
+    await normalizeDealContactIds(developedFor.contactIds, null);
     return {
       kind,
       clientId: contractor.client_id || null,
       subContractorId: contractor.id,
       at,
       quotationAmount,
+      costAmount,
+      contactIds: [],
     };
   }
 
@@ -16719,19 +16947,64 @@ async function normalizeDevelopedFor(developedFor) {
       error.statusCode = 400;
       throw error;
     }
-    return { kind, clientId: client.id, subContractorId: null, at, quotationAmount };
+    return {
+      kind, clientId: client.id, subContractorId: null, at, quotationAmount, costAmount,
+      contactIds: await normalizeDealContactIds(developedFor.contactIds, client.id),
+    };
   }
 
   // kind '' — explicitly emptied. A client id arriving with it is the legacy
   // shape (developed_for_client_id with nothing to say about kind), and the
   // only thing it can have meant is 'client'.
   if (rawClientId) {
-    return { kind: 'client', clientId: rawClientId, subContractorId: null, at, quotationAmount };
+    return {
+      kind: 'client',
+      clientId: rawClientId,
+      subContractorId: null,
+      at,
+      quotationAmount,
+      costAmount,
+      contactIds: await normalizeDealContactIds(developedFor.contactIds, rawClientId),
+    };
   }
-  return { kind: '', clientId: null, subContractorId: null, at, quotationAmount };
+  await normalizeDealContactIds(developedFor.contactIds, null);
+  return {
+    kind: '', clientId: null, subContractorId: null, at, quotationAmount, costAmount,
+    contactIds: [],
+  };
 }
 
-async function saveItem({
+// Replaces the people ticked on a part's deal. Called inside saveItem's
+// transaction, after normalizeDealContactIds has checked every id.
+async function writeDealContacts(itemId, contactIds) {
+  await run('DELETE FROM item_deal_contacts WHERE item_id = ?', [itemId]);
+  for (const contactId of contactIds) {
+    await run(
+      'INSERT OR IGNORE INTO item_deal_contacts (item_id, contact_id) VALUES (?, ?)',
+      [itemId, contactId],
+    );
+  }
+}
+
+/// A create the server stamps is retried when another create took its code
+/// between the free-number check and the insert. That clash is the server's
+/// own race, not the caller's choice, and "an automatic stamp must never block
+/// a save the caller did ask for" — the retry finds the next free number.
+async function saveItem(input = {}) {
+  const stamped =
+    (input.id === null || input.id === undefined) &&
+    input.partNo === undefined &&
+    input.partCode === undefined;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await saveItemOnce(input);
+    } catch (error) {
+      if (!stamped || attempt >= 2 || error?.code !== 'part_code_duplicate') throw error;
+    }
+  }
+}
+
+async function saveItemOnce({
   name,
   alias = '',
   displayName = '',
@@ -16935,21 +17208,58 @@ async function saveItem({
   let autoPartNo = normalizedPartNo;
   let autoPartCode = normalizedPartCode;
   if (id == null && partNo === undefined && partCode === undefined) {
-    const candidateNo = await nextPartNo({ groupId: normalizedGroupId }, { get });
-    const candidateCode = buildPartCode({
-      groupName: groupRow?.name || '',
-      itemName: trimmedName,
-      partNo: candidateNo,
-    });
-    const taken = candidateCode
-      ? await get('SELECT id FROM items WHERE group_id = ? AND part_code = ?', [
-          normalizedGroupId,
-          candidateCode,
-        ])
-      : null;
-    if (candidateCode && !taken) {
-      autoPartNo = candidateNo;
-      autoPartCode = candidateCode;
+    // One code per top-level property, in the order they were declared. The
+    // tree is already sanitized, already property-kind at the top, and already
+    // ordered by position, so this is the payload's own order.
+    //
+    // The shop's explicit code on a value wins — that field exists so somebody
+    // can say "Brass is B" once — and propertyCodeFor is the answer when
+    // nobody did.
+    const valueCodes = [];
+    for (const property of sanitizedTree) {
+      const value = (property?.children || [])[0];
+      if (!value) continue;
+      const explicit = String(value.code || '').trim();
+      const code = explicit || propertyCodeFor(value.name);
+      if (code) valueCodes.push(code);
+    }
+
+    // The next free number, not simply the next one.
+    //
+    // Two names in a group can reduce to the same letters — "Patti" and
+    // "Plate" are both P — and with the number scoped by name they both start
+    // at 1, so both derive one code. This used to leave the second part with NO
+    // code at all, silently: a part nothing can look up. Taking the next number
+    // keeps the create working and keeps the part findable, and migration 045
+    // already says part_no is "a STAMP, not a sequence invariant" whose
+    // "durable guard is the unique index on the code".
+    const lineage = await groupLineage(normalizedGroupId, { get });
+    const firstNo = await nextPartNo(
+      { groupId: normalizedGroupId, itemName: trimmedName },
+      { get, all },
+    );
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const candidateNo = firstNo + attempt;
+      const candidateCode = buildVariantPartCode({
+        // The whole lineage, not just the group the part sits in. A part filed
+        // under "Switch Action › Dolly" is stored against Dolly, so the row in
+        // hand names only the child.
+        groupName: lineage.slice(0, -1).join(' '),
+        setName: lineage.length ? lineage[lineage.length - 1] : '',
+        itemName: trimmedName,
+        valueCodes,
+        partNo: candidateNo,
+      });
+      if (!candidateCode) break;
+      const taken = await get(
+        'SELECT id FROM items WHERE group_id = ? AND part_code = ?',
+        [normalizedGroupId, candidateCode],
+      );
+      if (!taken) {
+        autoPartNo = candidateNo;
+        autoPartCode = candidateCode;
+        break;
+      }
     }
   }
 
@@ -16962,8 +17272,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, developed_for_kind, developed_for_sub_contractor_id, developed_for_at, developed_for_quotation_amount, available_for_purchase, pen_paper_baseline_json, blank_width_mm, blank_height_mm, part_no, part_code, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, cad_file_key, cad_file_name, developed_for_client_id, developed_for_kind, developed_for_sub_contractor_id, developed_for_at, developed_for_quotation_amount, developed_for_cost_amount, available_for_purchase, pen_paper_baseline_json, blank_width_mm, blank_height_mm, part_no, part_code, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -16989,6 +17299,7 @@ async function saveItem({
           normalizedDevelopedFor ? normalizedDevelopedFor.subContractorId : null,
           normalizedDevelopedFor ? normalizedDevelopedFor.at : null,
           normalizedDevelopedFor ? normalizedDevelopedFor.quotationAmount : null,
+          normalizedDevelopedFor ? (normalizedDevelopedFor.costAmount ?? null) : null,
           availableForPurchase ? 1 : 0,
           penPaperBaseline ? JSON.stringify(penPaperBaseline) : null,
           Number(blankWidthMm || 0),
@@ -17000,6 +17311,9 @@ async function saveItem({
         ],
       );
       itemId = result.lastID;
+      if (normalizedDevelopedFor && normalizedDevelopedFor.contactIds) {
+        await writeDealContacts(itemId, normalizedDevelopedFor.contactIds);
+      }
     } else {
       const existing = await getItemRowById(id);
       if (!existing) {
@@ -17018,7 +17332,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, developed_for_kind = ?, developed_for_sub_contractor_id = ?, developed_for_at = ?, developed_for_quotation_amount = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, blank_width_mm = ?, blank_height_mm = ?, part_no = ?, part_code = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, cad_file_key = ?, cad_file_name = ?, developed_for_client_id = ?, developed_for_kind = ?, developed_for_sub_contractor_id = ?, developed_for_at = ?, developed_for_quotation_amount = ?, developed_for_cost_amount = ?, available_for_purchase = ?, pen_paper_baseline_json = ?, blank_width_mm = ?, blank_height_mm = ?, part_no = ?, part_code = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -17079,6 +17393,11 @@ async function saveItem({
           normalizedDevelopedFor
             ? normalizedDevelopedFor.quotationAmount
             : (existing.developed_for_quotation_amount ?? null),
+          // `??` not `||`: a cost of 0 is a real figure ("the toolmaker did it
+          // for nothing"), and `||` would discard it and re-read the old value.
+          normalizedDevelopedFor && normalizedDevelopedFor.costAmount !== undefined
+            ? normalizedDevelopedFor.costAmount
+            : (existing.developed_for_cost_amount ?? null),
           // Preserve the existing flag when the caller didn't send it (e.g. an
           // internal re-seed via ensureItemRecord) instead of resetting to 0.
           availableForPurchase !== undefined
@@ -17106,6 +17425,30 @@ async function saveItem({
           id,
         ],
       );
+
+      // The deal's people (056). Sent → replace. Not sent → keep, unless the
+      // part no longer belongs to the same client: the ticks were people at
+      // the old company and would now name strangers.
+      let dealContactIds = normalizedDevelopedFor ? normalizedDevelopedFor.contactIds : undefined;
+      if (dealContactIds === undefined) {
+        const nextClientId = normalizedDevelopedFor
+          ? normalizedDevelopedFor.clientId
+          : developedForClientId !== undefined
+            ? (developedForClientId ? Number(developedForClientId) : null)
+            : (existing.developed_for_client_id || null);
+        const nextKind = normalizedDevelopedFor
+          ? normalizedDevelopedFor.kind
+          : developedForClientId !== undefined
+            ? (developedForClientId ? 'client' : '')
+            : (existing.developed_for_kind || (existing.developed_for_client_id ? 'client' : ''));
+        const sameClient =
+          nextKind === 'client' &&
+          Number(nextClientId || 0) === Number(existing.developed_for_client_id || 0);
+        if (!sameClient) dealContactIds = [];
+      }
+      if (dealContactIds !== undefined) {
+        await writeDealContacts(id, dealContactIds);
+      }
     }
 
     if (structuralChangeDetected) {
@@ -17330,6 +17673,17 @@ async function saveItem({
 
     await logChange('items', itemId, id == null ? 'INSERT' : 'UPDATE');
     await run('COMMIT');
+    // The section tree's cross-links follow whatever the save just changed —
+    // a new die, a different client, a machine taken off. After the commit and
+    // never failing the save: the part is written either way.
+    try {
+      await sectionTree.reconcileSectionLinks({ get, all, run }, itemId);
+    } catch (error) {
+      // Before migration 057 (a seed at first boot) the column is not there.
+      if (!/no such (column|table)/.test(String(error?.message || ''))) {
+        console.error('[Items] section tree links not reconciled:', error.message);
+      }
+    }
     return getItemRowById(itemId);
   } catch (error) {
     await run('ROLLBACK');
@@ -17337,8 +17691,12 @@ async function saveItem({
     // its read and this write. The index can, and a raw SQLITE_CONSTRAINT must
     // not reach a client as a 500.
     if (/UNIQUE constraint failed: items\.group_id, items\.part_code/.test(String(error?.message || ''))) {
+      // `autoPartCode` when the save was stamped rather than told. Reading
+      // `normalizedPartCode` alone printed `Part code "undefined" was just
+      // taken`, because an auto-stamped create never set it.
+      const clashed = normalizedPartCode ?? autoPartCode ?? '';
       const conflict = new Error(
-        `Part code "${normalizedPartCode}" was just taken by another part in this group.`,
+        `Part code "${clashed}" was just taken by another part in this group.`,
       );
       conflict.statusCode = 409;
       conflict.code = 'part_code_duplicate';
@@ -23197,7 +23555,14 @@ function dieRowToDto(r) {
     // measured at zero are different answers, which is why these are not
     // `|| 0`.
     dieType: r.die_type || '',
+    // The words for a type the shop typed. Empty for the built-in four, whose
+    // label is looked up from the slug on either side.
+    dieTypeLabel: r.die_type_label || '',
+    // `madeBy` survives beside `dieMakerId` rather than being replaced by it:
+    // every die that existed before the master has a name and no id, and that
+    // is a legal state. A reader prefers the id and falls back to the text.
     madeBy: r.made_by || '',
+    dieMakerId: r.die_maker_id == null ? null : Number(r.die_maker_id),
     poAt: r.po_at || null,
     dateInAt: r.date_in_at || null,
     linerSizeNm: r.liner_size_nm == null ? null : Number(r.liner_size_nm),
@@ -23526,7 +23891,9 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
       ownership,
       // The die sheet (migrations/048).
       dieType,
+      dieTypeLabel,
       madeBy,
+      dieMakerId,
       poAt,
       dateInAt,
       linerSizeNm,
@@ -23567,12 +23934,50 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
     };
 
     const normalizedDieType = String(keptText(dieType, 'die_type')).trim();
-    if (normalizedDieType && !DIE_TYPE_SLUGS.includes(normalizedDieType)) {
+    // A built-in type is named by its slug, so a custom label kept from
+    // before the type was switched would only sit there stale.
+    const normalizedDieTypeLabel = DIE_TYPE_SLUGS.includes(normalizedDieType)
+      ? ''
+      : String(keptText(dieTypeLabel, 'die_type_label')).trim();
+
+    // A typed type is allowed, but only with its label.
+    //
+    // This used to refuse any slug outside the built-in four. It now refuses a
+    // slug it cannot recover a LABEL for, which is the thing that actually
+    // matters: the code is built from the label's initials, so an unknown slug
+    // with no label beside it would store a die whose code can never be
+    // re-derived — and `buildDieCode` would quietly return '' rather than
+    // anything wrong-looking.
+    if (!isUsableDieType(normalizedDieType, normalizedDieTypeLabel)) {
       return res.status(400).json({
         success: false,
         die: null,
-        error: `"${normalizedDieType}" is not a die type.`,
+        error: `"${normalizedDieType}" is not a die type, and no name was given for it.`,
       });
+    }
+
+    // A maker that is not there would fail the foreign key and come back as a
+    // 500; an archived one would be linked silently. Only a NEWLY sent id is
+    // checked — a die keeps the maker it already has even once archived.
+    const resolvedDieMakerId = keptInt(dieMakerId, 'die_maker_id');
+    if (
+      dieMakerId !== undefined &&
+      resolvedDieMakerId !== null &&
+      resolvedDieMakerId !== (beforeRow ? beforeRow.die_maker_id : null)
+    ) {
+      const maker = await get('SELECT id, is_archived FROM die_makers WHERE id = ?', [
+        resolvedDieMakerId,
+      ]);
+      if (!maker || maker.is_archived) {
+        return res.status(400).json({
+          success: false,
+          die: null,
+          code: 'die_maker_unknown',
+          error: maker
+            ? 'That die maker is archived. Unarchive it first, or pick another.'
+            : 'That die maker does not exist.',
+        });
+      }
     }
 
     // Derived before the timestamp fallback, so a die made against a part is
@@ -23580,7 +23985,11 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
     // created from nothing, which the Dies screen can still do.
     let finalToolCode = String(toolCode || '').trim();
     if (!finalToolCode && !isUpdate) {
-      finalToolCode = buildDieCode({ dieType: normalizedDieType, partCode });
+      finalToolCode = buildDieCode({
+        dieType: normalizedDieType,
+        dieTypeLabel: normalizedDieTypeLabel,
+        partCode,
+      });
     }
     if (!finalToolCode) {
       finalToolCode = isUpdate ? String(beforeRow.tool_code) : `DIE-${Date.now()}`;
@@ -23627,7 +24036,9 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
       kept(status, 'status'),
       kept(ownership, 'ownership'),
       normalizedDieType,
+      normalizedDieTypeLabel,
       keptText(madeBy, 'made_by').trim(),
+      resolvedDieMakerId,
       kept(poAt, 'po_at'),
       kept(dateInAt, 'date_in_at'),
       keptInt(linerSizeNm, 'liner_size_nm'),
@@ -23641,12 +24052,12 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
     try {
       if (isUpdate) {
         await run(
-          `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, die_type = ?, made_by = ?, po_at = ?, date_in_at = ?, liner_size_nm = ?, liner_size_unit = ?, no_of_set = ?, store_area = ?, rack_no = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, die_type = ?, die_type_label = ?, made_by = ?, die_maker_id = ?, po_at = ?, date_in_at = ?, liner_size_nm = ?, liner_size_unit = ?, no_of_set = ?, store_area = ?, rack_no = ?, updated_at = ? WHERE id = ?`,
           [...columns, now, Number(id)],
         );
       } else {
         const info = await run(
-          `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, strokes_per_piece, setup_minutes, report_notes, physical_specs, status, ownership, die_type, made_by, po_at, date_in_at, liner_size_nm, liner_size_unit, no_of_set, store_area, rack_no, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, strokes_per_piece, setup_minutes, report_notes, physical_specs, status, ownership, die_type, die_type_label, made_by, die_maker_id, po_at, date_in_at, liner_size_nm, liner_size_unit, no_of_set, store_area, rack_no, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [...columns, now, now],
         );
         resultId = String(info.lastID);
@@ -24397,7 +24808,7 @@ app.delete('/api/units/:id', requirePermission('config.write'), async (req, res)
 
 app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
   try {
-    const rows = await getClientsWithUsage();
+    const rows = await partyContacts.attachClientContacts({ all }, await getClientsWithUsage());
     res.json({ success: true, clients: rows.map(rowToClientDto), error: null });
   } catch (error) {
     res.status(500).json({ success: false, clients: [], error: error.message });
@@ -24416,6 +24827,7 @@ app.get('/api/clients/:id', requirePermission('config.read'), async (req, res) =
     if (!row) {
       return res.status(404).json({ success: false, client: null, error: 'Not found' });
     }
+    await partyContacts.attachClientContacts({ all }, row);
     res.json({ success: true, client: rowToClientDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, client: null, error: error.message });
@@ -28213,6 +28625,7 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
 app.post('/api/clients', requirePermission('config.write'), async (req, res) => {
   try {
     const client = await saveClient(req.body || {});
+    await partyContacts.attachClientContacts({ all }, client);
     const clientDto = rowToClientDto(client);
     if (io) {
       io.emit('client_added', clientDto);
@@ -28237,6 +28650,7 @@ app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (
     if (Number(client.is_archived || 0) === 1) {
       // Already there. Answering with the row rather than refusing keeps two
       // clients racing the same button from showing one of them an error.
+      await partyContacts.attachClientContacts({ all }, client);
       return res.json({ success: true, client: rowToClientDto(client), error: null });
     }
     const usage = await get(`
@@ -28265,6 +28679,7 @@ app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (
     }
     await run('UPDATE clients SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
     const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    await partyContacts.attachClientContacts({ all }, after);
     const clientDto = rowToClientDto(after);
     // Every other client write broadcasts; this one never did, so an archive
     // stayed invisible to every other session until it reloaded.
@@ -28296,6 +28711,7 @@ app.patch('/api/clients/:id/unarchive', requirePermission('config.write'), async
     }
     await run('UPDATE clients SET is_archived = 0, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
     const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    await partyContacts.attachClientContacts({ all }, after);
     const clientDto = rowToClientDto(after);
     if (io) {
       io.emit('client_updated', clientDto);
@@ -28335,6 +28751,7 @@ app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res
       ...(req.body || {}),
       id,
     });
+    await partyContacts.attachClientContacts({ all }, client);
     const clientDto = rowToClientDto(client);
     if (io) {
       io.emit('client_updated', clientDto);
@@ -31859,6 +32276,7 @@ const {
   DIE_TYPE_SLUGS,
   buildDieCode,
   nextFreeDieCode,
+  isUsableDieType,
 } = require('./modules/dies/die-identity');
 const {
   buildMachineNo,
@@ -32981,6 +33399,39 @@ const itemMasterData = registerMasterDataRoutes({
 });
 
 registerUnitRoutes(app, { run, get, all, requirePermission, trackCreate });
+
+// The people at a client, nested under /api/clients so the clients module's
+// gate and grants apply. See modules/parties/contacts.js.
+partyContacts({
+  app,
+  get,
+  all,
+  run,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+  emit: async (clientId) => {
+    if (!io) return;
+    const row = await getClientRowById(clientId);
+    if (!row) return;
+    await partyContacts.attachClientContacts({ all }, row);
+    io.emit('client_updated', rowToClientDto(row));
+  },
+});
+
+// Die makers — the master behind a die's "made by". Gated as `dies`, not as a
+// module of its own: see modules/dies/die-makers.js.
+const registerDieMakerRoutes = require('./modules/dies/die-makers');
+registerDieMakerRoutes({
+  app,
+  get,
+  all,
+  run,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+});
 
 const { computeTerritory } = require("./kernel/territory");
 app.get("/api/kernel/territory", async (req, res) => {

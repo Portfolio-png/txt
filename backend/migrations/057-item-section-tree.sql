@@ -1,0 +1,19 @@
+-- How a part's item sheet is nested — and, because the user chose it to,
+-- what that nesting MEANS.
+--
+-- The sheet shows the part's sections as a file tree: Item › Client / Vendor ›
+-- Die › Machines by default, re-nestable by drag and drop. Nesting B under A
+-- links B's records to A's: Die under Client = that client's tooling, Machine
+-- under Die = the machines that run those dies. Those cross-links live in the
+-- canonical entity_links store with relation 'part_tree:<itemId>', written by
+-- modules/items/section-tree.js reconcileSectionLinks and nothing else, so a
+-- part only ever adds or removes its own and never a hand-made 'linked' link.
+--
+-- This column holds the nesting itself, per part: a JSON object child → parent
+-- over client_vendor / die_master / machine_master, rooted at group_item. NULL
+-- is the default chain. Part↔client, part↔die and part↔machine are unchanged
+-- (items.developed_for_*, item_dies, item_machines).
+--
+-- Design checklist: no floor event — this is part structure, and its history
+-- comes through the item's entity_activity_log diff.
+ALTER TABLE items ADD COLUMN section_tree_json TEXT;

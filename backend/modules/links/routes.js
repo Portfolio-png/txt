@@ -32,6 +32,26 @@ const {
   canonicalPair,
   legacyPairFor,
 } = require('./catalog');
+const { reconcileSectionLinks } = require('../items/section-tree');
+
+// Links named `part_tree:<itemId>` are an item's sheet nesting (057), owned by
+// reconcileSectionLinks and rebuilt from the item after every save. Nothing
+// else may write or remove them: a manual unlink that took them along was
+// quietly put back by the next save, and a forged one would be deleted by it.
+const PART_TREE_PREFIX = 'part_tree:';
+
+/// Rebuilds the item's nesting after its dies or machines changed here rather
+/// than through the item save that normally does it. Best effort, like the
+/// save's own call: the link that was asked for has landed either way.
+async function reconcileAfterLegacyWrite(deps, left, right) {
+  const itemId = left.type === 'item' ? left.id : right.type === 'item' ? right.id : null;
+  if (itemId === null) return;
+  try {
+    await reconcileSectionLinks(deps, itemId);
+  } catch (error) {
+    console.error('[links] section tree reconcile failed:', error.message);
+  }
+}
 
 module.exports = function registerLinksModuleRoutes(ctx) {
   const {
@@ -422,6 +442,12 @@ module.exports = function registerLinksModuleRoutes(ctx) {
       const fromId = from.id === undefined || from.id === null ? '' : String(from.id);
       const toId = to.id === undefined || to.id === null ? '' : String(to.id);
       const relation = String(req.body?.relation || 'linked').trim() || 'linked';
+      if (relation.startsWith(PART_TREE_PREFIX)) {
+        return res.status(400).json({
+          success: false,
+          error: 'That relation is kept by the item sheet and cannot be set by hand.',
+        });
+      }
 
       if (!isLinkableType(fromType)) return rejectUnknownType(res, fromType);
       if (!isLinkableType(toType)) return rejectUnknownType(res, toType);
@@ -513,6 +539,7 @@ module.exports = function registerLinksModuleRoutes(ctx) {
         } catch (_) {
           /* the trigger has already recorded it; this is belt and braces */
         }
+        if (inserted > 0) await reconcileAfterLegacyWrite({ get, all, run }, left, right);
       }
 
       res.status(201).json({
@@ -568,13 +595,22 @@ module.exports = function registerLinksModuleRoutes(ctx) {
           } catch (_) {
             /* the derived trigger has already recorded it */
           }
+          await reconcileAfterLegacyWrite({ get, all, run }, left, right);
         }
       } else {
         const relation = req.query.relation ? String(req.query.relation) : null;
+        if (relation && relation.startsWith(PART_TREE_PREFIX)) {
+          return res.status(400).json({
+            success: false,
+            error: 'That link comes from a part’s sheet nesting. Change the nesting instead.',
+          });
+        }
+        // With no relation named, every relation for the pair goes — except
+        // the sheet nesting's, which belongs to the parts that made it.
         const result = await run(
           `DELETE FROM entity_links
            WHERE left_type = ? AND left_id = ? AND right_type = ? AND right_id = ?
-             ${relation ? 'AND relation = ?' : ''}`,
+             ${relation ? 'AND relation = ?' : "AND relation NOT LIKE 'part_tree:%'"}`,
           relation
             ? [left.type, left.id, right.type, right.id, relation]
             : [left.type, left.id, right.type, right.id],
@@ -720,8 +756,9 @@ module.exports = function registerLinksModuleRoutes(ctx) {
 
     await run(
       `DELETE FROM entity_links
-        WHERE (left_type = ? AND left_id = ? AND right_type = ?)
-           OR (right_type = ? AND right_id = ? AND left_type = ?)`,
+        WHERE ((left_type = ? AND left_id = ? AND right_type = ?)
+           OR (right_type = ? AND right_id = ? AND left_type = ?))
+          AND relation NOT LIKE 'part_tree:%'`,
       [String(type), String(id), String(otherType), String(type), String(id), String(otherType)],
     );
     if (otherId === null || otherId === undefined || otherId === '') return;

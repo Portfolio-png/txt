@@ -110,8 +110,10 @@ const MODULES = {
     group: 'Masters',
     pathSegments: ['clients', 'sub-contractors'],
     recordSource: { table: 'clients', idCol: 'id', label: 'name' },
-    trackTables: { clients: 'Client' },
-    tables: ['clients', 'sub_contractors'],
+    // party_contacts (056) is generic over party_type, but only clients use it
+    // today and its routes nest under /api/clients, so clients owns it.
+    trackTables: { clients: 'Client', party_contacts: 'Contact' },
+    tables: ['clients', 'sub_contractors', 'party_contacts'],
     evacuated: false,
   },
   vendors: {
@@ -134,6 +136,7 @@ const MODULES = {
       'item_variation_nodes', 'item_variations', 'item_variation_values',
       'item_variation_dimensions', 'item_property_schema', 'item_unit_conversions',
       'item_bom_lines', 'variation_stock', 'user_favorite_items',
+      'item_deal_contacts',
     ],
     evacuated: true,
   },
@@ -153,7 +156,7 @@ const MODULES = {
     // so there is no path segment of its own to declare here. Listed so the
     // tables below have one owner rather than being nobody's.
     pathSegments: [],
-    trackTables: {},
+    trackTables: { process_stages: 'Stage' },
     tables: ['process_stages', 'process_routes', 'process_route_steps'],
     evacuated: true,
   },
@@ -169,10 +172,13 @@ const MODULES = {
   dies: {
     label: 'Dies',
     group: 'Masters',
-    pathSegments: ['dies'],
+    // `die-makers` is the master behind a die's "made by". It is part of die
+    // tooling rather than a module of its own, so it carries no permission
+    // keys of its own and is gated by dies.read/create/update/delete.
+    pathSegments: ['dies', 'die-makers'],
     recordSource: { table: 'dies', idCol: 'id', label: "COALESCE(NULLIF(TRIM(tool_code), ''), 'Die ' || id)" },
-    trackTables: { dies: 'Die' },
-    tables: ['dies'],
+    trackTables: { dies: 'Die', die_makers: 'Die maker' },
+    tables: ['dies', 'die_makers'],
     evacuated: false,
   },
   pipelines: {

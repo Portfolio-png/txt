@@ -70,6 +70,10 @@ async function saveDie(ctx, body) {
 const CODE_FIXTURE = [
   { type: 'cutting', partCode: 'SADP48', code: 'CDSADP48' },
   { type: 'bending', partCode: 'SADP48', code: 'BDSADP48' },
+  // The factory sheet's other two dies. RD and AD, not R and A: the mandatory
+  // D keeps a die code distinct from its own part code on a scan.
+  { type: 'riveting', partCode: 'SADP48', code: 'RDSADP48' },
+  { type: 'assembly', partCode: 'SADP48', code: 'ADSADP48' },
   { type: 'cutting', partCode: 'atl1', code: 'CDATL1' },
   { type: 'cutting', partCode: '', code: '' },
   { type: '', partCode: 'SADP48', code: '' },
@@ -290,6 +294,65 @@ test('a die picker reads where the die is kept', async () => {
     assert.ok(legacyRow, 'the legacy die is offered');
     assert.equal(structuredRow.subtitle, 'F206 · Rack 23-4');
     assert.equal(legacyRow.subtitle, 'Rack B, Shelf 3');
+  } finally {
+    await closeServer(ctx.server);
+  }
+});
+
+test('a part reads its dies’ typed type and maker; a bad maker is a 400', async () => {
+  // The item sheet edits a die from beside its part, so the part's own read
+  // must carry what the die sheet shows. Without dieTypeLabel and dieMakerId
+  // there, every correction sent back a bare slug and no maker — and the
+  // upsert stores what it is sent.
+  const ctx = await boot('paper-die-maker-link-', 'die-maker-link@paper.local');
+  try {
+    const maker = await fetch(`${ctx.baseUrl}/api/die-makers`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({ name: 'Ashok Dies' }),
+    }).then((r) => r.json());
+    assert.ok(maker.dieMaker?.id, JSON.stringify(maker));
+
+    const created = await saveDie(ctx, {
+      dieType: 'deep-draw',
+      dieTypeLabel: 'Deep Draw',
+      partCode: 'SADP48',
+      dieMakerId: maker.dieMaker.id,
+      status: 'ready',
+      ownership: 'inHouse',
+    });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const dieId = String(created.body.die.id);
+
+    const items = await fetch(`${ctx.baseUrl}/api/items`, { headers: ctx.headers }).then((r) =>
+      r.json(),
+    );
+    const part = items.items[0];
+    const linked = await fetch(`${ctx.baseUrl}/api/links`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({ from: { type: 'item', id: part.id }, to: { type: 'die', id: dieId } }),
+    });
+    assert.equal(linked.status, 201, await linked.clone().text());
+
+    const read = await fetch(`${ctx.baseUrl}/api/items/${part.id}`, { headers: ctx.headers }).then(
+      (r) => r.json(),
+    );
+    const onPart = read.item.dies.find((d) => d.id === dieId);
+    assert.ok(onPart, 'the die is listed on its part');
+    assert.equal(onPart.dieTypeLabel, 'Deep Draw');
+    assert.equal(onPart.dieMakerId, maker.dieMaker.id);
+
+    // A maker that is not there is the caller's mistake, not a 500.
+    const unknown = await saveDie(ctx, { id: dieId, dieMakerId: 999999 });
+    assert.equal(unknown.status, 400, JSON.stringify(unknown.body));
+
+    // Switching to a built-in type drops the typed label with it.
+    const builtIn = await saveDie(ctx, { id: dieId, dieType: 'cutting' });
+    assert.equal(builtIn.status, 200, JSON.stringify(builtIn.body));
+    assert.equal(builtIn.body.die.dieTypeLabel, '');
+    // And the maker, not mentioned, stays.
+    assert.equal(builtIn.body.die.dieMakerId, maker.dieMaker.id);
   } finally {
     await closeServer(ctx.server);
   }

@@ -506,3 +506,123 @@ test('a client PATCH that mentions one field keeps the rest', async () => {
     await closeServer(ctx.server);
   }
 });
+
+test('the development cost sits beside the quotation, and null is not zero', async () => {
+  // The quotation says what was quoted for making this part's dies. Without a
+  // cost beside it the one question anybody asks of it — did we make anything
+  // on that job — has no answer. The pair is what a margin reads.
+  //
+  // The null case is the one that matters: a part quoted but never costed must
+  // come back null, NOT 0, because zero cost reads as a 100% margin.
+  const ctx = await boot('paper-development-cost-', 'dev-cost@paper.local');
+  try {
+    const sample = await anyItemShape(ctx);
+    const client = await createClient(ctx, { name: 'Gold Madel Industries', alias: 'GM' });
+
+    const quotedOnly = await createItem(ctx, {
+      name: 'Quoted Not Costed',
+      displayName: 'Quoted Not Costed',
+      groupId: sample.groupId,
+      unitId: sample.unitId,
+      developedFor: { kind: 'client', clientId: client.id, quotationAmount: 85000 },
+    });
+    assert.equal(quotedOnly.status, 201, JSON.stringify(quotedOnly.body));
+    assert.equal(quotedOnly.body.item.developedFor.quotationAmount, 85000);
+    assert.equal(
+      quotedOnly.body.item.developedFor.costAmount,
+      null,
+      'never costed must be null, or the margin reads 100%',
+    );
+
+    const both = await createItem(ctx, {
+      name: 'Quoted And Costed',
+      displayName: 'Quoted And Costed',
+      groupId: sample.groupId,
+      unitId: sample.unitId,
+      developedFor: {
+        kind: 'client',
+        clientId: client.id,
+        quotationAmount: 85000,
+        costAmount: 61200,
+      },
+    });
+    assert.equal(both.status, 201, JSON.stringify(both.body));
+    assert.equal(both.body.item.developedFor.costAmount, 61200);
+
+    // Reads back off the row, not just out of the create's own response.
+    const reread = await readItem(ctx, both.body.item.id);
+    assert.equal(reread.developedFor.costAmount, 61200);
+    assert.equal(reread.developedFor.quotationAmount, 85000);
+
+    // Zero is a real figure — the toolmaker did it for nothing — and must
+    // survive as 0 rather than being read as "unset" and dropped.
+    const free = await createItem(ctx, {
+      name: 'Costed At Zero',
+      displayName: 'Costed At Zero',
+      groupId: sample.groupId,
+      unitId: sample.unitId,
+      developedFor: { kind: 'client', clientId: client.id, quotationAmount: 1000, costAmount: 0 },
+    });
+    assert.equal(free.status, 201, JSON.stringify(free.body));
+    assert.equal(free.body.item.developedFor.costAmount, 0);
+
+    // A negative cost is refused the way a negative quotation is.
+    const negative = await createItem(ctx, {
+      name: 'Negative Cost',
+      displayName: 'Negative Cost',
+      groupId: sample.groupId,
+      unitId: sample.unitId,
+      developedFor: { kind: 'client', clientId: client.id, costAmount: -5 },
+    });
+    assert.equal(negative.status, 400, JSON.stringify(negative.body));
+
+    // A 'self' part keeps its figures: developed in-house still has a cost,
+    // and the branch that returns no party must not drop them.
+    const inHouse = await createItem(ctx, {
+      name: 'In House Die',
+      displayName: 'In House Die',
+      groupId: sample.groupId,
+      unitId: sample.unitId,
+      developedFor: { kind: 'self', quotationAmount: 0, costAmount: 18700 },
+    });
+    assert.equal(inHouse.status, 201, JSON.stringify(inHouse.body));
+    assert.equal(inHouse.body.item.developedFor.kind, 'self');
+    assert.equal(inHouse.body.item.developedFor.costAmount, 18700);
+
+    // A block that does not MENTION the cost keeps it. The item sheet sends
+    // the deal on every save and has no cost column, so treating an absent
+    // cost as null wiped it on any edit to the part.
+    const patch = (body) =>
+      fetch(`${ctx.baseUrl}/api/items/${both.body.item.id}`, {
+        method: 'PATCH',
+        headers: ctx.headers,
+        body: JSON.stringify({
+          name: 'Quoted And Costed',
+          displayName: 'Quoted And Costed',
+          groupId: sample.groupId,
+          unitId: sample.unitId,
+          ...body,
+        }),
+      }).then(async (r) => ({ status: r.status, body: await r.json() }));
+    const silent = await patch({
+      developedFor: { kind: 'client', clientId: client.id, quotationAmount: 90000 },
+    });
+    assert.equal(silent.status, 200, JSON.stringify(silent.body));
+    assert.equal(silent.body.item.developedFor.quotationAmount, 90000);
+    assert.equal(silent.body.item.developedFor.costAmount, 61200);
+
+    // An explicit null still clears it.
+    const cleared = await patch({
+      developedFor: {
+        kind: 'client',
+        clientId: client.id,
+        quotationAmount: 90000,
+        costAmount: null,
+      },
+    });
+    assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+    assert.equal(cleared.body.item.developedFor.costAmount, null);
+  } finally {
+    await closeServer(ctx.server);
+  }
+});

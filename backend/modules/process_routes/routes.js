@@ -4,6 +4,7 @@
 // Process routing module — HTTP.
 //
 //   GET  /api/process-stages                   the factory's stage master
+//   POST /api/process-stages                   add a stage — a name is all it takes
 //   GET  /api/items/:id/routes                 every version, active first
 //   POST /api/items/:id/routes                 save a route (draft or active)
 //   POST /api/items/:id/routes/versions        declare a new version
@@ -68,6 +69,28 @@ module.exports = function registerProcessRoutesModule(ctx) {
     } catch (error) {
       console.error('[Routes] stage master failed:', error);
       res.status(500).json({ success: false, error: 'Could not read the stage master.' });
+    }
+  });
+
+  app.post('/api/process-stages', requirePermission('items.create'), async (req, res) => {
+    try {
+      const result = await service.createStage({ name: req.body?.name });
+      if (!result.ok) {
+        // The 409 carries the stage that already has this name, so the
+        // caller can simply use it.
+        res.status(result.status || 400).json({
+          success: false,
+          error: result.error,
+          code: result.code,
+          ...(result.stage ? { stage: result.stage } : {}),
+        });
+        return;
+      }
+      if (trackCreate) trackCreate('process_stages', result.stage.id, result.stage, req);
+      res.status(201).json({ success: true, stage: result.stage });
+    } catch (error) {
+      console.error('[Routes] stage create failed:', error);
+      res.status(500).json({ success: false, error: 'Could not add the stage.' });
     }
   });
 

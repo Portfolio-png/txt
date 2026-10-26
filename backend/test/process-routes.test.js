@@ -136,9 +136,12 @@ test('the nine stages are seeded as rows', async () => {
     const res = await ctx.call('GET', '/api/process-stages');
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const codes = res.body.stages.map((s) => s.code);
+    // Packing before Barcode: a label goes on a packed box. Migration 052
+    // seeded the other way round and 054 corrects it in the master, which is
+    // the only place the order lives.
     assert.deepEqual(codes, [
       'die', 'shearing', 'cutting', 'riveting',
-      'assembly', 'barcode', 'packing', 'billing', 'delivery',
+      'assembly', 'packing', 'barcode', 'billing', 'delivery',
     ]);
     // Rows, not constants: every one is editable and deactivatable.
     assert.ok(res.body.stages.every((s) => Number(s.active) === 1));
@@ -257,6 +260,49 @@ test('the rules hold over HTTP, not only in the validator', async () => {
 
     const ghost = await call('POST', '/api/items/99999/routes', { steps: [id('die')] });
     assert.equal(ghost.status, 404);
+  } finally {
+    await closeServer(ctx.server);
+  }
+});
+
+test('a stage can be added by name alone, and used at once', async () => {
+  const ctx = await boot('paper-route-new-stage-', 'route-new-stage@paper.local');
+  try {
+    const { call, partId } = ctx;
+    const before = (await call('GET', '/api/process-stages')).body.stages;
+    const lastPosition = Math.max(...before.map((s) => s.position));
+
+    const made = await call('POST', '/api/process-stages', { name: '  Bending  Press ' });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.stage.name, 'Bending Press');
+    assert.equal(made.body.stage.code, 'bending-press');
+    assert.equal(made.body.stage.position, lastPosition + 1, 'it goes to the end');
+    assert.equal(made.body.stage.repeatable, 0);
+    assert.equal(made.body.stage.active, 1);
+
+    // The same name in another case is the same stage, not a second one.
+    const again = await call('POST', '/api/process-stages', { name: 'bending press' });
+    assert.equal(again.status, 409);
+    assert.equal(again.body.code, 'stage_exists');
+    assert.equal(again.body.stage.id, made.body.stage.id);
+
+    // A different name whose slug collides still gets a code of its own.
+    const twin = await call('POST', '/api/process-stages', { name: 'Bending-Press!' });
+    assert.equal(twin.status, 201, JSON.stringify(twin.body));
+    assert.equal(twin.body.stage.code, 'bending-press-2');
+
+    const blank = await call('POST', '/api/process-stages', { name: '   ' });
+    assert.equal(blank.status, 400);
+    assert.equal(blank.body.code, 'stage_name_required');
+
+    // The new stage is a real stage: a route can use it straight away.
+    const die = before.find((s) => s.code === 'die').id;
+    const saved = await call('POST', `/api/items/${partId}/routes`, {
+      steps: [die, made.body.stage.id],
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    const route = saved.body.routes[0];
+    assert.deepEqual(route.steps.map((s) => s.stageName ?? s.stage_name), ['Die', 'Bending Press']);
   } finally {
     await closeServer(ctx.server);
   }

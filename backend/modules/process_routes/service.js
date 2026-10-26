@@ -295,8 +295,83 @@ module.exports = function createProcessRouteService({ get, all, run }) {
     return { ok: true, routeId, version, retiredRouteId: current.id, previousVersion: current.version };
   }
 
+  /// Adds a stage to the factory's master — a pipeline node the seeded nine
+  /// do not cover, named by whoever is authoring a route.
+  ///
+  /// Only a name is asked for. The code is derived (slug, uniquified), the
+  /// stage goes to the END of the order, and it is not repeatable — the same
+  /// defaults every seeded stage has. A name already in the master, in any
+  /// case, is answered with that stage rather than a second one: typing
+  /// "bending" after someone made "Bending" means the same stage.
+  async function createStage({ name } = {}) {
+    const clean = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!clean) {
+      return { ok: false, status: 400, code: 'stage_name_required', error: 'A stage needs a name.' };
+    }
+    if (clean.length > 60) {
+      return { ok: false, status: 400, code: 'stage_name_long', error: 'Keep a stage name under 60 characters.' };
+    }
+
+    const existing = await get(
+      `SELECT id, code, name, position, repeatable, active
+         FROM process_stages WHERE name = ? COLLATE NOCASE`,
+      [clean],
+    );
+    if (existing) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'stage_exists',
+        error: `"${existing.name}" is already a stage.`,
+        stage: existing,
+      };
+    }
+
+    // Same slug rule as die types (dies/die-identity.js slugifyDieType).
+    const base = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'stage';
+    let code = base;
+    for (let n = 2; await get('SELECT 1 FROM process_stages WHERE code = ?', [code]); n += 1) {
+      code = `${base}-${n}`;
+    }
+
+    const last = await get('SELECT COALESCE(MAX(position), 0) AS position FROM process_stages');
+    // Two adds of the same new name at once both pass the checks above, and
+    // the second hit UNIQUE(code) as a 500. Answered as the existing stage
+    // instead, which is what a caller already reuses on stage_exists.
+    let result;
+    try {
+      result = await run(
+        `INSERT INTO process_stages (code, name, position, repeatable, active)
+         VALUES (?, ?, ?, 0, 1)`,
+        [code, clean, Number(last?.position || 0) + 1],
+      );
+    } catch (error) {
+      if (!/UNIQUE constraint failed: process_stages\.code/.test(String(error?.message || ''))) {
+        throw error;
+      }
+      const raced = await get(
+        `SELECT id, code, name, position, repeatable, active
+           FROM process_stages WHERE name = ? COLLATE NOCASE OR code = ?`,
+        [clean, code],
+      );
+      return {
+        ok: false,
+        status: 409,
+        code: 'stage_exists',
+        error: raced ? `"${raced.name}" is already a stage.` : 'That stage was just added.',
+        stage: raced || undefined,
+      };
+    }
+    const stage = await get(
+      'SELECT id, code, name, position, repeatable, active FROM process_stages WHERE id = ?',
+      [result.lastID],
+    );
+    return { ok: true, stage };
+  }
+
   return {
     listStages,
+    createStage,
     routesFor,
     activeRoute,
     stepsFor,

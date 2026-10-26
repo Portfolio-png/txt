@@ -43,6 +43,50 @@ function initialsOf(value) {
 // neither leaves a gap. With no letters anywhere the answer is '', never the
 // bare number: a code that is only digits is indistinguishable from the part
 // number and tells a reader nothing.
+// "The same name" — trim, collapse internal whitespace, lower-case.
+//
+// Twin of normalizeUnitValue in server.js, which is what the duplicate-name
+// check uses. The part number scopes by name, so the two have to agree: a name
+// the duplicate check calls identical must get the next number, not a fresh 1.
+function normalizeName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+// The group lineage a code's letters come from, root first.
+//
+// A part is filed under the DEEPEST group it belongs to — the sheet creates
+// "Dolly" as a child of "Switch Action" and files the part there — so the one
+// row the save has in hand is the child. Taking only its name gave `DP` for a
+// part the sheet calls `SADP`, and the two disagreed on every part that has a
+// type. Walk up.
+//
+// Bounded, because a cycle in parent_group_id would otherwise hang the save.
+async function groupLineage(groupId, { get }) {
+  const names = [];
+  let current = Number(groupId || 0);
+  const seen = new Set();
+  for (let depth = 0; depth < 10 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    const row = await get('SELECT name, parent_group_id FROM groups WHERE id = ?', [
+      current,
+    ]);
+    if (!row) break;
+    names.push(row.name || '');
+    current = Number(row.parent_group_id || 0);
+  }
+  const lineage = names.reverse();
+  // "Primary Group" is the root saveGroup files every parentless group under,
+  // not a name anybody chose for the part, so it is no part of the code: the
+  // sheet shows action › dolly › patti and previews ADP…, and the stamp read
+  // PGADP… until this. Only when something sits below it — a part filed
+  // straight under Primary Group keeps its letters.
+  if (lineage.length > 1 && normalizeName(lineage[0]) === 'primary group') {
+    lineage.shift();
+  }
+  return lineage;
+}
+
 function buildPartCode({ groupName, setName, itemName, partNo } = {}) {
   const letters = (
     initialsOf(groupName) +
@@ -152,37 +196,78 @@ function valueCodeFor(value) {
 // Archived parts count. A number that was issued is spent: reissuing it puts
 // two rows on one code, which the unique index then refuses with an error the
 // person typing could not have predicted.
-async function nextPartNo({ groupId, setId, setPending }, { get }) {
+// One value's contribution to a part code: NUMBERS WHOLE, LETTERS FIRST.
+//
+// Brass -> B, Nickel -> N, Mild Steel -> MS, and 22 Gauge -> 22G.
+//
+// The digits are kept deliberately. Taking strictly the first character turns
+// both "22 Gauge" and "24 Gauge" into "2", so the two parts a press shop most
+// needs to tell apart would share a code and the unique index would refuse the
+// second with nothing to explain why. Gauge is the distinction; it cannot be
+// the thing that gets dropped.
+//
+// Distinct from valueCodeFor above, which keeps a short single word whole
+// (Brass -> BRAS) because it is the fallback for a VARIANT code where one value
+// is being added to a part that already has a name. This is the properties rule
+// for the code a part is stamped with, where every top-level property
+// contributes and four letters each would not fit on a drawing.
+//
+// Twin of partPropertyCode in packages/core_erp/lib/features/items/domain/
+// part_code.dart, asserted against the same vectors on both sides.
+function propertyCodeFor(value) {
+  // Split on the digit/letter boundary too, not only on punctuation and
+  // spaces. "22 Gauge" was already two words and came out 22G, but "22G"
+  // typed without the space was ONE word, was not all digits, and so took its
+  // first character — giving 2, exactly what this rule exists to prevent, and
+  // colliding with 24G. A gauge cell takes typed values verbatim, so that
+  // spelling is the normal one.
+  const tokens = String(value || '').match(/\d+|[A-Za-z]+/g) || [];
+  if (tokens.length === 0) return '';
+  return tokens
+    .map((token) => (/^\d+$/.test(token) ? token : token[0]))
+    .join('')
+    .toUpperCase();
+}
+
+async function nextPartNo({ groupId, setId, setPending, itemName }, { get, all }) {
   const normalizedGroupId = Number(groupId || 0);
   if (!normalizedGroupId) return 1;
 
-  // A set that has only been named has no members yet, so its scope is empty
-  // and the answer is 1. The caller has to say so — nothing stored can tell us,
-  // because the set does not exist.
-  if (setPending) return 1;
+  // Scope is the group and the NAME, so "the forty-eighth Dolly patti" counts
+  // Dolly pattis. It used to be the group and the SET, which made 48 the
+  // forty-eighth part of any name in that set — the code said one thing and the
+  // number counted another.
+  //
+  // Filtered in JS rather than matched in SQL so that "the same name" means
+  // exactly what it means everywhere else. normalizeName is the twin of
+  // server.js's normalizeUnitValue, and a LOWER(TRIM(...)) in SQL would not
+  // collapse the internal whitespace that one does.
+  //
+  // Archived parts count. A number that was issued is spent: reissuing it puts
+  // two rows on one code, which the unique index then refuses with an error the
+  // person typing could not have predicted.
+  const wanted = normalizeName(itemName);
+  if (!wanted) {
+    // Nothing to scope by. Fall back to the group so a part with no name yet
+    // still gets a number rather than colliding on 1 with every other.
+    const row = await get(
+      'SELECT MAX(part_no) AS maxNo FROM items WHERE group_id = ?',
+      [normalizedGroupId],
+    );
+    return Number(row?.maxNo || 0) + 1;
+  }
 
-  const normalizedSetId = Number(setId || 0);
-  const row = normalizedSetId
-    ? await get(
-        `SELECT MAX(items.part_no) AS maxNo
-           FROM items
-           JOIN inventory_set_lines ON inventory_set_lines.item_id = items.id
-          WHERE items.group_id = ? AND inventory_set_lines.set_id = ?`,
-        [normalizedGroupId, normalizedSetId],
-      )
-    : await get(
-        // The group's unfiled parts — the ones belonging to no set at all.
-        `SELECT MAX(part_no) AS maxNo
-           FROM items
-          WHERE group_id = ?
-            AND NOT EXISTS (
-              SELECT 1 FROM inventory_set_lines
-               WHERE inventory_set_lines.item_id = items.id
-            )`,
-        [normalizedGroupId],
-      );
-
-  return Number(row?.maxNo || 0) + 1;
+  const rows = await all(
+    'SELECT name, part_no FROM items WHERE group_id = ? AND part_no IS NOT NULL',
+    [normalizedGroupId],
+  );
+  let maxNo = 0;
+  for (const row of rows || []) {
+    if (normalizeName(row.name) !== wanted) continue;
+    const no = Number(row.part_no || 0);
+    if (no > maxNo) maxNo = no;
+  }
+  return maxNo + 1;
 }
 
 module.exports = {
@@ -190,6 +275,9 @@ module.exports = {
   buildVariantPartCode,
   variantCodeFromPartCode,
   valueCodeFor,
+  propertyCodeFor,
+  normalizeName,
+  groupLineage,
   initialsOf,
   nextPartNo,
   MAX_CODE_LETTERS,

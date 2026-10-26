@@ -26,6 +26,16 @@ const REPLICATED = [
   'dies', 'clients', 'vendors', 'departments', 'inventory_stock_positions',
 ];
 
+/// Tables given their triggers by later migrations (043, 044, 052, 058).
+/// Not in REPLICATED because the row-cloning test needs seeded rows, which
+/// these may not have — but their triggers must exist, and must come back
+/// after a reset: the restore stopped at 042, so they did not.
+const LATER = [
+  'entity_links', 'entity_variation_nodes', 'process_routes',
+  'die_makers', 'process_stages', 'party_contacts',
+];
+const ALL_TRIGGERED = [...REPLICATED, ...LATER];
+
 async function boot(prefix) {
   const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
@@ -202,7 +212,7 @@ test('every replicated table logs its own writes, with no application code invol
   assert.deepEqual(untested, [], `these tables had no row to clone: ${untested.join(', ')}`);
 });
 
-test('all 51 triggers exist, so no table is quietly unreplicated', async (t) => {
+test('every changelog trigger exists, so no table is quietly unreplicated', async (t) => {
   const backend = await boot('paper-changelog-exist-');
   t.after(async () => {
     await backend.closeDb();
@@ -214,14 +224,14 @@ test('all 51 triggers exist, so no table is quietly unreplicated', async (t) => 
   const present = new Set(rows.map((row) => row.name));
 
   const missing = [];
-  for (const table of REPLICATED) {
+  for (const table of ALL_TRIGGERED) {
     for (const suffix of ['ai', 'au', 'ad']) {
       const name = `trg_changelog_${table}_${suffix}`;
       if (!present.has(name)) missing.push(name);
     }
   }
   assert.deepEqual(missing, [], `missing triggers: ${missing.join(', ')}`);
-  assert.equal(present.size, REPLICATED.length * 3);
+  assert.equal(present.size, ALL_TRIGGERED.length * 3);
 });
 
 test('a wipe removes the triggers and puts them back', async (t) => {
@@ -240,7 +250,7 @@ test('a wipe removes the triggers and puts them back', async (t) => {
   );
   assert.equal(
     rows.length,
-    REPLICATED.length * 3,
+    ALL_TRIGGERED.length * 3,
     'every changelog trigger is back after a factory reset',
   );
 

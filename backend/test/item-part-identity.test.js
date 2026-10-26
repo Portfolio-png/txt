@@ -5,7 +5,13 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { buildPartCode } = require('../modules/items/part-identity');
+const {
+  buildPartCode,
+  propertyCodeFor,
+  valueCodeFor,
+  initialsOf,
+  groupLineage,
+} = require('../modules/items/part-identity');
 
 // A part is known on the floor by a number and a code — "the forty-eighth
 // Dolly patti in Switch Action", written SADP48. This proves the columns
@@ -375,7 +381,11 @@ test('a part code is unique within its group, and says who holds it', async () =
   }
 });
 
-test('the next part identity restarts per group and set, and counts archived parts', async () => {
+test('the next part identity restarts per NAME, and counts archived parts', async () => {
+  // The number counts parts of this name in this group — "the forty-eighth
+  // Dolly patti" counts Dolly pattis. It used to count the group's set
+  // members, so 48 was the forty-eighth part of ANY name in that set and the
+  // code said one thing while the number counted another.
   const ctx = await boot('paper-part-next-', 'part-next@paper.local');
   try {
     const items = await fetch(`${ctx.baseUrl}/api/items`, {
@@ -383,6 +393,7 @@ test('the next part identity restarts per group and set, and counts archived par
     }).then((r) => r.json());
     const sample = items.items[0];
     const groupId = sample.groupId;
+    const unitId = sample.unitId;
 
     const ask = (query) =>
       fetch(`${ctx.baseUrl}/api/items/next-part-identity?${query}`, {
@@ -390,22 +401,114 @@ test('the next part identity restarts per group and set, and counts archived par
       }).then(async (r) => ({ status: r.status, body: await r.json() }));
 
     // The route must not be swallowed by /api/items/:id.
-    const first = await ask(`groupId=${groupId}&name=Patti`);
+    const first = await ask(`groupId=${groupId}&name=Scoped A`);
     assert.equal(first.status, 200, JSON.stringify(first.body));
-    assert.equal(first.body.scope, 'group-unfiled');
-    assert.ok(first.body.partNo >= 1);
+    assert.equal(first.body.scope, 'group-name');
+    assert.equal(first.body.partNo, 1, 'no Scoped A in this group yet');
     assert.ok(first.body.partCode.endsWith(String(first.body.partNo)));
 
-    // A set that has only been named has no members, so its scope is empty.
-    const pending = await ask(`groupId=${groupId}&setPending=1&name=Patti`);
-    assert.equal(pending.body.partNo, 1);
-    assert.equal(pending.body.scope, 'pending-set');
+    // Make one, and the next of that name follows it.
+    const made = await fetch(`${ctx.baseUrl}/api/items`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({
+        name: 'Scoped A',
+        displayName: 'Scoped A',
+        groupId,
+        unitId,
+        partNo: 1,
+        partCode: 'SCOPE1',
+      }),
+    }).then((r) => r.json());
 
-    // Build a real set in this group with two numbered members.
-    const unitId = sample.unitId;
-    const madeIds = [];
-    for (const [index, name] of ['Scoped A', 'Scoped B'].entries()) {
-      const made = await fetch(`${ctx.baseUrl}/api/items`, {
+    const second = await ask(`groupId=${groupId}&name=Scoped A`);
+    assert.equal(second.body.partNo, 2, 'Scoped A holds 1, so the next is 2');
+
+    // A different name is a different scope and starts again.
+    const other = await ask(`groupId=${groupId}&name=Scoped B`);
+    assert.equal(other.body.partNo, 1, 'no Scoped B in this group');
+
+    // The same name, spelled differently, is the same name. This is the rule
+    // the duplicate-name check uses, and the two have to agree or a name it
+    // calls identical would get a fresh 1 and collide on the code.
+    const spelled = await ask(`groupId=${groupId}&name=${encodeURIComponent('  scoped   a  ')}`);
+    assert.equal(spelled.body.partNo, 2, 'trimmed, collapsed and lower-cased');
+
+    // Archived parts still hold their number: it was issued, and reissuing it
+    // would collide on the code.
+    await ctx.backend.run('UPDATE items SET is_archived = 1 WHERE id = ?', [
+      made.item.id,
+    ]);
+    const afterArchive = await ask(`groupId=${groupId}&name=Scoped A`);
+    assert.equal(afterArchive.body.partNo, 2);
+
+    assert.equal((await ask('name=Scoped A')).status, 400, 'groupId is required');
+  } finally {
+    await closeServer(ctx.server);
+    await ctx.backend.closeDb();
+  }
+});
+
+test('propertyCodeFor is numbers whole, letters first', () => {
+  // The same vectors as partPropertyCode in part_code.dart. The two
+  // implementations are allowed to exist; drifting apart is not.
+  const fixture = [
+    ['Brass', 'B'],
+    ['Nickel', 'N'],
+    ['copper', 'C'],
+    ['Mild Steel', 'MS'],
+    ['Brass Polish', 'BP'],
+    ['22 Gauge', '22G'],
+    ['24 Gauge', '24G'],
+    // Typed without the space, which is how a gauge cell usually gets one.
+    // These used to come out '2' and '2' — the collision this rule exists to
+    // prevent, reintroduced by the spelling.
+    ['22G', '22G'],
+    ['24G', '24G'],
+    ['2mm', '2M'],
+    ['M8', 'M8'],
+    ['128GB', '128G'],
+    ['12GB', '12G'],
+    ['16GB', '16G'],
+    ['SS 304', 'S304'],
+    ['', ''],
+    ['   ', ''],
+    ['---', ''],
+  ];
+  for (const [value, want] of fixture) {
+    assert.equal(propertyCodeFor(value), want, JSON.stringify(value));
+  }
+
+  // The digits are the whole point: taking strictly the first character makes
+  // these two the same, and they are the two parts a press shop most needs to
+  // tell apart.
+  assert.notEqual(propertyCodeFor('22 Gauge'), propertyCodeFor('24 Gauge'));
+  assert.notEqual(propertyCodeFor('22G'), propertyCodeFor('24G'));
+  assert.notEqual(propertyCodeFor('12GB'), propertyCodeFor('16GB'));
+
+  // Distinct from valueCodeFor, which keeps a short single word whole because
+  // it answers a different question.
+  assert.equal(valueCodeFor('Brass'), 'BRAS');
+  assert.equal(propertyCodeFor('Brass'), 'B');
+});
+
+test('a part is stamped with its properties in its code', async () => {
+  const ctx = await boot('paper-part-props-', 'part-props@paper.local');
+  try {
+    const items = await fetch(`${ctx.baseUrl}/api/items`, {
+      headers: ctx.headers,
+    }).then((r) => r.json());
+    const sample = items.items[0];
+    const { groupId, unitId } = sample;
+    // The WHOLE lineage, root first — not just the group the part is filed
+    // under. This test used to compute `initialsOf(groupRow.name)`, one level,
+    // and so asserted the very divergence it was meant to catch: the sheet
+    // showed SADP… for a part the server stamped DP….
+    const lineage = await groupLineage(groupId, { get: ctx.backend.get });
+    const trunk = lineage.map((n) => initialsOf(n)).join('');
+
+    const create = (name, tree) =>
+      fetch(`${ctx.baseUrl}/api/items`, {
         method: 'POST',
         headers: ctx.headers,
         body: JSON.stringify({
@@ -413,57 +516,147 @@ test('the next part identity restarts per group and set, and counts archived par
           displayName: name,
           groupId,
           unitId,
-          partNo: index + 1,
-          partCode: `SCOPE${index + 1}`,
+          variationTree: tree,
         }),
       }).then((r) => r.json());
-      madeIds.push(made.item.id);
-    }
-    const set = await fetch(`${ctx.baseUrl}/api/inventory/sets`, {
+
+    const property = (name, value, code) => ({
+      kind: 'property',
+      name,
+      children: [{ kind: 'value', name: value, code: code || '' }],
+    });
+
+    // No properties — stamped exactly as it always was.
+    const bare = await create('Bare Part', []);
+    assert.equal(bare.item.partCode, `${trunk}BP1`, 'trunk + number, unchanged');
+
+    // With properties — one code each, in declared order, between the letters
+    // and the number.
+    const full = await create('Full Part', [
+      property('Alloy', 'Brass'),
+      property('Thickness', '22 Gauge'),
+      property('Finish', 'Nickel'),
+    ]);
+    assert.equal(full.item.partCode, `${trunk}FPB22GN1`);
+
+    // The shop's explicit code on a value wins over the derived one.
+    const coded = await create('Coded Part', [property('Alloy', 'Brass', 'BR')]);
+    assert.equal(coded.item.partCode, `${trunk}CPBR1`);
+
+    // A part filed under a CHILD group takes the whole lineage's letters.
+    //
+    // This is the shape the sheet creates — it files "Switch Action › Dolly"
+    // as a parent and child group and puts the part under the child — and it
+    // is where the two sides disagreed: the save has only the child row in
+    // hand, so taking its name alone gave DP for a part the sheet calls SADP.
+    const parent = await fetch(`${ctx.baseUrl}/api/groups`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({ name: 'Switch Action', groupType: 'item', unitId }),
+    }).then((r) => r.json());
+    const child = await fetch(`${ctx.baseUrl}/api/groups`, {
       method: 'POST',
       headers: ctx.headers,
       body: JSON.stringify({
-        name: 'Scoped Kit',
-        groupId,
-        lines: madeIds.map((itemId, position) => ({
-          itemId,
-          variationLeafNodeId: 0,
-          quantity: 1,
-          position,
-        })),
+        name: 'Dolly',
+        groupType: 'item',
+        unitId,
+        parentGroupId: parent.group.id,
       }),
     }).then((r) => r.json());
 
-    const inSet = await ask(`groupId=${groupId}&setId=${set.set.id}&name=Patti`);
-    assert.equal(inSet.body.partNo, 3, 'the set holds 1 and 2, so the next is 3');
-    assert.equal(inSet.body.scope, 'set');
-
-    // Archived parts still hold their number: it was issued, and reissuing it
-    // would collide on the code.
-    await ctx.backend.run('UPDATE items SET is_archived = 1 WHERE id = ?', [madeIds[1]]);
-    const afterArchive = await ask(
-      `groupId=${groupId}&setId=${set.set.id}&name=Patti`,
-    );
-    assert.equal(afterArchive.body.partNo, 3);
-
-    // A different set in the same group starts again.
-    const otherSet = await fetch(`${ctx.baseUrl}/api/inventory/sets`, {
+    const nested = await fetch(`${ctx.baseUrl}/api/items`, {
       method: 'POST',
       headers: ctx.headers,
       body: JSON.stringify({
-        name: 'Other Kit',
-        groupId,
-        lines: [
-          { itemId: madeIds[0], variationLeafNodeId: 0, quantity: 1, position: 0 },
+        name: 'Patti',
+        displayName: 'Patti',
+        groupId: child.group.id,
+        unitId,
+        variationTree: [
+          property('Alloy', 'Brass'),
+          property('Thickness', '22 Gauge'),
+          property('Finish', 'Nickel'),
         ],
       }),
     }).then((r) => r.json());
-    const otherScope = await ask(
-      `groupId=${groupId}&setId=${otherSet.set.id}&name=Patti`,
-    );
-    assert.equal(otherScope.body.partNo, 2, 'only Scoped A (no 1) is in this set');
 
-    assert.equal((await ask('name=Patti')).status, 400, 'groupId is required');
+    // Asserted as the rule, not a literal: whether "Switch Action" is itself
+    // under a root group depends on the seed, and the point is that EVERY
+    // level contributes — which a one-level trunk did not.
+    const nestedLineage = await groupLineage(child.group.id, {
+      get: ctx.backend.get,
+    });
+    assert.deepEqual(
+      nestedLineage.slice(-2),
+      ['Switch Action', 'Dolly'],
+      'the lineage reaches past the group the part is filed under',
+    );
+    assert.equal(
+      nested.item.partCode,
+      `${nestedLineage.map((n) => initialsOf(n)).join('')}PB22GN1`,
+      'every lineage level, then the properties, then the number',
+    );
+    // "Primary Group" — the root a parentless group is filed under — is not a
+    // name anybody chose for the part, so it puts no letters in the code: the
+    // sheet previews SADP… and the stamp must agree, not read PGSADP….
+    assert.ok(
+      nested.item.partCode.startsWith('SADP'),
+      `the root group stays out of the code: ${nested.item.partCode}`,
+    );
+    assert.ok(
+      nested.item.partCode.includes('SAD'),
+      'Switch Action and Dolly are both in it, which is what the sheet shows',
+    );
+
+    // An update that changes a property does NOT restamp. A code is issued
+    // once; it is on drawings and every die code derives from it.
+    const patched = await fetch(`${ctx.baseUrl}/api/items/${full.item.id}`, {
+      method: 'PATCH',
+      headers: ctx.headers,
+      body: JSON.stringify({
+        name: 'Full Part',
+        displayName: 'Full Part',
+        groupId,
+        unitId,
+        variationTree: [property('Alloy', 'Copper')],
+      }),
+    }).then((r) => r.json());
+    assert.equal(patched.item.partCode, `${trunk}FPB22GN1`, 'issued once');
+  } finally {
+    await closeServer(ctx.server);
+    await ctx.backend.closeDb();
+  }
+});
+
+test('two names that reduce to the same letters both still get a code', async () => {
+  // "Patti" and "Plate" are both P, and with the number scoped by name they
+  // both start at 1 — so without properties they derive one code. This used to
+  // leave the second part with NO code at all, silently.
+  const ctx = await boot('paper-part-clash-', 'part-clash@paper.local');
+  try {
+    const items = await fetch(`${ctx.baseUrl}/api/items`, {
+      headers: ctx.headers,
+    }).then((r) => r.json());
+    const { groupId, unitId } = items.items[0];
+
+    const create = (name) =>
+      fetch(`${ctx.baseUrl}/api/items`, {
+        method: 'POST',
+        headers: ctx.headers,
+        body: JSON.stringify({ name, displayName: name, groupId, unitId }),
+      }).then((r) => r.json());
+
+    const patti = await create('Patti');
+    const plate = await create('Plate');
+
+    assert.ok(patti.item.partCode, 'the first gets a code');
+    assert.ok(plate.item.partCode, 'and so does the second');
+    assert.notEqual(
+      plate.item.partCode,
+      patti.item.partCode,
+      'the second takes the next number rather than no code',
+    );
   } finally {
     await closeServer(ctx.server);
     await ctx.backend.closeDb();
