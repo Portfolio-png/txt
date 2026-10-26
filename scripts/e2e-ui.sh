@@ -8,7 +8,7 @@
 # through it, and then reads the rows back out of SQLite. The rows are the
 # assertion that matters.
 #
-#   ./scripts/e2e-ui.sh              # harness proof, then the route journey
+#   ./scripts/e2e-ui.sh              # harness proof, then the part+route journey
 #   ./scripts/e2e-ui.sh app_boot     # just one file (by basename, no suffix)
 #
 # NEVER touches backend/paper.db. A throwaway database is created under
@@ -32,6 +32,13 @@ cleanup() {
   local code=$?
   if [[ -n "${SERVER_PID}" ]] && kill -0 "${SERVER_PID}" 2>/dev/null; then
     kill "${SERVER_PID}" 2>/dev/null || true
+    # Give it a moment, then insist. A server that outlives its run holds the
+    # port and its database, and the next run tests against the wrong one.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "${SERVER_PID}" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill -9 "${SERVER_PID}" 2>/dev/null || true
     wait "${SERVER_PID}" 2>/dev/null || true
   fi
   if [[ "${KEEP_DB:-0}" == "1" ]]; then
@@ -70,8 +77,29 @@ printf 'items=%s users=%s stages=%s\n' \
   "$(sqlite3 "${DB}" 'SELECT COUNT(*) FROM process_stages;')"
 
 # --- 2. the server -----------------------------------------------------------
+# Refuse to start if something already holds the port.
+#
+# Not a nicety: an orphaned server from an earlier run — the script's cleanup
+# does not fire if the run is killed — keeps listening on ${PORT} with ITS
+# database still open. The new server then fails to bind, the health check
+# passes against the old one, and the whole journey runs against a stale
+# database. That cost a confusing debugging round: a part "already existed" in
+# a database this script had just created empty, because the app was talking to
+# one from three days earlier.
+if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+  lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN | sed -n '1,5p' >&2
+  fail "port ${PORT} is already in use — an earlier run's server is probably \
+still up. Kill it, or set PORT= to something else."
+fi
+
 say "Starting the backend on ${BASE_URL}"
-( cd "${REPO}" && PORT="${PORT}" DB_PATH="${DB}" node backend/server.js ) \
+# `exec`, so the subshell is REPLACED by node and $! is node's own pid.
+#
+# Without it $! is the subshell, and cleanup killed the subshell while node
+# carried on holding the port with its database open. That is how three
+# orphaned servers accumulated here — one of them for three days — each making
+# the next run bind nothing and silently test against a stale database.
+( cd "${REPO}" && exec env PORT="${PORT}" DB_PATH="${DB}" node backend/server.js ) \
   >"${WORK}/server.log" 2>&1 &
 SERVER_PID=$!
 
@@ -93,7 +121,7 @@ echo "ready"
 # the next boot.
 TESTS=("${1:-}")
 if [[ -z "${TESTS[0]}" ]]; then
-  TESTS=(app_boot express_route)
+  TESTS=(app_boot sheet_route sheet_bulk)
 fi
 
 for name in "${TESTS[@]}"; do
@@ -107,11 +135,40 @@ done
 # --- 4. what actually landed -------------------------------------------------
 # Driving the UI is the point; rows in the database are the proof.
 say "Checking the database"
+
+# Bulk entry: three rows typed in one sitting, and Save pressed twice.
+#
+# The count is the whole assertion. The batching save wrote rows to the server
+# and then reported that nothing had been saved, so a second press filed them
+# again — six parts from three rows, or a sheet that could never be saved at
+# all. Rows commit one at a time now and a saved row that has not been touched
+# is skipped, so three rows must be three parts however many times Save is hit.
+BULK="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM items WHERE name LIKE 'E2E Bulk%';")"
+if [[ "${BULK}" != "0" ]]; then
+  echo "bulk parts written: ${BULK}"
+  [[ "${BULK}" == "3" ]] || fail "three rows produced ${BULK} parts"
+
+  # And no two parts may share a code within a group — the unique index the
+  # server enforces, checked here because the sheet now lets the server stamp
+  # every code rather than guessing one per row.
+  DUPES="$(sqlite3 "${DB}" "
+    SELECT COUNT(*) FROM (
+      SELECT group_id, part_code FROM items
+       WHERE part_code IS NOT NULL AND TRIM(part_code) <> ''
+       GROUP BY group_id, part_code HAVING COUNT(*) > 1
+    );")"
+  [[ "${DUPES}" == "0" ]] || fail "two parts share a code within one group"
+
+  sqlite3 -noheader "${DB}" "
+    SELECT '  ' || name || '  ' || COALESCE(NULLIF(part_code,''),'(unstamped)')
+      FROM items WHERE name LIKE 'E2E Bulk%' ORDER BY id;"
+fi
 ROUTES="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM process_routes WHERE status='active';")"
 if [[ "${ROUTES}" == "0" ]]; then
   echo "No active route was written."
   echo "(Expected if you ran only app_boot.)"
   [[ "${TESTS[0]}" == "app_boot" ]] && { say "OK — harness only"; exit 0; }
+  [[ "${TESTS[0]}" == "sheet_bulk" ]] && { say "OK — bulk entry only"; exit 0; }
   fail "the route journey ran but wrote nothing"
 fi
 

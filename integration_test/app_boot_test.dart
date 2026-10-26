@@ -19,7 +19,7 @@ void main() {
   // the first teardown's in-flight HTTP — thirteen providers initialize
   // concurrently after auth — lands while the second boot is running, and
   // reports as a failure of whichever test happens to be on screen.
-  testWidgets('boots, signs in against the real server, and opens Express',
+  testWidgets('boots, signs in against the real server, and opens the item sheet',
       (tester) async {
     await bootApp(tester);
 
@@ -27,11 +27,11 @@ void main() {
     // trip succeeded, and AppShell laid out wide enough to draw the sidebar
     // inline rather than hiding it in a Drawer.
     expect(
-      find.byKey(const ValueKey<String>('sidebar_express_wizard')),
+      find.byKey(const ValueKey<String>('sidebar_item_sheet')),
       findsOneWidget,
     );
 
-    await openExpress(tester);
-    expect(find.text('Express entry'), findsOneWidget);
+    await openItemSheet(tester);
+    expect(find.text('Item Master'), findsOneWidget);
   });
 }

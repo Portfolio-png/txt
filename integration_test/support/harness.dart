@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:paper/main.dart';
@@ -21,7 +22,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// A desktop window. `AppShell` treats anything under 900 logical pixels as
 /// mobile and moves the sidebar into a `Drawer`, and the default macOS window
-/// is 800x600 — so without this the Express pill is not on screen at all.
+/// is 800x600 — so without this the Masters header's pill is not on screen at
+/// all.
 const Size kDesktopWindow = Size(1600, 1100);
 
 /// Pumps until [finder] matches, or gives up and says what it was waiting for.
@@ -54,12 +56,33 @@ Future<void> pumpUntil(
   );
 }
 
+/// Prints every piece of text on screen, a few per line.
+///
+/// In chunks because `debugPrint` truncates a long single line — which is why
+/// the one-string version of this diagnostic kept appearing to stop at the
+/// sidebar, and cost two wrong hypotheses before anyone noticed the dump was
+/// cut rather than the screen being empty.
+void dumpVisibleText(WidgetTester tester, String label, {int perLine = 8}) {
+  final seen = <String>[];
+  for (final element in find.byType(Text).evaluate()) {
+    final widget = element.widget as Text;
+    final text = (widget.data ?? widget.textSpan?.toPlainText() ?? '').trim();
+    if (text.isEmpty || seen.contains(text)) continue;
+    seen.add(text);
+  }
+  debugPrint('$label: ${seen.length} distinct strings on screen');
+  for (var i = 0; i < seen.length; i += perLine) {
+    final slice = seen.skip(i).take(perLine).join(' | ');
+    debugPrint('  [$i] $slice');
+  }
+}
+
 /// Every piece of text currently rendered, for a failure message.
 ///
 /// Worth the lines: without it a timeout says only what was NOT found, and the
 /// next move is a ten-minute guess. With it the failure names the screen the
 /// app was actually on.
-String visibleText(WidgetTester tester, {int limit = 50}) {
+String visibleText(WidgetTester tester, {int limit = 250}) {
   final seen = <String>[];
   for (final element in find.byType(Text).evaluate()) {
     final widget = element.widget as Text;
@@ -69,7 +92,9 @@ String visibleText(WidgetTester tester, {int limit = 50}) {
     seen.add(trimmed);
     if (seen.length >= limit) break;
   }
-  return seen.isEmpty ? '(no text at all)' : seen.join(' | ');
+  if (seen.isEmpty) return '(no text at all)';
+  final truncated = seen.length >= limit;
+  return seen.join(' | ') + (truncated ? ' …(truncated at $limit)' : '');
 }
 
 /// Pumps until [finder] matches nothing — a dialog closing, a spinner going.
@@ -111,30 +136,132 @@ Future<void> bootApp(WidgetTester tester) async {
 
   await tester.pumpWidget(const MyApp());
 
-  // The shell is up when the sidebar's Express pill exists. Generous, because
+  // The shell is up when the sidebar's Sheet pill exists. Generous, because
   // this covers activation, a real login round trip and the first provider
   // fan-out.
   await pumpUntil(
     tester,
-    find.byKey(const ValueKey<String>('sidebar_express_wizard')),
+    find.byKey(const ValueKey<String>('sidebar_item_sheet')),
     timeout: const Duration(seconds: 90),
     reason: 'the app should reach AppShell with the sidebar drawn',
   );
 }
 
-/// Opens the Express window and waits for it.
+/// Opens the item sheet from the Masters header and waits for it.
 ///
-/// `openExpress` awaits `CreationLineupStore().load()` before `showDialog`, so
-/// the window is one async hop behind the tap.
-Future<void> openExpress(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey<String>('sidebar_express_wizard')));
+/// This was `openExpress`, which tapped `sidebar_express_wizard` and waited for
+/// the text "Express entry". Express and the Factory Sheet wizard were two
+/// doors onto one in-memory prototype and both are gone; the Masters header now
+/// carries a single Sheet pill onto the real screen.
+///
+/// Waits on the save button's key rather than any text: the breadcrumb and the
+/// section headings are wording, and wording is the first thing to change.
+Future<void> openItemSheet(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey<String>('sidebar_item_sheet')));
   await pumpUntil(
     tester,
-    find.text('Express entry'),
-    reason: 'tapping the Express pill should open the creation window',
+    find.byKey(const ValueKey<String>('save_item_sheet_btn')),
+    reason: 'tapping the Sheet pill should open the item master sheet',
   );
 }
 
 /// Call once per test file.
 IntegrationTestWidgetsFlutterBinding ensureBinding() =>
     IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+/// Waits until no cell picker is open.
+///
+/// The picker is a route with a modal barrier, and the barrier ABSORBS
+/// pointers while it dismisses. Tapping the next cell during that window hits
+/// the barrier instead and the tap is silently lost — which is how three rows
+/// came out with the third one's group never set.
+bool _pickerIsOpen() =>
+    find.textContaining('Type to filter').evaluate().isNotEmpty;
+
+Future<void> waitForPickerClosed(WidgetTester tester) async {
+  for (var i = 0; i < 60; i += 1) {
+    if (!_pickerIsOpen()) {
+      // Two more frames for the barrier itself to leave the tree.
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  throw TestFailure('a cell picker never closed');
+}
+
+/// Closes whatever picker is open, so a helper starts from a known state.
+///
+/// Belt and braces: a picker left open covers the next cell, the tap lands on
+/// it instead, and the step that follows waits for a dropdown that was never
+/// asked for — which reads as a hang rather than a missed tap.
+Future<void> dismissAnyPicker(WidgetTester tester) async {
+  if (!_pickerIsOpen()) return;
+  final close = find.byIcon(Icons.close_rounded);
+  if (close.evaluate().isNotEmpty) {
+    await tester.tap(close.last);
+  } else {
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+  }
+  await waitForPickerClosed(tester);
+}
+
+/// Taps a cell by its (sheet, row, column) key and picks [label] from the
+/// picker it opens.
+Future<void> pickInCell(
+  WidgetTester tester, {
+  required int column,
+  required String label,
+  int row = 0,
+  String sheet = 'item',
+}) async {
+  await dismissAnyPicker(tester);
+  await tester.ensureVisible(
+    find.byKey(ValueKey<String>('cell_${sheet}_${row}_$column')),
+  );
+  await tester.pump();
+  await tester.tap(find.byKey(ValueKey<String>('cell_${sheet}_${row}_$column')));
+
+  // Scoped to the picker's own rows. Once an earlier row holds the same label,
+  // a bare text finder also matches that CELL, and `.last` is then as likely
+  // to tap a cell as the option.
+  final option = find.widgetWithText(ListTile, label);
+  await pumpUntil(
+    tester,
+    option,
+    reason: 'the picker should offer "$label"',
+  );
+  await tester.tap(option.last);
+  await waitForPickerClosed(tester);
+}
+
+/// Taps a cell and types a value the picker does not have, taking the
+/// add-new tile.
+Future<void> typeNewInCell(
+  WidgetTester tester, {
+  required int column,
+  required String value,
+  int row = 0,
+  String sheet = 'item',
+}) async {
+  await dismissAnyPicker(tester);
+  await tester.ensureVisible(
+    find.byKey(ValueKey<String>('cell_${sheet}_${row}_$column')),
+  );
+  await tester.pump();
+  await tester.tap(find.byKey(ValueKey<String>('cell_${sheet}_${row}_$column')));
+  await pumpUntil(
+    tester,
+    find.byType(TextField),
+    reason: 'the picker should open with its search field',
+  );
+  await tester.enterText(find.byType(TextField).last, value);
+  await pumpUntil(
+    tester,
+    find.textContaining('Add "$value"'),
+    reason: 'typing a value the picker does not have should offer to add it',
+  );
+  await tester.tap(find.textContaining('Add "$value"'));
+  await waitForPickerClosed(tester);
+}
