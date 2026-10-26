@@ -87,6 +87,8 @@ When several features feed the same metrics, that cluster is a candidate product
 | Machine assignment | job, machine | machine_assigned, machine_released | Machine utilisation, idle time | Capacity |
 | Stock issue | stock_item, job | stock_issued, scrap_logged | Material per part, scrap rate | Material yield |
 | Developed For | part, client, sub_contractor | none — a part attribute, with field history through `entity_activity_log` | Parts developed per client, quotation value per client, quote-to-first-order lag, share of in-house vs client-driven development | Commercial |
+| Development margin | part, client | none — two part attributes, with field history through `entity_activity_log` | Margin per development job, margin by client, share of jobs quoted below cost, jobs quoted but never costed | Commercial |
+| Deal contacts | client, party_contact, part | none — people are master data and the ticks a part attribute; field history through `entity_activity_log` (`party_contacts` rows, item diffs) | Deals per person, who at a client brings work, parts dealt with someone since archived (whose relationship to re-establish) | Commercial |
 | Die sheet | die, part | none — a tool attribute; `item_dies` records which part it makes | Dies made per month and per maker, PO-to-date-in lead time, dies per part, where a die is when it is wanted | Tooling |
 | Machine sheet | machine, part | none — an asset attribute; `item_machines` records which parts it runs | Machines per type, rated tonnage available, strokes/min by machine, running hours between services, which parts a press is the only home for | Capacity |
 
