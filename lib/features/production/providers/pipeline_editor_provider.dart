@@ -1184,6 +1184,17 @@ class PipelineEditorProvider extends ChangeNotifier {
     _autoHealItemChain();
   }
 
+  /// Whether [endpoint] is the user's — a real item or group they mapped —
+  /// rather than nothing or a placeholder the editor made up.
+  static bool _isMapped(PipelineItemEndpoint? endpoint) =>
+      endpoint != null && !endpoint.isGenerated;
+
+  /// Fills the item chain in where nobody has said what flows.
+  ///
+  /// Only placeholders are (re)generated. An endpoint the user mapped is kept
+  /// as it is, and a successor's mapped input is NOT overwritten by its
+  /// predecessor's output: if the two disagree, that disagreement is exactly
+  /// what the unit check exists to find and bridge.
   void _autoHealItemChain() {
     List<ProcessNode> updatedNodes = [..._template.nodes];
     final flows = _template.flows;
@@ -1205,7 +1216,9 @@ class PipelineEditorProvider extends ChangeNotifier {
 
       final outgoingFlows = flows.where((f) => f.fromNodeId == currentId).toList();
 
-      if (currentNode.processType != 'Input' && currentNode.processType != 'Output') {
+      if (currentNode.processType != 'Input' &&
+          currentNode.processType != 'Output' &&
+          !_isMapped(currentNode.outputItem)) {
         if (outgoingFlows.isEmpty) {
           final defaultOutputName = '${currentNode.processType}_Output';
           final newOutputItem = PipelineItemEndpoint(
@@ -1280,6 +1293,10 @@ class PipelineEditorProvider extends ChangeNotifier {
       for (final flow in outgoingFlows) {
         final succIdx = updatedNodes.indexWhere((n) => n.id == flow.toNodeId);
         if (succIdx != -1) {
+          if (_isMapped(updatedNodes[succIdx].inputItem)) {
+            queue.add(updatedNodes[succIdx].id);
+            continue;
+          }
           updatedNodes[succIdx] = updatedNodes[succIdx].copyWith(
             inputItem: resolvedNode.outputItem,
             inputs: resolvedNode.outputItem != null ? [resolvedNode.outputItem!.itemName] : ['Input'],

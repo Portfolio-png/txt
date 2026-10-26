@@ -30,6 +30,23 @@ class PipelineItemEndpoint {
 
   bool get isGroup => groupId != null;
 
+  /// Ids at or above this are ones the editor made up, not master items.
+  ///
+  /// Every placeholder the pipeline editor invents ("Cutting_Output",
+  /// "Stage 2_Bending_Steel Sheet") takes a microsecond timestamp as its id —
+  /// about 1.7e15 — while a real item's id is a small database key. Read off
+  /// the id rather than a stored flag, so templates saved before this existed
+  /// are told apart too.
+  static const int generatedIdFloor = 1000000000000;
+
+  /// Whether the editor generated this endpoint rather than someone mapping
+  /// it to a real item (or group). A generated one may be regenerated; a
+  /// mapped one is the user's and must be left alone — overwriting it is what
+  /// wiped a kg → g mapping the moment two nodes were connected, so the unit
+  /// check had nothing left to convert.
+  bool get isGenerated =>
+      groupId == null && (itemId <= 0 || itemId >= generatedIdFloor);
+
   bool get hasVariation => variationLeafNodeId != 0;
 
   /// Item name including the variation path when one is applied.

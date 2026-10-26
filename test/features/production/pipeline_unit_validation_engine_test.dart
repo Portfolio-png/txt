@@ -160,6 +160,40 @@ void main() {
       },
     );
 
+    test('connecting two mapped nodes keeps both mappings', () {
+      // The heal used to rebuild both ends as "Action_Output" in Pcs, so a
+      // kg → g join lost the very units the converter needed to see.
+      final editor = PipelineEditorProvider(
+        template: _template(
+          sourceOutput: _endpoint(1, 'Steel Sheet', 1, 'kg'),
+          targetInput: _endpoint(2, 'Steel Blank', 2, 'g'),
+          includeFlow: false,
+        ),
+      );
+      addTearDown(editor.dispose);
+
+      editor.propagateItemChanges('source');
+
+      final source = editor.template.nodes.singleWhere((n) => n.id == 'source');
+      final target = editor.template.nodes.singleWhere((n) => n.id == 'target');
+      expect(source.outputItem?.itemName, 'Steel Sheet');
+      expect(source.outputItem?.unitSymbol, 'kg');
+      expect(target.inputItem?.itemName, 'Steel Blank');
+      expect(target.inputItem?.unitSymbol, 'g');
+    });
+
+    test('a placeholder is still regenerated where nothing was mapped', () {
+      const placeholder = PipelineItemEndpoint(
+        itemId: PipelineItemEndpoint.generatedIdFloor + 5,
+        itemName: 'Old_Output',
+        unitId: 0,
+        unitName: 'Pieces',
+        unitSymbol: 'Pcs',
+      );
+      expect(placeholder.isGenerated, isTrue);
+      expect(_endpoint(1, 'Steel Sheet', 1, 'kg').isGenerated, isFalse);
+    });
+
     test('repeated auto-fix does not duplicate bridge nodes', () {
       final editor = PipelineEditorProvider(
         template: _template(
