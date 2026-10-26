@@ -132,6 +132,11 @@ class PMItemMasterDetailScreen extends StatefulWidget {
 }
 
 class _PMItemMasterDetailScreenState extends State<PMItemMasterDetailScreen> {
+  /// Ids for rows made on this screen. They were `length + 1`, which repeats
+  /// after a delete — and deleting by id then removed BOTH rows sharing one.
+  int _nextLocalId = 1000;
+  String _newId(String prefix) => '${prefix}_${_nextLocalId++}';
+
   late final ItemMasterController _controller;
   final ScrollController _mainScrollController = ScrollController();
 
@@ -597,7 +602,7 @@ class _PMItemMasterDetailScreenState extends State<PMItemMasterDetailScreen> {
   void _handleAddPropertyInClientVendor() {
     final nextNo = _savedParties.length + 1;
     final newParty = SavedPartyRecord(
-      id: 'p_$nextNo',
+      id: _newId('p'),
       companyName: 'Party $nextNo',
       contactPerson: 'Contact Person $nextNo',
       phone: '980000000$nextNo',
@@ -664,7 +669,7 @@ class _PMItemMasterDetailScreenState extends State<PMItemMasterDetailScreen> {
               if (companyCtrl.text.trim().isEmpty) return;
               Navigator.of(ctx).pop();
               final newParty = SavedPartyRecord(
-                id: 'p_${_savedParties.length + 1}',
+                id: _newId('p'),
                 companyName: companyCtrl.text.trim(),
                 contactPerson: contactCtrl.text.trim(),
                 phone: phoneCtrl.text.trim(),
@@ -942,7 +947,7 @@ class _PMItemMasterDetailScreenState extends State<PMItemMasterDetailScreen> {
               setState(() {
                 _dieProcessRecords.add(
                   DieProcessRecord(
-                    id: 'proc_${_dieProcessRecords.length + 1}',
+                    id: _newId('proc'),
                     headerTitle: titleController.text.trim(),
                     poDate: '19/09/26',
                     time: '11:00',
@@ -1177,7 +1182,7 @@ class _PMItemMasterDetailScreenState extends State<PMItemMasterDetailScreen> {
               setState(() {
                 _machineRecords.add(
                   MachineMasterRecord(
-                    id: 'm_${_machineRecords.length + 1}',
+                    id: _newId('m'),
                     headerTitle: titleController.text.trim(),
                     machineType: typeController.text.trim(),
                     machineMake: makeController.text.trim(),

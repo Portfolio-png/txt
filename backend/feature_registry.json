@@ -25,9 +25,9 @@
   },
   {
     "key": "modules.pm",
-    "displayName": "Preventative Maintenance",
+    "displayName": "Part Master (prototype)",
     "category": "Modules",
-    "description": "Enable the Preventative Maintenance module"
+    "description": "The PM screen: a part-master prototype on sample data — nothing it shows is saved"
   },
   {
     "key": "modules.jobs",
@@ -118,5 +118,17 @@
     "displayName": "In-use Settle-up",
     "category": "Challan Mobile",
     "description": "Show the \"In-use\" list on the Challan tab and settle internal-use challans (scrap/leftover/lost/rejection/finished goods) back into stock"
+  },
+  {
+    "key": "masters.linkColumns",
+    "displayName": "Link Columns",
+    "category": "Catalog & Inventory",
+    "description": "Lay the creation window out as Miller columns over the item/die/machine link graph"
+  },
+  {
+    "key": "routes.listLens",
+    "displayName": "Route List Lens",
+    "category": "Catalog & Inventory",
+    "description": "Edit the process route of a part as a draggable list instead of one dropdown per step"
   }
 ]

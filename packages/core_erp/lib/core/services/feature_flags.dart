@@ -32,8 +32,8 @@ class FeatureKeys {
 
   @FeatureFlag(
     category: 'Modules',
-    displayName: 'Preventative Maintenance',
-    desc: 'Enable the Preventative Maintenance module',
+    displayName: 'Part Master (prototype)',
+    desc: 'The PM screen: a part-master prototype on sample data — nothing it shows is saved',
   )
   static const String modulesPm = 'modules.pm';
 
@@ -205,11 +205,13 @@ class FeatureKeys {
   /// OFF (the default) is Classic: one dropdown per step, which the doc names
   /// as suiting "operators used to older desktop software". ON is List: a
   /// palette of stages, dragged to reorder, which suits long routes.
+  // No apostrophes in a desc: bin/generate_registry.dart reads single-quoted
+  // strings only, and stopped at an escaped one ("Edit a part\\").
   @FeatureFlag(
     category: 'Catalog & Inventory',
     displayName: 'Route List Lens',
     desc:
-        'Edit a part\'s process route as a draggable list instead of one dropdown per step',
+        'Edit the process route of a part as a draggable list instead of one dropdown per step',
   )
   static const String routesListLens = 'routes.listLens';
 }

@@ -102,6 +102,29 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
     'TC No': ['TC Patti', 'Screw Clamp', 'Washer'],
   };
 
+  /// Items are keyed by group AND sub-group. Keyed by the sub-group name
+  /// alone, every new group's "General" replaced every other group's, and a
+  /// "Dolly" added under Cutout wiped Switch Action › Dolly. The seed above is
+  /// still read by bare sub-group name, as the fallback.
+  static String _itemsKey(String group, String subGroup) => '$group›$subGroup';
+
+  /// The one fallback: a selection that falls back to "Item 1" while its
+  /// option list fell back to "Patti" showed nothing selected.
+  static const List<String> _defaultItems = ['Item 1'];
+
+  List<String> _itemsFor(String group, String subGroup) =>
+      _itemsBySubGroup[_itemsKey(group, subGroup)] ??
+      _itemsBySubGroup[subGroup] ??
+      _defaultItems;
+
+  /// The list to add to, copied under this group's own key first.
+  List<String> _editableItemsFor(String group, String subGroup) =>
+      _itemsBySubGroup[_itemsKey(group, subGroup)] ??=
+          List<String>.of(_itemsFor(group, subGroup));
+
+  bool _hasName(Iterable<String> names, String name) =>
+      names.any((n) => n.trim().toLowerCase() == name.trim().toLowerCase());
+
   // Progressive variations for the selected item (Patti)
   late final List<PMItemVariation> _variations = [
     PMItemVariation(
@@ -184,7 +207,13 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
 
   String _derivePartCode(int partNumber) {
     // Switch Action (SA) + Dolly (D) + Brass (B) + Patti (P) + number
-    final g = _selectedGroup == 'Switch Action' ? 'SA' : _selectedGroup.substring(0, 2).toUpperCase();
+    // A one-letter group ("A") is a group too; substring(0, 2) threw on it.
+    final g = _selectedGroup == 'Switch Action'
+        ? 'SA'
+        : (_selectedGroup.length < 2
+                ? _selectedGroup
+                : _selectedGroup.substring(0, 2))
+            .toUpperCase();
     final sg = _selectedSubGroup.isNotEmpty ? _selectedSubGroup.substring(0, 1).toUpperCase() : 'X';
     final it = _selectedItem.isNotEmpty ? _selectedItem.substring(0, 1).toUpperCase() : 'P';
     return '$g$sg${'B'}$it$partNumber';
@@ -233,11 +262,16 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
           ElevatedButton(
             onPressed: () {
               final val = ctrl.text.trim();
+              if (val.isNotEmpty && _hasName(_groups, val)) {
+                // Re-adding "Socket" duplicated it and wiped its sub-groups.
+                showAppToast(context, '"$val" is already a group.');
+                return;
+              }
               if (val.isNotEmpty) {
                 setState(() {
                   _groups.add(val);
                   _subGroupsByGroup[val] = ['General'];
-                  _itemsBySubGroup['General'] = ['Item 1'];
+                  _itemsBySubGroup[_itemsKey(val, 'General')] = ['Item 1'];
                   _selectedGroup = val;
                   _selectedSubGroup = 'General';
                   _selectedItem = 'Item 1';
@@ -268,10 +302,15 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
           ElevatedButton(
             onPressed: () {
               final val = ctrl.text.trim();
+              if (val.isNotEmpty &&
+                  _hasName(_subGroupsByGroup[_selectedGroup] ?? const [], val)) {
+                showAppToast(context, '"$val" is already under $_selectedGroup.');
+                return;
+              }
               if (val.isNotEmpty) {
                 setState(() {
                   (_subGroupsByGroup[_selectedGroup] ??= []).add(val);
-                  _itemsBySubGroup[val] = ['Component 1'];
+                  _itemsBySubGroup[_itemsKey(_selectedGroup, val)] = ['Component 1'];
                   _selectedSubGroup = val;
                   _selectedItem = 'Component 1';
                 });
@@ -303,7 +342,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
               final val = ctrl.text.trim();
               if (val.isNotEmpty) {
                 setState(() {
-                  (_itemsBySubGroup[_selectedSubGroup] ??= []).add(val);
+                  _editableItemsFor(_selectedGroup, _selectedSubGroup).add(val);
                   _selectedItem = val;
                 });
                 Navigator.pop(ctx);
@@ -457,7 +496,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
   Widget _buildMatrixGridMode() {
     final activeVar = _variations[_selectedVariationIndex];
     final currentSubGroups = _subGroupsByGroup[_selectedGroup] ?? ['General'];
-    final currentItems = _itemsBySubGroup[_selectedSubGroup] ?? ['Patti'];
+    final currentItems = _itemsFor(_selectedGroup, _selectedSubGroup);
 
     return Column(
       key: const ValueKey('matrix_grid_mode'),
@@ -761,7 +800,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                         _selectedGroup = groupText;
                         final nextSubs = _subGroupsByGroup[groupText] ?? ['General'];
                         _selectedSubGroup = nextSubs.first;
-                        _selectedItem = (_itemsBySubGroup[_selectedSubGroup] ?? ['Item 1']).first;
+                        _selectedItem = _itemsFor(_selectedGroup, _selectedSubGroup).first;
                         _syncControllersWithActiveVariation();
                       });
                     }
@@ -782,7 +821,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                     } else if (subGroupText.isNotEmpty) {
                       setState(() {
                         _selectedSubGroup = subGroupText;
-                        _selectedItem = (_itemsBySubGroup[subGroupText] ?? ['Item 1']).first;
+                        _selectedItem = _itemsFor(_selectedGroup, subGroupText).first;
                         _syncControllersWithActiveVariation();
                       });
                     }
@@ -1305,7 +1344,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
   // ===========================================================================
   Widget _buildMillerColumnsMode() {
     final subGroups = _subGroupsByGroup[_selectedGroup] ?? ['General'];
-    final items = _itemsBySubGroup[_selectedSubGroup] ?? ['Patti'];
+    final items = _itemsFor(_selectedGroup, _selectedSubGroup);
     final active = _variations[_selectedVariationIndex];
 
     return Column(
@@ -1351,7 +1390,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                       _selectedGroup = val;
                       final nextSubs = _subGroupsByGroup[val] ?? ['General'];
                       _selectedSubGroup = nextSubs.first;
-                      _selectedItem = (_itemsBySubGroup[_selectedSubGroup] ?? ['Item 1']).first;
+                      _selectedItem = _itemsFor(_selectedGroup, _selectedSubGroup).first;
                     });
                   },
                   onAdd: _addNewGroupDialog,
@@ -1369,7 +1408,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                   onSelect: (val) {
                     setState(() {
                       _selectedSubGroup = val;
-                      _selectedItem = (_itemsBySubGroup[val] ?? ['Item 1']).first;
+                      _selectedItem = _itemsFor(_selectedGroup, val).first;
                     });
                   },
                   onAdd: _addNewSubGroupDialog,
@@ -1843,15 +1882,16 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                       _selectedGroup = v;
                       final subs = _subGroupsByGroup[v] ?? ['General'];
                       _selectedSubGroup = subs.first;
-                      _selectedItem = (_itemsBySubGroup[_selectedSubGroup] ?? ['Item 1']).first;
+                      _selectedItem = _itemsFor(_selectedGroup, _selectedSubGroup).first;
                       _syncControllersWithActiveVariation();
                     });
                   },
                   onCreate: (val) {
+                    if (_hasName(_groups, val)) return;
                     setState(() {
                       _groups.add(val);
                       _subGroupsByGroup[val] = ['General'];
-                      _itemsBySubGroup['General'] = ['Item 1'];
+                      _itemsBySubGroup[_itemsKey(val, 'General')] = ['Item 1'];
                     });
                   },
                 ),
@@ -1869,14 +1909,17 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                   onSelected: (v) {
                     setState(() {
                       _selectedSubGroup = v;
-                      _selectedItem = (_itemsBySubGroup[v] ?? ['Item 1']).first;
+                      _selectedItem = _itemsFor(_selectedGroup, v).first;
                       _syncControllersWithActiveVariation();
                     });
                   },
                   onCreate: (val) {
+                    if (_hasName(_subGroupsByGroup[_selectedGroup] ?? const [], val)) {
+                      return;
+                    }
                     setState(() {
                       (_subGroupsByGroup[_selectedGroup] ??= []).add(val);
-                      _itemsBySubGroup[val] = ['Item 1'];
+                      _itemsBySubGroup[_itemsKey(_selectedGroup, val)] = ['Item 1'];
                     });
                   },
                 ),
@@ -1890,7 +1933,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                   key: ValueKey('item_$_selectedSubGroup-$_selectedItem'),
                   label: 'Item',
                   value: _selectedItem,
-                  options: _itemsBySubGroup[_selectedSubGroup] ?? ['Patti'],
+                  options: _itemsFor(_selectedGroup, _selectedSubGroup),
                   onSelected: (v) {
                     setState(() {
                       _selectedItem = v;
@@ -1899,7 +1942,7 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                   },
                   onCreate: (val) {
                     setState(() {
-                      (_itemsBySubGroup[_selectedSubGroup] ??= []).add(val);
+                      _editableItemsFor(_selectedGroup, _selectedSubGroup).add(val);
                     });
                   },
                 ),
@@ -1978,7 +2021,9 @@ class _PMGroupItemCascadeSectionState extends State<PMGroupItemCascadeSection> {
                 }
               : null,
         );
-        if (selected != null) {
+        // onSelected calls setState; the section may be gone by the time the
+        // dialog answers.
+        if (selected != null && mounted) {
           onSelected(selected.value);
         }
       },
