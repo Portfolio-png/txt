@@ -52,6 +52,16 @@ class GroupCollageCard extends StatefulWidget {
 class _GroupCollageCardState extends State<GroupCollageCard> {
   bool _hovered = false;
 
+  /// True while the kebab menu is open. Opening it lays a barrier over the
+  /// card, which ends the hover — and the button, shown only on hover, was
+  /// unmounted under its own menu. PopupMenuButton drops a selection whose
+  /// button is gone, so "Edit Group" did nothing.
+  bool _menuOpen = false;
+
+  void _setMenuOpen(bool open) {
+    if (mounted && _menuOpen != open) setState(() => _menuOpen = open);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Tooltip(
@@ -84,11 +94,14 @@ class _GroupCollageCardState extends State<GroupCollageCard> {
                     fit: StackFit.expand,
                     children: <Widget>[
                       GroupCoverMosaic(covers: widget.covers),
-                      if (_hovered && widget.onEdit != null)
+                      if ((_hovered || _menuOpen) && widget.onEdit != null)
                         Positioned(
                           right: 8,
                           top: 8,
-                          child: _GroupMenuButton(onEdit: widget.onEdit!),
+                          child: _GroupMenuButton(
+                            onEdit: widget.onEdit!,
+                            onOpenChanged: _setMenuOpen,
+                          ),
                         ),
                       if (_hovered && widget.onOpenItems != null)
                         Positioned(
@@ -413,9 +426,13 @@ class _OpenItemsButton extends StatelessWidget {
 }
 
 class _GroupMenuButton extends StatelessWidget {
-  const _GroupMenuButton({required this.onEdit});
+  const _GroupMenuButton({required this.onEdit, required this.onOpenChanged});
 
   final VoidCallback onEdit;
+
+  /// Told when the menu opens and closes, so the card keeps this button
+  /// mounted for as long as its menu is up.
+  final ValueChanged<bool> onOpenChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -435,7 +452,10 @@ class _GroupMenuButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
         ),
         position: PopupMenuPosition.under,
+        onOpened: () => onOpenChanged(true),
+        onCanceled: () => onOpenChanged(false),
         onSelected: (value) {
+          onOpenChanged(false);
           if (value == 'edit') onEdit();
         },
         itemBuilder: (context) => [

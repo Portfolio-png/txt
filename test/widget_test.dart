@@ -1324,6 +1324,12 @@ class FakeClientRepository extends ClientRepository {
 
   @override
   Future<void> deleteClient(int id) async {}
+
+  // Contacts (056) and anything added to the repository later: answered by
+  // the base class rather than breaking compilation of every test that
+  // imports this file, which is how the whole root suite went dark before.
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class FakeVendorRepository extends VendorRepository {

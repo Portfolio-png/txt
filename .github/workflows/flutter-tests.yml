@@ -1,0 +1,100 @@
+name: Flutter tests
+
+# Until this existed nothing ran a Flutter test anywhere: the root suite went
+# dark twice (fakes that stopped compiling) and nobody saw it. The backend has
+# had its gate in deploy-backend.yml all along.
+#
+# core_erp runs whole. The root suite runs the files that are green today,
+# listed by name — widget_test.dart, production_widget_test.dart and
+# job_work_stock_balance_test.dart still carry ~74 stale UI tests. Add a file
+# here as soon as it passes; never take one out to make CI green.
+#
+# The macOS end-to-end run stays local: scripts/e2e-ui.sh.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "lib/**"
+      - "packages/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - ".github/workflows/flutter-tests.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "lib/**"
+      - "packages/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - ".github/workflows/flutter-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  core_erp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/core_erp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # Errors only: the package carries warnings and infos that predate this.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test
+
+      - name: Test (green files)
+        run: |
+          flutter test \
+            test/clients_logic_test.dart \
+            test/core/app_flow_hooks_test.dart \
+            test/features/groups/component_links_card_test.dart \
+            test/features/groups/component_workflow_panel_test.dart \
+            test/features/items/item_expression_executor_test.dart \
+            test/features/items/item_expression_test.dart \
+            test/features/items/item_expression_values_dialog_test.dart \
+            test/features/items/item_expression_view_test.dart \
+            test/features/items/searchable_select_inline_panel_test.dart \
+            test/features/items/set_overview_dialog_test.dart \
+            test/features/pm/node_configurator_screen_test.dart \
+            test/features/pm/pm_group_item_cascade_section_test.dart \
+            test/features/pm/pm_item_master_detail_screen_test.dart \
+            test/features/production/batch_flow_provider_test.dart \
+            test/features/production/material_ledger_distributor_test.dart \
+            test/features/production/pipeline_stage_numbering_test.dart \
+            test/features/production/pipeline_unit_validation_engine_test.dart \
+            test/features/production/process_node_scrap_test.dart \
+            test/features/production/production_provider_test.dart \
+            test/features/production/production_run_provider_test.dart \
+            test/groups_logic_test.dart \
+            test/produce_monitor_smoke_test.dart \
+            test/sidebar_nesting_test.dart

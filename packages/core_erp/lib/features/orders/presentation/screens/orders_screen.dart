@@ -370,15 +370,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       _contentHorizontalPadding,
                       0,
                     ),
-                    child: OrderInsightsView(
-                      orders: _insightOrders(context),
-                      items: context.watch<ItemsProvider>().items,
-                      fulfilment: context.watch<OrdersProvider>().fulfilment,
-                      fulfilmentLoaded: context
-                          .watch<OrdersProvider>()
-                          .fulfilmentLoaded,
-                      onOpenChallan: _openChallanFromCheckpoint,
-                      onBack: () => setState(() => _showInsights = false),
+                    // Parked off to the right while closed, but still built —
+                    // and its loading spinner spun forever, because the
+                    // fulfilment it waits for is only fetched on open. That
+                    // burned a frame per tick on the Orders page and kept
+                    // every pumpAndSettle in the orders tests from settling.
+                    child: TickerMode(
+                      enabled: _showInsights,
+                      child: OrderInsightsView(
+                        orders: _insightOrders(context),
+                        items: context.watch<ItemsProvider>().items,
+                        fulfilment: context.watch<OrdersProvider>().fulfilment,
+                        fulfilmentLoaded: context
+                            .watch<OrdersProvider>()
+                            .fulfilmentLoaded,
+                        onOpenChallan: _openChallanFromCheckpoint,
+                        onBack: () => setState(() => _showInsights = false),
+                      ),
                     ),
                   ),
                 ),

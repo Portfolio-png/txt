@@ -4,6 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:core_erp/features/groups/domain/group_cover.dart';
 import 'package:core_erp/features/groups/presentation/widgets/group_collage_card.dart';
 
+// "Edit Group" on a group card did nothing. The kebab button is drawn only on
+// hover; opening its menu lays a barrier over the card, the hover ends, and
+// the button was unmounted under its own menu — PopupMenuButton then drops the
+// selection. This drives the real hover → open → pick path.
+
 void main() {
   testWidgets('hover -> menu -> Edit Group fires onEdit', (tester) async {
     int edits = 0;
@@ -34,22 +39,16 @@ void main() {
     await tester.pumpAndSettle();
 
     final menuIcon = find.byIcon(Icons.more_vert);
-    print('MENU ICON FOUND: ${menuIcon.evaluate().length}');
     expect(menuIcon, findsOneWidget);
 
     await tester.tap(menuIcon);
     await tester.pumpAndSettle();
 
     final editItem = find.text('Edit Group');
-    print('EDIT ITEM FOUND: ${editItem.evaluate().length}');
-    print('MENU BUTTON STILL MOUNTED AFTER OPEN: '
-        '${find.byType(PopupMenuButton<String>).evaluate().length}');
     expect(editItem, findsOneWidget);
 
     await tester.tap(editItem);
     await tester.pumpAndSettle();
-
-    print('>>> onEdit CALL COUNT = $edits');
     expect(edits, 1, reason: 'onEdit should have fired exactly once');
   });
 }
