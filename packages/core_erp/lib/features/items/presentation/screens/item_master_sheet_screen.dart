@@ -1345,8 +1345,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           id: 'client_vendor',
           icon: Icons.storefront_rounded,
           heading: 'Client / Vendor',
-          blurb:
-              'The party this part was developed for, and what the die job was worth',
           collapsed: collapsed,
           trailing: MarginHealthBadge(
             quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
@@ -1359,7 +1357,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           id: 'die_master',
           icon: Icons.precision_manufacturing_rounded,
           heading: 'Die Process Master',
-          blurb: 'Press tooling and progressive dies for this part',
           collapsed: collapsed,
           child: _dieSheet(),
         );
@@ -1368,7 +1365,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           id: 'machine_master',
           icon: Icons.settings_suggest_rounded,
           heading: 'Machines & Routing',
-          blurb: 'Which stages this part runs through, in order',
           collapsed: collapsed,
           child: _machinesAndRouting(),
         );
@@ -1377,8 +1373,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           id: 'group_item',
           icon: Icons.inventory_2_rounded,
           heading: 'Item Master',
-          blurb:
-              'Group path, part identity, the recipe columns and creation stamps',
           collapsed: collapsed,
           trailing: _identityChip(),
           child: _groupItemSheet(),
@@ -1966,7 +1960,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     required String id,
     required IconData icon,
     required String heading,
-    required String blurb,
     required Widget child,
     Widget? trailing,
     bool collapsed = false,
@@ -2052,14 +2045,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
                         color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    Text(
-                      blurb,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF5A6A80),
                       ),
                     ),
                   ],
