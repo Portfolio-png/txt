@@ -494,7 +494,10 @@ module.exports = function registerItemsModuleRoutes(ctx) {
           (SELECT COUNT(*) FROM material_group_item_links WHERE item_id = ?) AS count
       `, [id, id, id, id, id]);
       if ((usage?.count || 0) > 0) {
-        const error = new Error('Item is in use');
+        // Said whole: the sheet shows this sentence as the reason.
+        const error = new Error(
+          'This part is used on orders, challans or materials, so it cannot be archived.',
+        );
         error.statusCode = 409;
         throw error;
       }

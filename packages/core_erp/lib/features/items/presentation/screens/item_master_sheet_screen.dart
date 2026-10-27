@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/sitting_scope.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../sheet/sheet.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
@@ -630,6 +631,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               ],
             ),
             const SizedBox(width: 16),
+            _archiveButton(),
+            const SizedBox(width: 8),
             AppButton(
               key: const ValueKey('save_item_sheet_btn'),
               label: _controller.isSavingNow
@@ -1001,12 +1004,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return at > 0 ? siblings[at - 1] : null;
   }
 
-  /// Loads the part's stored nesting once it exists, unless a change is
-  /// waiting to be saved.
+  /// Follows the part's stored nesting, unless a change is waiting to be
+  /// saved here.
+  ///
+  /// Loaded once per part, it used to be: a nesting changed in another window
+  /// never showed, and saving this one's then quietly put the old one back.
   void _syncTreeFromPart() {
     final part = _livePart;
-    if (part == null || part.id == _treeLoadedFor || _treeDirty) return;
+    if (part == null || _treeDirty) return;
     final stored = {..._defaultTree, ...?part.sectionTree};
+    if (part.id == _treeLoadedFor && mapEquals(stored, _savedTree)) return;
     _treeLoadedFor = part.id;
     _parentOf = Map<String, String>.of(stored);
     _savedTree = Map<String, String>.of(stored);
@@ -1695,6 +1702,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
         );
 
+    // Deleted or archived (here or anywhere): there is nothing to edit, so
+    // the row says why instead of offering an Edit that cannot save.
+    if (_controller.isRowGone(row)) {
+      return button(
+        key: 'row_gone_$row',
+        icon: Icons.block_rounded,
+        tip: error ?? 'This part is no longer in the catalogue.',
+        color: const Color(0xFF94A3B8),
+      );
+    }
     if (saved && locked) {
       final id = sheet.draftAt(row).entityId;
       return button(
@@ -1715,6 +1732,50 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       tip: error ?? (saved ? 'Save the changes to this part' : 'Save this part'),
       color: error != null ? const Color(0xFFDC2626) : const Color(0xFF059669),
       onPressed: _controller.isSavingNow ? null : () => _saveRow(row),
+    );
+  }
+
+  /// Archive for the part on the selected row. Drawn always, disabled with
+  /// why when there is nothing to archive — the sheet could create and edit a
+  /// part but never retire one, and "Remove row" only took it off the screen.
+  Widget _archiveButton() {
+    final sheet = _controller.groupItemController;
+    final row = sheet.row;
+    final id = sheet.draftAt(row).entityId;
+    final String? why = id == null
+        ? 'Select a saved part to archive it'
+        : (_controller.isRowGone(row)
+            ? _controller.rowError(row)
+            : (_controller.isSavingNow ? 'Still saving' : null));
+    return Tooltip(
+      message: why ?? 'Archive item #$id — kept, restorable from the Items screen',
+      child: OutlinedButton.icon(
+        key: const ValueKey('archive_part_btn'),
+        onPressed: why == null ? () => _archivePart(id!) : null,
+        icon: const Icon(Icons.archive_outlined, size: 18),
+        label: const Text('Archive part', style: TextStyle(fontSize: 14)),
+      ),
+    );
+  }
+
+  Future<void> _archivePart(int id) async {
+    final label = _partCodeNow.trim().isEmpty ? 'this part' : _partCodeNow;
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Archive $label?',
+      message: 'It leaves every picker and list but is kept, and can be '
+          'restored from the Items screen.',
+      confirmLabel: 'Archive',
+    );
+    if (!ok || !mounted) return;
+    final items = context.read<ItemsProvider>();
+    final done = await items.archiveItem(id);
+    if (!mounted) return;
+    _toast(
+      done
+          ? 'Archived $label.'
+          : (items.errorMessage ?? 'The part could not be archived.'),
+      isError: !done,
     );
   }
 

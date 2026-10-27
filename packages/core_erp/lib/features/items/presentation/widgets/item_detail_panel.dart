@@ -28,6 +28,7 @@ import '../../domain/variation_code.dart';
 import 'developed_for_form.dart';
 import '../../domain/item_usage_record.dart';
 import '../providers/items_provider.dart';
+import '../screens/item_master_sheet_screen.dart';
 
 import 'item_pipeline_metrics_card.dart';
 
@@ -460,13 +461,47 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                           : _ItemCadFileCard(item: item);
                       final editButton = widget.onEdit == null
                           ? null
-                          : AppButton(
-                              label: 'Edit Item',
-                              icon: Icons.edit_outlined,
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                                widget.onEdit?.call();
-                              },
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AppButton(
+                                  label: 'Edit Item',
+                                  icon: Icons.edit_outlined,
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    widget.onEdit?.call();
+                                  },
+                                ),
+                                // The sheet only ever started blank, so a part
+                                // that existed could not be worked on there.
+                                // A text button under Edit, not a second
+                                // AppButton beside it: the column is narrow.
+                                if (!item.isArchived)
+                                  TextButton.icon(
+                                    key: const ValueKey('detail_open_in_sheet'),
+                                    icon: const Icon(
+                                      Icons.table_rows_outlined,
+                                      size: 18,
+                                    ),
+                                    label: const Text(
+                                      'Open in sheet',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    onPressed: () {
+                                      final navigator = Navigator.of(context);
+                                      navigator.pop();
+                                      ItemMasterSheetScreen.open(
+                                        navigator.context,
+                                        initialItems: [item],
+                                        title: item.partCode.trim().isEmpty
+                                            ? item.name
+                                            : item.partCode,
+                                      );
+                                    },
+                                  ),
+                              ],
                             );
                       // "Developed for", not "Client": the answer may be Self
                       // or a contractor, and a button that promises a client

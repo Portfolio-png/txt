@@ -1096,6 +1096,31 @@ class ItemsProvider extends ChangeNotifier {
     }
   }
 
+  /// Archives a part and takes its archived row as the one of record. False
+  /// with [errorMessage] set — the server's reason — when it is refused,
+  /// which it is while orders or challans still use the part.
+  Future<bool> archiveItem(int id) async {
+    while (_isSaving) {
+      await (_saveIdle ??= Completer<void>()).future;
+    }
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _repository.archiveItem(id);
+      final fresh = await _repository.getItemFresh(id);
+      if (fresh != null) _recordWrite(fresh);
+      return true;
+    } catch (error) {
+      _errorMessage =
+          error is ItemApiException ? error.message : error.toString();
+      return false;
+    } finally {
+      _endSave();
+      notifyListeners();
+    }
+  }
+
   /// Points an item at a pipeline (or clears it) without disturbing anything
   /// else it carries.
   Future<ItemDefinition?> setItemPipeline(int itemId, String? pipelineId) {

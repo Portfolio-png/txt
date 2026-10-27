@@ -46,6 +46,10 @@ abstract class ItemRepository {
   });
 
   Future<void> deleteItem(int id);
+
+  /// Archives a part: kept, restorable, out of every picker. Refused (as an
+  /// [Exception] with the server's reason) while orders or challans use it.
+  Future<void> archiveItem(int id);
   Future<ItemDefinition> reassignItemGroup(int id, int groupId);
 
   /// Mints a fresh, short-lived download link for the item's CAD file. The item

@@ -459,12 +459,25 @@ class ItemMasterController extends ChangeNotifier {
     return name.isEmpty ? 'that person' : name;
   }
 
+  /// Rows whose part was deleted or archived somewhere else, with why. Such a
+  /// row stays as it was — it is what the user was looking at — but locked,
+  /// and says so: it used to sit there looking saved and editable.
+  final Map<SheetDraft, String> _goneRows = Map.identity();
+
+  /// Whether [row]'s part is gone from the catalogue.
+  bool isRowGone(int row) =>
+      row >= 0 &&
+      row < groupItemController.rowCount &&
+      _goneRows.containsKey(groupItemController.draftAt(row));
+
   /// Re-reads saved, closed item rows from [entities] after they changed
   /// somewhere else — another window, another person. Rows open for editing,
   /// or holding unsaved changes, are left exactly as they are.
   void refreshLockedRows(List<Object?> entities) {
     final writer = binding;
     if (writer == null || entities.isEmpty) return;
+    _markGoneRows(entities);
+    _followDeal(entities);
     final sheet = groupItemController;
     // Which entities the sheet shows, found in one pass — this runs on every
     // provider notification, and scanning the whole catalogue per row was
@@ -475,7 +488,11 @@ class ItemMasterController extends ChangeNotifier {
     };
     if (wanted.isEmpty) return;
     final byId = <int, int>{};
-    for (var i = 0; i < entities.length && byId.length < wanted.length; i += 1) {
+    for (
+      var i = 0;
+      i < entities.length && byId.length < wanted.length;
+      i += 1
+    ) {
       final id = _idOf(entities[i]);
       if (id != null && wanted.contains(id)) byId.putIfAbsent(id, () => i);
     }
@@ -495,6 +512,84 @@ class ItemMasterController extends ChangeNotifier {
       if (rows.isEmpty) continue;
       if (_sameValues(rows.first, draft)) continue;
       sheet.replaceRowAt(row, rows.first);
+    }
+  }
+
+  void _markGoneRows(List<Object?> entities) {
+    final sheet = groupItemController;
+    final live = <int, Object?>{
+      for (final entity in entities)
+        if (_idOf(entity) != null) _idOf(entity)!: entity,
+    };
+    var changed = false;
+    for (var row = 0; row < sheet.rowCount; row += 1) {
+      final draft = sheet.draftAt(row);
+      final id = draft.entityId;
+      if (id == null) continue;
+      final entity = live[id];
+      final reason = entity == null
+          ? 'This part has been deleted. Nothing here can be saved to it.'
+          : (_isArchivedOf(entity)
+                ? 'This part is archived. Restore it on the Items screen to '
+                      'edit it here.'
+                : null);
+      if (reason == null) {
+        changed |= _goneRows.remove(draft) != null;
+        continue;
+      }
+      if (_goneRows[draft] == reason) continue;
+      _goneRows[draft] = reason;
+      sheet.setRowLocked(row, true);
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// Puts the part's stored deal back on screen when it changed somewhere
+  /// else and nothing here is waiting to be saved. The deal was read once, at
+  /// open, so a quotation or company changed in another window never showed
+  /// — and the next save here wrote the old one back.
+  void _followDeal(List<Object?> entities) {
+    final writer = binding;
+    final partId = _savedItemId;
+    if (writer == null || partId == null || !_isExternal) return;
+    if (clientVendorController.draft.isDirtySinceSave || _peopleDirty) return;
+    final entity = entities.where((e) => _idOf(e) == partId).firstOrNull;
+    if (entity == null) return;
+    final deal = writer.dealOf(entity);
+    if (deal == null) return;
+    final ticksSame = setEquals(deal.ticked, _loadedTicks);
+    if (ticksSame && _sameValues(deal.deal, clientVendorController.draft)) {
+      return;
+    }
+    _applyDeal(deal);
+    notifyListeners();
+  }
+
+  /// [deal] on screen, its people listed with its ticks.
+  void _applyDeal(({SheetDraft deal, Set<int> ticked}) deal) {
+    _loadedTicks = deal.ticked;
+    final partyColumn = clientVendorController.sheetDef.columnBoundTo(
+      SheetBindsTo.developedForParty,
+    );
+    _loadedTicksFor = partyColumn == null
+        ? null
+        : deal.deal.get(partyColumn.id)?.refId;
+    clientVendorController.loadRecords([deal.deal]);
+    clientVendorController.draft.markClean();
+    // The same company with different ticks: re-list its people with them.
+    final party = dealPartyId;
+    if (party != null && party == _peopleRequestedFor && !_peopleInProgress) {
+      _peopleSignature = null;
+      _loadPeople(party, ticked: _loadedTicks);
+    }
+  }
+
+  static bool _isArchivedOf(Object? record) {
+    try {
+      return (record as dynamic).isArchived == true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -820,15 +915,7 @@ class ItemMasterController extends ChangeNotifier {
       _resetDeal();
     } else {
       _isExternal = true;
-      _loadedTicks = deal.ticked;
-      final partyColumn = clientVendorController.sheetDef.columnBoundTo(
-        SheetBindsTo.developedForParty,
-      );
-      _loadedTicksFor = partyColumn == null
-          ? null
-          : deal.deal.get(partyColumn.id)?.refId;
-      clientVendorController.loadRecords([deal.deal]);
-      clientVendorController.draft.markClean();
+      _applyDeal(deal);
     }
 
     _isSaved = true;
@@ -847,7 +934,8 @@ class ItemMasterController extends ChangeNotifier {
   /// The refusal on [row], or null when it has none.
   String? rowError(int row) {
     if (row < 0 || row >= groupItemController.rowCount) return null;
-    return _rowErrors[groupItemController.draftAt(row)];
+    final draft = groupItemController.draftAt(row);
+    return _goneRows[draft] ?? _rowErrors[draft];
   }
 
   /// Refusals on rows still on the sheet.

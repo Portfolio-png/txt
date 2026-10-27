@@ -1859,6 +1859,20 @@ class _ItemRow extends StatelessWidget {
                   onCreatePipeline: onCreatePipeline,
                 ),
               ),
+              // The sheet could only start blank: both doors opened "New
+              // part", so an existing part could never be worked on there.
+              if (!item.isArchived)
+                SoftActionLink(
+                  key: ValueKey<String>('open_in_sheet_${item.id}'),
+                  label: 'Open in sheet',
+                  onTap: () => ItemMasterSheetScreen.open(
+                    context,
+                    initialItems: [item],
+                    title: item.partCode.trim().isEmpty
+                        ? item.name
+                        : item.partCode,
+                  ),
+                ),
               SoftActionLink(
                 label: 'Delete',
                 onTap: itemsProvider.isSaving

@@ -828,6 +828,48 @@ class ApiItemRepository implements ItemRepository {
     return parsed.item!.toDomain();
   }
 
+  @override
+  Future<void> archiveItem(int id) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockItems.indexWhere((item) => item.id == id);
+      if (index == -1) throw ItemApiException('Item not found.');
+      final current = _mockItems[index];
+      _mockItems[index] = ItemDefinition(
+        id: current.id,
+        name: current.name,
+        alias: current.alias,
+        displayName: current.displayName,
+        quantity: current.quantity,
+        groupId: current.groupId,
+        unitId: current.unitId,
+        unitConversions: current.unitConversions,
+        namingFormat: current.namingFormat,
+        isArchived: true,
+        usageCount: current.usageCount,
+        createdAt: current.createdAt,
+        updatedAt: DateTime.now(),
+        variationTree: current.variationTree,
+        availableForPurchase: current.availableForPurchase,
+      );
+      return;
+    }
+
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/items/$id/archive'),
+      headers: const {'Content-Type': 'application/json'},
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'The part could not be archived.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   void _validateCreateOrUpdate({
     int? id,
     required String name,

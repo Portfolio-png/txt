@@ -67,6 +67,30 @@ class _Repo implements ItemRepository {
     return server[id];
   }
 
+  final List<int> archived = [];
+  String? refuseArchive;
+
+  @override
+  Future<void> archiveItem(int id) async {
+    if (refuseArchive != null) throw Exception(refuseArchive);
+    archived.add(id);
+    final part = server[id]!;
+    server[id] = ItemDefinition(
+      id: part.id,
+      name: part.name,
+      alias: part.alias,
+      displayName: part.displayName,
+      quantity: part.quantity,
+      groupId: part.groupId,
+      unitId: part.unitId,
+      isArchived: true,
+      usageCount: 0,
+      createdAt: part.createdAt,
+      updatedAt: DateTime(2026, 7, 1),
+      variationTree: const [],
+    );
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -136,5 +160,20 @@ void main() {
     provider.dispose();
     socket.processEventForTest(_change('items', 1, 'UPDATE'));
     expect(heard, hasLength(1));
+  });
+
+  test('archiving takes the archived row as the one of record', () async {
+    final (provider, repo) = await open();
+    expect(await provider.archiveItem(1), isTrue);
+    expect(repo.archived, [1]);
+    expect(provider.items.single.isArchived, isTrue);
+  });
+
+  test('a refused archive says why and changes nothing', () async {
+    final (provider, repo) = await open();
+    repo.refuseArchive = 'This part is used on orders';
+    expect(await provider.archiveItem(1), isFalse);
+    expect(provider.errorMessage, contains('used on orders'));
+    expect(provider.items.single.isArchived, isFalse);
   });
 }
