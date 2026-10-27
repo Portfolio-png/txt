@@ -3,15 +3,19 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/pipeline_stage_node.dart';
+import '../../../units/data/unit_family_service.dart';
 import '../../../units/domain/global_length_units.dart';
+import '../../../units/domain/unit_family.dart';
 import '../../../materials/domain/material_definition.dart';
 import '../../domain/sheet_part.dart';
 import 'pen_paper_baseline_widget.dart';
+import 'raw_sheet_review.dart';
 import 'sheet_dimension_figure.dart';
 
 /// Records Master Data in a window of its own: the sheet being described in the
@@ -87,6 +91,8 @@ class MasterDataPanel extends StatefulWidget {
     this.readOnly = false,
     this.showHeader = true,
     this.embedded = false,
+    this.onEdit,
+    this.saving = false,
   });
 
   /// The baseline the panel opens on. Edits are made to a working copy, so the
@@ -128,6 +134,13 @@ class MasterDataPanel extends StatefulWidget {
   /// window. The host must give it a bounded height: the step body takes
   /// whatever is left between the step bar and the footer.
   final bool embedded;
+
+  /// Called by the footer's Edit while [readOnly]. Null when there is nothing
+  /// to edit yet (no saved part), and the footer says so instead.
+  final VoidCallback? onEdit;
+
+  /// A save is on its way: Save spins and cannot be pressed twice.
+  final bool saving;
 
   @override
   State<MasterDataPanel> createState() => _MasterDataPanelState();
@@ -205,6 +218,26 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     _kerfController = TextEditingController();
     _trimController = TextEditingController();
     _writeFields();
+    _loadCountFamily();
+  }
+
+  /// Pc, doz, gro — what the output pieces are typed in. A host without the
+  /// units master (a test, an old database) gets whole pieces instead.
+  UnitFamily? _countFamily;
+
+  Future<void> _loadCountFamily() async {
+    UnitFamilyService? service;
+    try {
+      service = context.read<UnitFamilyService>();
+    } on ProviderNotFoundException {
+      return;
+    }
+    try {
+      final family = await service.byCode('count');
+      if (mounted && family != null) setState(() => _countFamily = family);
+    } catch (_) {
+      // No families to offer: the field takes whole pieces.
+    }
   }
 
   /// Writes every field from [_baseline] — the dimensions, the machine row and
@@ -483,25 +516,29 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
-  /// What the sheet is, from the variant's own name — a variant of a sheet is a
-  /// sheet, the same rule the Master Data table reads its material type by.
+  /// What the drawing calls the sheet: its material when one is picked.
   String get _materialLabel {
-    final name = widget.itemName.toLowerCase();
-    for (final noun in const <String>[
-      'sheet',
-      'coil',
-      'strip',
-      'plate',
-      'patti',
-      'rod',
-      'bar',
-      'wire',
-      'pipe',
-      'tube',
-    ]) {
-      if (name.contains(noun)) return noun;
-    }
-    return 'sheet';
+    final named = _baseline.materialName.trim();
+    return named.isEmpty ? 'sheet' : named;
+  }
+
+  /// The sheet planned here, in words, for the Input row of Material data:
+  /// "Steel / MS · 48 × 96 in · 1.6 mm".
+  String get _sheetLabel {
+    final named = _baseline.materialName.trim();
+    final face = lengthUnitBySymbol(_baseline.faceUnit, fallback: 'in');
+    final width = _faceText(_baseline.sheetWidthInches, face.symbol);
+    final height = _faceText(_baseline.sheetHeightInches, face.symbol);
+    final gauge = lengthUnitBySymbol(_baseline.gaugeUnit);
+    final thickness = _baseline.sheetThicknessMm > 0
+        ? _showUnit(_baseline.sheetThicknessMm, gauge)
+        : '';
+    return <String>[
+      named.isEmpty ? 'Sheet' : named,
+      if (width.isNotEmpty && height.isNotEmpty)
+        '$width × $height ${face.symbol}',
+      if (thickness.isNotEmpty) '$thickness ${gauge.symbol}',
+    ].join(' · ');
   }
 
   void _onMachineChanged() {
@@ -807,43 +844,88 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     );
   }
 
+  /// The record as it will be saved: without the blank rows the editor keeps
+  /// for typing into, and — while Material data still follows the plan — with
+  /// the plan's figures in it, whether or not that step was ever opened. Save
+  /// from step 1 used to store the generic 100 kg defaults behind it.
+  PenPaperBaseline get _recorded {
+    final baseline = _baseline.withoutEmptyBands;
+    if (!baseline.materialFromPlan || baseline.isGranular) return baseline;
+    return baseline.copyWith(
+      stageReconciliations: [
+        baseline.reconciliationFromPlan(
+          densityGCm3: _material?.densityGCm3,
+          sheetLabel: _sheetLabel,
+          partName: widget.itemName.trim(),
+          keepFrom: baseline.stageReconciliations.firstOrNull,
+        ),
+      ],
+    );
+  }
+
+  List<RawSheetReviewSection> _reviewSections(PenPaperBaseline recorded) =>
+      rawSheetReviewSections(
+        baseline: recorded,
+        partName: widget.itemName,
+        sheetLabel: _sheetLabel,
+        material: _material,
+        countFamily: _countFamily,
+      );
+
+  /// What will be recorded, on one page — and the same page printed.
   Widget _reviewStep() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final recorded = _recorded;
+    final sections = _reviewSections(recorded);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            const Icon(
-              Icons.fact_check_outlined,
-              size: 30,
-              color: SoftErpTheme.textSecondary,
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Review comes next',
-              style: TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
+            const Expanded(
+              child: Text(
+                'AS IT WILL BE RECORDED',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.7,
+                ),
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              _baseline.hasCutPlan
-                  ? 'The plan so far: ${_planSummary()}.'
-                  : 'Nothing planned on the sheet yet.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: SoftErpTheme.textSecondary,
-                fontSize: 12.5,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
+            TextButton.icon(
+              key: const ValueKey<String>('raw-review-print'),
+              onPressed: () => showRawSheetReviewPrint(
+                context,
+                baseline: recorded,
+                sections: sections,
+                partName: widget.itemName,
+              ),
+              icon: const Icon(Icons.print_outlined, size: 18),
+              label: const Text(
+                'Print / PDF',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: SingleChildScrollView(
+              child: RawSheetReviewCard(
+                key: const ValueKey<String>('raw-review-card'),
+                sections: sections,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1811,16 +1893,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     ].join(' · ');
   }
 
-  /// The plan in one line, for the places a list will not fit.
-  String _planSummary() {
-    final parts = _baseline.yields.where((entry) => !entry.isOffcut).toList();
-    if (parts.isEmpty) return 'nothing yet';
-    if (parts.length == 1) {
-      return '${parts.single.count} × ${parts.single.sizeLabel}';
-    }
-    return '${_baseline.pieceCount} pieces in ${parts.length} sizes';
-  }
-
   /// What the plan actually produces — a list, because bands of different sizes
   /// make different parts and adding them into one number says nothing.
   Widget _yieldBlock() {
@@ -2029,17 +2101,13 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           pipelineName: widget.pipelineName,
           stageNodes: widget.stageNodes,
           itemName: widget.itemName,
-          onChanged: (updated) {
-            setState(() {
-              // The widget rebuilds the baseline wholesale, so the dimensions
-              // are carried across rather than dropped by an edit to the table.
-              _baseline = updated.copyWith(
-                sheetWidthInches: _baseline.sheetWidthInches,
-                sheetHeightInches: _baseline.sheetHeightInches,
-                sheetThicknessMm: _baseline.sheetThicknessMm,
-              );
-            });
-          },
+          sheetLabel: _sheetLabel,
+          densityGCm3: _material?.densityGCm3,
+          countFamily: _countFamily,
+          followsSheetPlan: true,
+          // The widget edits a copy of this very record, so what comes back
+          // is the whole of it — the sheet plan included.
+          onChanged: (updated) => setState(() => _baseline = updated),
         ),
       ),
     );
@@ -2053,15 +2121,33 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           variant: AppButtonVariant.secondary,
           onPressed: widget.onCancel,
         ),
-      AppButton(
-        label: 'Save Master Data',
-        icon: Icons.check_rounded,
-        onPressed: widget.readOnly
-            ? null
-            // Without the blank rows the editor keeps for typing into.
-            : () => widget.onSave(_baseline.withoutEmptyBands),
-      ),
+      // Read only with somewhere to go, the footer offers the way in where
+      // the Save would be: a greyed Save with "Read only." beside it was the
+      // whole of the old answer to "how do I save this", and it read as broken.
+      if (widget.readOnly && widget.onEdit != null)
+        AppButton(
+          key: const ValueKey<String>('master-data-edit'),
+          label: 'Edit',
+          icon: Icons.edit_outlined,
+          onPressed: widget.onEdit,
+        )
+      else
+        AppButton(
+          key: const ValueKey<String>('master-data-save'),
+          label: 'Save Master Data',
+          icon: Icons.check_rounded,
+          isLoading: widget.saving,
+          onPressed: widget.readOnly || widget.saving
+              ? null
+              // Without the blank rows the editor keeps for typing into.
+              : () => widget.onSave(_recorded),
+        ),
     ];
+    final note = !widget.readOnly
+        ? 'The drawing follows what you type.'
+        : widget.onEdit == null
+        ? 'Read only.'
+        : '';
     const decoration = BoxDecoration(
       color: Color(0xFFFBFBFB),
       border: Border(top: BorderSide(color: SoftErpTheme.border)),
@@ -2082,10 +2168,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           spacing: 10,
           runSpacing: 8,
           children: [
-            if (widget.readOnly)
-              const Text(
-                'Read only.',
-                style: TextStyle(
+            if (widget.readOnly && note.isNotEmpty)
+              Text(
+                note,
+                style: const TextStyle(
                   color: SoftErpTheme.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -2105,12 +2191,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         children: [
           Expanded(
             child: Text(
-              widget.readOnly
-                  ? 'Read only.'
-                  : 'The drawing follows what you type.',
+              note,
               style: const TextStyle(
                 color: SoftErpTheme.textSecondary,
-                fontSize: 12.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),

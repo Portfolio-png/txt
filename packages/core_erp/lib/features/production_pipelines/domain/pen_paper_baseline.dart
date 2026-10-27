@@ -218,6 +218,11 @@ class PenPaperStageReconciliation {
     this.materialType = '',
     this.rejectionPercent = 0.0,
     this.notes = '',
+    this.inputSheets,
+    this.outputPieces,
+    this.outputUnitId,
+    this.inputLabel = '',
+    this.outputLabel = '',
   });
 
   final String stageId;
@@ -245,6 +250,34 @@ class PenPaperStageReconciliation {
   /// absolute, because that is how the floor quotes it.
   final double rejectionPercent;
   final String notes;
+
+  /// Whole sheets going in — a sheet planned in step 1 is one. Null on a
+  /// record from before it existed; read [sheetsIn] instead.
+  final int? inputSheets;
+
+  /// Pieces coming out, in whole base units of Count (the units contract: a
+  /// count is an integer, never a double). Null on an old record; read
+  /// [piecesOut], which falls back to a whole [outputQty].
+  final int? outputPieces;
+
+  /// The Count unit the pieces were typed in (Pc, doz, gro) — how to show
+  /// them again. Null is the base, pieces.
+  final int? outputUnitId;
+
+  /// What goes in and what comes out, in words: the sheet ("MS sheet · 48 ×
+  /// 96 in · 1.2 mm") and the part. They replace [materialType], a guess made
+  /// from the first word of the part's name.
+  final String inputLabel;
+  final String outputLabel;
+
+  int get sheetsIn => inputSheets ?? (inputQty == inputQty.roundToDouble() ? inputQty.round() : 0);
+
+  int get piecesOut =>
+      outputPieces ??
+      (outputQty == outputQty.roundToDouble() ? outputQty.round() : 0);
+
+  String get inputName => inputLabel.isNotEmpty ? inputLabel : materialType;
+  String get outputName => outputLabel.isNotEmpty ? outputLabel : materialType;
 
   /// Average weight of one piece, which is what the pieces/weight pair is for.
   double get inputKgPerPiece => inputQty > 0 ? inputKg / inputQty : 0.0;
@@ -288,6 +321,11 @@ class PenPaperStageReconciliation {
     String? materialType,
     double? rejectionPercent,
     String? notes,
+    int? inputSheets,
+    int? outputPieces,
+    Object? outputUnitId = _keep,
+    String? inputLabel,
+    String? outputLabel,
   }) {
     return PenPaperStageReconciliation(
       stageId: stageId ?? this.stageId,
@@ -305,8 +343,17 @@ class PenPaperStageReconciliation {
       materialType: materialType ?? this.materialType,
       rejectionPercent: rejectionPercent ?? this.rejectionPercent,
       notes: notes ?? this.notes,
+      inputSheets: inputSheets ?? this.inputSheets,
+      outputPieces: outputPieces ?? this.outputPieces,
+      outputUnitId: outputUnitId == _keep
+          ? this.outputUnitId
+          : outputUnitId as int?,
+      inputLabel: inputLabel ?? this.inputLabel,
+      outputLabel: outputLabel ?? this.outputLabel,
     );
   }
+
+  static const Object _keep = Object();
 
   Map<String, dynamic> toJson() {
     return {
@@ -325,6 +372,11 @@ class PenPaperStageReconciliation {
       'materialType': materialType,
       'rejectionPercent': rejectionPercent,
       'notes': notes,
+      if (inputSheets != null) 'inputSheets': inputSheets,
+      if (outputPieces != null) 'outputPieces': outputPieces,
+      if (outputUnitId != null) 'outputUnitId': outputUnitId,
+      'inputLabel': inputLabel,
+      'outputLabel': outputLabel,
     };
   }
 
@@ -345,6 +397,11 @@ class PenPaperStageReconciliation {
       materialType: json['materialType'] as String? ?? '',
       rejectionPercent: (json['rejectionPercent'] as num?)?.toDouble() ?? 0.0,
       notes: json['notes'] as String? ?? '',
+      inputSheets: (json['inputSheets'] as num?)?.toInt(),
+      outputPieces: (json['outputPieces'] as num?)?.toInt(),
+      outputUnitId: (json['outputUnitId'] as num?)?.toInt(),
+      inputLabel: json['inputLabel'] as String? ?? '',
+      outputLabel: json['outputLabel'] as String? ?? '',
     );
   }
 }
@@ -354,6 +411,7 @@ class PenPaperStageReconciliation {
 class PenPaperBaseline {
   const PenPaperBaseline({
     this.isGranular = false,
+    this.materialFromPlan = false,
     this.keyEfficiencyBenchmark = 75.0,
     this.baselineOutputRate = 12.0,
     this.baselineScrapRate = 4.0,
@@ -1015,6 +1073,48 @@ class PenPaperBaseline {
     );
   }
 
+  /// The whole-pipeline Material data row this plan implies: one sheet in at
+  /// its weight, the planned pieces out at theirs, the offcut booked as scrap
+  /// and the blade and trim as weight loss — so it balances by construction.
+  ///
+  /// With no density (no material picked) the weights are left at zero and
+  /// only the counts are filled; the caller says why.
+  PenPaperStageReconciliation reconciliationFromPlan({
+    required double? densityGCm3,
+    required String sheetLabel,
+    required String partName,
+    PenPaperStageReconciliation? keepFrom,
+  }) {
+    final weights = densityGCm3 == null || densityGCm3 <= 0
+        ? SheetWeights.zero
+        : weighAt(densityGCm3);
+    double kg(double value) => (value * 1000).roundToDouble() / 1000;
+    final base = keepFrom ??
+        const PenPaperStageReconciliation(
+          stageId: 'whole_pipeline',
+          stageName: 'Entire Pipeline',
+        );
+    return base.copyWith(
+      stageId: 'whole_pipeline',
+      stageName: 'Entire Pipeline',
+      recordScrap: true,
+      recordRejection: true,
+      recordWeightLoss: true,
+      inputSheets: 1,
+      inputQty: 1,
+      inputKg: kg(weights.sheetKg),
+      outputPieces: pieceCount,
+      outputQty: pieceCount.toDouble(),
+      outputKg: kg(weights.partsKg),
+      scrapKg: kg(weights.offcutKg),
+      weightLossKg: kg(weights.lostKg),
+      rejectionKg: 0,
+      rejectionPercent: 0,
+      inputLabel: sheetLabel,
+      outputLabel: partName,
+    );
+  }
+
   /// The production pipeline this sample was measured on. A baseline only means
   /// something in the context of a route, so it is stamped at capture time —
   /// if the item's default pipeline later changes, the record still says which
@@ -1023,6 +1123,13 @@ class PenPaperBaseline {
   final String pipelineName;
 
   final bool isGranular;
+
+  /// Whether Material data still follows the sheet plan: true while nobody has
+  /// typed over it, so changing the plan re-fills it. Editing a figure turns
+  /// it off; "Refill from sheet plan" turns it back on. Off for a record saved
+  /// before it existed, so what was recorded is never replaced.
+  final bool materialFromPlan;
+
   final double keyEfficiencyBenchmark;
   final double baselineOutputRate;
   final double baselineScrapRate;
@@ -1091,6 +1198,7 @@ class PenPaperBaseline {
 
     return PenPaperBaseline(
       isGranular: false,
+      materialFromPlan: true,
       keyEfficiencyBenchmark: 88.0,
       baselineOutputRate: 12.5,
       baselineScrapRate: 4.2,
@@ -1102,6 +1210,7 @@ class PenPaperBaseline {
 
   PenPaperBaseline copyWith({
     bool? isGranular,
+    bool? materialFromPlan,
     double? keyEfficiencyBenchmark,
     double? baselineOutputRate,
     double? baselineScrapRate,
@@ -1126,6 +1235,7 @@ class PenPaperBaseline {
   }) {
     return PenPaperBaseline(
       isGranular: isGranular ?? this.isGranular,
+      materialFromPlan: materialFromPlan ?? this.materialFromPlan,
       keyEfficiencyBenchmark:
           keyEfficiencyBenchmark ?? this.keyEfficiencyBenchmark,
       baselineOutputRate: baselineOutputRate ?? this.baselineOutputRate,
@@ -1154,6 +1264,7 @@ class PenPaperBaseline {
   Map<String, dynamic> toJson() {
     return {
       'isGranular': isGranular,
+      'materialFromPlan': materialFromPlan,
       'keyEfficiencyBenchmark': keyEfficiencyBenchmark,
       'baselineOutputRate': baselineOutputRate,
       'baselineScrapRate': baselineScrapRate,
@@ -1193,6 +1304,7 @@ class PenPaperBaseline {
 
     return PenPaperBaseline(
       isGranular: json['isGranular'] as bool? ?? false,
+      materialFromPlan: json['materialFromPlan'] as bool? ?? false,
       keyEfficiencyBenchmark:
           (json['keyEfficiencyBenchmark'] as num?)?.toDouble() ?? 88.0,
       baselineOutputRate:

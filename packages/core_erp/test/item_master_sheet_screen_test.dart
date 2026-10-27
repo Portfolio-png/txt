@@ -615,6 +615,47 @@ void main() {
       expect(repo.updated.single.id, 500);
     });
 
+    testWidgets('the footer Edit, typed pieces, Save: the pieces are on the part',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      expect(tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).itemName,
+          'Patti',
+          reason: 'the part, not a guess from the cursor row');
+
+      // Read only, the footer offers the way in where the Save would be.
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+      await tester.pump();
+      expect(tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
+          isFalse);
+
+      await tester.ensureVisible(find.text('Material data'));
+      await tester.pump();
+      await tester.tap(find.text('Material data'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('material-output-pieces')), '2900');
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('master-data-save')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      final row = repo.updated.single.penPaperBaseline!.stageReconciliations.single;
+      expect(row.outputPieces, 2900);
+      expect(row.outputLabel, 'Patti');
+      expect(tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
+          isTrue,
+          reason: 'a save that landed leaves edit mode');
+    });
+
     testWidgets('a die changed anywhere re-reads the open part (real time)',
         (tester) async {
       // The server announces a die edit on every part that uses it

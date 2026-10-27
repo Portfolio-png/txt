@@ -122,6 +122,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   bool? _rawPanelOpen;
   bool _rawEditing = false;
   int _rawEpoch = 0;
+
+  /// A raw sheet save in flight, and the part the panel was last drawn for —
+  /// so moving to another part does not carry edit mode across to it.
+  bool _rawSaving = false;
+  int? _rawPartId;
   static const double _rawPanelWidth = 520;
 
   /// The left rail folded to an icon strip (remembered on this device).
@@ -747,6 +752,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
 
     final part = _livePart;
+    if (part?.id != _rawPartId) {
+      _rawPartId = part?.id;
+      _rawEditing = false;
+    }
     final baseline = part?.penPaperBaseline ?? PenPaperBaseline.createDefault();
     final panel = MasterDataPanel(
       // Bumped on Cancel, so the edits are thrown away with the old state.
@@ -755,9 +764,19 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       embedded: true,
       showHeader: false,
       readOnly: part == null || !_rawEditing,
-      itemName: _partLabelNow,
+      // The saved part's own name: the Output row of Material data and the
+      // review are about the part, not whichever row the cursor is on.
+      itemName: part == null
+          ? _partLabelNow
+          : (part.displayName.trim().isEmpty ? part.name : part.displayName),
+      pipelineId: part?.defaultPipelineId,
+      pipelineName: part?.defaultPipelineName ?? '',
       parts: _plannableParts(),
       materials: _materials?.materials ?? const [],
+      saving: _rawSaving,
+      onEdit: part != null && !_rawEditing
+          ? () => setState(() => _rawEditing = true)
+          : null,
       onSave: (saved) => unawaited(_saveRawSheet(saved)),
       onCancel: _rawEditing
           ? () => setState(() {
@@ -829,10 +848,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Future<void> _saveRawSheet(PenPaperBaseline baseline) async {
     final part = _livePart;
     if (part == null) return;
+    if (_rawSaving) return;
     final items = context.read<ItemsProvider>();
+    setState(() => _rawSaving = true);
     final saved = await items.setItemPenPaperBaseline(part.id, baseline);
     if (!mounted) return;
     setState(() {
+      _rawSaving = false;
+      // A failed save stays in edit mode, so what was typed is not lost.
       if (saved != null) _rawEditing = false;
     });
     _toast(
