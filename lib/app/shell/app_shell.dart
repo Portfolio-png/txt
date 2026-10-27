@@ -838,10 +838,21 @@ void _registerAppFlowHooks() {
       return names;
     }
 
+    final capacities = <int>{};
+    for (final machine in machines) {
+      final kgf = machine.capacityKgf;
+      if (kgf != null && kgf > 0) capacities.add(kgf);
+    }
     return MachineSheetSuggestions(
       makes: distinct((machine) => machine.machineMake),
       feederMakes: distinct((machine) => machine.feederMake),
       dieFeedTypes: distinct((machine) => machine.dieFeedType),
+      names: distinct((machine) => machine.name),
+      years: distinct((machine) => '${machine.manufacturedYear ?? ''}'),
+      runningHours: distinct((machine) => '${machine.runningHours ?? ''}'),
+      strokesPerMinute:
+          distinct((machine) => '${machine.strokesPerMinute ?? ''}'),
+      capacitiesKgf: capacities.toList(),
     );
   };
   // Unread today — see the note on `dieEditor` above.

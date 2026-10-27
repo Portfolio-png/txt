@@ -13,6 +13,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'pick_or_type_field.dart';
+
 import '../theme/soft_erp_theme.dart';
 
 /// Kilograms-force in one metric ton-force.
@@ -127,6 +129,7 @@ class ForceCapacityField extends StatelessWidget {
     this.onChanged,
     this.fieldKey,
     this.freeHandKey,
+    this.suggestions,
   });
 
   final TextEditingController controller;
@@ -141,6 +144,10 @@ class ForceCapacityField extends StatelessWidget {
   final Key? fieldKey;
   final Key? freeHandKey;
 
+  /// Figures used before, in [unitSymbol]. Given, the figure is a searchable
+  /// dropdown of them that also takes a new one; null keeps a plain field.
+  final List<String>? suggestions;
+
   @override
   Widget build(BuildContext context) {
     final freeHand = kind == CapacityKind.freeHand;
@@ -151,7 +158,20 @@ class ForceCapacityField extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: TextField(
+              child: suggestions != null
+                  ? PickOrTypeField(
+                      fieldKey: fieldKey,
+                      controller: controller,
+                      label: label,
+                      options: suggestions!,
+                      // Greyed with free hand ticked, as the plain field is.
+                      enabled: enabled && !freeHand,
+                      errorText: errorText,
+                      searchKeyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: onChanged,
+                    )
+                  : TextField(
                 key: fieldKey,
                 controller: controller,
                 // Greyed rather than hidden while free hand is ticked: the
@@ -161,9 +181,10 @@ class ForceCapacityField extends StatelessWidget {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (_) => onChanged?.call(),
                 style: const TextStyle(fontSize: 14),
+                // No helper line: the free-hand tick below already says
+                // "no rated capacity", and "Optional" was noise.
                 decoration: InputDecoration(
                   labelText: label,
-                  helperText: freeHand ? 'No rated capacity' : 'Optional',
                   errorText: errorText,
                   border: const OutlineInputBorder(),
                 ),

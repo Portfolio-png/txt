@@ -255,11 +255,26 @@ class MachineSheetSuggestions {
     this.makes = const <String>[],
     this.feederMakes = const <String>[],
     this.dieFeedTypes = const <String>[],
+    this.names = const <String>[],
+    this.years = const <String>[],
+    this.runningHours = const <String>[],
+    this.strokesPerMinute = const <String>[],
+    this.capacitiesKgf = const <int>[],
   });
 
   final List<String> makes;
   final List<String> feederMakes;
   final List<String> dieFeedTypes;
+
+  /// Every other field on the sheet is a dropdown of what was used before,
+  /// too — the same answers recur across a shop's machines.
+  final List<String> names;
+  final List<String> years;
+  final List<String> runningHours;
+  final List<String> strokesPerMinute;
+
+  /// Rated capacities in kgf; the sheet shows them in whichever unit is picked.
+  final List<int> capacitiesKgf;
 }
 
 class AppFlowHooks {

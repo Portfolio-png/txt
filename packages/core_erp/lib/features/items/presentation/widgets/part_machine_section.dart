@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/pick_or_type_field.dart';
+
 import '../../../../sheet/sheet_engine.dart';
 import 'package:provider/provider.dart';
 
@@ -594,9 +596,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               runSpacing: 12,
               crossAxisAlignment: WrapCrossAlignment.start,
               children: [
+                // Every field a dropdown of what this shop has used before,
+                // which also takes a new answer — the same makes, years and
+                // figures recur across its machines. No helper lines: the
+                // labels say enough.
                 FitToText(
                   texts: ['Machine Type', _typeNameFor(_groupId)],
-                  helper: 'Power Press, Punching M… type a new one to add it',
                   minWidth: 220,
                   chrome: 72,
                   child: GroupPickerField(
@@ -611,12 +616,6 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     searchHintText: 'Search or type a new machine type',
                     decoration: const InputDecoration(
                       labelText: 'Machine Type',
-                      // There are no machine groups on a fresh system, so this
-                      // is not a convenience — it is the only way the list
-                      // ever fills.
-                      helperText:
-                          'Power Press, Punching M… type a new one to add it',
-                      helperMaxLines: 2,
                       isDense: true,
                       border: OutlineInputBorder(),
                     ),
@@ -624,6 +623,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       _groupId = id;
                       _rederiveNo();
                     }),
+                    // There are no machine types on a fresh system, so typing
+                    // a new one is the only way the list ever fills.
                     canCreateOption: (query, _) => query.trim().isNotEmpty,
                     createOptionLabelBuilder: (query) => 'Add type "$query"',
                     onCreateOption: (query) async {
@@ -643,10 +644,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     },
                   ),
                 ),
+                // A text field, not a dropdown: the number is unique and is
+                // derived from the type, so a list of numbers already taken
+                // would only offer duplicates.
                 FitToText(
                   controller: _noController,
                   texts: const ['Machine No.'],
-                  helper: _noHelper(),
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-no-field'),
                     controller: _noController,
@@ -657,116 +660,50 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'Machine No.',
-                      helperText: _noHelper(),
-                      helperMaxLines: 2,
                       isDense: true,
-                      border: const OutlineInputBorder(),
+                      border: OutlineInputBorder(),
                     ),
                   ),
                 ),
-                FitToText(
+                _pick(
+                  slug: 'name',
+                  label: 'Name',
                   controller: _nameController,
-                  texts: const ['Name'],
-                  helper: 'Optional — the number is used if blank',
-                  child: TextField(
-                    key: const ValueKey<String>(
-                      'quick-entry-machine-name-field',
-                    ),
-                    controller: _nameController,
-                    enabled: enabled,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      helperText: 'Optional — the number is used if blank',
-                      helperMaxLines: 2,
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.names,
+                  enabled: enabled,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'make',
+                  label: 'Machine Make',
                   controller: _makeController,
-                  texts: const ['Machine Make'],
-                  helper: 'Who built it',
-                  child: _SuggestingField(
-                    fieldKey: const ValueKey<String>(
-                      'quick-entry-machine-make-field',
-                    ),
-                    controller: _makeController,
-                    enabled: enabled,
-                    label: 'Machine Make',
-                    helper: 'Who built it',
-                    suggestions: _suggestions.makes,
-                    onChanged: () => setState(() {}),
-                  ),
+                  options: _suggestions.makes,
+                  enabled: enabled,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'dom',
+                  label: 'D.O.M.',
                   controller: _yearController,
-                  texts: const ['D.O.M.', '2011'],
-                  helper: 'Year it was built',
-                  minWidth: 120,
-                  child: TextField(
-                    key: const ValueKey<String>(
-                      'quick-entry-machine-dom-field',
-                    ),
-                    controller: _yearController,
-                    enabled: enabled,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'D.O.M.',
-                      hintText: '2011',
-                      // A year, because that is what anyone knows about a
-                      // machine this old.
-                      helperText: 'Year it was built',
-                      helperMaxLines: 2,
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.years,
+                  enabled: enabled,
+                  numeric: true,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'hours',
+                  label: 'Running Hrs',
                   controller: _hoursController,
-                  texts: const ['Running Hrs'],
-                  helper: 'The meter now',
-                  minWidth: 120,
-                  child: TextField(
-                    key: const ValueKey<String>(
-                      'quick-entry-machine-hours-field',
-                    ),
-                    controller: _hoursController,
-                    enabled: enabled,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'Running Hrs',
-                      helperText: 'The meter now',
-                      helperMaxLines: 2,
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.runningHours,
+                  enabled: enabled,
+                  numeric: true,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'strokes',
+                  label: 'Stroke / Min',
                   controller: _strokesController,
-                  texts: const ['Stroke / Min'],
-                  minWidth: 120,
-                  child: TextField(
-                    key: const ValueKey<String>(
-                      'quick-entry-machine-strokes-field',
-                    ),
-                    controller: _strokesController,
-                    enabled: enabled,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'Stroke / Min',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.strokesPerMinute,
+                  enabled: enabled,
+                  numeric: true,
                 ),
                 // A figure, a unit and a "free hand" tick: one compact block.
                 SizedBox(
@@ -783,6 +720,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     kind: _capacityKind,
                     enabled: enabled,
                     errorText: _capacityError,
+                    // Figures used before, read in the unit picked here.
+                    suggestions: [
+                      for (final kgf in _suggestions.capacitiesKgf)
+                        formatCapacityFromKgf(kgf, _capacityUnit),
+                    ],
                     onUnitChanged: (symbol) => setState(() {
                       _capacityUnit = symbol;
                       _capacityError = null;
@@ -791,49 +733,24 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       _capacityKind = kind;
                       _capacityError = null;
                     }),
-                    onChanged: () {
-                      if (_capacityError != null) {
-                        setState(() => _capacityError = null);
-                      }
-                    },
+                    onChanged: () => setState(() => _capacityError = null),
                   ),
                 ),
-                FitToText(
+                // Named "make" because everywhere else in this system a
+                // feeder is an upstream node in a pipeline.
+                _pick(
+                  slug: 'feeder',
+                  label: 'Feeder make',
                   controller: _feederController,
-                  texts: const ['Feeder make'],
-                  helper: 'The feeder on this machine, if it has one',
-                  child: _SuggestingField(
-                    fieldKey: const ValueKey<String>(
-                      'quick-entry-machine-feeder-field',
-                    ),
-                    controller: _feederController,
-                    enabled: enabled,
-                    label: 'Feeder make',
-                    // Named "make" because everywhere else in this system a
-                    // feeder is an upstream node in a pipeline, and the sheet
-                    // uses the word for both.
-                    helper: 'The feeder on this machine, if it has one',
-                    suggestions: _suggestions.feederMakes,
-                    onChanged: () => setState(() {}),
-                  ),
+                  options: _suggestions.feederMakes,
+                  enabled: enabled,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'feed',
+                  label: 'Die Type',
                   controller: _feedTypeController,
-                  texts: const ['Die Type'],
-                  helper:
-                      'What tooling it takes — Manual, Semi Prog, Progressive',
-                  child: _SuggestingField(
-                    fieldKey: const ValueKey<String>(
-                      'quick-entry-machine-feed-field',
-                    ),
-                    controller: _feedTypeController,
-                    enabled: enabled,
-                    label: 'Die Type',
-                    helper:
-                        'What tooling it takes — Manual, Semi Prog, Progressive',
-                    suggestions: _suggestions.dieFeedTypes,
-                    onChanged: () => setState(() {}),
-                  ),
+                  options: _suggestions.dieFeedTypes,
+                  enabled: enabled,
                 ),
               ],
             ),
@@ -893,13 +810,30 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     );
   }
 
-  String _noHelper() {
-    if (_editingMachineId != null) {
-      return 'Renumbering this renumbers the machine itself';
-    }
-    if (_noPinned) return 'Typed over — it will not follow the type any more';
-    if (_groupId == null) return 'Pick a type and it fills in';
-    return 'The next in this type';
+  /// One pick-or-type field, as wide as its label and longest answer.
+  Widget _pick({
+    required String slug,
+    required String label,
+    required TextEditingController controller,
+    required List<String> options,
+    required bool enabled,
+    bool numeric = false,
+  }) {
+    return FitToText(
+      controller: controller,
+      texts: [label, ...options.take(8)],
+      minWidth: numeric ? 140 : 180,
+      chrome: 72,
+      child: PickOrTypeField(
+        fieldKey: ValueKey<String>('quick-entry-machine-$slug-field'),
+        controller: controller,
+        label: label,
+        options: options,
+        enabled: enabled,
+        searchKeyboardType: numeric ? TextInputType.number : null,
+        onChanged: () => setState(() {}),
+      ),
+    );
   }
 
   String _heading(String? editing) {
@@ -965,84 +899,6 @@ class _PartMachineSectionState extends State<PartMachineSection> {
             onTap: enabled ? () => _editMachine(machine) : null,
             onUnlink: enabled ? () => _unlink(machine) : null,
           ),
-      ],
-    );
-  }
-}
-
-/// A text field with the answers already used offered beneath it.
-///
-/// Chips rather than an Autocomplete overlay: an overlay inside a dialog
-/// inside a scroll view is a positioning fight this codebase has already lost
-/// once.
-class _SuggestingField extends StatelessWidget {
-  const _SuggestingField({
-    required this.controller,
-    required this.label,
-    required this.helper,
-    required this.suggestions,
-    required this.enabled,
-    this.onChanged,
-    this.fieldKey,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final String helper;
-  final List<String> suggestions;
-  final bool enabled;
-  final VoidCallback? onChanged;
-  final Key? fieldKey;
-
-  @override
-  Widget build(BuildContext context) {
-    final typed = controller.text.trim().toLowerCase();
-    final offered = suggestions
-        .where((name) => typed.isEmpty || name.toLowerCase().contains(typed))
-        .where((name) => name.toLowerCase() != typed)
-        .take(5)
-        .toList(growable: false);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          key: fieldKey,
-          controller: controller,
-          enabled: enabled,
-          textCapitalization: TextCapitalization.words,
-          onChanged: (_) => onChanged?.call(),
-          style: const TextStyle(fontSize: 14),
-          decoration: InputDecoration(
-            labelText: label,
-            helperText: helper,
-            helperMaxLines: 2,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        if (offered.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final name in offered)
-                ActionChip(
-                  label: Text(name, style: const TextStyle(fontSize: 14)),
-                  onPressed: !enabled
-                      ? null
-                      : () {
-                          controller.text = name;
-                          controller.selection = TextSelection.collapsed(
-                            offset: name.length,
-                          );
-                          onChanged?.call();
-                        },
-                ),
-            ],
-          ),
-        ],
       ],
     );
   }

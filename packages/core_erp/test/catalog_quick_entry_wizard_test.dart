@@ -2230,6 +2230,27 @@ void _machineSectionTests() {
       return harness;
     }
 
+    /// Picks [value] in a machine field's dropdown, or adds it — every field
+    /// but the number is a dropdown of answers used before.
+    Future<void> pickOrType(
+      WidgetTester tester,
+      String slug,
+      String value,
+    ) async {
+      await _tapVisible(tester, machineField(slug));
+      await tester.enterText(find.byType(TextField).last, value);
+      await tester.pumpAndSettle();
+      final add = find.text('Use "$value"');
+      await tester.tap(add.evaluate().isNotEmpty ? add : find.text(value).last);
+      await tester.pumpAndSettle();
+    }
+
+    /// What a machine dropdown shows.
+    bool showsIn(String slug, String value) => find
+        .descendant(of: machineField(slug), matching: find.text(value))
+        .evaluate()
+        .isNotEmpty;
+
     Future<void> pickType(WidgetTester tester, String name) async {
       await _tapVisible(
         tester,
@@ -2273,7 +2294,10 @@ void _machineSectionTests() {
       await tester.enterText(machineField('no'), 'LATHE-7');
       await tester.pumpAndSettle();
       expect(_textIn(tester, 'machine-no'), 'LATHE-7');
-      expect(find.textContaining('Typed over'), findsOneWidget);
+      // No note under the field any more — the pin itself is what matters:
+      // picking the type again does not take the number back.
+      await pickType(tester, 'Power Press');
+      expect(_textIn(tester, 'machine-no'), 'LATHE-7');
     });
 
     testWidgets('Add hands the sheet over once, then links it to the part', (
@@ -2282,14 +2306,13 @@ void _machineSectionTests() {
       final harness = await partReady(tester);
 
       await pickType(tester, 'Power Press');
-      await tester.enterText(machineField('make'), 'Mayank');
-      await tester.enterText(machineField('dom'), '2011');
-      await tester.enterText(machineField('hours'), '5001');
-      await tester.enterText(machineField('strokes'), '110');
-      await tester.enterText(machineField('capacity'), '35');
-      await tester.enterText(machineField('feeder'), 'Jay Shanti');
-      await tester.enterText(machineField('feed'), 'Progressive');
-      await tester.pumpAndSettle();
+      await pickOrType(tester, 'make', 'Mayank');
+      await pickOrType(tester, 'dom', '2011');
+      await pickOrType(tester, 'hours', '5001');
+      await pickOrType(tester, 'strokes', '110');
+      await pickOrType(tester, 'capacity', '35');
+      await pickOrType(tester, 'feeder', 'Jay Shanti');
+      await pickOrType(tester, 'feed', 'Progressive');
       await _tapVisible(tester, addMachine());
 
       expect(drafts, hasLength(1));
@@ -2323,8 +2346,7 @@ void _machineSectionTests() {
       await partReady(tester);
 
       await pickType(tester, 'Power Press');
-      await tester.enterText(machineField('capacity'), '35');
-      await tester.pumpAndSettle();
+      await pickOrType(tester, 'capacity', '35');
       await _tapVisible(
         tester,
         find.byKey(const ValueKey<String>('quick-entry-machine-free-hand')),
@@ -2343,8 +2365,7 @@ void _machineSectionTests() {
       await partReady(tester);
 
       await pickType(tester, 'Power Press');
-      await tester.enterText(machineField('capacity'), 'heavy');
-      await tester.pumpAndSettle();
+      await pickOrType(tester, 'capacity', 'heavy');
       await _tapVisible(tester, addMachine());
 
       expect(drafts, isEmpty, reason: 'nothing is written on a bad capacity');
@@ -2461,7 +2482,7 @@ void _machineSectionTests() {
       // Tapping one loads it in to be corrected.
       await _tapVisible(tester, machineRow('90'));
       expect(find.text('Machines · ATP48 · PP-1'), findsOneWidget);
-      expect(_textIn(tester, 'machine-make'), 'Mayank');
+      expect(showsIn('make', 'Mayank'), isTrue);
       expect(
         find.descendant(of: addMachine(), matching: find.text('Save machine')),
         findsOneWidget,
