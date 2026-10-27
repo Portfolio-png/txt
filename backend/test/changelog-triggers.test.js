@@ -32,7 +32,7 @@ const REPLICATED = [
 /// after a reset: the restore stopped at 042, so they did not.
 const LATER = [
   'entity_links', 'entity_variation_nodes', 'process_routes',
-  'die_makers', 'process_stages', 'party_contacts',
+  'die_makers', 'process_stages', 'party_contacts', 'item_sheet_properties',
 ];
 const ALL_TRIGGERED = [...REPLICATED, ...LATER];
 

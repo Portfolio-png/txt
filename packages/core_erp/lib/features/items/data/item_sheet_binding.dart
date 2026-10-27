@@ -14,6 +14,7 @@ import '../../groups/domain/group_definition.dart';
 import '../../groups/presentation/providers/groups_provider.dart';
 import '../domain/developed_for.dart';
 import '../domain/item_definition.dart';
+import '../domain/sheet_property.dart';
 import '../domain/item_inputs.dart';
 import '../domain/swg_gauge_table.dart';
 import '../presentation/providers/items_provider.dart';
@@ -30,6 +31,7 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     this.materials,
     required this.itemSheet,
     this.liveItemSheet,
+    this.sheetProperties,
     this.partySheet,
     this.dealDraft,
     this.dealContactIds,
@@ -50,6 +52,10 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   final SheetDef Function()? liveItemSheet;
 
   SheetDef get _sheet => liveItemSheet?.call() ?? itemSheet;
+
+  /// The sheet's saved property columns (061), read live: a column's own
+  /// option list comes first in its dropdown, ahead of values parts carry.
+  final List<SheetProperty> Function()? sheetProperties;
 
   /// The development deal, which is one record for the whole screen rather
   /// than one per part — so it arrives as a sheet plus its single row.
@@ -509,6 +515,19 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     final property = SheetBindsTo.variationProperty(column.bindsTo!);
     final seen = <String>{};
     final out = <ColumnOption>[];
+    // The column's own list first, in the order it was given. Its own id
+    // band, so a value parts carry (92000s) never takes one of these ids.
+    final stored = sheetProperties?.call() ?? const <SheetProperty>[];
+    final wanted = _normalize(property);
+    final own = stored.where((p) => p.key == wanted).firstOrNull;
+    for (final label in own?.options ?? const <String>[]) {
+      if (!seen.add(_normalize(label))) continue;
+      out.add(ColumnOption(
+        id: 93000000 + column.id * 1000 + out.length,
+        columnId: column.id,
+        label: label,
+      ));
+    }
     for (final item in live) {
       final value = _valueOfProperty(item, property);
       if (value == null || !seen.add(_normalize(value))) continue;

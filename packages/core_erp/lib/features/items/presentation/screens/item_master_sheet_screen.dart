@@ -19,6 +19,8 @@ import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../../production_pipelines/domain/sheet_part.dart';
 import '../../../production_pipelines/presentation/widgets/master_data_dialog.dart';
 import '../../data/item_sheet_binding.dart';
+import '../../domain/sheet_property.dart';
+import '../providers/sheet_properties_provider.dart';
 import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
 import '../providers/items_provider.dart';
@@ -165,6 +167,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   MaterialsProvider? _materials;
   ClientsProvider? _clients;
 
+  /// The sheet's saved property columns (061), shared by every window.
+  SheetPropertiesProvider? _sheetProps;
+
+  /// Keys of the stored columns last put on the sheet — so a column removed
+  /// elsewhere is taken off, while Alloy and Thickness (not stored) never are.
+  Set<String> _storedKeys = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -197,6 +206,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // anywhere else — the Clients screen, another window — did not appear here
     // until the sheet was reopened.
     _clients = _maybeRead<ClientsProvider>()?..addListener(_onMastersChanged);
+    _sheetProps = _maybeRead<SheetPropertiesProvider>()
+      ?..addListener(_onSheetPropsChanged);
 
     // Saves elsewhere show up through the providers above. A die or machine
     // edited anywhere arrives as a change to every part that uses it
@@ -206,8 +217,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     // Commit whichever row the cursor leaves, however it left — a click, Tab
     // or Enter past the end, or Add row.
-    _controller.groupItemController.onRowLeft =
-        (row) => unawaited(_commitOnLeave(row));
+    // The property columns' hooks: a value typed in joins the column's list,
+    // and removing, renaming or editing a stored column changes it for all.
+    _controller.groupItemController
+      ..onOptionAdded = _onOptionAdded
+      ..confirmRemoveColumn = _confirmRemoveColumn
+      ..onColumnRemoved = _onColumnRemoved
+      ..onColumnRenamed = _onColumnRenamed
+      ..canEditOptions = ((column) => _storedFor(column) != null)
+      ..onEditOptions = _editOptions
+      ..onRowLeft = (row) => unawaited(_commitOnLeave(row));
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -216,6 +235,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       if (clients != null && clients.clients.isEmpty && !clients.isLoading) {
         unawaited(clients.refresh());
       }
+      // The stored property columns go on before the pickers are built, so
+      // their options are built with them.
+      await _sheetProps?.ensureLoaded();
+      if (!mounted) return;
+      _syncPropertyColumns();
       await _controller.loadReferenceData();
       if (!mounted) return;
       unawaited(_loadRailPreference());
@@ -258,6 +282,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       ),
       // The controller's copy is the one a + adds properties to.
       liveItemSheet: () => _controller.groupItemController.sheetDef,
+      sheetProperties: () => _sheetProps?.properties ?? const [],
       partySheet: SheetDef(
         id: 2,
         key: 'item_party',
@@ -297,7 +322,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   @override
   void dispose() {
-    _controller.groupItemController.onRowLeft = null;
+    _controller.groupItemController
+      ..onRowLeft = null
+      ..onOptionAdded = null
+      ..confirmRemoveColumn = null
+      ..onColumnRemoved = null
+      ..onColumnRenamed = null
+      ..canEditOptions = null
+      ..onEditOptions = null;
+    _sheetProps?.removeListener(_onSheetPropsChanged);
     _items?.removeListener(_onMastersChanged);
     _groups?.removeListener(_onMastersChanged);
     _materials?.removeListener(_onMastersChanged);
@@ -1490,8 +1523,159 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
 
     if (!mounted || result == null) return;
-    _controller.groupItemController
-        .addPropertyColumn(result.name, kind: result.kind);
+    final provider = _sheetProps;
+    if (provider == null) {
+      // No store in this host (a test harness): a column for this session.
+      _controller.groupItemController.addPropertyColumn(
+        result.name,
+        kind: _columnKindFor(result.kind),
+      );
+      return;
+    }
+    // Saved first, so the column is everyone's before anything is typed in
+    // it. A name already on the sheet answers with that column.
+    final saved = await provider.create(
+      name: result.name,
+      kind: result.kind,
+      options: result.options,
+    );
+    if (!mounted) return;
+    if (saved == null) {
+      _toast(provider.errorMessage ?? 'The column was not added.', isError: true);
+      return;
+    }
+    _syncPropertyColumns();
+    await _controller.loadReferenceData();
+  }
+
+  // --- the sheet's stored property columns --------------------------------
+
+  static String _keyOf(String name) =>
+      name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+  /// A list and a free-text property are both a dropdown that takes a new
+  /// value: what is typed joins the list for everyone, so the two differ only
+  /// in what was picked when the column was added.
+  static ColumnKind _columnKindFor(String kind) => switch (kind) {
+        'material' => ColumnKind.material,
+        'gauge' => ColumnKind.gauge,
+        _ => ColumnKind.list,
+      };
+
+  /// The stored column [column] is, or null for one that is not stored
+  /// (Alloy, Thickness, the identity columns).
+  SheetProperty? _storedFor(ColumnDef column) {
+    final binds = column.bindsTo;
+    if (!SheetBindsTo.isVariation(binds)) return null;
+    return _sheetProps?.byKey(SheetBindsTo.variationProperty(binds!));
+  }
+
+  /// Puts the stored columns on the sheet and takes off the ones removed.
+  ///
+  /// A column somebody has typed into and not saved stays until it is saved,
+  /// rather than vanishing under them because another window removed it.
+  void _syncPropertyColumns() {
+    final provider = _sheetProps;
+    if (provider == null || !provider.isLoaded) return;
+    final sheet = _controller.groupItemController;
+    final onSheet = <String, ColumnDef>{
+      for (final column in sheet.sheetDef.columns)
+        if (SheetBindsTo.isVariation(column.bindsTo))
+          _keyOf(SheetBindsTo.variationProperty(column.bindsTo!)): column,
+    };
+    final stored = [...provider.properties]
+      ..sort((a, b) => a.position.compareTo(b.position));
+    for (final property in stored) {
+      final existing = onSheet[property.key];
+      if (existing == null) {
+        sheet.addColumn(
+          label: property.name,
+          kind: _columnKindFor(property.kind),
+          bindsTo: SheetBindsTo.variation(property.propertyName),
+        );
+      } else if (existing.label != property.name) {
+        sheet.renameColumn(existing.id, property.name);
+      }
+    }
+    final keep = {for (final property in stored) property.key};
+    for (final key in _storedKeys.difference(keep)) {
+      final column = onSheet[key];
+      if (column == null || _hasUnsavedTyping(column)) continue;
+      sheet.removeColumn(column.id);
+    }
+    _storedKeys = keep;
+  }
+
+  bool _hasUnsavedTyping(ColumnDef column) {
+    final sheet = _controller.groupItemController;
+    for (var row = 0; row < sheet.rowCount; row += 1) {
+      final draft = sheet.draftAt(row);
+      final value = draft.get(column.id);
+      if (value != null && value.isNotEmpty && draft.isDirtySinceSave) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _onSheetPropsChanged() {
+    if (!mounted) return;
+    _syncPropertyColumns();
+    _onMastersChanged();
+  }
+
+  void _onOptionAdded(ColumnDef column, String label) {
+    final property = _storedFor(column);
+    if (property == null) return;
+    unawaited(_sheetProps!.addOption(property.id, label));
+  }
+
+  Future<bool> _confirmRemoveColumn(ColumnDef column) async {
+    if (_storedFor(column) == null) return true;
+    return showConfirmDialog(
+      context,
+      title: 'Remove ${column.label} from the sheet?',
+      message: 'It goes for everyone, with its list of options. Parts keep '
+          'the values they were saved with.',
+      confirmLabel: 'Remove',
+    );
+  }
+
+  void _onColumnRemoved(ColumnDef column) {
+    final provider = _sheetProps;
+    final property = _storedFor(column);
+    if (provider == null || property == null) return;
+    _storedKeys = {..._storedKeys}..remove(property.key);
+    unawaited(() async {
+      final done = await provider.remove(property.id);
+      if (!done && mounted) {
+        _toast(provider.errorMessage ?? 'The column was not removed.', isError: true);
+      }
+    }());
+  }
+
+  void _onColumnRenamed(ColumnDef column, String label) {
+    final property = _storedFor(column);
+    if (property == null || property.name == label) return;
+    unawaited(_sheetProps!.rename(property.id, label));
+  }
+
+  Future<void> _editOptions(ColumnDef column) async {
+    final property = _storedFor(column);
+    final provider = _sheetProps;
+    if (property == null || provider == null) return;
+    final result = await showDialog<_NewProperty>(
+      context: context,
+      builder: (ctx) => _AddPropertyDialog(editing: property),
+    );
+    if (!mounted || result == null) return;
+    final saved = await provider.replaceOptions(property.id, result.options);
+    if (!mounted) return;
+    if (saved == null) {
+      _toast(provider.errorMessage ?? 'The options were not saved.', isError: true);
+      return;
+    }
+    await _controller.loadReferenceData();
   }
 
   /// The part this screen is working on, as stored — null until it is saved.
@@ -2163,24 +2347,32 @@ class _TreeGuidePainter extends CustomPainter {
 
 /// What [_AddPropertyDialog] answers with.
 class _NewProperty {
-  const _NewProperty(this.name, this.kind);
+  const _NewProperty(this.name, this.kind, this.options);
 
   final String name;
-  final ColumnKind kind;
+
+  /// What the user picked: 'list', 'text', 'material' or 'gauge'.
+  final String kind;
+  final List<String> options;
 }
 
-/// Names a new property and says what kind of answer it takes.
+/// Names a new property, says what kind of answer it takes and, for a list
+/// or free text, lists the answers to offer. Opened with [editing] it edits
+/// that column's options only.
 ///
 /// A `StatefulWidget` rather than a `StatefulBuilder` because of the text
-/// controller. The caller used to make one, `await showDialog`, then dispose it
-/// on the next line — but a dialog keeps rebuilding through its **exit**
+/// controllers. The caller used to make one, `await showDialog`, then dispose
+/// it on the next line — but a dialog keeps rebuilding through its **exit**
 /// transition, so `_AnimatedState.didUpdateWidget` called `addListener` on a
 /// controller that had already been disposed. That threw, and the half-built
 /// frame surfaced as `A RenderFlex overflowed by 99284 pixels on the bottom`
 /// and `Tried to build dirty widget in the wrong build scope` — none of which
-/// name the controller. Owning it here ties its life to the route's.
+/// name the controller. Owning them here ties their life to the route's.
 class _AddPropertyDialog extends StatefulWidget {
-  const _AddPropertyDialog();
+  const _AddPropertyDialog({this.editing});
+
+  /// The column whose options are being edited, or null to add one.
+  final SheetProperty? editing;
 
   @override
   State<_AddPropertyDialog> createState() => _AddPropertyDialogState();
@@ -2188,81 +2380,178 @@ class _AddPropertyDialog extends StatefulWidget {
 
 class _AddPropertyDialogState extends State<_AddPropertyDialog> {
   final TextEditingController _name = TextEditingController();
-  ColumnKind _kind = ColumnKind.list;
+  final TextEditingController _option = TextEditingController();
+  String _kind = 'list';
+  late final List<String> _options = [...?widget.editing?.options];
+
+  bool get _editing => widget.editing != null;
+  bool get _takesOptions => _kind == 'list' || _kind == 'text';
 
   @override
   void dispose() {
     _name.dispose();
+    _option.dispose();
     super.dispose();
   }
 
+  /// Adds what is in the option box — several at once when pasted with
+  /// commas — skipping blanks and ones already listed (ignoring case).
+  void _addOption() {
+    final typed = _option.text;
+    if (typed.trim().isEmpty) return;
+    setState(() {
+      for (final raw in typed.split(',')) {
+        final label = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+        if (label.isEmpty) continue;
+        if (_options.any((o) => o.toLowerCase() == label.toLowerCase())) {
+          continue;
+        }
+        _options.add(label);
+      }
+      _option.clear();
+    });
+  }
+
   void _submit() {
+    // An option still in the box counts — nobody should lose the last one
+    // for not pressing Enter.
+    _addOption();
+    if (_editing) {
+      final editing = widget.editing!;
+      Navigator.of(context).pop(
+        _NewProperty(editing.name, editing.kind, List.of(_options)),
+      );
+      return;
+    }
     final name = _name.text.trim();
     if (name.isEmpty) return;
-    Navigator.of(context).pop(_NewProperty(name, _kind));
+    Navigator.of(context).pop(
+      _NewProperty(name, _kind, _takesOptions ? List.of(_options) : const []),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text(
-        'Add a property',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+      title: Text(
+        _editing ? 'Options for ${widget.editing!.name}' : 'Add a property',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
       ),
       content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'A property is what varies between one part and the next — '
-              'the alloy it is pressed from, the gauge, the finish. Every '
-              'one you add shows in the part code.',
-              style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _name,
-              autofocus: true,
-              style: const TextStyle(fontSize: 15),
-              decoration: const InputDecoration(
-                labelText: 'Property name',
-                hintText: 'Plating, Temper, Coating…',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'What kind of answer does it take?',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF475569),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final option in const [
-                  (ColumnKind.list, 'A list of values'),
-                  (ColumnKind.material, 'A material'),
-                  (ColumnKind.gauge, 'A gauge'),
-                  (ColumnKind.text, 'Free text'),
-                ])
-                  ChoiceChip(
-                    label: Text(
-                      option.$2,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    selected: _kind == option.$1,
-                    onSelected: (_) => setState(() => _kind = option.$1),
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!_editing) ...[
+                const Text(
+                  'A property is what varies between one part and the next — '
+                  'the alloy it is pressed from, the gauge, the finish. Every '
+                  'one you add shows in the part code, and stays on the sheet '
+                  'for everyone until it is removed.',
+                  style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  key: const ValueKey('property_name'),
+                  controller: _name,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: const InputDecoration(
+                    labelText: 'Property name',
+                    hintText: 'Plating, Temper, Coating…',
+                    border: OutlineInputBorder(),
                   ),
+                  onSubmitted: (_) => _submit(),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'What kind of answer does it take?',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in const [
+                      ('list', 'A list of values'),
+                      ('material', 'A material'),
+                      ('gauge', 'A gauge'),
+                      ('text', 'Free text'),
+                    ])
+                      ChoiceChip(
+                        label: Text(
+                          option.$2,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        selected: _kind == option.$1,
+                        onSelected: (_) => setState(() => _kind = option.$1),
+                      ),
+                  ],
+                ),
               ],
-            ),
-          ],
+              if (_editing || _takesOptions) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Options',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Offered in this column\'s dropdown on every part. A new '
+                  'value typed into the column is added here too.',
+                  style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('property_option'),
+                  controller: _option,
+                  autofocus: _editing,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    labelText: 'Add an option',
+                    hintText: 'Nickel, Chrome… then Enter',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      tooltip: 'Add',
+                      icon: const Icon(Icons.add_rounded),
+                      onPressed: _addOption,
+                    ),
+                  ),
+                  onSubmitted: (_) => _addOption(),
+                ),
+                if (_options.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final option in _options)
+                        InputChip(
+                          key: ValueKey('property_option_$option'),
+                          label: Text(
+                            option,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          onDeleted: () =>
+                              setState(() => _options.remove(option)),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ],
+          ),
         ),
       ),
       actions: [
@@ -2271,8 +2560,12 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
           child: const Text('Cancel', style: TextStyle(fontSize: 14)),
         ),
         FilledButton(
+          key: const ValueKey('property_submit'),
           onPressed: _submit,
-          child: const Text('Add', style: TextStyle(fontSize: 14)),
+          child: Text(
+            _editing ? 'Save options' : 'Add',
+            style: const TextStyle(fontSize: 14),
+          ),
         ),
       ],
     );

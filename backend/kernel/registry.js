@@ -128,7 +128,7 @@ const MODULES = {
   items: {
     label: 'Items',
     group: 'Masters',
-    pathSegments: ['items', 'groups'],
+    pathSegments: ['items', 'groups', 'item-sheet-properties'],
     recordSource: { table: 'items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(display_name), ''), name)" },
     trackTables: { items: 'Item' },
     tables: [
@@ -136,7 +136,7 @@ const MODULES = {
       'item_variation_nodes', 'item_variations', 'item_variation_values',
       'item_variation_dimensions', 'item_property_schema', 'item_unit_conversions',
       'item_bom_lines', 'variation_stock', 'user_favorite_items',
-      'item_deal_contacts',
+      'item_deal_contacts', 'item_sheet_properties',
     ],
     evacuated: true,
   },

@@ -252,6 +252,8 @@ class SocketService {
           emitEvent = 'material_types_changed';
         } else if (tableName == 'die_makers') {
           emitEvent = 'die_makers_changed';
+        } else if (tableName == 'item_sheet_properties') {
+          emitEvent = 'item_sheet_properties_changed';
         }
 
         if (emitEvent.isNotEmpty) {

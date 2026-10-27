@@ -28,6 +28,16 @@ class HeaderCell extends StatefulWidget {
 
 class _HeaderCellState extends State<HeaderCell> {
   bool _hovered = false;
+
+  /// True while the column menu is open. Opening it lays a barrier over the
+  /// header, which ends the hover; the button, shown only on hover, was then
+  /// unmounted under its own menu and PopupMenuButton dropped the pick — the
+  /// group card's Edit menu had the same fault.
+  bool _menuOpen = false;
+
+  void _setMenuOpen(bool open) {
+    if (mounted && _menuOpen != open) setState(() => _menuOpen = open);
+  }
   bool _isEditingName = false;
   late final TextEditingController _nameController;
   final FocusNode _focusNode = FocusNode();
@@ -175,7 +185,7 @@ class _HeaderCellState extends State<HeaderCell> {
 
             // Reserved 16px on every header forever; now it earns its place only
             // when the pointer is on the column or the column is focused.
-            if (!widget.column.isStamp && (_hovered || isFocused))
+            if (!widget.column.isStamp && (_hovered || isFocused || _menuOpen))
               _buildMoreMenu(context),
           ],
         ),
@@ -286,6 +296,11 @@ class _HeaderCellState extends State<HeaderCell> {
             enabled: canRight,
             child: const Text('Move right', style: TextStyle(fontSize: 14)),
           ),
+          if (widget.controller.canEditOptions?.call(widget.column) ?? false)
+            const PopupMenuItem(
+              value: 'options',
+              child: Text('Edit options…', style: TextStyle(fontSize: 14)),
+            ),
           const PopupMenuDivider(),
           PopupMenuItem(
             value: 'remove',
@@ -296,7 +311,10 @@ class _HeaderCellState extends State<HeaderCell> {
             ),
           ),
         ],
+        onOpened: () => _setMenuOpen(true),
+        onCanceled: () => _setMenuOpen(false),
         onSelected: (val) {
+          _setMenuOpen(false);
           switch (val) {
             case 'rename':
               setState(() => _isEditingName = true);
@@ -310,8 +328,11 @@ class _HeaderCellState extends State<HeaderCell> {
             case 'move_right':
               widget.controller.moveColumn(widget.column.id, 1);
               break;
+            case 'options':
+              widget.controller.onEditOptions?.call(widget.column);
+              break;
             case 'remove':
-              widget.controller.removeColumn(widget.column.id);
+              widget.controller.requestRemoveColumn(widget.column.id);
               break;
           }
         },

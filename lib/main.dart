@@ -28,6 +28,8 @@ import 'package:core_erp/features/clients/presentation/providers/clients_provide
 import 'package:core_erp/features/clients/presentation/providers/sub_contractors_provider.dart';
 import 'package:core_erp/features/die_makers/data/die_maker_repository.dart';
 import 'package:core_erp/features/die_makers/presentation/providers/die_makers_provider.dart';
+import 'package:core_erp/features/items/data/sheet_property_repository.dart';
+import 'package:core_erp/features/items/presentation/providers/sheet_properties_provider.dart';
 import 'package:paper/core/services/activation_service.dart';
 import 'package:paper/features/auth/presentation/screens/activation_screen.dart';
 import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
@@ -702,6 +704,22 @@ class MyApp extends StatelessWidget {
               DieMakersProvider(repository: context.read<DieMakerRepository>()),
           update: (context, repository, previous) =>
               previous ?? DieMakersProvider(repository: repository),
+        ),
+        // The item sheet's own property columns (061), shared by every
+        // window; above the Navigator so the pushed sheet can read them.
+        Provider<SheetPropertyRepository>(
+          create: (context) => ApiSheetPropertyRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        ChangeNotifierProxyProvider<SheetPropertyRepository, SheetPropertiesProvider>(
+          create: (context) => SheetPropertiesProvider(
+            repository: context.read<SheetPropertyRepository>(),
+          ),
+          update: (context, repository, previous) =>
+              previous ?? SheetPropertiesProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<DieRepository, DiesProvider>(
           create: (context) =>

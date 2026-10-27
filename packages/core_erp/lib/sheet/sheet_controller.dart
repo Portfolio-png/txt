@@ -322,6 +322,24 @@ class SheetController extends ChangeNotifier {
   /// what is already on file.
   Future<Contact?> Function(int partyId, String name)? onAddContact;
 
+  /// A value typed into [ColumnDef] with Add new. The host keeps lists that
+  /// outlive the sheet (the item sheet's property columns), so a value added
+  /// here joins that list for everyone.
+  void Function(ColumnDef column, String label)? onOptionAdded;
+
+  /// Asked before a column is removed; false keeps it. Null removes at once.
+  Future<bool> Function(ColumnDef column)? confirmRemoveColumn;
+
+  /// Told after a column is removed or renamed, so the host can do the same
+  /// to wherever it keeps the column.
+  void Function(ColumnDef column)? onColumnRemoved;
+  void Function(ColumnDef column, String label)? onColumnRenamed;
+
+  /// Offered on a column's menu as "Edit options…" when the host can edit
+  /// that column's list; null hides it.
+  bool Function(ColumnDef column)? canEditOptions;
+  void Function(ColumnDef column)? onEditOptions;
+
   void applyContact(int columnId, Contact contact, {int? row}) {
     final target = row ?? _row;
 
@@ -639,6 +657,8 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
   }
 
+  static int _nextNewOptionId = 900000000;
+
   void addNewOption(int columnId, String label, {int? row}) {
     final col = _sheetDef.getColumn(columnId);
     if (col == null || label.trim().isEmpty) return;
@@ -650,12 +670,11 @@ class SheetController extends ChangeNotifier {
       columnId,
     );
 
-    final maxId = _options.fold<int>(
-      500,
-      (prev, o) => o.id > prev ? o.id : prev,
-    );
+    // Its own band, far above the binding's (90000s for gauges, materials and
+    // property values): max+1 of a shared range could land on an id a later
+    // reload hands to a different value.
     final newOption = ColumnOption(
-      id: maxId + 1,
+      id: _nextNewOptionId++,
       columnId: columnId,
       parentOptionId: parentOptId,
       label: label.trim(),
@@ -666,6 +685,7 @@ class SheetController extends ChangeNotifier {
     _options.add(newOption);
     _optionIndex = null;
     target.addNewOption(newOption);
+    onOptionAdded?.call(col, newOption.label);
 
     final existing = target.get(columnId) ?? CellValue(columnId: columnId);
     target.set(
@@ -731,6 +751,22 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Remove as the column menu does it: asks the host first when it keeps the
+  /// column somewhere, then tells it.
+  Future<void> requestRemoveColumn(int columnId) async {
+    final col = _sheetDef.getColumn(columnId);
+    if (col == null) return;
+    final (allowed, _) = _sheetDef.canRemove(columnId);
+    if (!allowed) {
+      removeColumn(columnId); // says why, as before
+      return;
+    }
+    final confirm = confirmRemoveColumn;
+    if (confirm != null && !await confirm(col)) return;
+    removeColumn(columnId);
+    if (_sheetDef.getColumn(columnId) == null) onColumnRemoved?.call(col);
+  }
+
   void removeColumn(int columnId) {
     final col = _sheetDef.getColumn(columnId);
     if (col == null) return;
@@ -772,6 +808,8 @@ class SheetController extends ChangeNotifier {
   void renameColumn(int columnId, String newLabel) {
     if (newLabel.trim().isEmpty) return;
     _sheetDef = _sheetDef.renameColumn(columnId, newLabel.trim());
+    final renamed = _sheetDef.getColumn(columnId);
+    if (renamed != null) onColumnRenamed?.call(renamed, newLabel.trim());
     _lastActionResult = 'Renamed column to "$newLabel".';
     notifyListeners();
   }

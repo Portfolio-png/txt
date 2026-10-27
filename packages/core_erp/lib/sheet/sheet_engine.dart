@@ -367,12 +367,16 @@ abstract final class SheetEngine {
             );
 
         if (!exists && !isNew && optLabel.isNotEmpty) {
-          final pathStr = groupPathString(sheet, draft, col.id);
+          // A property column's list is its own, not a level of the group
+          // path — "not a part name under Switch Action" was wrong for one.
+          final message = SheetBindsTo.isVariation(col.bindsTo)
+              ? '“$optLabel” is not in ${col.label}\'s list. Pick one, or choose Add new.'
+              : '“$optLabel” is not a part name under '
+                    '${groupPathString(sheet, draft, col.id)}. Pick one, or choose Add new.';
           errors[col.id] = ValidationError(
             columnId: col.id,
             code: 'not_in_list',
-            message:
-                '“$optLabel” is not a part name under $pathStr. Pick one, or choose Add new.',
+            message: message,
           );
           continue;
         }

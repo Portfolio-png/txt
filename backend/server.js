@@ -131,6 +131,8 @@ const TRIGGER_LOGGED_TABLES = new Set([
   // 058: the masters added since, which had no triggers and so never reached
   // a replica or another session until it reloaded.
   'die_makers', 'process_stages', 'party_contacts', 'item_deal_contacts',
+  // 061: the item sheet's property columns.
+  'item_sheet_properties',
 ]);
 
 /// The highest changelog row already pushed to connected clients.
@@ -2099,8 +2101,9 @@ function moduleOpForRequest(req) {
     module = 'pipelines'; // the pipeline designer is a master
   } else if (['production', 'production-runs', 'pipeline-runs', 'telemetry'].includes(seg)) {
     module = 'production';
-  } else if (['items', 'groups', 'process-stages'].includes(seg)) {
-    // process-stages is the stage master a part's route is built from.
+  } else if (['items', 'groups', 'process-stages', 'item-sheet-properties'].includes(seg)) {
+    // process-stages is the stage master a part's route is built from;
+    // item-sheet-properties are the item sheet's own property columns (061).
     // Declared here deliberately: an unmapped segment returns null, which
     // skips the per-module CRUD check entirely.
     module = 'items';
@@ -33550,6 +33553,19 @@ partyContacts({
 // module of its own: see modules/dies/die-makers.js.
 const registerDieMakerRoutes = require('./modules/dies/die-makers');
 registerDieMakerRoutes({
+  app,
+  get,
+  all,
+  run,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+});
+
+// The item sheet's property columns (061) — gated as `items`.
+const registerItemSheetPropertyRoutes = require('./modules/items/sheet-properties');
+registerItemSheetPropertyRoutes({
   app,
   get,
   all,
