@@ -680,10 +680,46 @@ void cutTests() {
       );
     });
 
-    test('trim comes off both edges before anything is planned', () {
+    test('trim comes off the left and right before anything is planned', () {
       final trimmed = sheet.copyWith(edgeTrimMm: 10);
       expect(trimmed.usableSpanMm(SheetCutAxis.columns), closeTo(1199.2, 0.01));
       expect(trimmed.fitsRemaining(SheetCutAxis.columns, 40), 29);
+      // One pair of sides only: the height is untouched.
+      expect(trimmed.usableSpanMm(SheetCutAxis.rows), closeTo(2438.4, 0.01));
+      expect(trimmed.cutPositionsMm(SheetCutAxis.columns), isEmpty);
+    });
+
+    test('trim on the top and bottom leaves the width whole', () {
+      final trimmed = sheet.copyWith(
+        edgeTrimMm: 10,
+        edgeTrimAxis: SheetCutAxis.rows,
+      );
+      expect(trimmed.usableSpanMm(SheetCutAxis.columns), closeTo(1219.2, 0.01));
+      expect(trimmed.usableSpanMm(SheetCutAxis.rows), closeTo(2418.4, 0.01));
+      expect(trimmed.fitsRemaining(SheetCutAxis.columns, 40), 30);
+
+      final sheared = trimmed.copyWith(
+        primaryAxis: SheetCutAxis.rows,
+        bands: const <SheetCutGroup>[SheetCutGroup(sizeMm: 100, count: 2)],
+      );
+      // The first strip starts below the trim, not at the sheet's edge.
+      expect(sheared.cutPositionsMm(SheetCutAxis.rows).first, closeTo(110, 0.01));
+    });
+
+    test('the trim side survives storage, and an old plan reads as left and right', () {
+      final stored = sheet
+          .copyWith(edgeTrimMm: 10, edgeTrimAxis: SheetCutAxis.rows)
+          .toJson();
+      expect(stored['edgeTrimAxis'], 'rows');
+      expect(
+        PenPaperBaseline.fromJson(stored).edgeTrimAxis,
+        SheetCutAxis.rows,
+      );
+      final legacy = Map<String, dynamic>.of(stored)..remove('edgeTrimAxis');
+      expect(
+        PenPaperBaseline.fromJson(legacy).edgeTrimAxis,
+        SheetCutAxis.columns,
+      );
     });
 
     test('the gap applies inside a strip too', () {
@@ -763,7 +799,7 @@ void cutTests() {
       expect(plan.pieceCount, 1200);
     });
 
-    test('the gap and the trim come off both levels', () {
+    test('the gap comes off both levels, the trim off the width', () {
       final plan = sheet.copyWith(kerfMm: 3, edgeTrimMm: 10).planFor(bracket);
       expect(plan.bands.single.count, 19);
       expect(plan.subCutsFor(0).single.count, 56);

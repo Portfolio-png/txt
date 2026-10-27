@@ -741,19 +741,44 @@ void _registerAppFlowHooks() {
       ),
     );
   };
-  AppFlowHooks.dieMadeByNames ??= (context) async {
+  AppFlowHooks.dieSheetSuggestions ??= (context) async {
     final provider = context.read<DiesProvider>();
     await provider.initialize();
-    final seen = <String>{};
-    final names = <String>[];
     // Newest first: the last person to cut a die is the likeliest next one.
-    for (final die in provider.dies.toList()
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt))) {
-      final name = die.madeBy.trim();
-      if (name.isEmpty || !seen.add(name.toLowerCase())) continue;
-      names.add(name);
+    final dies = provider.dies.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    List<String> distinct(String Function(Die) read) {
+      final seen = <String>{};
+      final values = <String>[];
+      for (final die in dies) {
+        final value = read(die).trim();
+        if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
+        values.add(value);
+      }
+      return values;
     }
-    return names;
+
+    final typedSeen = <String>{};
+    return DieSheetSuggestions(
+      madeBy: distinct((d) => d.madeBy),
+      storeAreas: distinct((d) => d.storeArea),
+      rackNos: distinct((d) => d.rackNo),
+      noOfSets: distinct((d) => d.noOfSet?.toString() ?? ''),
+      linerSizesNm: [
+        for (final size in distinct((d) => d.linerSizeNm?.toString() ?? ''))
+          int.parse(size),
+      ],
+      typedTypes: [
+        for (final die in dies)
+          if (die.dieTypeLabel.trim().isNotEmpty &&
+              typedSeen.add(die.dieType.trim()))
+            (slug: die.dieType.trim(), label: die.dieTypeLabel.trim()),
+      ],
+      toolCodes: {
+        for (final die in dies)
+          if (die.toolCode.trim().isNotEmpty) die.toolCode.trim().toUpperCase(),
+      },
+    );
   };
   // The wizard's machine sheet. It writes through MachinesProvider rather
   // than posting itself, so a machine entered beside a part turns up on the

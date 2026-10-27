@@ -572,7 +572,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     add(
       PenPaperBaseline.offcutRegion,
       _baseline.planEndMm(_baseline.primaryAxis),
-      _baseline.edgeTrimMm + _baseline.usableSpanMm(_baseline.primaryAxis),
+      _baseline.trimMm(_baseline.primaryAxis) +
+          _baseline.usableSpanMm(_baseline.primaryAxis),
     );
     return out;
   }
@@ -580,11 +581,11 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// One region's cuts walked into bands, in the inches the sheet is drawn in.
   List<SheetFigureBand> _regionBands(int region, List<SheetCutGroup> groups) {
     final gap = _baseline.kerfMm;
+    final trim = _baseline.trimMm(_baseline.secondaryAxis);
     final limit =
-        _baseline.edgeTrimMm +
-        _baseline.regionExtentMm(region, _baseline.secondaryAxis);
+        trim + _baseline.regionExtentMm(region, _baseline.secondaryAxis);
     final out = <SheetFigureBand>[];
-    var at = _baseline.edgeTrimMm;
+    var at = trim;
     var first = true;
     var index = -1;
     for (final group in groups) {
@@ -931,7 +932,12 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               heightInches: _baseline.sheetHeightInches,
               thicknessMm: _baseline.sheetThicknessMm,
               materialLabel: _materialLabel,
-              trimInches: _baseline.sizeInInches(_baseline.edgeTrimMm),
+              trimXInches: _baseline.sizeInInches(
+                _baseline.trimMm(SheetCutAxis.columns),
+              ),
+              trimYInches: _baseline.sizeInInches(
+                _baseline.trimMm(SheetCutAxis.rows),
+              ),
               columnBands: _baseline.primaryAxis == SheetCutAxis.columns
                   ? _primaryFigureBands()
                   : const <SheetFigureBand>[],
@@ -1107,10 +1113,11 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'The band around the sheet nobody cuts into — the '
-                          'damaged mill edge, the machine clamp, and the '
-                          'straight edge you gauge from. Comes off both ends '
-                          'of each axis before anything is planned.',
+                          'The strip nobody cuts into — the damaged mill edge, '
+                          'the machine clamp, the straight edge you gauge '
+                          'from. Comes off one pair of sides only: left & '
+                          'right (the width, across the columns) or top & '
+                          'bottom (the height, across the rows).',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -1407,6 +1414,38 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // The trim comes off one pair of edges, not all four — so say which.
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          runSpacing: 4,
+          children: [
+            const SizedBox(
+              width: 78,
+              child: Text(
+                'TRIM SIDES',
+                style: TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            _AxisChoice(
+              axis: _baseline.edgeTrimAxis,
+              keyPrefix: 'sheet-trim-axis',
+              labelOf: (axis) => axis == SheetCutAxis.columns
+                  ? 'left & right'
+                  : 'top & bottom',
+              onChanged: widget.readOnly
+                  ? null
+                  : (axis) => setState(() {
+                      _baseline = _baseline.copyWith(edgeTrimAxis: axis);
+                    }),
             ),
           ],
         ),
@@ -2205,10 +2244,21 @@ class _DimensionField extends StatelessWidget {
 /// It sits with the primary split because everything else hangs off it: change
 /// the direction and the strips you had are not the strips you have.
 class _AxisChoice extends StatelessWidget {
-  const _AxisChoice({required this.axis, required this.onChanged});
+  const _AxisChoice({
+    required this.axis,
+    required this.onChanged,
+    this.labelOf,
+    this.keyPrefix,
+  });
 
   final SheetCutAxis axis;
   final ValueChanged<SheetCutAxis>? onChanged;
+
+  /// What each choice reads as; the axis's own [SheetCutAxis.yields] if unset.
+  final String Function(SheetCutAxis axis)? labelOf;
+
+  /// Keys each choice `<prefix>-<axis name>`, for finding it in a test.
+  final String? keyPrefix;
 
   @override
   Widget build(BuildContext context) {
@@ -2221,6 +2271,9 @@ class _AxisChoice extends StatelessWidget {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
+                key: keyPrefix == null
+                    ? null
+                    : ValueKey<String>('$keyPrefix-${option.name}'),
                 onTap: onChanged == null ? null : () => onChanged!(option),
                 borderRadius: BorderRadius.circular(5),
                 child: Ink(
@@ -2240,7 +2293,7 @@ class _AxisChoice extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    option.yields,
+                    labelOf?.call(option) ?? option.yields,
                     style: TextStyle(
                       color: option == axis
                           ? SoftErpTheme.accentDeeper

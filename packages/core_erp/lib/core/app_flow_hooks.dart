@@ -277,6 +277,38 @@ class MachineSheetSuggestions {
   final List<int> capacitiesKgf;
 }
 
+/// The die sheet's answers from every die already in the master, for its
+/// dropdowns — and the codes those dies hold, so a new die is offered a free
+/// one before the server has to refuse it.
+class DieSheetSuggestions {
+  const DieSheetSuggestions({
+    this.madeBy = const <String>[],
+    this.storeAreas = const <String>[],
+    this.rackNos = const <String>[],
+    this.noOfSets = const <String>[],
+    this.linerSizesNm = const <int>[],
+    this.typedTypes = const <({String slug, String label})>[],
+    this.toolCodes = const <String>{},
+  });
+
+  final List<String> madeBy;
+  final List<String> storeAreas;
+  final List<String> rackNos;
+  final List<String> noOfSets;
+
+  /// Liner sizes in whole nanometres; the sheet shows them in whichever unit
+  /// is picked.
+  final List<int> linerSizesNm;
+
+  /// Die types the shop typed rather than picked, so they can be picked next
+  /// time. The four built-ins are never in here.
+  final List<({String slug, String label})> typedTypes;
+
+  /// Every die code in the factory, upper-cased. `dies.tool_code` is unique
+  /// across all of them, not just one part's.
+  final Set<String> toolCodes;
+}
+
 class AppFlowHooks {
   const AppFlowHooks._();
 
@@ -308,9 +340,10 @@ class AppFlowHooks {
   )?
   createDieFromSheet;
 
-  /// Names that have appeared in "made by" on a die before, newest first.
-  /// Unset means no suggestions — the field is free text either way.
-  static Future<List<String>> Function(BuildContext context)? dieMadeByNames;
+  /// What has been typed into the die sheet before, newest first. Unset means
+  /// no suggestions — every field is free text either way.
+  static Future<DieSheetSuggestions> Function(BuildContext context)?
+  dieSheetSuggestions;
 
   static bool get canCreateDieFromSheet => createDieFromSheet != null;
 

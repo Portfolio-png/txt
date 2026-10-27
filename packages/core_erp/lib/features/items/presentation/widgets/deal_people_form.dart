@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/fit_to_text.dart';
+import '../../../../core/widgets/pick_or_type_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../sheet/column_option.dart';
+import '../../../clients/presentation/widgets/designation_field.dart'
+    show kDesignationSuggestions;
 import '../../../../sheet/item_master_controller.dart';
 import '../../../../sheet/sheet_binding.dart';
 import '../../../../sheet/sheet_controller.dart';
@@ -58,6 +61,21 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   Party? _created;
 
   SheetController get _deal => widget.controller.clientVendorController;
+
+  /// Designations people at any company were given before, then the usual
+  /// ones nobody has used yet — so "Purchase Head" is typed once and picked
+  /// after that, and is not spelt three ways across the client list.
+  List<String> _designations() {
+    final seen = <String>{};
+    return [
+      for (final value in [
+        for (final contact in _people.contacts) contact.designation ?? '',
+        ...kDesignationSuggestions,
+      ])
+        if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
+          value.trim(),
+    ];
+  }
   SheetController get _people => widget.controller.peopleController;
 
   @override
@@ -338,10 +356,39 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         widget.partSaved && !_dealEditing && widget.controller.dealPartyId != null;
     final blank = _people.isRowBlank(row);
 
-    Widget field(String binds, String label, {TextInputType? keyboard, double min = 150}) {
+    Widget field(
+      String binds,
+      String label, {
+      TextInputType? keyboard,
+      double min = 150,
+      List<String>? options,
+    }) {
       final column = _column(_people, binds);
       final key = 'person:$row:$binds';
       final text = _field(key, _text(_people, binds, row: row));
+      if (options != null) {
+        // A dropdown of what was said before. It writes through the same
+        // draft the text field does, so saving is unchanged.
+        return FitToText(
+          controller: text,
+          texts: [label, ...options.take(8)],
+          minWidth: min,
+          chrome: 72,
+          child: PickOrTypeField(
+            fieldKey: ValueKey<String>('deal_person_${row}_$binds'),
+            controller: text,
+            label: label,
+            options: options,
+            enabled: !locked,
+            errorText: column == null ? null : errors[column]?.message,
+            onChanged: () {
+              if (column != null) {
+                _people.updateTextValue(column, text.text, row: row);
+              }
+            },
+          ),
+        );
+      }
       return FitToText(
         controller: text,
         texts: [label],
@@ -388,7 +435,12 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           ),
         ),
         field(SheetBindsTo.personName, 'Name', min: 180),
-        field(SheetBindsTo.personDesignation, 'Designation'),
+        field(
+          SheetBindsTo.personDesignation,
+          'Designation',
+          min: 170,
+          options: _designations(),
+        ),
         field(SheetBindsTo.personPhone, 'Contact No', keyboard: TextInputType.phone),
         field(SheetBindsTo.personEmail, 'Email ID',
             keyboard: TextInputType.emailAddress, min: 200),

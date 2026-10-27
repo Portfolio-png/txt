@@ -462,6 +462,37 @@ void main() {
       expect(find.byKey(const ValueKey('deal_person_2_edit')), findsOneWidget);
     });
 
+    testWidgets('Designation offers what people were given before, and takes a new one',
+        (tester) async {
+      await tester.runAsync(open);
+      pickGoldMedal();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ListenableBuilder(
+              listenable: controller,
+              builder: (context, child) => DealPeopleForm(controller: controller),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.byKey(const ValueKey('deal_add_person')));
+      await tester.pump();
+
+      final designation =
+          find.byKey(const ValueKey('deal_person_2_person.designation'));
+      await tester.tap(designation);
+      await tester.pumpAndSettle();
+      // Ravi Shah's, from the client list — not only the stock ones.
+      expect(find.text('Purchase'), findsWidgets);
+      await tester.enterText(find.byType(TextField).last, 'Plant Head');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use "Plant Head"'));
+      await tester.pumpAndSettle();
+
+      expect(controller.peopleController.draftAt(2).get(32)?.textValue, 'Plant Head');
+    });
+
     test('a saved part changed elsewhere refreshes its closed row, not an open one',
         () async {
       final saved = _item(id: 500, name: 'Patti', groupId: 11);

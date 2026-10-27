@@ -52,7 +52,7 @@ void main() {
     widthInches: 48,
     heightInches: 96,
     thicknessMm: 1,
-    trimInches: trim,
+    trimXInches: trim,
     columnBands: columns,
     columnPlanEndInches: planEnd,
     rowPlanEndInches: 95,

@@ -30,7 +30,8 @@ class SheetDimensionFigure extends StatefulWidget {
     required this.heightInches,
     required this.thicknessMm,
     this.materialLabel = '',
-    this.trimInches = 0,
+    this.trimXInches = 0,
+    this.trimYInches = 0,
     this.columnBands = const <SheetFigureBand>[],
     this.rowBands = const <SheetFigureBand>[],
     this.columnPlanEndInches = 0,
@@ -51,7 +52,11 @@ class SheetDimensionFigure extends StatefulWidget {
   /// The drawing does not do this arithmetic. The baseline works out where the
   /// cuts land and the operator's list is printed from the same numbers, so the
   /// picture and the instruction cannot disagree.
-  final double trimInches;
+  ///
+  /// The trim at each end of the width (left and right) and of the height (top
+  /// and bottom). Only one of the two is ever set — the trim has a side.
+  final double trimXInches;
+  final double trimYInches;
   final List<SheetFigureBand> columnBands;
   final List<SheetFigureBand> rowBands;
 
@@ -178,7 +183,8 @@ class SheetDimensionFigureState extends State<SheetDimensionFigure>
     final planChanged =
         bandsMoved ||
         !_sameCuts(old.regionCuts, w.regionCuts) ||
-        old.trimInches != w.trimInches ||
+        old.trimXInches != w.trimXInches ||
+        old.trimYInches != w.trimYInches ||
         old.primaryIsColumns != w.primaryIsColumns;
 
     if (!_moves) {
@@ -258,7 +264,8 @@ class SheetDimensionFigureState extends State<SheetDimensionFigure>
             shape: shape,
             hasFace: w.widthInches > 0 && w.heightInches > 0,
             materialLabel: w.materialLabel,
-            trimInches: w.trimInches,
+            trimXInches: w.trimXInches,
+            trimYInches: w.trimYInches,
             columnBands: _columnTween.transform(t),
             rowBands: _rowTween.transform(t),
             columnPlanEndInches: _columnTween.planEndAt(t),
@@ -470,7 +477,8 @@ class _SheetPainter extends CustomPainter {
     required this.hasFace,
     required this.materialLabel,
     required this.textDirection,
-    this.trimInches = 0,
+    this.trimXInches = 0,
+    this.trimYInches = 0,
     this.columnBands = const <SheetFigureBand>[],
     this.rowBands = const <SheetFigureBand>[],
     this.columnPlanEndInches = 0,
@@ -484,7 +492,8 @@ class _SheetPainter extends CustomPainter {
   final bool hasFace;
   final String materialLabel;
   final TextDirection textDirection;
-  final double trimInches;
+  final double trimXInches;
+  final double trimYInches;
   final List<SheetFigureBand> columnBands;
   final List<SheetFigureBand> rowBands;
   final double columnPlanEndInches;
@@ -678,24 +687,42 @@ class _SheetPainter extends CustomPainter {
     bool known,
   ) {
     if (!known) return;
-    final trim = trimInches.clamp(0.0, math.min(width, height) / 2 - 0.001);
-    final usableRight = width - trim;
-    final usableBottom = height - trim;
+    final trimX = trimXInches
+        .clamp(0.0, math.max(0.0, width / 2 - 0.001))
+        .toDouble();
+    final trimY = trimYInches
+        .clamp(0.0, math.max(0.0, height / 2 - 0.001))
+        .toDouble();
+    final usableRight = width - trimX;
+    final usableBottom = height - trimY;
 
-    // The trim, hatched off. The operator will not cut into it, so it is not
-    // part of the plan and must not read as material the plan could have used.
-    if (trim > 0) {
+    // The trim, hatched off — on the two sides it was taken from, not all
+    // four. The operator will not cut into it, so it is not part of the plan
+    // and must not read as material the plan could have used.
+    if (trimX > 0 || trimY > 0) {
       final trimPaint = Paint()..color = const Color(0x14000000);
-      _quad(canvas, at, 0, 0, width, trim, trimPaint);
-      _quad(canvas, at, 0, usableBottom, width, height, trimPaint);
-      _quad(canvas, at, 0, trim, trim, usableBottom, trimPaint);
-      _quad(canvas, at, usableRight, trim, width, usableBottom, trimPaint);
+      if (trimY > 0) {
+        _quad(canvas, at, 0, 0, width, trimY, trimPaint);
+        _quad(canvas, at, 0, usableBottom, width, height, trimPaint);
+      }
+      if (trimX > 0) {
+        _quad(canvas, at, 0, trimY, trimX, usableBottom, trimPaint);
+        _quad(canvas, at, usableRight, trimY, width, usableBottom, trimPaint);
+      }
 
       final boundary = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.7
         ..color = _thinLine;
-      _dashedRect(canvas, at, trim, trim, usableRight, usableBottom, boundary);
+      _dashedRect(
+        canvas,
+        at,
+        trimX,
+        trimY,
+        usableRight,
+        usableBottom,
+        boundary,
+      );
     }
 
     if (columnBands.isEmpty && rowBands.isEmpty) return;
@@ -705,7 +732,7 @@ class _SheetPainter extends CustomPainter {
       // many score lines there are before handing each one its turn.
       _counting = true;
       _lineIndex = 0;
-      _planBands(canvas, at, scale, trim, usableRight, usableBottom);
+      _planBands(canvas, at, scale, trimX, trimY, usableRight, usableBottom);
       _lineCount = _lineIndex;
       _counting = false;
     }
@@ -719,14 +746,14 @@ class _SheetPainter extends CustomPainter {
       final waste = Paint()
         ..color = SoftErpTheme.warningText.withValues(alpha: 0.20 * offcut);
       if (takenX < usableRight - 0.0001) {
-        _quad(canvas, at, takenX, trim, usableRight, usableBottom, waste);
+        _quad(canvas, at, takenX, trimY, usableRight, usableBottom, waste);
       }
       if (takenY < usableBottom - 0.0001) {
-        _quad(canvas, at, trim, takenY, takenX, usableBottom, waste);
+        _quad(canvas, at, trimX, takenY, takenX, usableBottom, waste);
       }
     }
 
-    _planBands(canvas, at, scale, trim, usableRight, usableBottom);
+    _planBands(canvas, at, scale, trimX, trimY, usableRight, usableBottom);
   }
 
   /// Every band of the plan, in drawing order: the sheet-wide split, then each
@@ -735,7 +762,8 @@ class _SheetPainter extends CustomPainter {
     Canvas canvas,
     Offset Function(double, double, double) at,
     double scale,
-    double trim,
+    double trimX,
+    double trimY,
     double usableRight,
     double usableBottom,
   ) {
@@ -746,7 +774,7 @@ class _SheetPainter extends CustomPainter {
         at,
         band,
         scale,
-        acrossFrom: trim,
+        acrossFrom: trimY,
         acrossTo: usableBottom,
         vertical: true,
       );
@@ -757,7 +785,7 @@ class _SheetPainter extends CustomPainter {
         at,
         band,
         scale,
-        acrossFrom: trim,
+        acrossFrom: trimX,
         acrossTo: usableRight,
         vertical: false,
       );
@@ -1214,7 +1242,8 @@ class _SheetPainter extends CustomPainter {
       old.shape.width != shape.width ||
       old.shape.height != shape.height ||
       old.shape.thickness != shape.thickness ||
-      old.trimInches != trimInches ||
+      old.trimXInches != trimXInches ||
+      old.trimYInches != trimYInches ||
       old.columnPlanEndInches != columnPlanEndInches ||
       old.rowPlanEndInches != rowPlanEndInches ||
       !listEquals(old.regionCuts, regionCuts) ||

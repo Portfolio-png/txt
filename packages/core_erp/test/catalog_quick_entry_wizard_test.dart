@@ -1787,6 +1787,7 @@ void _dieSectionTests() {
   group('the die sheet', () {
     late List<DieSheetDraft> drafts;
     late DieCreateOutcome outcome;
+    late DieSheetSuggestions suggestions;
 
     setUp(() {
       drafts = <DieSheetDraft>[];
@@ -1799,18 +1800,33 @@ void _dieSectionTests() {
         drafts.add(draft);
         return outcome;
       };
-      AppFlowHooks.dieMadeByNames = (context) async => <String>['Atul Mestry'];
+      suggestions = const DieSheetSuggestions(madeBy: <String>['Atul Mestry']);
+      AppFlowHooks.dieSheetSuggestions = (context) async => suggestions;
     });
 
     tearDown(() {
       AppFlowHooks.createDieFromSheet = null;
-      AppFlowHooks.dieMadeByNames = null;
+      AppFlowHooks.dieSheetSuggestions = null;
     });
 
     Finder dieField(String slug) =>
         find.byKey(ValueKey<String>('quick-entry-die-$slug-field'));
     Finder addDie() =>
         find.byKey(const ValueKey<String>('quick-entry-add-die'));
+
+    /// Picks [value] in a die field's dropdown, or adds it.
+    Future<void> pickOrType(
+      WidgetTester tester,
+      String slug,
+      String value,
+    ) async {
+      await _tapVisible(tester, dieField(slug));
+      await tester.enterText(find.byType(TextField).last, value);
+      await tester.pumpAndSettle();
+      final add = find.text('Use "$value"');
+      await tester.tap(add.evaluate().isNotEmpty ? add : find.text(value).last);
+      await tester.pumpAndSettle();
+    }
 
     /// Makes a part and selects it, which is what the Die section needs.
     Future<_Harness> partOnScreen(WidgetTester tester) async {
@@ -1850,6 +1866,92 @@ void _dieSectionTests() {
       },
     );
 
+    testWidgets('a typed type is sent with its words and saves', (
+      tester,
+    ) async {
+      await partOnScreen(tester);
+
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey<String>('quick-entry-die-add-type')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('quick-entry-die-type-input')),
+        'Deep Drawing',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use this type'));
+      await tester.pumpAndSettle();
+      expect(_textIn(tester, 'die-code'), 'DDDATP48');
+
+      await _tapVisible(tester, addDie());
+      expect(drafts, hasLength(1));
+      expect(drafts.single.dieType, 'deep-drawing');
+      expect(drafts.single.dieTypeLabel, 'Deep Drawing');
+      expect(find.textContaining('could not be saved'), findsNothing);
+      expect(find.textContaining('Pick a type'), findsNothing);
+    });
+
+    testWidgets('the sheet offers what earlier dies were given', (
+      tester,
+    ) async {
+      suggestions = const DieSheetSuggestions(
+        storeAreas: <String>['F206'],
+        rackNos: <String>['23-4'],
+        noOfSets: <String>['2'],
+        linerSizesNm: <int>[94500000],
+      );
+      await partOnScreen(tester);
+
+      await _tapVisible(tester, find.text('Cutting'));
+      await pickOrType(tester, 'area', 'F206');
+      await pickOrType(tester, 'rack', '23-4');
+      await pickOrType(tester, 'sets', '2');
+      // Stored in nanometres, offered in the unit on screen.
+      await pickOrType(tester, 'liner', '94.5');
+      expect(find.text('Use "F206"'), findsNothing);
+      await _tapVisible(tester, addDie());
+
+      final draft = drafts.single;
+      expect(draft.storeArea, 'F206');
+      expect(draft.rackNo, '23-4');
+      expect(draft.noOfSet, 2);
+      expect(draft.linerSizeNm, 94500000);
+    });
+
+    testWidgets('a type typed on an earlier die is a chip to pick', (
+      tester,
+    ) async {
+      suggestions = const DieSheetSuggestions(
+        typedTypes: <({String slug, String label})>[
+          (slug: 'deep-drawing', label: 'Deep Drawing'),
+        ],
+      );
+      await partOnScreen(tester);
+
+      await _tapVisible(
+        tester,
+        find.byKey(
+          const ValueKey<String>('quick-entry-die-used-type-deep-drawing'),
+        ),
+      );
+      expect(_textIn(tester, 'die-code'), 'DDDATP48');
+      await _tapVisible(tester, addDie());
+      expect(drafts.single.dieTypeLabel, 'Deep Drawing');
+    });
+
+    testWidgets('a code held by another part\'s die is not offered', (
+      tester,
+    ) async {
+      // "Blanking" codes BD, like Bending — and die codes are unique across
+      // the whole factory, not per part.
+      suggestions = const DieSheetSuggestions(toolCodes: <String>{'BDATP48'});
+      await partOnScreen(tester);
+
+      await _tapVisible(tester, find.text('Bending'));
+      expect(_textIn(tester, 'die-code'), 'BDATP48-2');
+    });
+
     testWidgets('a code typed over is pinned against a later type change', (
       tester,
     ) async {
@@ -1871,11 +1973,10 @@ void _dieSectionTests() {
 
       await _tapVisible(tester, find.text('Cutting'));
       await tester.enterText(dieField('made-by'), 'Atul Mestry');
-      await tester.enterText(dieField('liner'), '94.50');
-      await tester.enterText(dieField('sets'), '1');
-      await tester.enterText(dieField('area'), 'F206');
-      await tester.enterText(dieField('rack'), '23-4');
-      await tester.pumpAndSettle();
+      await pickOrType(tester, 'liner', '94.50');
+      await pickOrType(tester, 'sets', '1');
+      await pickOrType(tester, 'area', 'F206');
+      await pickOrType(tester, 'rack', '23-4');
       await _tapVisible(tester, addDie());
 
       expect(drafts, hasLength(1));
@@ -1946,8 +2047,7 @@ void _dieSectionTests() {
       await partOnScreen(tester);
 
       await _tapVisible(tester, find.text('Cutting'));
-      await tester.enterText(dieField('liner'), 'wide');
-      await tester.pumpAndSettle();
+      await pickOrType(tester, 'liner', 'wide');
       await _tapVisible(tester, addDie());
 
       expect(
@@ -2010,12 +2110,13 @@ void _manyDiesTests() {
           ),
         );
       };
-      AppFlowHooks.dieMadeByNames = (context) async => const <String>[];
+      AppFlowHooks.dieSheetSuggestions =
+          (context) async => const DieSheetSuggestions();
     });
 
     tearDown(() {
       AppFlowHooks.createDieFromSheet = null;
-      AppFlowHooks.dieMadeByNames = null;
+      AppFlowHooks.dieSheetSuggestions = null;
     });
 
     Finder dieRow(String id) =>
@@ -2098,8 +2199,16 @@ void _manyDiesTests() {
       expect(find.text('Dies · ATP48 · CDATP48'), findsOneWidget);
       expect(_textIn(tester, 'die-code'), 'CDATP48');
       expect(_textIn(tester, 'die-made-by'), 'Atul Mestry');
-      expect(_textIn(tester, 'die-liner'), '94.5');
-      expect(_textIn(tester, 'die-area'), 'F206');
+      // Dropdowns now, so what they show rather than a text field's text.
+      for (final (slug, shown) in [('liner', '94.5'), ('area', 'F206')]) {
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey<String>('quick-entry-die-$slug-field')),
+            matching: find.text(shown),
+          ),
+          findsOneWidget,
+        );
+      }
       expect(
         find.descendant(of: addDie(), matching: find.text('Save die')),
         findsOneWidget,
@@ -2535,7 +2644,8 @@ void _stagedCreateTests() {
           ),
         );
       };
-      AppFlowHooks.dieMadeByNames = (context) async => const <String>[];
+      AppFlowHooks.dieSheetSuggestions =
+          (context) async => const DieSheetSuggestions();
       AppFlowHooks.machineSheetSuggestions = (context) async =>
           const MachineSheetSuggestions();
     });
@@ -2543,7 +2653,7 @@ void _stagedCreateTests() {
     tearDown(() {
       AppFlowHooks.createDieFromSheet = null;
       AppFlowHooks.createMachineFromSheet = null;
-      AppFlowHooks.dieMadeByNames = null;
+      AppFlowHooks.dieSheetSuggestions = null;
       AppFlowHooks.machineSheetSuggestions = null;
     });
 

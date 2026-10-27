@@ -58,6 +58,7 @@ const SHEET_PLAN = {
   },
   kerfMm: 3,
   edgeTrimMm: 10,
+  edgeTrimAxis: 'rows',
   plannedPartId: 42,
   plannedPartName: 'MS Bracket 60x40',
 };
@@ -133,6 +134,7 @@ test('a sheet plan survives being saved and reopened', async () => {
     assert.equal(stored.materialName, 'Steel / MS');
     assert.equal(stored.kerfMm, 3);
     assert.equal(stored.edgeTrimMm, 10);
+    assert.equal(stored.edgeTrimAxis, 'rows');
     assert.equal(stored.primaryAxis, 'columns');
     assert.equal(stored.bands.length, 2);
     assert.equal(stored.bands[0].sizeMm, 300);

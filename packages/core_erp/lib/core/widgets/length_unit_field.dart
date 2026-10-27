@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 
 import '../../features/units/domain/global_length_units.dart';
 import '../theme/soft_erp_theme.dart';
+import 'pick_or_type_field.dart';
+import 'searchable_select.dart';
 
 /// Nanometres in one millimetre.
 const int nanometresPerMillimetre = 1000000;
@@ -97,6 +99,8 @@ class LengthUnitField extends StatelessWidget {
     this.enabled = true,
     this.onChanged,
     this.fieldKey,
+    this.unitKey,
+    this.suggestions,
   });
 
   final TextEditingController controller;
@@ -109,13 +113,30 @@ class LengthUnitField extends StatelessWidget {
   final VoidCallback? onChanged;
   final Key? fieldKey;
 
+  /// On the unit picker, for finding it in a test.
+  final Key? unitKey;
+
+  /// Sizes used before, already in [unitSymbol]. Given, the number is a
+  /// searchable dropdown of them that also takes a new one; null keeps a
+  /// plain field.
+  final List<String>? suggestions;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: TextField(
+    final number = suggestions != null
+        ? PickOrTypeField(
+            fieldKey: fieldKey,
+            controller: controller,
+            label: label,
+            options: suggestions!,
+            enabled: enabled,
+            errorText: errorText,
+            searchKeyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+            ),
+            onChanged: onChanged,
+          )
+        : TextField(
             key: fieldKey,
             controller: controller,
             enabled: enabled,
@@ -128,48 +149,58 @@ class LengthUnitField extends StatelessWidget {
               errorText: errorText,
               border: const OutlineInputBorder(),
             ),
-          ),
+          );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: suggestions != null && helperText != null && errorText == null
+              // The dropdown has no helper line of its own.
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    number,
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 4),
+                      child: Text(
+                        helperText!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : number,
         ),
         const SizedBox(width: 8),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: PopupMenuButton<String>(
-            enabled: enabled,
-            tooltip: 'Read this in another unit',
-            initialValue: unitSymbol,
-            onSelected: onUnitChanged,
-            itemBuilder: (context) => [
+        // The same searchable dropdown as every other pick on the sheet, so
+        // "thou" is found by typing it rather than scrolling for it.
+        SizedBox(
+          width: 104,
+          child: SearchableSelectField<String>(
+            key: unitKey,
+            value: unitSymbol,
+            fieldEnabled: enabled,
+            dialogTitle: 'Unit',
+            searchHintText: 'Search units',
+            options: [
               for (final unit in globalLengthUnits)
-                PopupMenuItem<String>(
+                SearchableSelectOption<String>(
                   value: unit.symbol,
-                  child: Text(
-                    '${unit.name} (${unit.symbol})',
-                    style: const TextStyle(fontSize: 14),
-                  ),
+                  label: unit.symbol,
+                  subtitle: unit.name,
+                  searchText: '${unit.name} ${unit.symbol}',
                 ),
             ],
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-                border: Border.all(color: SoftErpTheme.border),
-                color: SoftErpTheme.sectionSurface,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    unitSymbol,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: SoftErpTheme.textPrimary,
-                    ),
-                  ),
-                  const Icon(Icons.arrow_drop_down_rounded, size: 18),
-                ],
-              ),
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
             ),
+            onChanged: (symbol) {
+              if (symbol != null && symbol != unitSymbol) onUnitChanged(symbol);
+            },
           ),
         ),
       ],

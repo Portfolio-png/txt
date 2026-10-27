@@ -369,6 +369,7 @@ class PenPaperBaseline {
     this.subCuts = const <int, List<SheetCutGroup>>{},
     this.kerfMm = 0,
     this.edgeTrimMm = 0,
+    this.edgeTrimAxis = SheetCutAxis.columns,
     this.plannedPartId,
     this.plannedPartName = '',
     this.faceUnit = 'in',
@@ -407,10 +408,20 @@ class PenPaperBaseline {
   /// the plan is arithmetic rather than a promise.
   final double kerfMm;
 
-  /// Trim taken off every edge before anything is planned — the clamped strip,
-  /// the mill edge, whatever the operator will not cut into. The sheet that was
-  /// bought is not the sheet that can be used.
+  /// Trim taken off two opposite edges before anything is planned — the
+  /// clamped strip, the mill edge, whatever the operator will not cut into.
+  /// The sheet that was bought is not the sheet that can be used.
   final double edgeTrimMm;
+
+  /// Which two edges [edgeTrimMm] comes off: [SheetCutAxis.columns] trims the
+  /// left and right sides (the width), [SheetCutAxis.rows] the top and bottom
+  /// (the height). Only one pair — a shear squares the sheet against its fence
+  /// on the other two, so trimming all four counted material twice.
+  final SheetCutAxis edgeTrimAxis;
+
+  /// The trim at EACH end of [axis]: [edgeTrimMm] on the trimmed axis, nothing
+  /// on the other.
+  double trimMm(SheetCutAxis axis) => axis == edgeTrimAxis ? edgeTrimMm : 0;
 
   /// How the sheet is broken down, in the two levels a shear and a press work
   /// in: the sheet is sheared into strips along [primaryAxis], and then each
@@ -531,11 +542,11 @@ class PenPaperBaseline {
     SheetCutAxis.rows => sheetHeightMm,
   };
 
-  /// The edge that can actually be planned on, once both trims are off it.
+  /// The edge that can actually be planned on, once its trims are off it.
   double usableSpanMm(SheetCutAxis axis) {
     final span = axisSpanMm(axis);
     if (span <= 0) return 0;
-    return math.max(0, span - edgeTrimMm * 2);
+    return math.max(0, span - trimMm(axis) * 2);
   }
 
   /// The cuts acting along one axis at the top level. The secondary axis has no
@@ -805,9 +816,9 @@ class PenPaperBaseline {
     final usable = usableSpanMm(axis);
     if (usable <= 0) return const <double>[];
     final kerf = math.max(0, kerfMm);
-    final limit = edgeTrimMm + usable;
+    final limit = trimMm(axis) + usable;
     final positions = <double>[];
-    var at = edgeTrimMm;
+    var at = trimMm(axis);
     var first = true;
     for (final group in cutsFor(axis)) {
       if (!group.isComplete) continue;
@@ -831,9 +842,9 @@ class PenPaperBaseline {
     final usable = usableSpanMm(axis);
     if (usable <= 0) return const <SheetBandSpan>[];
     final gap = math.max(0, kerfMm);
-    final limit = edgeTrimMm + usable;
+    final limit = trimMm(axis) + usable;
     final spans = <SheetBandSpan>[];
-    var at = edgeTrimMm;
+    var at = trimMm(axis);
     var first = true;
     var index = -1;
     for (final group in cutsFor(axis)) {
@@ -868,7 +879,7 @@ class PenPaperBaseline {
   /// here to the far trim is offcut.
   double planEndMm(SheetCutAxis axis) {
     final positions = cutPositionsMm(axis);
-    return positions.isEmpty ? edgeTrimMm : positions.last;
+    return positions.isEmpty ? trimMm(axis) : positions.last;
   }
 
   /// The share of the usable edge that leaves as parts rather than as swarf or
@@ -1106,6 +1117,7 @@ class PenPaperBaseline {
     Map<int, List<SheetCutGroup>>? subCuts,
     double? kerfMm,
     double? edgeTrimMm,
+    SheetCutAxis? edgeTrimAxis,
     int? plannedPartId,
     String? plannedPartName,
     String? faceUnit,
@@ -1130,6 +1142,7 @@ class PenPaperBaseline {
       subCuts: subCuts ?? this.subCuts,
       kerfMm: kerfMm ?? this.kerfMm,
       edgeTrimMm: edgeTrimMm ?? this.edgeTrimMm,
+      edgeTrimAxis: edgeTrimAxis ?? this.edgeTrimAxis,
       plannedPartId: plannedPartId ?? this.plannedPartId,
       plannedPartName: plannedPartName ?? this.plannedPartName,
       faceUnit: faceUnit ?? this.faceUnit,
@@ -1161,6 +1174,7 @@ class PenPaperBaseline {
       ),
       'kerfMm': kerfMm,
       'edgeTrimMm': edgeTrimMm,
+      'edgeTrimAxis': edgeTrimAxis.name,
       'plannedPartId': plannedPartId,
       'plannedPartName': plannedPartName,
       'faceUnit': faceUnit,
@@ -1198,6 +1212,11 @@ class PenPaperBaseline {
       subCuts: _readSubCuts(json),
       kerfMm: (json['kerfMm'] as num?)?.toDouble() ?? 0,
       edgeTrimMm: (json['edgeTrimMm'] as num?)?.toDouble() ?? 0,
+      // Absent on a plan saved before the trim had a side: read as the left
+      // and right, which is where the shop takes it.
+      edgeTrimAxis: json['edgeTrimAxis']?.toString() == 'rows'
+          ? SheetCutAxis.rows
+          : SheetCutAxis.columns,
       plannedPartId: (json['plannedPartId'] as num?)?.toInt(),
       plannedPartName: json['plannedPartName']?.toString() ?? '',
       faceUnit: lengthUnitBySymbol(

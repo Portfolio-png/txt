@@ -11,6 +11,7 @@ import '../../../../core/utils/stamp_format.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../../../core/widgets/fit_to_text.dart';
+import '../../../../core/widgets/pick_or_type_field.dart';
 import '../../../die_makers/presentation/providers/die_makers_provider.dart';
 import '../../../die_makers/presentation/widgets/die_maker_picker_field.dart';
 import '../../../dies/domain/die_code.dart';
@@ -119,8 +120,9 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// same pin the part code has, and for the same reason.
   bool _codePinned = false;
 
-  /// Names used on a die before, for the Made By suggestions. Loaded once.
-  List<String> _madeByNames = const <String>[];
+  /// What earlier dies were given, for the dropdowns. Loaded on open and
+  /// again after each save, so a value typed here is offered on the next die.
+  DieSheetSuggestions _suggestions = const DieSheetSuggestions();
 
   bool _saving = false;
   String? _error;
@@ -147,7 +149,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadMadeByNames();
+      _loadSuggestions();
       unawaited(_dieMakers?.ensureLoaded());
     });
   }
@@ -192,12 +194,15 @@ class _PartDieSectionState extends State<PartDieSection> {
     super.dispose();
   }
 
-  Future<void> _loadMadeByNames() async {
-    final hook = AppFlowHooks.dieMadeByNames;
+  Future<void> _loadSuggestions() async {
+    final hook = AppFlowHooks.dieSheetSuggestions;
     if (hook == null || !mounted) return;
-    final names = await hook(context);
+    final suggestions = await hook(context);
     if (!mounted) return;
-    setState(() => _madeByNames = names);
+    setState(() {
+      _suggestions = suggestions;
+      _rederiveCode();
+    });
   }
 
   List<ItemDieLink> get _dies {
@@ -247,6 +252,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       return fresh == null ||
           (fresh.toolCode == mine.toolCode &&
               fresh.dieType == mine.dieType &&
+              fresh.dieTypeLabel == mine.dieTypeLabel &&
               fresh.madeBy == mine.madeBy &&
               fresh.dieMakerId == mine.dieMakerId &&
               fresh.linerSizeNm == mine.linerSizeNm &&
@@ -348,12 +354,14 @@ class _PartDieSectionState extends State<PartDieSection> {
   ///
   /// A second cutting die on the same part derives the same code as the first,
   /// so the free one in the series is offered up front rather than after a
-  /// refusal. The server still has the last word — it is the only thing that
-  /// can see the other 400 dies in the factory.
+  /// refusal. So does a die on ANOTHER part: a typed "Blanking" codes BD like
+  /// Bending, and the code is unique across the factory. The server still has
+  /// the last word — the master read here can be a moment old.
   String _suggestedCode() {
     final base = buildDieCodeFor(choice: _type, partCode: widget.partCode);
     if (base.isEmpty) return '';
     final taken = <String>{
+      ..._suggestions.toolCodes,
       for (final die in _dies)
         if (die.id != _editingDieId) die.toolCode.trim().toUpperCase(),
       // Held dies count too, or two cutting dies waiting on the same part
@@ -585,6 +593,8 @@ class _PartDieSectionState extends State<PartDieSection> {
           ? 'Die $code is saved.'
           : 'Die $code is on this part.';
     });
+    // What was just typed is now an answer used before, and its code is taken.
+    unawaited(_loadSuggestions());
   }
 
   Future<void> _unlink(ItemDieLink die) async {
@@ -703,10 +713,13 @@ class _PartDieSectionState extends State<PartDieSection> {
                   child: _madeByField(enabled),
                 ),
                 SizedBox(
-                  width: 280,
+                  width: 300,
                   child: LengthUnitField(
                     fieldKey: const ValueKey<String>(
                       'quick-entry-die-liner-field',
+                    ),
+                    unitKey: const ValueKey<String>(
+                      'quick-entry-die-liner-unit',
                     ),
                     controller: _linerController,
                     unitSymbol: _linerUnit,
@@ -714,67 +727,35 @@ class _PartDieSectionState extends State<PartDieSection> {
                     label: 'Liner Size',
                     helperText: 'Optional',
                     errorText: _linerError,
+                    suggestions: _linerSuggestions,
                     onUnitChanged: (symbol) => setState(() {
                       _linerUnit = symbol;
                       _linerError = null;
                     }),
-                    onChanged: () {
-                      if (_linerError != null)
-                        setState(() => _linerError = null);
-                    },
+                    onChanged: () => setState(() => _linerError = null),
                   ),
                 ),
-                FitToText(
+                _pick(
+                  slug: 'sets',
+                  label: 'No. of Sets',
                   controller: _setsController,
-                  texts: const ['No. of Sets'],
-                  minWidth: 120,
-                  child: TextField(
-                    key: const ValueKey<String>('quick-entry-die-sets-field'),
-                    controller: _setsController,
-                    enabled: enabled,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'No. of Sets',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.noOfSets,
+                  enabled: enabled,
+                  numeric: true,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'area',
+                  label: 'Store Area',
                   controller: _storeAreaController,
-                  texts: const ['Store Area', 'F206'],
-                  minWidth: 120,
-                  child: TextField(
-                    key: const ValueKey<String>('quick-entry-die-area-field'),
-                    controller: _storeAreaController,
-                    enabled: enabled,
-                    textCapitalization: TextCapitalization.characters,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'Store Area',
-                      hintText: 'F206',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.storeAreas,
+                  enabled: enabled,
                 ),
-                FitToText(
+                _pick(
+                  slug: 'rack',
+                  label: 'Rack No.',
                   controller: _rackController,
-                  texts: const ['Rack No.', '23-4'],
-                  minWidth: 120,
-                  child: TextField(
-                    key: const ValueKey<String>('quick-entry-die-rack-field'),
-                    controller: _rackController,
-                    enabled: enabled,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      labelText: 'Rack No.',
-                      hintText: '23-4',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  options: _suggestions.rackNos,
+                  enabled: enabled,
                 ),
               ],
             ),
@@ -855,6 +836,44 @@ class _PartDieSectionState extends State<PartDieSection> {
     );
   }
 
+  /// Liner sizes used before, read in the unit picked now — so switching to
+  /// inches re-lists the same sizes in inches rather than offering mm figures.
+  List<String> get _linerSuggestions {
+    final seen = <String>{};
+    return [
+      for (final nm in _suggestions.linerSizesNm)
+        if (seen.add(formatLengthFromNanometres(nm, _linerUnit)))
+          formatLengthFromNanometres(nm, _linerUnit),
+    ];
+  }
+
+  /// One pick-or-type field, as wide as its label and longest answer — the
+  /// machine sheet's, so the two sheets beside a part read the same.
+  Widget _pick({
+    required String slug,
+    required String label,
+    required TextEditingController controller,
+    required List<String> options,
+    required bool enabled,
+    bool numeric = false,
+  }) {
+    return FitToText(
+      controller: controller,
+      texts: [label, ...options.take(8)],
+      minWidth: numeric ? 140 : 160,
+      chrome: 72,
+      child: PickOrTypeField(
+        fieldKey: ValueKey<String>('quick-entry-die-$slug-field'),
+        controller: controller,
+        label: label,
+        options: options,
+        enabled: enabled,
+        searchKeyboardType: numeric ? TextInputType.number : null,
+        onChanged: () => setState(() {}),
+      ),
+    );
+  }
+
   String _heading(String? editing) {
     final label = widget.partCode.isNotEmpty
         ? widget.partCode
@@ -917,6 +936,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     id: '',
     toolCode: draft.toolCode,
     dieType: draft.dieType,
+    dieTypeLabel: draft.dieTypeLabel,
     madeBy: draft.madeBy,
     poAt: draft.poAt,
     dateInAt: draft.dateInAt,
@@ -979,6 +999,28 @@ class _PartDieSectionState extends State<PartDieSection> {
                           _rederiveCode();
                         }),
                 ),
+
+              // Types typed on earlier dies, so "Deep Drawing" is typed once
+              // and picked after that — not retyped, and not spelt two ways.
+              for (final typed in _suggestions.typedTypes)
+                if (_type?.slug != typed.slug)
+                  ChoiceChip(
+                    key: ValueKey<String>('quick-entry-die-used-type-${typed.slug}'),
+                    label: Text(
+                      typed.label,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    selected: false,
+                    onSelected: !enabled
+                        ? null
+                        : (_) => setState(() {
+                            _type = DieTypeChoice.fromStored(
+                              typed.slug,
+                              typed.label,
+                            );
+                            _rederiveCode();
+                          }),
+                  ),
 
               // The one the shop typed, shown as a chip beside the built-ins
               // so it reads as what it is: a type on the same footing, not an
@@ -1064,7 +1106,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// The pre-master field, kept for hosts with no die maker provider.
   Widget _madeByTextField(bool enabled) {
     final typed = _madeByController.text.trim().toLowerCase();
-    final suggestions = _madeByNames
+    final suggestions = _suggestions.madeBy
         .where((name) => typed.isEmpty || name.toLowerCase().contains(typed))
         .where((name) => name.toLowerCase() != typed)
         .take(5)
@@ -1196,7 +1238,7 @@ class _DieRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = DieType.fromSlug(die.dieType);
+    final type = DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
