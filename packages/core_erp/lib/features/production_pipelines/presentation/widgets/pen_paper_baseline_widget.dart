@@ -27,7 +27,6 @@ class PenPaperBaselineWidget extends StatefulWidget {
     this.pipelineName = '',
     this.itemName = '',
     this.sheetLabel = '',
-    this.densityGCm3,
     this.countFamily,
     this.followsSheetPlan = false,
   });
@@ -58,10 +57,6 @@ class PenPaperBaselineWidget extends StatefulWidget {
   /// The sheet planned in step 1 ("Steel / MS · 48 × 96 in · 1.6 mm"): what
   /// the Input row is called.
   final String sheetLabel;
-
-  /// The planned sheet's material density, which turns the plan into kg.
-  /// Null when no material is picked: the counts still fill, the weights wait.
-  final double? densityGCm3;
 
   /// The Count family (Pc, doz, gro) the output pieces are typed in. Null
   /// when it is not seeded, and the field takes whole pieces.
@@ -94,6 +89,12 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
   int? _outputUnitId;
 
   bool _wholeRecordScrap = true;
+
+  /// Whether scrap is still the balance — in less out, rejection and weight
+  /// loss — and so follows the weights as they are typed. Typing a different
+  /// figure stops it; "Use" beside it puts the balance back. Not stored: a
+  /// record whose scrap equals its balance simply reads as following it.
+  bool _scrapAuto = true;
   bool _wholeRecordRejection = true;
   bool _wholeRecordWeightLoss = true;
 
@@ -130,8 +131,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     final inputsChanged =
         !identical(widget.baseline, oldWidget.baseline) ||
         widget.sheetLabel != oldWidget.sheetLabel ||
-        widget.itemName != oldWidget.itemName ||
-        widget.densityGCm3 != oldWidget.densityGCm3;
+        widget.itemName != oldWidget.itemName;
     if (inputsChanged) {
       final row = _wholeRow;
       if (_json(row) != _shownJson) _fillWhole(row);
@@ -161,7 +161,6 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     final stored = _storedWhole;
     if (_followsPlan) {
       return widget.baseline.reconciliationFromPlan(
-        densityGCm3: widget.densityGCm3,
         sheetLabel: widget.sheetLabel,
         partName: widget.itemName.trim(),
         keepFrom: stored,
@@ -169,12 +168,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     }
     final row =
         stored ??
-        const PenPaperStageReconciliation(
-          stageId: 'whole_pipeline',
-          stageName: 'Entire Pipeline',
-          inputSheets: 1,
-          inputQty: 1,
-        );
+        PenPaperStageReconciliation.empty.copyWith(inputSheets: 1, inputQty: 1);
     return row.copyWith(
       inputLabel: widget.sheetLabel.isEmpty ? null : widget.sheetLabel,
       outputLabel: widget.itemName.trim().isEmpty
@@ -200,6 +194,8 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               ? _kg(row.rejectionKg / row.inputKg * 100)
               : '');
     _wholeScrapCtrl.text = _kg(row.scrapKg);
+    _scrapAuto =
+        row.scrapKg == 0 || (row.scrapKg - _balanceOf(row)).abs() < 0.0005;
     _wholeLossCtrl.text = _kg(row.weightLossKg);
     _wholeNotesCtrl.text = row.notes.isNotEmpty
         ? row.notes
@@ -238,7 +234,6 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     final row = widget.baseline
         .copyWith(materialFromPlan: true, isGranular: false)
         .reconciliationFromPlan(
-          densityGCm3: widget.densityGCm3,
           sheetLabel: widget.sheetLabel,
           partName: widget.itemName.trim(),
           keepFrom: _storedWhole,
@@ -332,16 +327,55 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     }
   }
 
-  /// The whole-pipeline row as typed. Typing over a figure is a statement
-  /// that the plan's figure was wrong, so it stops following the plan.
-  void _saveWholePipelineBaseline() {
+  /// What scrap comes to by the balance: what went in, less what came out and
+  /// the other losses being accounted for. Never below nothing — a weight
+  /// half-typed would otherwise offer negative scrap.
+  static double _balanceOf(PenPaperStageReconciliation row) {
+    final kg =
+        row.inputKg -
+        row.outputKg -
+        row.effectiveRejectionKg -
+        row.effectiveWeightLossKg;
+    return kg <= 0 ? 0 : (kg * 1000).roundToDouble() / 1000;
+  }
+
+  double get _scrapBalanceKg => _balanceOf(_wholeDraft);
+
+  /// A weight, rejection or loss changed: scrap follows the balance while it
+  /// still is the balance.
+  void _weightsChanged() {
+    if (_scrapAuto && _wholeRecordScrap) {
+      _wholeScrapCtrl.text = _kg(_scrapBalanceKg);
+    }
+    setState(() {});
+    _saveWholePipelineBaseline();
+  }
+
+  void _scrapTyped() {
+    final typed = double.tryParse(_wholeScrapCtrl.text) ?? 0;
+    setState(() => _scrapAuto = (typed - _scrapBalanceKg).abs() < 0.0005);
+    _saveWholePipelineBaseline();
+  }
+
+  void _useScrapBalance() {
+    setState(() {
+      _scrapAuto = true;
+      _wholeScrapCtrl.text = _kg(_scrapBalanceKg);
+    });
+    _saveWholePipelineBaseline();
+  }
+
+  /// The whole-pipeline row as typed. Typing over a count ([countsTyped]) is
+  /// a statement that the plan's count was wrong, so it stops following the
+  /// plan; a weight does not, because the plan never had weights to follow.
+  void _saveWholePipelineBaseline({bool countsTyped = false}) {
     final row = _wholeDraft;
     _shownJson = _json(row);
     widget.onChanged(
       _stamped(
         widget.baseline.copyWith(
           isGranular: false,
-          materialFromPlan: false,
+          materialFromPlan: countsTyped ? false : null,
           stageReconciliations: [row],
           notes: row.notes,
         ),
@@ -387,39 +421,34 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
         : 0.0;
     final sheets = int.tryParse(_wholeInputQtyCtrl.text.trim());
     final pieces = _outputPieces;
-    return (_storedWhole ??
-            const PenPaperStageReconciliation(
-              stageId: 'whole_pipeline',
-              stageName: 'Entire Pipeline',
-            ))
-        .copyWith(
-          stageId: 'whole_pipeline',
-          stageName: 'Entire Pipeline',
-          recordScrap: _wholeRecordScrap,
-          recordRejection: _wholeRecordRejection,
-          recordWeightLoss: _wholeRecordWeightLoss,
-          inputKg: inputKg,
-          outputKg: double.tryParse(_wholeOutputCtrl.text) ?? 0.0,
-          scrapKg: _wholeRecordScrap
-              ? (double.tryParse(_wholeScrapCtrl.text) ?? 0.0)
-              : 0.0,
-          rejectionKg: inputKg * (rejectionPercent / 100.0),
-          weightLossKg: _wholeRecordWeightLoss
-              ? (double.tryParse(_wholeLossCtrl.text) ?? 0.0)
-              : 0.0,
-          inputSheets: sheets ?? 0,
-          inputQty: (sheets ?? 0).toDouble(),
-          outputPieces: pieces ?? 0,
-          // Still written for readers from before pieces were whole.
-          outputQty: (pieces ?? 0).toDouble(),
-          outputUnitId: _outputUnitId,
-          inputLabel: widget.sheetLabel.isEmpty ? null : widget.sheetLabel,
-          outputLabel: widget.itemName.trim().isEmpty
-              ? null
-              : widget.itemName.trim(),
-          rejectionPercent: rejectionPercent,
-          notes: _wholeNotesCtrl.text.trim(),
-        );
+    return (_storedWhole ?? PenPaperStageReconciliation.empty).copyWith(
+      stageId: 'whole_pipeline',
+      stageName: 'Entire Pipeline',
+      recordScrap: _wholeRecordScrap,
+      recordRejection: _wholeRecordRejection,
+      recordWeightLoss: _wholeRecordWeightLoss,
+      inputKg: inputKg,
+      outputKg: double.tryParse(_wholeOutputCtrl.text) ?? 0.0,
+      scrapKg: _wholeRecordScrap
+          ? (double.tryParse(_wholeScrapCtrl.text) ?? 0.0)
+          : 0.0,
+      rejectionKg: inputKg * (rejectionPercent / 100.0),
+      weightLossKg: _wholeRecordWeightLoss
+          ? (double.tryParse(_wholeLossCtrl.text) ?? 0.0)
+          : 0.0,
+      inputSheets: sheets ?? 0,
+      inputQty: (sheets ?? 0).toDouble(),
+      outputPieces: pieces ?? 0,
+      // Still written for readers from before pieces were whole.
+      outputQty: (pieces ?? 0).toDouble(),
+      outputUnitId: _outputUnitId,
+      inputLabel: widget.sheetLabel.isEmpty ? null : widget.sheetLabel,
+      outputLabel: widget.itemName.trim().isEmpty
+          ? null
+          : widget.itemName.trim(),
+      rejectionPercent: rejectionPercent,
+      notes: _wholeNotesCtrl.text.trim(),
+    );
   }
 
   // --- build ---------------------------------------------------------------
@@ -610,14 +639,11 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
 
   Widget _buildWholePipelineForm() {
     final draft = _wholeDraft;
-    final noWeights =
-        _followsPlan &&
-        (widget.densityGCm3 == null || widget.densityGCm3! <= 0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.followsSheetPlan) ...[
-          _buildPlanStrip(noWeights: noWeights),
+          _buildPlanStrip(),
           const SizedBox(height: 10),
         ],
         // Input and output side by side: the record is a comparison, and the
@@ -632,8 +658,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               name: draft.inputName,
               nameKey: const ValueKey<String>('material-input-name'),
               weightController: _wholeInputCtrl,
+              weightKey: const ValueKey<String>('material-input-kg'),
               readOnly: widget.readOnly,
-              onChanged: _saveWholePipelineBaseline,
+              onChanged: _weightsChanged,
               perPiece: draft.inputKgPerPiece,
               perWhat: 'sheet',
               qtyField: _CellField(
@@ -643,7 +670,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                 hint: '1',
                 readOnly: widget.readOnly,
                 wholeOnly: true,
-                onChanged: _saveWholePipelineBaseline,
+                onChanged: () => _saveWholePipelineBaseline(countsTyped: true),
               ),
             );
             final output = _MeasureColumn(
@@ -653,8 +680,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               name: draft.outputName,
               nameKey: const ValueKey<String>('material-output-name'),
               weightController: _wholeOutputCtrl,
+              weightKey: const ValueKey<String>('material-output-kg'),
               readOnly: widget.readOnly,
-              onChanged: _saveWholePipelineBaseline,
+              onChanged: _weightsChanged,
               perPiece: draft.outputKgPerPiece,
               perWhat: 'piece',
               qtyFlex: 6,
@@ -671,7 +699,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                     _outputPieces = pieces;
                     _outputUnitId = unitId;
                   });
-                  _saveWholePipelineBaseline();
+                  _saveWholePipelineBaseline(countsTyped: true);
                 },
               ),
               // Everything that did not come out as good output is accounted
@@ -708,15 +736,12 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
 
   /// Where the figures came from: the sheet plan, or typed. Typed over, it
   /// offers the plan's back rather than leaving no way to undo it.
-  Widget _buildPlanStrip({required bool noWeights}) {
+  Widget _buildPlanStrip() {
     final following = _followsPlan;
     final text = following
-        ? (noWeights
-              ? 'From the sheet plan: 1 sheet in, the planned pieces out. '
-                    'Pick the material in Sheet planning to fill the weights.'
-              : 'From the sheet plan: 1 sheet in, the planned pieces out, '
-                    'offcut as scrap.')
-        : 'Typed over the sheet plan.';
+        ? 'From the sheet plan: 1 sheet in, the planned pieces out. Type the '
+              'weights; scrap fills from the balance.'
+        : 'Counts typed over the sheet plan.';
     return Row(
       children: [
         Icon(
@@ -762,12 +787,34 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
           unit: 'kg',
           enabled: _wholeRecordScrap,
           controller: _wholeScrapCtrl,
+          fieldKey: const ValueKey<String>('material-scrap-kg'),
           readOnly: widget.readOnly,
+          // Typed over, the balance is offered beside it rather than lost.
+          aside: _wholeRecordScrap && !_scrapAuto && !widget.readOnly
+              ? Tooltip(
+                  message: 'In − out − rejection − weight loss',
+                  child: TextButton(
+                    key: const ValueKey<String>('material-scrap-use-balance'),
+                    onPressed: _useScrapBalance,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    child: Text(
+                      'Use ${_kg(_scrapBalanceKg)} kg',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                )
+              : null,
           onToggle: () {
             setState(() => _wholeRecordScrap = !_wholeRecordScrap);
-            _saveWholePipelineBaseline();
+            _weightsChanged();
           },
-          onChanged: _saveWholePipelineBaseline,
+          onChanged: _scrapTyped,
         ),
         _LossRow(
           label: 'Rejection',
@@ -782,9 +829,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               : null,
           onToggle: () {
             setState(() => _wholeRecordRejection = !_wholeRecordRejection);
-            _saveWholePipelineBaseline();
+            _weightsChanged();
           },
-          onChanged: _saveWholePipelineBaseline,
+          onChanged: _weightsChanged,
         ),
         _LossRow(
           label: 'Weight loss',
@@ -794,9 +841,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
           readOnly: widget.readOnly,
           onToggle: () {
             setState(() => _wholeRecordWeightLoss = !_wholeRecordWeightLoss);
-            _saveWholePipelineBaseline();
+            _weightsChanged();
           },
-          onChanged: _saveWholePipelineBaseline,
+          onChanged: _weightsChanged,
         ),
       ],
     );
@@ -1427,6 +1474,7 @@ class _MeasureColumn extends StatelessWidget {
     required this.perPiece,
     required this.perWhat,
     this.nameKey,
+    this.weightKey,
     this.qtyFlex = 4,
     this.trailing,
   });
@@ -1438,6 +1486,7 @@ class _MeasureColumn extends StatelessWidget {
   final String nameHeading;
   final String name;
   final Key? nameKey;
+  final Key? weightKey;
   final TextEditingController weightController;
   final Widget qtyField;
   final int qtyFlex;
@@ -1518,6 +1567,7 @@ class _MeasureColumn extends StatelessWidget {
                           const Text('WEIGHT', style: _heading),
                           const SizedBox(height: 4),
                           _CellField(
+                            key: weightKey,
                             controller: weightController,
                             suffix: 'kg',
                             hint: '0.0',
@@ -1643,6 +1693,8 @@ class _LossRow extends StatelessWidget {
     required this.onToggle,
     required this.onChanged,
     this.resolved,
+    this.aside,
+    this.fieldKey,
   });
 
   final String label;
@@ -1655,6 +1707,10 @@ class _LossRow extends StatelessWidget {
 
   /// What a percentage works out to in kg, shown next to it.
   final String? resolved;
+
+  /// A control in place of [resolved] — scrap's "use the balance".
+  final Widget? aside;
+  final Key? fieldKey;
 
   @override
   Widget build(BuildContext context) {
@@ -1702,6 +1758,7 @@ class _LossRow extends StatelessWidget {
             flex: 4,
             child: enabled
                 ? _CellField(
+                    key: fieldKey,
                     controller: controller,
                     suffix: unit,
                     hint: '0',
@@ -1713,15 +1770,17 @@ class _LossRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             flex: 4,
-            child: Text(
-              resolved ?? '',
-              textAlign: TextAlign.left,
-              style: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child:
+                aside ??
+                Text(
+                  resolved ?? '',
+                  textAlign: TextAlign.left,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
           ),
         ],
       ),

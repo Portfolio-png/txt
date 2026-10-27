@@ -6,7 +6,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-import '../../../materials/domain/material_definition.dart';
 import '../../../units/domain/quantity.dart';
 import '../../../units/domain/unit_family.dart';
 import '../../../units/domain/units.dart';
@@ -24,17 +23,17 @@ class RawSheetReviewSection {
 /// sheet show — one template, so what is printed is what was reviewed.
 ///
 /// [partName] is the part being made, [sheetLabel] the sheet it is cut from
-/// ("Steel / MS · 48 × 96 in · 1.6 mm"). Weights need [material]; without
-/// it the plan is stated in pieces and millimetres alone.
+/// ("MS · First grade · 48 × 14 in · 23 ga"). No weight is worked out from
+/// the alloy: the weights shown are the ones typed in Material data.
 List<RawSheetReviewSection> rawSheetReviewSections({
   required PenPaperBaseline baseline,
   required String partName,
   required String sheetLabel,
-  MaterialDefinition? material,
   UnitFamily? countFamily,
 }) {
   String kg(double value) => '${_kg(value)} kg';
   String mm(double value) => '${_trim(value)} mm';
+  String said(String value) => value.trim().isEmpty ? 'Not set' : value.trim();
 
   final parts = baseline.yields.where((entry) => !entry.isOffcut).toList();
   final sheetAreaMm2 = baseline.sheetWidthMm * baseline.sheetHeightMm;
@@ -49,14 +48,14 @@ List<RawSheetReviewSection> rawSheetReviewSections({
     ]),
     RawSheetReviewSection('Sheet', [
       ('Sheet', sheetLabel),
+      ('Alloy', said(baseline.materialName)),
       (
-        'Material',
-        material == null
-            ? (baseline.materialName.trim().isEmpty
-                  ? 'Not set — no weight'
-                  : '${baseline.materialName.trim()} (not in the master)')
-            : '${material.name} · ${material.densityLabel}',
+        'Grade',
+        baseline.materialGrade.isEmpty
+            ? 'Not set'
+            : '${baseline.materialGrade} grade',
       ),
+      ('Vendor', said(baseline.vendorName)),
     ]),
     RawSheetReviewSection('Cut plan', [
       if (parts.isEmpty) ('Pieces', 'Nothing planned on the sheet yet'),
@@ -68,18 +67,6 @@ List<RawSheetReviewSection> rawSheetReviewSections({
       if (sheetAreaMm2 > 0) ('Yield', '${yieldPct.toStringAsFixed(1)}%'),
     ]),
   ];
-
-  if (material != null) {
-    final weights = baseline.weighAt(material.densityGCm3);
-    sections.add(
-      RawSheetReviewSection('Weights per sheet', [
-        ('Sheet in', kg(weights.sheetKg)),
-        ('Parts out', kg(weights.partsKg)),
-        ('Offcut', kg(weights.offcutKg)),
-        ('Blade and trim', kg(weights.lostKg)),
-      ]),
-    );
-  }
 
   final rows = baseline.stageReconciliations;
   if (!baseline.isGranular && rows.isNotEmpty) {

@@ -6155,8 +6155,12 @@ async function initDb() {
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMaterialsIfEmpty();
-    await seedUnitsIfEmpty();
   }
+  // The unit families and their ladders (Pc / doz / gro, g / kg …) are the
+  // units contract, not demo data. Behind the demo flag, a real database got
+  // migration 051's family rows with no units linked to them, so every family
+  // read back empty and no screen could offer dozens or gross. Idempotent.
+  await seedUnitsIfEmpty();
   await bootstrapUnitsFromMaterials();
   await backfillMaterialUnitIds();
   if (SEED_DEMO_DATA_ON_BOOT) {

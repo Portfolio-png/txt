@@ -139,48 +139,6 @@ class SheetYield {
       : value.toStringAsFixed(1);
 }
 
-/// What a plan weighs, once the material is known.
-///
-/// Four numbers that must reconcile: the sheet that goes in, the parts that
-/// come out, the offcut that is still material, and the remainder lost to the
-/// blade and the trimmed edge. The last one is the reason this is a breakdown
-/// rather than a single figure — kerf is real weight that leaves as dust and
-/// never appears on either side of a paper calculation.
-class SheetWeights {
-  const SheetWeights({
-    required this.sheetKg,
-    required this.partsKg,
-    required this.offcutKg,
-  });
-
-  static const SheetWeights zero = SheetWeights(
-    sheetKg: 0,
-    partsKg: 0,
-    offcutKg: 0,
-  );
-
-  /// One whole sheet as bought.
-  final double sheetKg;
-
-  /// Everything the plan calls a part.
-  final double partsKg;
-
-  /// Material left whole but unplanned — still worth something on a rack.
-  final double offcutKg;
-
-  /// Swarf and trimmed edge: what the sheet weighed less what survives it.
-  ///
-  /// Clamped at zero. A plan can be over-committed while it is being typed,
-  /// and a negative loss on screen would read as a bug rather than as a plan
-  /// that does not fit yet.
-  double get lostKg => math.max(0, sheetKg - partsKg - offcutKg);
-
-  /// The share of the sheet that leaves as parts, 0-100.
-  double get yieldPercent => sheetKg <= 0 ? 0 : partsKg / sheetKg * 100;
-
-  bool get isEmpty => sheetKg <= 0;
-}
-
 /// The two axes a sheet is divided along, named for what they yield.
 enum SheetCutAxis {
   /// Cuts running down the sheet, dividing its width into columns. The x axis.
@@ -224,6 +182,19 @@ class PenPaperStageReconciliation {
     this.inputLabel = '',
     this.outputLabel = '',
   });
+
+  /// A whole-pipeline row with nothing weighed yet. The constructor's own
+  /// defaults are a 100 kg worked example, which must never pass for a
+  /// record of what went on the scale.
+  static const PenPaperStageReconciliation empty = PenPaperStageReconciliation(
+    stageId: 'whole_pipeline',
+    stageName: 'Entire Pipeline',
+    inputKg: 0,
+    outputKg: 0,
+    scrapKg: 0,
+    rejectionKg: 0,
+    weightLossKg: 0,
+  );
 
   final String stageId;
   final String stageName;
@@ -270,7 +241,9 @@ class PenPaperStageReconciliation {
   final String inputLabel;
   final String outputLabel;
 
-  int get sheetsIn => inputSheets ?? (inputQty == inputQty.roundToDouble() ? inputQty.round() : 0);
+  int get sheetsIn =>
+      inputSheets ??
+      (inputQty == inputQty.roundToDouble() ? inputQty.round() : 0);
 
   int get piecesOut =>
       outputPieces ??
@@ -433,6 +406,9 @@ class PenPaperBaseline {
     this.faceUnit = 'in',
     this.gaugeUnit = 'mm',
     this.materialName = '',
+    this.materialGrade = '',
+    this.vendorId,
+    this.vendorName = '',
   });
 
   /// The units the sheet's own measurements are read in, by symbol.
@@ -444,13 +420,23 @@ class PenPaperBaseline {
   final String faceUnit;
   final String gaugeUnit;
 
-  /// What the sheet is made of, by name, matched against the material master.
+  /// The alloy the sheet is, by name. On the item sheet it is the part's own
+  /// Alloy, stamped here at save so a plan recorded last year still says what
+  /// it was cut from after the master row is renamed or archived.
   ///
-  /// A name rather than an id: the master is a shop's own list and a row can be
-  /// renamed or archived, but a plan recorded last year still has to say what it
-  /// was cut from. The density is looked up when the weight is wanted, so a
-  /// corrected density improves old plans instead of leaving them stale.
+  /// No weight is worked out from it: what an alloy weighs depends on its
+  /// grade, so the weights in Material data are what was put on the scale.
   final String materialName;
+
+  /// The alloy's grade — 'First', 'Second', 'Third', or '' for not said.
+  final String materialGrade;
+
+  static const List<String> grades = ['First', 'Second', 'Third'];
+
+  /// Who supplied the sheet: the Vendors master's id, and its name as it was
+  /// when picked, so an archived vendor still reads on an old record.
+  final int? vendorId;
+  final String vendorName;
 
   /// The part this plan is cutting, when it came from the catalogue rather than
   /// from typed sizes. Stamped so the record says what it was planning, and so
@@ -1046,70 +1032,27 @@ class PenPaperBaseline {
     return sheetAreaSqInches * sqInchToSqCm * (sheetThicknessMm / 10.0);
   }
 
-  /// What this plan weighs in a material of [densityGCm3].
+  /// The whole-pipeline Material data row this plan implies: one sheet in,
+  /// the planned pieces out, named by the sheet and the part.
   ///
-  /// Density is passed in rather than held here: the material master owns that
-  /// number and can correct it, and a plan that stored a copy would keep
-  /// quoting the old one. Areas come from [yields], so the split between parts
-  /// and offcut is exactly the split drawn on the sheet.
-  SheetWeights weighAt(double densityGCm3) {
-    if (densityGCm3 <= 0 || sheetVolumeCc <= 0) return SheetWeights.zero;
-    // areaMm2 x thickness gives mm3; a cubic centimetre is 1000 of those.
-    final ccPerMm2 = sheetThicknessMm / 1000.0;
-    var parts = 0.0;
-    var offcut = 0.0;
-    for (final yield in yields) {
-      final kg = yield.areaMm2 * ccPerMm2 * densityGCm3 / 1000.0;
-      if (yield.isOffcut) {
-        offcut += kg;
-      } else {
-        parts += kg;
-      }
-    }
-    return SheetWeights(
-      sheetKg: sheetVolumeCc * densityGCm3 / 1000.0,
-      partsKg: parts,
-      offcutKg: offcut,
-    );
-  }
-
-  /// The whole-pipeline Material data row this plan implies: one sheet in at
-  /// its weight, the planned pieces out at theirs, the offcut booked as scrap
-  /// and the blade and trim as weight loss — so it balances by construction.
-  ///
-  /// With no density (no material picked) the weights are left at zero and
-  /// only the counts are filled; the caller says why.
+  /// Counts only. The weights are what was put on the scale, typed by hand, so
+  /// they are carried over from [keepFrom] when it is a whole-pipeline row —
+  /// never the generic stage defaults, which would show 100 kg nobody weighed.
   PenPaperStageReconciliation reconciliationFromPlan({
-    required double? densityGCm3,
     required String sheetLabel,
     required String partName,
     PenPaperStageReconciliation? keepFrom,
   }) {
-    final weights = densityGCm3 == null || densityGCm3 <= 0
-        ? SheetWeights.zero
-        : weighAt(densityGCm3);
-    double kg(double value) => (value * 1000).roundToDouble() / 1000;
-    final base = keepFrom ??
-        const PenPaperStageReconciliation(
-          stageId: 'whole_pipeline',
-          stageName: 'Entire Pipeline',
-        );
+    final base = keepFrom != null && keepFrom.stageId == 'whole_pipeline'
+        ? keepFrom
+        : PenPaperStageReconciliation.empty;
     return base.copyWith(
       stageId: 'whole_pipeline',
       stageName: 'Entire Pipeline',
-      recordScrap: true,
-      recordRejection: true,
-      recordWeightLoss: true,
       inputSheets: 1,
       inputQty: 1,
-      inputKg: kg(weights.sheetKg),
       outputPieces: pieceCount,
       outputQty: pieceCount.toDouble(),
-      outputKg: kg(weights.partsKg),
-      scrapKg: kg(weights.offcutKg),
-      weightLossKg: kg(weights.lostKg),
-      rejectionKg: 0,
-      rejectionPercent: 0,
       inputLabel: sheetLabel,
       outputLabel: partName,
     );
@@ -1124,11 +1067,14 @@ class PenPaperBaseline {
 
   final bool isGranular;
 
-  /// Whether Material data still follows the sheet plan: true while nobody has
-  /// typed over it, so changing the plan re-fills it. Editing a figure turns
-  /// it off; "Refill from sheet plan" turns it back on. Off for a record saved
+  /// Whether Material data's counts still follow the sheet plan: true while
+  /// nobody has typed over the sheets or pieces, so changing the plan re-fills
+  /// them. Typing a count turns it off (a weight does not — weights are always
+  /// typed); "Refill from sheet plan" turns it back on. Off for a record saved
   /// before it existed, so what was recorded is never replaced.
   final bool materialFromPlan;
+
+  static const Object _keepVendor = Object();
 
   final double keyEfficiencyBenchmark;
   final double baselineOutputRate;
@@ -1232,6 +1178,9 @@ class PenPaperBaseline {
     String? faceUnit,
     String? gaugeUnit,
     String? materialName,
+    String? materialGrade,
+    Object? vendorId = _keepVendor,
+    String? vendorName,
   }) {
     return PenPaperBaseline(
       isGranular: isGranular ?? this.isGranular,
@@ -1258,6 +1207,9 @@ class PenPaperBaseline {
       faceUnit: faceUnit ?? this.faceUnit,
       gaugeUnit: gaugeUnit ?? this.gaugeUnit,
       materialName: materialName ?? this.materialName,
+      materialGrade: materialGrade ?? this.materialGrade,
+      vendorId: vendorId == _keepVendor ? this.vendorId : vendorId as int?,
+      vendorName: vendorName ?? this.vendorName,
     );
   }
 
@@ -1291,6 +1243,9 @@ class PenPaperBaseline {
       'faceUnit': faceUnit,
       'gaugeUnit': gaugeUnit,
       'materialName': materialName,
+      'materialGrade': materialGrade,
+      if (vendorId != null) 'vendorId': vendorId,
+      'vendorName': vendorName,
     };
   }
 
@@ -1337,6 +1292,9 @@ class PenPaperBaseline {
       ).symbol,
       gaugeUnit: lengthUnitBySymbol(json['gaugeUnit']?.toString()).symbol,
       materialName: json['materialName']?.toString() ?? '',
+      materialGrade: json['materialGrade']?.toString() ?? '',
+      vendorId: (json['vendorId'] as num?)?.toInt(),
+      vendorName: json['vendorName']?.toString() ?? '',
     );
   }
 }

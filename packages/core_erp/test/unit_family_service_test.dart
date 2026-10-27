@@ -194,6 +194,22 @@ void main() {
       expect(stub.calls, 2);
     });
 
+    test('an empty answer is not kept, so the next read can find the units',
+        () async {
+      // Families with no units linked yet read back as none; the server's
+      // boot seed links them, and the app must not hold on to "none".
+      final stub = _Stub({
+        'success': true,
+        'families': [
+          {'id': 1, 'name': 'Count', 'code': 'count', 'units': []},
+        ],
+      });
+      final service = UnitFamilyService(client: stub, baseUrl: 'http://x');
+      expect(await service.byCode('count'), isNull);
+      await service.families();
+      expect(stub.calls, 2);
+    });
+
     test('a refusal and an unreadable body both raise, not return empty', () async {
       // Empty would read as "this workspace has no units", which is a
       // different and much more alarming fact than "you may not look".

@@ -4,9 +4,9 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/mast
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The join between the two features: sheet planning knows the volume, the
-/// material master knows the density, and the plan is only worth costing if the
-/// window actually puts them together on screen.
+/// The alloy, picked from the material master in a host with no Alloy column
+/// of its own (the item screen's dialog). By name only: what an alloy weighs
+/// depends on its grade, so no weight is ever worked out from it.
 void main() {
   const materials = <MaterialDefinition>[
     MaterialDefinition(id: 1, name: 'Steel / MS', densityGCm3: 7.85),
@@ -69,52 +69,29 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('with no master, the window asks for no material', (
-    tester,
-  ) async {
+  testWidgets('with no master, the window asks for no alloy', (tester) async {
     bigScreen(tester);
     await open(tester, master: const []);
-    // A shop that has not filled in densities plans in millimetres, and the
-    // window says nothing about weight rather than guessing one.
-    expect(find.text('MATERIAL'), findsNothing);
+    expect(find.text('ALLOY'), findsNothing);
     expect(find.textContaining('kg'), findsNothing);
   });
 
-  testWidgets('choosing a material puts a weight on the plan', (tester) async {
-    bigScreen(tester);
-    await open(tester);
-
-    expect(find.text('MATERIAL'), findsOneWidget);
-    // Nothing chosen yet, so no weight is claimed.
-    expect(find.text('Sheet in'), findsNothing);
-
-    await choose(tester, 1);
-
-    // 4' x 8' x 1.6 mm of mild steel is 37.3 kg, and the breakdown has to
-    // account for where every kilo of it goes.
-    expect(find.text('IN STEEL / MS'), findsOneWidget);
-    expect(find.text('Sheet in'), findsOneWidget);
-    expect(find.text('37.3 kg'), findsOneWidget);
-    expect(find.text('Parts out'), findsOneWidget);
-    // Three 3 mm cuts is real weight that reaches neither parts nor rack.
-    expect(find.text('Blade and trim'), findsOneWidget);
-  });
-
-  testWidgets('the same plan in aluminium weighs a third as much', (
+  testWidgets('choosing an alloy names it, and claims no weight', (
     tester,
   ) async {
     bigScreen(tester);
     await open(tester);
+    expect(find.text('ALLOY'), findsOneWidget);
 
     await choose(tester, 2);
-
-    expect(find.text('IN ALUMINIUM'), findsOneWidget);
-    expect(find.text('12.8 kg'), findsOneWidget);
-    // And the steel figure is gone, not left beside it.
-    expect(find.text('37.3 kg'), findsNothing);
+    expect(find.text('Aluminium'), findsWidgets);
+    // The density-made breakdown is gone for good.
+    expect(find.text('Sheet in'), findsNothing);
+    expect(find.text('IN ALUMINIUM'), findsNothing);
+    expect(find.textContaining('g/cm³'), findsNothing);
   });
 
-  testWidgets('the chosen material comes back on the saved baseline', (
+  testWidgets('the alloy and its grade come back on the saved baseline', (
     tester,
   ) async {
     bigScreen(tester);
@@ -144,23 +121,26 @@ void main() {
     await tester.pumpAndSettle();
 
     await choose(tester, 1);
+    await tester.tap(find.byKey(const ValueKey<String>('sheet-grade')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Second grade').last);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Save Master Data'));
     await tester.pumpAndSettle();
 
     expect(saved, isNotNull);
     expect(saved!.materialName, 'Steel / MS');
+    expect(saved!.materialGrade, 'Second');
   });
 
   testWidgets('a material the master no longer has is still named', (
     tester,
   ) async {
     bigScreen(tester);
-    // An old plan cut from something since archived. The record still says
-    // what it was, it just cannot be weighed any more.
+    // An old plan cut from something since archived still says what it was.
     await open(tester, baseline: planned.copyWith(materialName: 'Inconel 625'));
     expect(find.textContaining('Inconel 625'), findsOneWidget);
-    expect(find.text('Sheet in'), findsNothing);
   });
 
   testWidgets('the list stays inside the window instead of covering it', (
@@ -224,11 +204,32 @@ void main() {
     expect(find.text('No material by that name.'), findsOneWidget);
   });
 
-  testWidgets('a chosen material can be unset again', (tester) async {
+  testWidgets('a chosen alloy can be unset again', (tester) async {
     bigScreen(tester);
-    await open(tester);
-    await choose(tester, 1);
-    expect(find.text('Sheet in'), findsOneWidget);
+    PenPaperBaseline? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  saved = await showMasterDataDialog(
+                    context,
+                    baseline: planned.copyWith(materialName: 'Aluminium'),
+                    materials: materials,
+                    pipelineName: 'Shear → Press',
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey<String>('sheet-material')));
     await tester.pumpAndSettle();
@@ -236,9 +237,8 @@ void main() {
       find.byKey(const ValueKey<String>('material-option-none')),
     );
     await tester.pumpAndSettle();
-
-    // Back to planning in millimetres, with no weight claimed.
-    expect(find.text('Sheet in'), findsNothing);
-    expect(find.text('37.3 kg'), findsNothing);
+    await tester.tap(find.text('Save Master Data'));
+    await tester.pumpAndSettle();
+    expect(saved!.materialName, '');
   });
 }

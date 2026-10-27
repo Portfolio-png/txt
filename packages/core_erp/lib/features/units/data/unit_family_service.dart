@@ -48,10 +48,15 @@ class UnitFamilyService {
     if (useMockResponses) return _cache = _mockFamilies;
     final payload = await _get('/api/units/families');
     final raw = (payload['families'] as List?) ?? const [];
-    return _cache = [
+    final families = [
       for (final entry in raw)
         if (entry is Map<String, dynamic>) ?_familyFrom(entry),
     ];
+    // Nothing to keep: a workspace whose families had no units linked yet
+    // (fixed by the server's boot seed) would otherwise read as having none
+    // for the rest of the session.
+    if (families.isNotEmpty) _cache = families;
+    return families;
   }
 
   /// One family by its code — 'count', 'mass', 'length', 'area', 'volume',

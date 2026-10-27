@@ -1,9 +1,9 @@
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Material data filled from the sheet plan: one sheet in, the planned pieces
-// out, offcut as scrap and blade-and-trim as weight loss, so it balances. It
-// used to start from hard-coded 100 kg in / 90 kg out and nought pieces.
+// Material data filled from the sheet plan: the counts — one sheet in, the
+// planned pieces out — and the names. Never a weight: what an alloy weighs
+// depends on its grade, so the weights are what was put on the scale.
 
 void main() {
   // A 4' x 8' sheet at 1.6 mm, sheared into four 300 mm strips.
@@ -15,36 +15,82 @@ void main() {
     kerfMm: 3,
   );
 
-  test('one sheet in, the planned pieces out, and it balances', () {
+  test('one sheet in, the planned pieces out, and no weight made up', () {
     final row = planned.reconciliationFromPlan(
-      densityGCm3: 7.85,
-      sheetLabel: 'MS sheet',
-      partName: 'Dolly Patti',
-    );
-    final weights = planned.weighAt(7.85);
-
-    expect(row.sheetsIn, 1);
-    expect(row.piecesOut, planned.pieceCount);
-    expect(row.inputKg, closeTo(weights.sheetKg, 0.001));
-    expect(row.outputKg, closeTo(weights.partsKg, 0.001));
-    expect(row.scrapKg, closeTo(weights.offcutKg, 0.001));
-    expect(row.weightLossKg, closeTo(weights.lostKg, 0.001));
-    expect(row.rejectionKg, 0);
-    expect(row.balanceDeltaKg.abs(), lessThan(0.01));
-    expect(row.inputName, 'MS sheet');
-    expect(row.outputName, 'Dolly Patti');
-  });
-
-  test('with no material the counts fill and the weights wait', () {
-    final row = planned.reconciliationFromPlan(
-      densityGCm3: null,
-      sheetLabel: 'Sheet',
+      sheetLabel: 'MS · First grade',
       partName: 'Dolly Patti',
     );
     expect(row.sheetsIn, 1);
     expect(row.piecesOut, planned.pieceCount);
     expect(row.inputKg, 0);
+    expect(row.outputKg, 0);
+    expect(row.scrapKg, 0);
+    expect(row.inputName, 'MS · First grade');
+    expect(row.outputName, 'Dolly Patti');
   });
+
+  test('weights typed earlier are kept; the stage defaults never leak in', () {
+    const typed = PenPaperStageReconciliation(
+      stageId: 'whole_pipeline',
+      stageName: 'Entire Pipeline',
+      inputKg: 4,
+      outputKg: 3,
+      scrapKg: 1,
+      outputPieces: 10,
+    );
+    final kept = planned.reconciliationFromPlan(
+      sheetLabel: 'Sheet',
+      partName: 'Dolly Patti',
+      keepFrom: typed,
+    );
+    expect(kept.inputKg, 4);
+    expect(kept.scrapKg, 1);
+    expect(
+      kept.piecesOut,
+      planned.pieceCount,
+      reason: 'counts follow the plan',
+    );
+
+    // createDefault's per-stage rows carry 100 kg nobody weighed.
+    final stage = PenPaperBaseline.createDefault().stageReconciliations.first;
+    final fresh = planned.reconciliationFromPlan(
+      sheetLabel: 'Sheet',
+      partName: 'Dolly Patti',
+      keepFrom: stage,
+    );
+    expect(fresh.inputKg, 0);
+  });
+
+  test(
+    'alloy, grade and vendor survive a round trip; old records read empty',
+    () {
+      final back = PenPaperBaseline.fromJson(
+        planned
+            .copyWith(
+              materialName: 'MS',
+              materialGrade: 'Second',
+              vendorId: 7,
+              vendorName: 'Tata Steel',
+            )
+            .toJson(),
+      );
+      expect(back.materialName, 'MS');
+      expect(back.materialGrade, 'Second');
+      expect(back.vendorId, 7);
+      expect(back.vendorName, 'Tata Steel');
+      expect(back.copyWith(vendorId: null).vendorId, isNull);
+
+      final old = PenPaperBaseline.fromJson(
+        planned.toJson()
+          ..remove('materialGrade')
+          ..remove('vendorId')
+          ..remove('vendorName'),
+      );
+      expect(old.materialGrade, '');
+      expect(old.vendorId, isNull);
+      expect(old.vendorName, '');
+    },
+  );
 
   test('pieces and labels survive a round trip; old records still read', () {
     const row = PenPaperStageReconciliation(

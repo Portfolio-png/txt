@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert' show jsonEncode;
 import 'dart:math' as math;
 
@@ -9,7 +10,10 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/pipeline_stage_node.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../../units/data/unit_family_service.dart';
+import '../../../vendors/domain/vendor_inputs.dart';
+import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../../units/domain/global_length_units.dart';
 import '../../../units/domain/unit_family.dart';
 import '../../../materials/domain/material_definition.dart';
@@ -93,6 +97,7 @@ class MasterDataPanel extends StatefulWidget {
     this.embedded = false,
     this.onEdit,
     this.saving = false,
+    this.alloy,
   });
 
   /// The baseline the panel opens on. Edits are made to a working copy, so the
@@ -105,6 +110,7 @@ class MasterDataPanel extends StatefulWidget {
   final PenPaperBaseline baseline;
   final String? pipelineId;
   final String pipelineName;
+
   final String itemName;
   final List<PipelineStageNode> stageNodes;
 
@@ -112,9 +118,8 @@ class MasterDataPanel extends StatefulWidget {
   /// has none, in which case the panel stays a place to type sizes by hand.
   final List<SheetPart> parts;
 
-  /// The material master, for the one number that turns a planned volume into
-  /// a weight. Empty when the caller has none, in which case the sheet is
-  /// planned in millimetres alone and no weight is claimed.
+  /// The material master, to pick the alloy from when the host has no Alloy
+  /// column of its own ([alloy] null). Names only: no weight is worked out.
   final List<MaterialDefinition> materials;
   final bool readOnly;
 
@@ -141,6 +146,12 @@ class MasterDataPanel extends StatefulWidget {
 
   /// A save is on its way: Save spins and cannot be pressed twice.
   final bool saving;
+
+  /// The part's own Alloy, from the sheet's Alloy column. Given, the panel
+  /// shows it and does not pick one of its own — alloy and the sheet's
+  /// material are one thing, changed in one place. Null for a host with no
+  /// Alloy column, which keeps the panel's own picker.
+  final String? alloy;
 
   @override
   State<MasterDataPanel> createState() => _MasterDataPanelState();
@@ -219,11 +230,39 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     _trimController = TextEditingController();
     _writeFields();
     _loadCountFamily();
+    _watchVendors();
   }
 
   /// Pc, doz, gro — what the output pieces are typed in. A host without the
   /// units master (a test, an old database) gets whole pieces instead.
   UnitFamily? _countFamily;
+
+  /// The Vendors master, for who supplied the sheet. Null for a host
+  /// without it (a test), and the vendor row is not drawn.
+  VendorsProvider? _vendors;
+
+  void _watchVendors() {
+    try {
+      _vendors = Provider.of<VendorsProvider>(context, listen: false);
+    } on ProviderNotFoundException {
+      return;
+    }
+    // A vendor added in another window joins the list here.
+    _vendors!.addListener(_onVendorsChanged);
+    // After the first frame: a refresh notifies at once, and notifying from
+    // initState marks the provider dirty in the middle of a build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final vendors = _vendors;
+      if (!mounted || vendors == null) return;
+      if (vendors.vendors.isEmpty && !vendors.isLoading) {
+        unawaited(vendors.refresh());
+      }
+    });
+  }
+
+  void _onVendorsChanged() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _loadCountFamily() async {
     UnitFamilyService? service;
@@ -320,6 +359,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   @override
   void dispose() {
+    _vendors?.removeListener(_onVendorsChanged);
     _widthController.dispose();
     _heightController.dispose();
     _thicknessController.dispose();
@@ -516,16 +556,12 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
-  /// What the drawing calls the sheet: its material when one is picked.
-  String get _materialLabel {
-    final named = _baseline.materialName.trim();
-    return named.isEmpty ? 'sheet' : named;
-  }
+  /// What the drawing calls the sheet: its alloy when there is one.
+  String get _materialLabel => _alloy.isEmpty ? 'sheet' : _alloy;
 
   /// The sheet planned here, in words, for the Input row of Material data:
-  /// "Steel / MS · 48 × 96 in · 1.6 mm".
+  /// "MS · First grade · 48 × 14 in · 23 ga".
   String get _sheetLabel {
-    final named = _baseline.materialName.trim();
     final face = lengthUnitBySymbol(_baseline.faceUnit, fallback: 'in');
     final width = _faceText(_baseline.sheetWidthInches, face.symbol);
     final height = _faceText(_baseline.sheetHeightInches, face.symbol);
@@ -533,8 +569,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     final thickness = _baseline.sheetThicknessMm > 0
         ? _showUnit(_baseline.sheetThicknessMm, gauge)
         : '';
+    final grade = _baseline.materialGrade;
     return <String>[
-      named.isEmpty ? 'Sheet' : named,
+      _alloy.isEmpty ? 'Sheet' : _alloy,
+      if (grade.isNotEmpty) '$grade grade',
       if (width.isNotEmpty && height.isNotEmpty)
         '$width × $height ${face.symbol}',
       if (thickness.isNotEmpty) '$thickness ${gauge.symbol}',
@@ -802,9 +840,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// of is just a column of numbers again.
   Widget _sheetStep(double panelWidth) {
     const controlsWidth = 392.0;
+    final vendor = _vendors == null
+        ? const <Widget>[]
+        : <Widget>[_vendorRow(), const SizedBox(height: 12)];
     if (panelWidth < _sideBySideWidth) {
       return ListView(
         children: [
+          // Who it came from first, then the sheet itself.
+          ...vendor,
           SizedBox(height: 320, child: _sheetPanel()),
           const SizedBox(height: 12),
           _dimensionFields(),
@@ -813,19 +856,27 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         ],
       );
     }
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(child: _sheetPanel()),
-        const SizedBox(width: 18),
-        SizedBox(
-          width: controlsWidth,
-          child: ListView(
-            padding: EdgeInsets.zero,
+        ...vendor,
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _dimensionFields(),
-              const SizedBox(height: 12),
-              _cutOperationBar(),
+              Expanded(child: _sheetPanel()),
+              const SizedBox(width: 18),
+              SizedBox(
+                width: controlsWidth,
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _dimensionFields(),
+                    const SizedBox(height: 12),
+                    _cutOperationBar(),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -849,12 +900,13 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// the plan's figures in it, whether or not that step was ever opened. Save
   /// from step 1 used to store the generic 100 kg defaults behind it.
   PenPaperBaseline get _recorded {
-    final baseline = _baseline.withoutEmptyBands;
+    // The part's alloy is stamped on, so the record says what it was cut from
+    // even after the part's Alloy is changed.
+    final baseline = _baseline.withoutEmptyBands.copyWith(materialName: _alloy);
     if (!baseline.materialFromPlan || baseline.isGranular) return baseline;
     return baseline.copyWith(
       stageReconciliations: [
         baseline.reconciliationFromPlan(
-          densityGCm3: _material?.densityGCm3,
           sheetLabel: _sheetLabel,
           partName: widget.itemName.trim(),
           keepFrom: baseline.stageReconciliations.firstOrNull,
@@ -868,7 +920,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         baseline: recorded,
         partName: widget.itemName,
         sheetLabel: _sheetLabel,
-        material: _material,
         countFamily: _countFamily,
       );
 
@@ -1224,8 +1275,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             _partPicker(),
             const SizedBox(height: 10),
           ],
-          if (widget.materials.isNotEmpty) ...[
-            _materialPicker(),
+          if (widget.alloy != null || widget.materials.isNotEmpty) ...[
+            _alloyRow(),
             const SizedBox(height: 10),
           ],
           _machineRow(),
@@ -1330,60 +1381,190 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   ///
   /// One choice, and every figure on this screen gains a weight — which is the
   /// only reason the shop can price a plan without putting anything on a scale.
-  MaterialDefinition? get _material {
-    final name = _baseline.materialName.trim().toLowerCase();
-    if (name.isEmpty) return null;
-    for (final material in widget.materials) {
-      if (material.name.toLowerCase() == name) return material;
-    }
-    // The name is kept even when the master no longer has the row, so an old
-    // plan still says what it was cut from. It just cannot be weighed.
-    return null;
-  }
+  /// The alloy the sheet is: the part's own when the host has an Alloy
+  /// column, else whatever this record was given.
+  String get _alloy => (widget.alloy ?? _baseline.materialName).trim();
 
-  SheetWeights get _weights => _material == null
-      ? SheetWeights.zero
-      : _baseline.weighAt(_material!.densityGCm3);
+  static const TextStyle _rowLabel = TextStyle(
+    color: SoftErpTheme.textPrimary,
+    fontSize: 11.5,
+    fontWeight: FontWeight.w800,
+    letterSpacing: 0.6,
+  );
 
-  Widget _materialPicker() {
-    final chosen = _material;
-    final named = _baseline.materialName.trim();
-    final unknown = named.isNotEmpty && chosen == null;
+  /// Alloy and its grade. The alloy is the part's (changed in its Alloy
+  /// column, never here) when the host gives one; the grade is the sheet's.
+  /// No density and no weight: what an alloy weighs depends on its grade, so
+  /// the weights in Material data are what went on the scale.
+  Widget _alloyRow() {
+    final alloy = _alloy;
+    final fromPart = widget.alloy != null;
     final enabled = !widget.readOnly;
-    return Row(
-      children: [
-        const SizedBox(
-          width: 74,
-          child: Text(
-            'MATERIAL',
-            style: TextStyle(
-              color: SoftErpTheme.textPrimary,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.6,
+    final Widget alloyField = fromPart
+        ? Tooltip(
+            message: 'Change it in the Alloy column of the part',
+            child: Container(
+              key: const ValueKey<String>('sheet-alloy'),
+              height: 40,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: SoftErpTheme.border),
+              ),
+              child: Text(
+                alloy.isEmpty ? 'Not set — pick it in the Alloy column' : alloy,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: alloy.isEmpty
+                      ? SoftErpTheme.textSecondary
+                      : SoftErpTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: alloy.isEmpty ? FontWeight.w600 : FontWeight.w800,
+                ),
+              ),
             ),
-          ),
-        ),
-        Expanded(
-          child: _MaterialPickerField(
+          )
+        : _MaterialPickerField(
             key: const ValueKey<String>('sheet-material'),
-            label: chosen?.name ?? (unknown ? named : ''),
-            trailing: chosen?.densityLabel ?? '',
-            hint: unknown
-                ? '$named (not in the master)'
-                : 'Not set — no weight',
-            enabled: enabled,
-            onPressed: enabled
+            label: alloy,
+            trailing: '',
+            hint: 'Not set',
+            enabled: enabled && widget.materials.isNotEmpty,
+            onPressed: enabled && widget.materials.isNotEmpty
                 ? (anchorContext) async {
                     final picked = await _showMaterialMenu(anchorContext);
                     if (picked == null || !mounted) return;
                     setState(() {
-                      _baseline = _baseline.copyWith(
-                        materialName: picked.isEmpty ? '' : picked,
-                      );
+                      _baseline = _baseline.copyWith(materialName: picked);
                     });
                   }
                 : null,
+          );
+    final grade = _baseline.materialGrade;
+    final gradeField = DropdownButtonFormField<String>(
+      key: const ValueKey<String>('sheet-grade'),
+      initialValue: PenPaperBaseline.grades.contains(grade) ? grade : '',
+      isDense: true,
+      isExpanded: true,
+      style: const TextStyle(
+        color: SoftErpTheme.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: InputDecoration(
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      items: [
+        const DropdownMenuItem(value: '', child: Text('Not set')),
+        for (final g in PenPaperBaseline.grades)
+          DropdownMenuItem(value: g, child: Text('$g grade')),
+      ],
+      onChanged: enabled
+          ? (value) => setState(
+              () => _baseline = _baseline.copyWith(materialGrade: value ?? ''),
+            )
+          : null,
+    );
+    return Column(
+      children: [
+        Row(
+          children: [
+            const SizedBox(width: 74, child: Text('ALLOY', style: _rowLabel)),
+            Expanded(child: alloyField),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const SizedBox(width: 74, child: Text('GRADE', style: _rowLabel)),
+            Expanded(child: gradeField),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Who supplied the sheet, from the Vendors master. A name typed that is
+  /// not there yet is added to it, so the next sheet offers it.
+  Widget _vendorRow() {
+    final vendors = _vendors;
+    if (vendors == null) return const SizedBox.shrink();
+    final listed = [
+      for (final vendor in vendors.vendors)
+        if (!vendor.isArchived || vendor.id == _baseline.vendorId) vendor,
+    ];
+    final current = _baseline.vendorId;
+    final enabled = !widget.readOnly;
+    return Row(
+      children: [
+        const SizedBox(width: 74, child: Text('VENDOR', style: _rowLabel)),
+        Expanded(
+          child: SearchableSelectField<int>(
+            key: const ValueKey<String>('sheet-vendor'),
+            value: listed.any((v) => v.id == current) ? current : null,
+            fieldEnabled: enabled,
+            dialogTitle: 'Vendor',
+            searchHintText: 'Search or add a vendor',
+            emptyText: 'No vendors yet — type a name to add one',
+            options: [
+              for (final vendor in listed)
+                SearchableSelectOption<int>(
+                  value: vendor.id,
+                  label: vendor.displayLabel,
+                  searchText: '${vendor.name} ${vendor.alias}',
+                ),
+            ],
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: _baseline.vendorName.isNotEmpty
+                  ? _baseline.vendorName
+                  : 'Who supplied the sheet',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            canCreateOption: (query, options) =>
+                enabled &&
+                query.trim().isNotEmpty &&
+                !options.any(
+                  (o) => o.label.toLowerCase() == query.trim().toLowerCase(),
+                ),
+            createOptionLabelBuilder: (query) => 'Add vendor "${query.trim()}"',
+            onCreateOption: (query) async {
+              final created = await vendors.createVendor(
+                CreateVendorInput(name: query.trim()),
+              );
+              if (created == null) return null;
+              if (mounted) {
+                setState(() {
+                  _baseline = _baseline.copyWith(
+                    vendorId: created.id,
+                    vendorName: created.name,
+                  );
+                });
+              }
+              return SearchableSelectOption<int>(
+                value: created.id,
+                label: created.displayLabel,
+              );
+            },
+            onChanged: (id) {
+              final vendor = vendors.findById(id);
+              setState(() {
+                _baseline = _baseline.copyWith(
+                  vendorId: id,
+                  vendorName: vendor?.name ?? '',
+                );
+              });
+            },
           ),
         ),
       ],
@@ -1918,105 +2099,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         const SizedBox(height: 6),
         for (final entry in parts) _yieldRow(entry),
         for (final entry in waste) _yieldRow(entry),
-        _weightBlock(),
       ],
-    );
-  }
-
-  /// What the plan weighs, once a material has been chosen.
-  ///
-  /// This is the answer to how a job gets costed without anyone entering a
-  /// price here. Material is bought by the kilogram and scrap is sold by it, so
-  /// a plan that says "37.3 kg in, 28.1 kg of parts, 8.4 kg back on the rack"
-  /// is already a costing — it only needs today's rate, which the shop knows
-  /// and which changes weekly anyway.
-  ///
-  /// The fourth number is the one paper never has. Kerf and trim are real
-  /// weight that leaves as dust, belonging to neither the parts nor the offcut,
-  /// and it is only visible because the plan accounted for the blade.
-  Widget _weightBlock() {
-    final material = _material;
-    if (material == null) return const SizedBox.shrink();
-    final weights = _weights;
-    if (weights.isEmpty) return const SizedBox.shrink();
-
-    String kg(double value) => '${value.toStringAsFixed(1)} kg';
-
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.sectionSurface,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(
-                'IN ${material.name.toUpperCase()}',
-                style: const TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${weights.yieldPercent.toStringAsFixed(0)}% yield',
-                style: const TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          _weightRow('Sheet in', kg(weights.sheetKg), emphasis: true),
-          _weightRow('Parts out', kg(weights.partsKg), emphasis: true),
-          if (weights.offcutKg > 0.05)
-            _weightRow('Offcut to stock', kg(weights.offcutKg)),
-          if (weights.lostKg > 0.05)
-            _weightRow('Blade and trim', kg(weights.lostKg)),
-        ],
-      ),
-    );
-  }
-
-  Widget _weightRow(String label, String value, {bool emphasis = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 3),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: emphasis
-                    ? SoftErpTheme.textPrimary
-                    : SoftErpTheme.textSecondary,
-                fontSize: 12,
-                fontWeight: emphasis ? FontWeight.w700 : FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              color: emphasis
-                  ? SoftErpTheme.textPrimary
-                  : SoftErpTheme.textSecondary,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2102,7 +2185,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           stageNodes: widget.stageNodes,
           itemName: widget.itemName,
           sheetLabel: _sheetLabel,
-          densityGCm3: _material?.densityGCm3,
           countFamily: _countFamily,
           followsSheetPlan: true,
           // The widget edits a copy of this very record, so what comes back
@@ -2836,7 +2918,7 @@ class _MaterialMenuState extends State<_MaterialMenu> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: const Text(
-          'Not set — no weight',
+          'Not set',
           style: TextStyle(
             color: SoftErpTheme.textSecondary,
             fontSize: 12.5,
@@ -2869,16 +2951,6 @@ class _MaterialMenuState extends State<_MaterialMenu> {
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              material.densityLabel,
-              style: const TextStyle(
-                color: SoftErpTheme.textSecondary,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
           ],

@@ -4,8 +4,57 @@ import 'package:core_erp/features/production_pipelines/domain/sheet_part.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/raw_sheet_review.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/sheet_dimension_figure.dart';
+import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
+import 'package:core_erp/features/vendors/domain/vendor_definition.dart';
+import 'package:core_erp/features/vendors/domain/vendor_inputs.dart';
+import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+
+VendorDefinition _vendor(int id, String name) => VendorDefinition(
+  id: id,
+  name: name,
+  alias: '',
+  gstNumber: '',
+  address: '',
+  contactName: '',
+  phone: '',
+  email: '',
+  isArchived: false,
+  usageCount: 0,
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
+);
+
+/// The Vendors master, in memory.
+class _Vendors implements VendorRepository {
+  final List<VendorDefinition> rows = [_vendor(1, 'Tata Steel')];
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<VendorDefinition>> getVendors() async => List.of(rows);
+
+  @override
+  Future<VendorDefinition?> getVendor(int id) async =>
+      rows.where((v) => v.id == id).firstOrNull;
+
+  @override
+  Future<VendorDefinition> createVendor(CreateVendorInput input) async {
+    final created = _vendor(rows.length + 1, input.name);
+    rows.add(created);
+    return created;
+  }
+
+  @override
+  Future<VendorDefinition> updateVendor(UpdateVendorInput input) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> deleteVendor(int id) async {}
+}
 
 /// The Master Data editor without a dialog around it: the same panel the
 /// dialog shows, set into a narrow side panel. It has to lay out in the room it
@@ -42,34 +91,45 @@ void main() {
     VoidCallback? onCancel,
     VoidCallback? onEdit,
     bool showHeader = true,
+    String? alloy,
+    VendorsProvider? vendors,
   }) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    Widget app(Widget child) => vendors == null
+        ? child
+        : ChangeNotifierProvider<VendorsProvider>.value(
+            value: vendors,
+            child: child,
+          );
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Row(
-            children: [
-              const Expanded(child: SizedBox()),
-              SizedBox(
-                width: 520,
-                child: MasterDataPanel(
-                  key: const ValueKey<String>('panel'),
-                  baseline: baseline,
-                  itemName: 'Alloy - 16A - MS Sheet',
-                  pipelineName: 'Cut → Punch',
-                  parts: parts,
-                  materials: materials,
-                  readOnly: readOnly,
-                  embedded: true,
-                  showHeader: showHeader,
-                  onSave: onSave ?? (_) {},
-                  onCancel: onCancel,
-                  onEdit: onEdit,
+      app(
+        MaterialApp(
+          home: Scaffold(
+            body: Row(
+              children: [
+                const Expanded(child: SizedBox()),
+                SizedBox(
+                  width: 520,
+                  child: MasterDataPanel(
+                    key: const ValueKey<String>('panel'),
+                    alloy: alloy,
+                    baseline: baseline,
+                    itemName: 'Alloy - 16A - MS Sheet',
+                    pipelineName: 'Cut → Punch',
+                    parts: parts,
+                    materials: materials,
+                    readOnly: readOnly,
+                    embedded: true,
+                    showHeader: showHeader,
+                    onSave: onSave ?? (_) {},
+                    onCancel: onCancel,
+                    onEdit: onEdit,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -224,11 +284,11 @@ void main() {
     await tester.pump();
 
     final row = saved!.stageReconciliations.single;
-    final weights = planned.weighAt(7.85);
     expect(row.inputSheets, 1);
     expect(row.outputPieces, planned.pieceCount);
-    expect(row.inputKg, closeTo(weights.sheetKg, 0.001));
-    expect(row.scrapKg, closeTo(weights.offcutKg, 0.001));
+    // Nothing weighed, nothing claimed: no density makes up a weight.
+    expect(row.inputKg, 0);
+    expect(row.scrapKg, 0);
     expect(row.outputLabel, 'Alloy - 16A - MS Sheet');
     expect(saved!.bands, isNotEmpty);
   });
@@ -318,7 +378,8 @@ void main() {
     );
     expect(find.text('Alloy - 16A - MS Sheet'), findsOneWidget);
     expect(find.text('${planned.pieceCount} pcs'), findsWidgets);
-    expect(find.textContaining('Steel / MS · 7.85'), findsOneWidget);
+    expect(find.text('Steel / MS'), findsOneWidget, reason: 'the Alloy row');
+    expect(find.text('Weights per sheet'.toUpperCase()), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('raw-review-print')),
       findsOneWidget,
@@ -330,14 +391,126 @@ void main() {
       baseline: following,
       partName: 'Dolly Patti',
       sheetLabel: 'Steel / MS · 48 × 96 in · 1.6 mm',
-      material: materials.single,
     );
-    expect(sections.map((s) => s.title), contains('Weights per sheet'));
+    expect(sections.map((s) => s.title), isNot(contains('Weights per sheet')));
+    final sheet = sections.firstWhere((s) => s.title == 'Sheet');
+    expect(
+      sheet.rows.map((r) => r.$1),
+      containsAll(['Alloy', 'Grade', 'Vendor']),
+    );
     final bytes = await buildRawSheetReviewPdf(
       baseline: following,
       sections: sections,
       partName: 'Dolly Patti',
     );
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+  });
+
+  // --- alloy from the part, scrap from the balance, vendor -----------------
+
+  testWidgets('the alloy is the part\'s: shown, not picked, and stamped', (
+    tester,
+  ) async {
+    PenPaperBaseline? saved;
+    await mount(tester, alloy: 'Brass', onSave: (b) => saved = b);
+    expect(find.byKey(const ValueKey<String>('sheet-material')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('sheet-alloy')),
+        matching: find.text('Brass'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Save Master Data'));
+    await tester.pump();
+    expect(saved!.materialName, 'Brass', reason: 'over the old Steel / MS');
+  });
+
+  testWidgets('scrap follows the balance, and offers it back once typed over', (
+    tester,
+  ) async {
+    PenPaperBaseline? saved;
+    await mount(tester, baseline: following, onSave: (b) => saved = b);
+    await openStep(tester, 'Material data');
+
+    Finder field(String key) => find.descendant(
+      of: find.byKey(ValueKey<String>(key)),
+      matching: find.byType(TextField),
+    );
+    String scrap() =>
+        tester.widget<TextField>(field('material-scrap-kg')).controller!.text;
+
+    await tester.enterText(field('material-input-kg'), '4');
+    await tester.pump();
+    await tester.enterText(field('material-output-kg'), '3');
+    await tester.pump();
+    expect(scrap(), '1.0', reason: '4 in − 3 out');
+
+    await tester.ensureVisible(field('material-scrap-kg'));
+    await tester.enterText(field('material-scrap-kg'), '0.5');
+    await tester.pump();
+    final use = find.byKey(
+      const ValueKey<String>('material-scrap-use-balance'),
+    );
+    expect(use, findsOneWidget);
+    expect(find.text('Use 1.0 kg'), findsOneWidget);
+
+    // Typed over, a new weight leaves it alone…
+    await tester.enterText(field('material-output-kg'), '2');
+    await tester.pump();
+    expect(scrap(), '0.5');
+
+    // …until the balance is taken back.
+    await tester.tap(use);
+    await tester.pump();
+    expect(scrap(), '2.0');
+    expect(use, findsNothing);
+
+    await tester.tap(find.text('Save Master Data'));
+    await tester.pump();
+    final row = saved!.stageReconciliations.single;
+    expect(row.scrapKg, 2);
+    expect(saved!.materialFromPlan, isTrue, reason: 'a weight is not a count');
+  });
+
+  testWidgets('a vendor is picked from the master, or added to it', (
+    tester,
+  ) async {
+    final repo = _Vendors();
+    final vendors = VendorsProvider(repository: repo);
+    await vendors.refresh();
+    PenPaperBaseline? saved;
+    await mount(tester, vendors: vendors, onSave: (b) => saved = b);
+
+    await tester.tap(find.byKey(const ValueKey<String>('sheet-vendor')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tata Steel').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Master Data'));
+    await tester.pump();
+    expect(saved!.vendorId, 1);
+    expect(saved!.vendorName, 'Tata Steel');
+
+    await tester.tap(find.byKey(const ValueKey<String>('sheet-vendor')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Jindal');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add vendor "Jindal"'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Master Data'));
+    await tester.pump();
+    expect(saved!.vendorName, 'Jindal');
+    expect(repo.rows.map((v) => v.name), contains('Jindal'));
+  });
+
+  testWidgets('an unloaded vendor list is fetched after the first frame', (
+    tester,
+  ) async {
+    // Fetched from initState, the refresh notified mid-build and threw —
+    // found by the end-to-end run, where the list starts empty.
+    final vendors = VendorsProvider(repository: _Vendors());
+    await mount(tester, vendors: vendors);
+    expect(tester.takeException(), isNull);
+    expect(vendors.vendors.map((v) => v.name), ['Tata Steel']);
   });
 }

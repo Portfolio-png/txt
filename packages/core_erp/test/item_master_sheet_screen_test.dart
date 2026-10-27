@@ -123,6 +123,7 @@ ItemDefinition _item({
   required String name,
   required int groupId,
   String partCode = 'SADP48',
+  List<ItemVariationNodeDefinition> variationTree = const [],
 }) =>
     ItemDefinition(
       id: id,
@@ -139,7 +140,7 @@ ItemDefinition _item({
       usageCount: 0,
       createdAt: DateTime(2026, 5, 15, 10, 5),
       updatedAt: DateTime(2026, 5, 15, 10, 5),
-      variationTree: const [],
+      variationTree: variationTree,
     );
 
 Future<void> _pumpScreen(
@@ -654,6 +655,44 @@ void main() {
       expect(tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
           isTrue,
           reason: 'a save that landed leaves edit mode');
+    });
+
+    testWidgets('the raw sheet names the part\'s own Alloy, not one of its own',
+        (tester) async {
+      ItemVariationNodeDefinition node(int id, String name,
+              {ItemVariationNodeKind kind = ItemVariationNodeKind.property,
+              int? parent,
+              List<ItemVariationNodeDefinition> children = const []}) =>
+          ItemVariationNodeDefinition(
+            id: id,
+            itemId: 500,
+            parentNodeId: parent,
+            kind: kind,
+            name: name,
+            displayName: name,
+            position: 0,
+            isArchived: false,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+            children: children,
+            inputType: kind == ItemVariationNodeKind.property ? 'Material' : 'Text',
+          );
+      final patti = _item(id: 500, name: 'Patti', groupId: 11, variationTree: [
+        node(10, 'Alloy', children: [
+          node(11, 'Brass', kind: ItemVariationNodeKind.value, parent: 10),
+        ]),
+      ]);
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel.alloy, 'Brass');
+      expect(panel.materials, isEmpty,
+          reason: 'no picker of its own: alloy is changed in its column');
     });
 
     testWidgets('a die changed anywhere re-reads the open part (real time)',

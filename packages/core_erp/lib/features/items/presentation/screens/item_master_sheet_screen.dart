@@ -772,7 +772,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       pipelineId: part?.defaultPipelineId,
       pipelineName: part?.defaultPipelineName ?? '',
       parts: _plannableParts(),
-      materials: _materials?.materials ?? const [],
+      // Alloy and the sheet's material are one thing: the panel shows the
+      // part's Alloy cell and is not given a picker of its own.
+      alloy: _alloyNow,
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
@@ -1719,6 +1721,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final column = sheet.columnBoundTo(SheetBindsTo.partCode);
     if (column == null) return '';
     return _controller.groupItemController.draft.get(column.id)?.textValue ?? '';
+  }
+
+  /// The part's Alloy as the sheet shows it now — typed or picked, saved or
+  /// not — so the raw sheet panel never names a different alloy.
+  String get _alloyNow {
+    final sheet = _controller.groupItemController.sheetDef;
+    final column = sheet.columnBoundTo(SheetBindsTo.variation('Alloy'));
+    if (column == null) return '';
+    final value = _controller.groupItemController.draft.get(column.id);
+    return (value?.optionLabel ?? value?.textValue ?? '').trim();
   }
 
   String get _partLabelNow {
