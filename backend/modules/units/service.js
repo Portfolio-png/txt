@@ -547,8 +547,43 @@ function convertQuantity(qtyBase, fromUnit, toUnit) {
   return qtyBase;
 }
 
+/// A quantity spelt out down its family's ladder, largest unit first — 2900
+/// pieces is [{20 gro}, {1 doz}, {8 Pc}], the way 2,900 is 2 thousand 9
+/// hundred. Exact and whole; empty rungs left out; zero is [{0 base}]; a
+/// negative carries its sign on the first part. Mirrors Units.breakdown in
+/// packages/core_erp/lib/features/units/domain/units.dart.
+function breakdownQuantity(qtyBase, family) {
+  const factorOf = (u) => Number(u.factor_to_base || u.factorToBase || 1);
+  const units = family.ladder || family.units || [];
+  const base = family.base || [...units].sort((a, b) => factorOf(a) - factorOf(b))[0];
+  if (Number(qtyBase) === 0) return [{ unit: base, count: 0 }];
+  const rungs = units
+    .filter((u) => factorOf(u) > factorOf(base) && u.on_ladder !== 0 && u.onLadder !== false)
+    .sort((a, b) => factorOf(b) - factorOf(a));
+  let left = Math.abs(Number(qtyBase));
+  const parts = [];
+  for (const unit of rungs) {
+    const count = Math.floor(left / factorOf(unit));
+    if (count === 0) continue;
+    parts.push({ unit, count });
+    left -= count * factorOf(unit);
+  }
+  if (left > 0) parts.push({ unit: base, count: left });
+  if (Number(qtyBase) < 0) parts[0] = { ...parts[0], count: -parts[0].count };
+  return parts;
+}
+
+/// breakdownQuantity as one line: "20 gro · 1 doz · 8 Pc".
+function formatBreakdown(qtyBase, family) {
+  return breakdownQuantity(qtyBase, family)
+    .map((part) => `${part.count} ${part.unit.symbol}`.trim())
+    .join(' · ');
+}
+
 module.exports = {
   UnitParseError,
+  breakdownQuantity,
+  formatBreakdown,
   STANDARD_FAMILIES,
   seedStandardUnitFamilies,
   parseQuantity,

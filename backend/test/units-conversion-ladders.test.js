@@ -8,6 +8,7 @@ const {
   UnitParseError,
   parseQuantity,
   formatQuantity,
+  formatBreakdown,
   convertQuantity,
   STANDARD_FAMILIES,
 } = require('../modules/units/service');
@@ -183,4 +184,29 @@ test('Units Contract: an integral-only family never auto-promotes to a fraction'
     formatQuantity(1250000, { ...massFamily, units: massLadder, ladder: massLadder, integral_only: 0 }),
     '1.25 kg',
   );
+});
+
+// --- Ladder breakdown -------------------------------------------------------
+// The same vectors are asserted against Units.breakdown in
+// packages/core_erp/test/units_contract_test.dart.
+test('Units Contract: a count spells out down the ladder, like thousands and hundreds', () => {
+  const countFamily = STANDARD_FAMILIES.find((f) => f.code === 'count');
+  const base = { ...countFamily.base, factor_to_base: 1, on_ladder: 1 };
+  const ladder = [
+    base,
+    ...countFamily.ladder.map((u) => ({ ...u, factor_to_base: u.factorToBase, on_ladder: 1 })),
+  ];
+  const family = { ...countFamily, base, units: ladder, ladder };
+  const fixture = [
+    { base: 2900, text: '20 gro · 1 doz · 8 Pc' },
+    { base: 144, text: '1 gro' },
+    { base: 156, text: '1 gro · 1 doz' },
+    { base: 155, text: '1 gro · 11 Pc' },
+    { base: 11, text: '11 Pc' },
+    { base: 0, text: '0 Pc' },
+    { base: -2900, text: '-20 gro · 1 doz · 8 Pc' },
+  ];
+  for (const { base: qty, text } of fixture) {
+    assert.equal(formatBreakdown(qty, family), text, `${qty} base units`);
+  }
 });

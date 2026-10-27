@@ -185,6 +185,30 @@ void main() {
       });
     });
 
+    // The same vectors are asserted against breakdownQuantity in
+    // backend/test/units-conversion-ladders.test.js.
+    test('A count spells out down the ladder, like thousands and hundreds', () {
+      const fixture = <int, String>{
+        2900: '20 gro · 1 doz · 8 Pc', // 2880 + 12 + 8
+        144: '1 gro',
+        156: '1 gro · 1 doz',
+        155: '1 gro · 11 Pc',
+        11: '11 Pc',
+        0: '0 Pc',
+        -2900: '-20 gro · 1 doz · 8 Pc',
+      };
+      fixture.forEach((base, text) {
+        expect(
+          Units.formatBreakdown(Quantity(base, countFamily)),
+          text,
+          reason: '$base base units',
+        );
+      });
+      final parts = Units.breakdown(Quantity(2900, countFamily));
+      expect([for (final p in parts) p.count], [20, 1, 8]);
+      expect([for (final p in parts) p.unit.symbol], ['gro', 'doz', 'Pc']);
+    });
+
     test('A family that is not integral-only still promotes to a decimal', () {
       // The right answer for mass: 1.25 kg is a real weight, and the fix above
       // must not have made every family integral.

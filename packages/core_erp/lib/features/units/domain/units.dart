@@ -166,4 +166,40 @@ abstract final class Units {
       divisor: u.factorToBase,
     );
   }
+
+  /// [q] spelt out down its family's ladder, largest unit first — the way
+  /// 2,900 is 2 thousand 9 hundred: 2900 pieces is 20 gro, 1 doz, 8 Pc.
+  ///
+  /// Exact and whole: each rung takes what divides, the rest falls to the
+  /// next, and whatever is left lands on the base. Rungs with nothing are
+  /// left out; zero is `[0 base]`. A negative quantity carries its sign on
+  /// the first part only. Mirrors `breakdownQuantity` in
+  /// backend/modules/units/service.js.
+  static List<({Unit unit, int count})> breakdown(Quantity q) {
+    final base = q.family.base;
+    if (q.base == 0) return [(unit: base, count: 0)];
+    final rungs = [
+      for (final unit in q.family.ladder)
+        if (unit.factorToBase > base.factorToBase) unit,
+    ]..sort((a, b) => b.factorToBase.compareTo(a.factorToBase));
+
+    var left = q.base.abs();
+    final parts = <({Unit unit, int count})>[];
+    for (final unit in rungs) {
+      final count = left ~/ unit.factorToBase;
+      if (count == 0) continue;
+      parts.add((unit: unit, count: count));
+      left -= count * unit.factorToBase;
+    }
+    if (left > 0) parts.add((unit: base, count: left));
+    if (q.base < 0) {
+      parts[0] = (unit: parts[0].unit, count: -parts[0].count);
+    }
+    return parts;
+  }
+
+  /// [breakdown] as one line: "20 gro · 1 doz · 8 Pc".
+  static String formatBreakdown(Quantity q) => [
+    for (final part in breakdown(q)) '${part.count} ${part.unit.symbol}'.trim(),
+  ].join(' · ');
 }
