@@ -89,6 +89,14 @@ class SheetController extends ChangeNotifier {
   /// index it started with can point at a different row by then (Remove, or a
   /// reload), and stamping the saved id onto THAT row made its next edit
   /// overwrite somebody else's part.
+  /// Where the row with [rowKey] sits now, or -1 when it is gone.
+  int indexOfRowKey(Object rowKey) {
+    for (var i = 0; i < _drafts.length; i += 1) {
+      if (identical(_drafts[i].rowKey, rowKey)) return i;
+    }
+    return -1;
+  }
+
   int indexOfDraft(SheetDraft draft) {
     for (var i = 0; i < _drafts.length; i += 1) {
       if (identical(_drafts[i], draft)) return i;
@@ -443,6 +451,7 @@ class SheetController extends ChangeNotifier {
       entityId: entityId,
       values: current.values,
       newOptions: current.newOptions,
+      rowKey: current.rowKey,
     );
 
     if (partCode != null && partCode.trim().isNotEmpty) {
@@ -522,8 +531,15 @@ class SheetController extends ChangeNotifier {
   /// are; never call it on a row somebody is editing.
   void replaceRowAt(int row, SheetDraft draft) {
     if (row < 0 || row >= _drafts.length) return;
-    draft.markClean();
-    _drafts[row] = draft;
+    // Still the same row of the sheet, whatever record it now holds.
+    final kept = SheetDraft(
+      sheetKey: draft.sheetKey,
+      entityId: draft.entityId,
+      values: draft.values,
+      newOptions: draft.newOptions,
+      rowKey: _drafts[row].rowKey,
+    )..markClean();
+    _drafts[row] = kept;
     _forgetOwnIdentities();
     _deriveAndValidate();
     notifyListeners();
@@ -640,7 +656,19 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Asked before an existing option is set, with the row, the column and the
+  /// option. Answering true means the host took the pick over — the Part Name
+  /// of a part that already exists loads that part rather than naming a new
+  /// one after it — and the cell is left to the host.
+  bool Function(int row, ColumnDef column, ColumnOption option)? onPickExisting;
+
   void setOption(int columnId, ColumnOption option, {int? row}) {
+    final column = _sheetDef.getColumn(columnId);
+    if (column != null &&
+        !option.isNew &&
+        onPickExisting?.call(row ?? _row, column, option) == true) {
+      return;
+    }
     final target = _draftFor(row);
     final existing = target.get(columnId) ?? CellValue(columnId: columnId);
     target.set(

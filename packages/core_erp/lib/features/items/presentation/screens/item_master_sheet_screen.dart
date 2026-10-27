@@ -134,9 +134,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   static const _railPrefKey = 'item_sheet.rail_collapsed';
 
 
-  /// Dies and machines entered before the part exists. Written once it does.
-  final List<DieSheetDraft> _stagedDies = [];
-  final List<MachineSheetDraft> _stagedMachines = [];
+  /// Dies and machines entered before their row's part exists, held per row
+  /// and written onto THAT row's part once it does. One list for the screen
+  /// put a die held on row 2 onto whichever part was open when something
+  /// saved.
+  final Map<Object, List<DieSheetDraft>> _heldDies = Map.identity();
+  final Map<Object, List<MachineSheetDraft>> _heldMachines = Map.identity();
+
+  Object get _cursorRowKey => _controller.groupItemController.draft.rowKey;
+
+  /// The cursor row's held dies and machines — what the sections show.
+  List<DieSheetDraft> get _stagedDies =>
+      _heldDies.putIfAbsent(_cursorRowKey, () => []);
+  List<MachineSheetDraft> get _stagedMachines =>
+      _heldMachines.putIfAbsent(_cursorRowKey, () => []);
   final Set<int> _madeHere = <int>{};
 
   static const _sections = [
@@ -385,7 +396,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       final ok = await _controller.commitRow(row);
       if (!mounted) return;
       if (ok) {
-        final id = _controller.savedItemId;
+        // The row just left, not the cursor's: that has moved on.
+        final id = _committedPartId;
         if (id != null) _madeHere.add(id);
         await _flushStaged();
         // A nesting arranged before the part existed is saved with it now.
@@ -394,22 +406,56 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
   }
 
-  /// Writes the dies and machines held while the part did not exist.
-  ///
-  /// Two calls, because each list is a full replace on the item. Held records
-  /// are created first and only then linked, so a create that succeeded but a
-  /// link that failed leaves the record in its master rather than losing it.
+  /// The part the last successful row save wrote, wherever its row is now.
+  int? get _committedPartId {
+    final at = _controller.lastCommittedRow;
+    final sheet = _controller.groupItemController;
+    if (at == null || at < 0 || at >= sheet.rowCount) return null;
+    return sheet.draftAt(at).entityId;
+  }
+
+  ItemDefinition? _partById(int id) {
+    for (final item in context.read<ItemsProvider>().items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  /// Writes the dies and machines held on every row whose part now exists,
+  /// each onto its own row's part. A row removed takes what it held with it.
   Future<void> _flushStaged() async {
-    final part = _livePart;
-    if (part == null) return;
-    if (_stagedDies.isEmpty && _stagedMachines.isEmpty) return;
     if (!AppFlowHooks.canCreateDieFromSheet &&
         !AppFlowHooks.canCreateMachineFromSheet) {
       return;
     }
+    final sheet = _controller.groupItemController;
+    final keys = {..._heldDies.keys, ..._heldMachines.keys}.toList();
+    for (final key in keys) {
+      if (!mounted) return;
+      final dies = _heldDies[key] ?? const <DieSheetDraft>[];
+      final machines = _heldMachines[key] ?? const <MachineSheetDraft>[];
+      if (dies.isEmpty && machines.isEmpty) continue;
+      final at = sheet.indexOfRowKey(key);
+      if (at < 0) {
+        _heldDies.remove(key);
+        _heldMachines.remove(key);
+        continue;
+      }
+      final id = sheet.draftAt(at).entityId;
+      final part = id == null ? null : _partById(id);
+      if (part == null) continue;
+      await _flushHeldOnto(part, key);
+    }
+  }
 
+  /// Two calls, because each list is a full replace on the item. Held records
+  /// are created first and only then linked, so a create that succeeded but a
+  /// link that failed leaves the record in its master rather than losing it.
+  Future<void> _flushHeldOnto(ItemDefinition part, Object rowKey) async {
+    final held = _heldDies[rowKey] ?? <DieSheetDraft>[];
     final dieIds = <String>[for (final d in part.dies) d.id];
-    for (final draft in List<DieSheetDraft>.from(_stagedDies)) {
+    var diesAdded = false;
+    for (final draft in List<DieSheetDraft>.from(held)) {
       if (!mounted) return;
       final outcome = await AppFlowHooks.createDieFromSheet?.call(context, draft);
       final id = outcome?.record?.id;
@@ -426,11 +472,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         continue;
       }
       dieIds.add(id);
-      if (mounted) setState(() => _stagedDies.remove(draft));
+      diesAdded = true;
+      if (mounted) setState(() => held.remove(draft));
     }
 
+    final heldMachines = _heldMachines[rowKey] ?? <MachineSheetDraft>[];
     final machineIds = <String>[for (final m in part.machines) m.id];
-    for (final draft in List<MachineSheetDraft>.from(_stagedMachines)) {
+    var machinesAdded = false;
+    for (final draft in List<MachineSheetDraft>.from(heldMachines)) {
       if (!mounted) return;
       final outcome =
           await AppFlowHooks.createMachineFromSheet?.call(context, draft);
@@ -446,12 +495,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         continue;
       }
       machineIds.add(id);
-      if (mounted) setState(() => _stagedMachines.remove(draft));
+      machinesAdded = true;
+      if (mounted) setState(() => heldMachines.remove(draft));
     }
 
     if (!mounted) return;
-    if (dieIds.isNotEmpty) await _setDies(dieIds);
-    if (machineIds.isNotEmpty) await _setMachines(machineIds);
+    if (diesAdded) await _setDiesOn(part.id, dieIds);
+    if (machinesAdded) await _setMachinesOn(part.id, machineIds);
   }
 
   void _toast(String message, {bool isError = false}) {
@@ -467,8 +517,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   bool get _hasUnsavedWork =>
       _controller.hasUnsavedWork ||
-      _stagedDies.isNotEmpty ||
-      _stagedMachines.isNotEmpty;
+      _heldDies.values.any((held) => held.isNotEmpty) ||
+      _heldMachines.values.any((held) => held.isNotEmpty);
 
   /// Back with something unwritten. Rows commit as the cursor leaves them,
   /// but the row under the cursor, an edit to a saved row and held dies were
@@ -1789,17 +1839,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Future<String?> _setDies(List<String> dieIds) async {
     final part = _livePart;
     if (part == null) return 'Save the part first.';
+    return _setDiesOn(part.id, dieIds);
+  }
+
+  Future<String?> _setDiesOn(int partId, List<String> dieIds) async {
     final items = context.read<ItemsProvider>();
-    final saved = await items.setItemLinks(part.id, dieIds: dieIds);
+    final saved = await items.setItemLinks(partId, dieIds: dieIds);
     return saved == null ? (items.errorMessage ?? 'That did not save.') : null;
   }
 
   Future<String?> _setMachines(List<String> machineIds) async {
     final part = _livePart;
     if (part == null) return 'Save the part first.';
+    return _setMachinesOn(part.id, machineIds);
+  }
+
+  Future<String?> _setMachinesOn(int partId, List<String> machineIds) async {
     final items = context.read<ItemsProvider>();
-    final saved =
-        await items.setItemLinks(part.id, machineIds: machineIds);
+    final saved = await items.setItemLinks(partId, machineIds: machineIds);
     return saved == null ? (items.errorMessage ?? 'That did not save.') : null;
   }
 
@@ -2006,7 +2063,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         ? (_controller.lastCommittedRow ?? -1)
         : sheet.indexOfDraft(before);
     if (ok) {
-      final id = _controller.savedItemId;
+      final id = _committedPartId;
       if (id != null) _madeHere.add(id);
       await _flushStaged();
       if (mounted && _treeDirty) await _saveTree();
@@ -2025,12 +2082,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _toast(error ?? _controller.statusBarMessage, isError: error != null);
   }
 
-  /// The deal line's Save on a saved part: the deal travels with the part row,
-  /// so re-commit it.
+  /// The deal line's Save on a saved part: the deal travels with its part's
+  /// row, so re-commit it.
   Future<bool> _saveDeal() async {
+    final row = _controller.dealRow ?? _controller.groupItemController.row;
     await _handleSave();
     if (!mounted) return false;
-    return _controller.rowError(0) == null;
+    return _controller.rowError(row) == null;
   }
 
   String _pinnedPartName() {

@@ -73,7 +73,9 @@ class SheetDraft {
     this.entityId,
     Map<int, CellValue>? values,
     List<ColumnOption>? newOptions,
-  })  : _values = Map<int, CellValue>.from(values ?? {}),
+    Object? rowKey,
+  })  : rowKey = rowKey ?? Object(),
+        _values = Map<int, CellValue>.from(values ?? {}),
         _newOptions = List<ColumnOption>.from(newOptions ?? []);
 
   final String sheetKey;
@@ -85,6 +87,13 @@ class SheetDraft {
   /// name and code — and the code is unique, so the server would refuse the
   /// save rather than obviously duplicating. A row knows what it is.
   final int? entityId;
+
+  /// Which row of the sheet this is, kept when the row's draft is replaced —
+  /// by its save (which hands it an id) or by a part loaded into it. Things
+  /// that belong to a row rather than to a record (dies held before the part
+  /// exists, the deal being typed) follow the row by this, not by the draft
+  /// object or its index, both of which change.
+  final Object rowKey;
   final Map<int, CellValue> _values;
   final List<ColumnOption> _newOptions;
 
@@ -129,6 +138,7 @@ class SheetDraft {
       entityId: entityId,
       values: _values,
       newOptions: _newOptions,
+      rowKey: rowKey,
     );
   }
 }

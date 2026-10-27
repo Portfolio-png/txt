@@ -241,7 +241,19 @@ class MiniTable extends StatelessWidget {
                             bottom: BorderSide(color: Color(0xFFE2E8F0)),
                           ),
                         ),
-                        child: rowStatusBuilder!(r),
+                        // The gutter selects its row too — the way onto a saved
+                        // row whose cells are closed. Buttons in it still win
+                        // their own taps.
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            controller.selectRow(r);
+                            onRowSelected?.call(r);
+                          },
+                          child: SizedBox.expand(
+                            child: Center(child: rowStatusBuilder!(r)),
+                          ),
+                        ),
                       ),
                   ],
                 ),

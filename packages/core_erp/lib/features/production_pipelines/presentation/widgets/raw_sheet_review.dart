@@ -61,7 +61,7 @@ List<RawSheetReviewSection> rawSheetReviewSections({
       if (parts.isEmpty) ('Pieces', 'Nothing planned on the sheet yet'),
       for (final entry in parts)
         (entry.label, '${entry.count} × ${entry.sizeLabel}'),
-      if (baseline.kerfMm > 0) ('Part gap', mm(baseline.kerfMm)),
+      if (baseline.kerfMm > 0) ('Pitch', mm(baseline.kerfMm)),
       if (baseline.edgeTrimMm > 0) ('Edge trim', mm(baseline.edgeTrimMm)),
       ('Pieces per sheet', _pieces(baseline.pieceCount, countFamily)),
       if (sheetAreaMm2 > 0) ('Yield', '${yieldPct.toStringAsFixed(1)}%'),

@@ -1216,7 +1216,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: const <Widget>[
                         Text(
-                          'Part gap',
+                          'Pitch',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 12.5,
@@ -1612,7 +1612,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             SizedBox(
               width: 78,
               child: Text(
-                'PART GAP',
+                'PITCH',
                 style: TextStyle(
                   color: kerf > 0
                       ? SoftErpTheme.textPrimary

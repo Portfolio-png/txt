@@ -10,6 +10,7 @@ class ColumnOption {
     this.isNew = false,
     this.createdAt,
     this.createdBy,
+    this.detail = '',
   });
 
   final int id;
@@ -19,6 +20,11 @@ class ColumnOption {
   final bool isNew;
   final String? createdAt;
   final int? createdBy;
+
+  /// A second line under the label, to tell apart options that read the
+  /// same — two parts named "Patti" in one group, by their codes. Not part of
+  /// the option's identity.
+  final String detail;
 
   ColumnOption copyWith({
     int? id,
@@ -37,6 +43,7 @@ class ColumnOption {
       isNew: isNew ?? this.isNew,
       createdAt: createdAt ?? this.createdAt,
       createdBy: createdBy ?? this.createdBy,
+      detail: detail,
     );
   }
 

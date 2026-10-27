@@ -148,12 +148,17 @@ class _ValueCellState extends State<ValueCell> {
         widget.column.kind == ColumnKind.gauge ||
         widget.column.kind == ColumnKind.material;
 
-    // A saved row is closed until its Edit: it shows its values but takes no
-    // taps, no picker and no keyboard focus.
+    // A saved row is closed until its Edit: it shows its values, opens no
+    // picker and takes no keyboard focus — but a tap still selects the row,
+    // which is how the sections below are moved onto that part.
     final locked = widget.controller.isRowLocked(widget.rowIndex);
     _focusNode.canRequestFocus = !locked;
     if (locked) {
-      return IgnorePointer(child: _lockedBody(cellVal));
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: _lockedBody(cellVal),
+      );
     }
 
     return CallbackShortcuts(
@@ -274,6 +279,8 @@ class _ValueCellState extends State<ValueCell> {
       height: widget.metrics.rowHeight,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       alignment: Alignment.centerLeft,
+      // The selected row reads as selected, saved or not.
+      color: widget.isSelected ? const Color(0xFFEEF2FF) : null,
       child: Text(
         text.isEmpty ? '—' : text,
         maxLines: 1,
@@ -889,7 +896,12 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
     final options = _candidates;
 
     final filteredOptions = options
-        .where((o) => _query.isEmpty || o.label.toLowerCase().contains(_query))
+        .where(
+          (o) =>
+              _query.isEmpty ||
+              o.label.toLowerCase().contains(_query) ||
+              o.detail.toLowerCase().contains(_query),
+        )
         .toList();
 
     final filteredParties = parties
@@ -1044,6 +1056,15 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                         opt.label,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
+                      subtitle: opt.detail.isEmpty
+                          ? null
+                          : Text(
+                              opt.detail,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
                       trailing: opt.isNew
                           ? Container(
                               padding: const EdgeInsets.symmetric(

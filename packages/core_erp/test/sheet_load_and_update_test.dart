@@ -655,6 +655,67 @@ void main() {
       expect(repo.updated.single.id, id);
     });
 
+    // --- picking an existing part ------------------------------------------
+
+    ColumnOption nameOption(ItemMasterController c, int id) {
+      final column = c.groupItemController.sheetDef.columnBoundTo(
+        SheetBindsTo.name,
+      )!;
+      return c.groupItemController.options.firstWhere(
+        (o) => o.columnId == column.id && o.id == id,
+      );
+    }
+
+    int nameColumn(ItemMasterController c) =>
+        c.groupItemController.sheetDef.columnBoundTo(SheetBindsTo.name)!.id;
+
+    test('picking an existing part loads it into the row, as an edit', () async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 10);
+      final c = await sheetWith(stored: [patti]);
+      final sheet = c.groupItemController;
+
+      sheet.setOption(nameColumn(c), nameOption(c, 500), row: 0);
+      expect(sheet.draftAt(0).entityId, 500, reason: 'that part, not a new one');
+      expect(sheet.isRowLocked(0), isFalse, reason: 'open to edit right away');
+      expect(c.savedItemId, 500, reason: 'the sections below follow it');
+      expect(sheet.validateRow(0), isTrue, reason: 'not "already exists"');
+
+      fill(c, 0, name: 'Patti Mk2');
+      expect(await c.commitRow(0), isTrue);
+      expect(repo.created, isEmpty);
+      expect(repo.updated.single.id, 500);
+    });
+
+    test('a part already on another row is gone to, not loaded twice', () async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 10);
+      final c = await sheetWith(stored: [patti]);
+      final sheet = c.groupItemController;
+      c.loadItems(<ItemDefinition>[patti]);
+      sheet.addRow();
+      expect(sheet.row, 1);
+
+      sheet.setOption(nameColumn(c), nameOption(c, 500), row: 1);
+      expect(sheet.row, 0);
+      expect(sheet.rowCount, 1, reason: 'the row that only held the pick goes');
+    });
+
+    test('two parts with one name are both offered, told apart by code', () async {
+      final c = await sheetWith(
+        stored: [
+          _item(id: 500, name: 'Patti', groupId: 10, partCode: 'SADP48'),
+          _item(id: 501, name: 'Patti', groupId: 10, partCode: 'SADP49'),
+        ],
+      );
+      final offered = c.groupItemController.options
+          .where((o) => o.columnId == nameColumn(c))
+          .toList();
+      expect(offered.map((o) => o.id), [500, 501]);
+      expect(offered.map((o) => o.detail), ['SADP48', 'SADP49']);
+
+      c.groupItemController.setOption(nameColumn(c), offered[1], row: 0);
+      expect(c.groupItemController.draftAt(0).entityId, 501);
+    });
+
     test('a blank row is not a failure and is not written', () async {
       final c = await sheetWith();
       expect(await c.commitRow(0), isFalse);

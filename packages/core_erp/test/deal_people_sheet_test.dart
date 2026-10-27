@@ -609,6 +609,64 @@ void main() {
       expect(controller.dealContactIdsForSave(), [12]);
     });
 
+    test('the deal is each part\'s, and follows the selected row', () async {
+      final forGold = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        developedFor: const DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+          quotationAmount: 85000,
+        ),
+      );
+      final forNobody = _item(id: 501, name: 'Dolly', groupId: 11);
+      await open(existing: [forGold, forNobody]);
+      controller.loadItems(<ItemDefinition>[forGold, forNobody]);
+      expect(controller.dealPartyId, 5);
+
+      controller.groupItemController.selectRow(1);
+      expect(controller.savedItemId, 501);
+      expect(controller.isExternal, isFalse);
+      expect(controller.dealPartyId, isNull);
+
+      controller.groupItemController.selectRow(0);
+      expect(controller.dealPartyId, 5);
+      expect(controller.clientVendorController.draft.get(25)?.intValue, 85000);
+    });
+
+    test('a deal typed for one part is written to it alone, even after moving on',
+        () async {
+      final forGold = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        developedFor: const DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+          quotationAmount: 85000,
+        ),
+      );
+      final forNobody = _item(id: 501, name: 'Dolly', groupId: 11);
+      await open(existing: [forGold, forNobody]);
+      controller.loadItems(<ItemDefinition>[forGold, forNobody]);
+      controller.clientVendorController.updateTextValue(25, '90000');
+
+      // Moving on does not drop the typed deal, or hand it to Dolly.
+      controller.groupItemController.selectRow(1);
+      expect(controller.dealPartyId, 5);
+      expect(controller.dealRow, 0);
+
+      await controller.commitAllRows();
+      expect(itemsRepo.updated.map((u) => u.id), [500],
+          reason: 'Dolly was not changed, so it is not written');
+      expect(itemsRepo.updated.single.developedFor!.quotationAmount, 90000);
+      // Written, so the section moves to the selected part's (none).
+      expect(controller.dealPartyId, isNull);
+    });
+
     test('a part for nobody opens with the deal off and sends nothing', () async {
       final saved = _item(id: 501, name: 'Patti', groupId: 11);
       await open(existing: [saved]);

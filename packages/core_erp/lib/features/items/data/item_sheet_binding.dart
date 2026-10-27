@@ -306,6 +306,15 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     return out;
   }
 
+  @override
+  ItemDefinition? entityById(int id) => _liveItem(id);
+
+  @override
+  SheetDraft? draftForId(int id) {
+    final item = _liveItem(id);
+    return item == null ? null : toDrafts([item]).firstOrNull;
+  }
+
   ItemDefinition? _liveItem(int id) {
     for (final item in items.items) {
       if (item.id == id) return item;
@@ -455,18 +464,19 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
             );
           }
         case SheetBindsTo.name:
-          // One per name PER GROUP: "Patti" under Dolly and under Rocker are
-          // two options, and de-duplicating across groups left the second
-          // group with no Patti to pick.
-          final seen = <String>{};
+          // One per PART, scoped to its group: picking one loads that very
+          // part into the row. A name can repeat — in another group, set or
+          // unit — so they are told apart by code rather than folded into one
+          // option that could only ever load the first of them.
           for (final item in live) {
-            if (!seen.add('${item.groupId}|${_normalize(item.name)}')) continue;
+            final code = item.partCode.trim();
             out.add(
               ColumnOption(
                 id: item.id,
                 columnId: column.id,
                 parentOptionId: item.groupId,
                 label: item.name,
+                detail: code.isEmpty ? 'Part #${item.id}' : code,
               ),
             );
           }

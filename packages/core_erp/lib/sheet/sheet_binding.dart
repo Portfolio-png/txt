@@ -109,6 +109,16 @@ abstract class SheetBinding<T> {
   /// outside party, or the binding has no deal.
   ({SheetDraft deal, Set<int> ticked})? dealOf(T entity) => null;
 
+  /// The record with [id] as this binding last knew it, or null. Default
+  /// knows none — a binding that cannot look records up cannot load one into
+  /// a row when its name is picked.
+  T? entityById(int id) => null;
+
+  /// The record with [id] as a sheet row, or null. Its own method rather than
+  /// `toDrafts([entityById(id)])`: a list built here is a `List<Object?>`,
+  /// which a typed binding's `toDrafts` refuses at run time.
+  SheetDraft? draftForId(int id) => null;
+
   /// The options, parties and uniqueness sets this sheet's cells read from.
   ///
   /// Default is empty so a binding can be written for saving alone; a host that

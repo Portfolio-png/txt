@@ -5,6 +5,8 @@ import 'package:core_erp/features/items/domain/developed_for.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
+import 'package:core_erp/core/app_flow_hooks.dart';
+import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -693,6 +695,69 @@ void main() {
       expect(panel.alloy, 'Brass');
       expect(panel.materials, isEmpty,
           reason: 'no picker of its own: alloy is changed in its column');
+    });
+
+    testWidgets('selecting a saved row moves the sections onto its part',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11, partCode: 'SADP48');
+      final strip = _item(id: 501, name: 'Strip', groupId: 11, partCode: 'SADS49');
+      final repo = _FakeItemRepository([patti, strip]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti, strip],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      MasterDataPanel panel() =>
+          tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      PartDieSection dies() =>
+          tester.widget<PartDieSection>(find.byType(PartDieSection));
+      expect(panel().itemName, 'Patti');
+      expect(find.textContaining('SAVED #500'), findsOneWidget);
+
+      // A saved row is closed, but a tap still selects it.
+      await tester.tap(find.text('Strip').first);
+      await tester.pump();
+      expect(panel().itemName, 'Strip');
+      expect(dies().part?.id, 501);
+      expect(find.textContaining('SAVED #501'), findsOneWidget);
+    });
+
+    testWidgets('a die held on a new row stays with that row', (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      final repo = _FakeItemRepository([patti]);
+      // Held dies are offered only where they can be made.
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError('not saved in this test');
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      PartDieSection dies() =>
+          tester.widget<PartDieSection>(find.byType(PartDieSection));
+
+      await tester.tap(find.text('Add row').first);
+      await tester.pump();
+      expect(dies().part, isNull, reason: 'a new row is a new part');
+      dies().onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
+      await tester.pump();
+      expect(dies().staged, hasLength(1));
+
+      await tester.tap(find.text('Patti').first);
+      await tester.pump();
+      expect(dies().part?.id, 500);
+      expect(dies().staged, isEmpty, reason: 'held for the other row');
+
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is ValueCell && w.rowIndex == 1 && w.column.id == 3,
+        ),
+      );
+      await tester.pump();
+      expect(dies().staged.single.toolCode, 'D1');
     });
 
     testWidgets('a die changed anywhere re-reads the open part (real time)',

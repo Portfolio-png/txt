@@ -74,7 +74,8 @@ class ItemMasterController extends ChangeNotifier {
   bool _isExternal = true;
   String _activeSection = 'group_item';
   bool _isEditing = false;
-  bool _isSaved = false;
+  /// The id the legacy whole-sheet [saveItem] last wrote. The item sheet
+  /// commits row by row and reads its part off the cursor row instead.
   int? _savedItemId;
   String? _savedCreatedAt;
   String _statusBarMessage =
@@ -83,8 +84,14 @@ class ItemMasterController extends ChangeNotifier {
   bool get isExternal => _isExternal;
   String get activeSection => _activeSection;
   bool get isEditing => _isEditing;
-  bool get isSaved => _isSaved;
-  int? get savedItemId => _savedItemId;
+  bool get isSaved => savedItemId != null;
+
+  /// The part the sheet is on: the cursor row's. Everything below the table
+  /// — the deal, dies, machines, route, raw sheet — follows it, so selecting
+  /// another row moves them all onto that row's part. It used to be one id
+  /// for the whole screen, set by the last save, so the sections stayed on
+  /// whichever part was saved last while the cursor sat on another.
+  int? get savedItemId => groupItemController.draft.entityId ?? _savedItemId;
   String? get savedCreatedAt => _savedCreatedAt;
   String get statusBarMessage => _statusBarMessage;
 
@@ -362,13 +369,119 @@ class ItemMasterController extends ChangeNotifier {
       clientVendorController.onAddContact = writer.addContact;
     }
 
-    groupItemController.addListener(_onChildChanged);
+    // The deal on screen starts as the first row's.
+    _claimDeal(groupItemController.draft);
+    groupItemController.addListener(_onRowsChanged);
+    groupItemController.onPickExisting = _pickExisting;
     clientVendorController.addListener(_onDealChanged);
     peopleController.addListener(_onChildChanged);
   }
 
   void _onChildChanged() {
     notifyListeners();
+  }
+
+  void _onRowsChanged() {
+    _syncDealToCursor();
+    notifyListeners();
+  }
+
+  // --- which part the deal is ------------------------------------------------
+
+  /// The row the deal on screen belongs to, and the part it was for. A deal
+  /// is a part's — who it was developed for — so it changes with the row.
+  Object? _dealRowKey;
+  int? _dealPartId;
+
+  /// The row a save is writing right now, so the deal only rides on its own
+  /// part's save.
+  Object? _savingRowKey;
+
+  /// Where the deal's own row sits, or null when it is not on the sheet.
+  int? get dealRow {
+    final key = _dealRowKey;
+    if (key == null) return null;
+    final at = groupItemController.indexOfRowKey(key);
+    return at < 0 ? null : at;
+  }
+
+  void _claimDeal(SheetDraft draft) {
+    _dealRowKey = draft.rowKey;
+    _dealPartId = draft.entityId;
+  }
+
+  /// Puts the cursor row's part's deal on screen when the cursor has moved to
+  /// another part. A deal typed and not yet saved is never dropped or carried
+  /// to the wrong part: it stays, belonging to its row, until that row's save
+  /// writes it ([commitRow] marks it clean and calls this again).
+  void _syncDealToCursor({bool force = false}) {
+    final writer = binding;
+    if (writer == null) return;
+    final draft = groupItemController.draft;
+    if (identical(draft.rowKey, _dealRowKey) &&
+        draft.entityId == _dealPartId) {
+      return;
+    }
+    if (!force && _dealDirty && dealRow != null) {
+      _statusBarMessage =
+          'The Client / Vendor changes belong to row ${dealRow! + 1} — they '
+          'are written when that row saves.';
+      return;
+    }
+    _claimDeal(draft);
+    final id = draft.entityId;
+    final entity = id == null ? null : writer.entityById(id);
+    final deal = entity == null ? null : writer.dealOf(entity);
+    if (deal == null) {
+      // A saved part with no outside party opens with the section off; a new
+      // row starts as the screen does, ready for one.
+      _isExternal = id == null;
+      _resetDeal();
+    } else {
+      _isExternal = true;
+      _applyDeal(deal);
+    }
+  }
+
+  /// A Part Name picked that is an existing part loads THAT part into the row
+  /// — it is an edit of it, not a new part named after it (which the sheet
+  /// refuses as a duplicate). Already on another row, the cursor goes there
+  /// instead of the part being on the sheet twice.
+  bool _pickExisting(int row, ColumnDef column, ColumnOption option) {
+    final writer = binding;
+    if (writer == null || column.bindsTo != SheetBindsTo.name) return false;
+    final entity = writer.entityById(option.id);
+    if (entity == null) return false;
+    final sheet = groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return false;
+    if (sheet.draftAt(row).entityId == option.id) return false;
+
+    for (var other = 0; other < sheet.rowCount; other += 1) {
+      if (other == row || sheet.draftAt(other).entityId != option.id) continue;
+      // Leave nothing half-typed behind: a row that only held the pick goes.
+      final picked = sheet.draftAt(row);
+      sheet.selectRow(other);
+      final at = sheet.indexOfDraft(picked);
+      if (at >= 0 && picked.entityId == null && sheet.isRowBlank(at)) {
+        sheet.removeRow(at);
+      }
+      _statusBarMessage = 'That part is already on row ${sheet.row + 1}.';
+      notifyListeners();
+      return true;
+    }
+
+    final loaded = writer.draftForId(option.id);
+    if (loaded == null) return false;
+    sheet.replaceRowAt(row, loaded);
+    sheet.setRowLocked(row, false);
+    if (sheet.row != row) sheet.selectRow(row);
+    // What was typed for a new part does not become this part's deal.
+    _syncDealToCursor(force: true);
+    _statusBarMessage =
+        'Opened ${_codeOf(entity) ?? 'that part'} on row ${row + 1} — edits '
+        'save to it.';
+    notifyListeners();
+    return true;
   }
 
   // --- the deal and its people ----------------------------------------------
@@ -551,7 +664,7 @@ class ItemMasterController extends ChangeNotifier {
   /// — and the next save here wrote the old one back.
   void _followDeal(List<Object?> entities) {
     final writer = binding;
-    final partId = _savedItemId;
+    final partId = _dealPartId;
     if (writer == null || partId == null || !_isExternal) return;
     if (clientVendorController.draft.isDirtySinceSave || _peopleDirty) return;
     final entity = entities.where((e) => _idOf(e) == partId).firstOrNull;
@@ -658,12 +771,17 @@ class ItemMasterController extends ChangeNotifier {
   /// The deal row a save writes, or null when the part is not for an outside
   /// party — in which case the part says nothing and keeps what it had.
   SheetDraft? dealDraftForSave() =>
-      _isExternal ? clientVendorController.draft : null;
+      _isExternal && _dealRidesOnThisSave ? clientVendorController.draft : null;
+
+  /// Whether the save running now is the deal's own part's. Outside a row
+  /// save (the legacy whole-sheet [saveItem]) the deal rides as it always did.
+  bool get _dealRidesOnThisSave =>
+      _savingRowKey == null || identical(_savingRowKey, _dealRowKey);
 
   /// The people ticked on the deal, or null to say nothing — when the part is
   /// not external, or the table has not loaded this company's people yet.
   List<int>? dealContactIdsForSave() {
-    if (!_isExternal || !peopleLoaded) return null;
+    if (!_isExternal || !peopleLoaded || !_dealRidesOnThisSave) return null;
     return _tickedIds();
   }
 
@@ -904,7 +1022,7 @@ class ItemMasterController extends ChangeNotifier {
 
     groupItemController.loadRecords(rows);
 
-    // The deal is one per screen, so it is the first part's. A part with no
+    // The deal on screen is the first row's part's. A part with no
     // outside party opens with the section off rather than offering a blank
     // deal that a save would then write.
     final deal = writer.dealOf(entities.first);
@@ -918,8 +1036,7 @@ class ItemMasterController extends ChangeNotifier {
       _applyDeal(deal);
     }
 
-    _isSaved = true;
-    _savedItemId = _idOf(entities.first);
+    _claimDeal(groupItemController.draftAt(0));
     _statusBarMessage = entities.length == 1
         ? 'Opened ${_codeOf(entities.first) ?? 'that part'} for editing.'
         : 'Opened ${entities.length} parts for editing.';
@@ -982,10 +1099,12 @@ class ItemMasterController extends ChangeNotifier {
 
     // Already written and untouched since — nothing to do. An edited row IS
     // committed again, which `saveRow` turns into an update because the draft
-    // carries its entityId.
-    // A changed deal is a change to every part on the sheet, since the deal
-    // is the screen's, so it writes a saved row again too.
-    if (draft.entityId != null && !draft.isDirtySinceSave && !_dealDirty) {
+    // carries its entityId. A changed deal writes its own part again — only
+    // its own: the deal is a part's, not the sheet's.
+    final ownsDeal = identical(draft.rowKey, _dealRowKey);
+    if (draft.entityId != null &&
+        !draft.isDirtySinceSave &&
+        !(ownsDeal && _dealDirty)) {
       _rowErrors.remove(draft);
       return false;
     }
@@ -1005,9 +1124,10 @@ class ItemMasterController extends ChangeNotifier {
       return false;
     }
 
-    // The deal rides on every part, so a bad quotation must stop the part
+    // The deal rides on its part, so a bad quotation must stop the part
     // rather than be read as "no quotation" and clear the stored one.
-    if (_isExternal &&
+    if (ownsDeal &&
+        _isExternal &&
         clientVendorController.draft.isDirtySinceSave &&
         !clientVendorController.validateRow(0)) {
       _rowErrors[draft] =
@@ -1023,17 +1143,20 @@ class ItemMasterController extends ChangeNotifier {
 
     Object? result;
     final sent = Map.of(draft.values);
+    final dealSent = ownsDeal && _dealDirty;
     try {
-      if (!await _flushPeople()) {
+      if (ownsDeal && !await _flushPeople()) {
         _rowErrors[draft] = _statusBarMessage;
         return false;
       }
+      _savingRowKey = draft.rowKey;
       result = await writer.saveRow(draft);
     } catch (error) {
       _rowErrors[draft] = 'That row did not save: $error';
       _statusBarMessage = _rowErrors[draft]!;
       return false;
     } finally {
+      _savingRowKey = null;
       _isSavingNow = false;
       notifyListeners();
       _drainQueue();
@@ -1056,6 +1179,12 @@ class ItemMasterController extends ChangeNotifier {
     _lastCommittedRow = at >= 0 ? at : null;
     final id = _idOf(result);
     final stamps = _stampsOf(result);
+    if (identical(draft.rowKey, _dealRowKey)) {
+      // The deal is this part's now, and written — unless it was typed into
+      // again while the save ran.
+      _dealPartId = id ?? _dealPartId;
+      if (dealSent) clientVendorController.draft.markClean();
+    }
     if (id != null && at >= 0) {
       groupItemController.markRowSaved(
         at,
@@ -1067,8 +1196,9 @@ class ItemMasterController extends ChangeNotifier {
       );
     }
 
-    _isSaved = true;
-    _savedItemId = id ?? _savedItemId;
+    // The cursor may have moved on while this saved; a deal that waited for
+    // this row can now give way to the cursor row's.
+    _syncDealToCursor();
     final code = _codeOf(result);
     final label = at >= 0 ? 'row ${at + 1}' : 'a removed row';
     _statusBarMessage = code == null
@@ -1115,13 +1245,6 @@ class ItemMasterController extends ChangeNotifier {
     }
 
     final refused = _refusedCount;
-    // Every part carries the deal now, so it is no longer pending — but only
-    // if every part really did land. A row skipped because another save was
-    // running carries no error, and counting that as success left the deal
-    // marked clean on parts that never received it.
-    if (refused == 0 && _isExternal && _everyRowLanded) {
-      clientVendorController.draft.markClean();
-    }
     final totalSaved = savedItemIds.length;
     if (written == 0 && refused == 0) {
       _statusBarMessage = totalSaved > 0
@@ -1209,7 +1332,6 @@ class ItemMasterController extends ChangeNotifier {
       return false;
     }
 
-    _isSaved = true;
     _applySavedRecord(saved.first);
     notifyListeners();
     return true;
