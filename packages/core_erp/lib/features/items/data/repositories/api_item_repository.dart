@@ -63,6 +63,10 @@ class ApiItemRepository implements ItemRepository {
     return parsed.items.map((item) => item.toDomain()).toList(growable: false);
   }
 
+  /// This repository has no local copy, so its read is already fresh.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) => getItem(id);
+
   @override
   Future<ItemDefinition?> getItem(int id) async {
     if (useMockResponses) {

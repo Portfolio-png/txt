@@ -11,6 +11,11 @@ abstract class ItemRepository {
   Future<void> init();
   Future<List<ItemDefinition>> getItems();
   Future<ItemDefinition?> getItem(int id);
+
+  /// [getItem] from the server itself, never a local copy. For answering a
+  /// change event: a replica applies the same event later, so reading it then
+  /// returns the state before the change.
+  Future<ItemDefinition?> getItemFresh(int id);
   Future<ItemDefinition> createItem(CreateItemInput input);
   Future<ItemDefinition> updateItem(UpdateItemInput input);
 

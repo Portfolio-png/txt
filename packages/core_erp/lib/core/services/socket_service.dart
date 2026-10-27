@@ -247,6 +247,11 @@ class SocketService {
         } else if (tableName == 'pipeline_templates' ||
             tableName == 'pipeline_runs') {
           emitEvent = 'production_changed';
+        } else if (tableName == 'material_types') {
+          // The materials master the Alloy picker offers.
+          emitEvent = 'material_types_changed';
+        } else if (tableName == 'die_makers') {
+          emitEvent = 'die_makers_changed';
         }
 
         if (emitEvent.isNotEmpty) {

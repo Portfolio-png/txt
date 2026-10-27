@@ -227,8 +227,15 @@ class ItemsProvider extends ChangeNotifier {
   /// the row back instead, as this used to, went to the local replica, which
   /// the changelog has not reached yet at the moment the event fires: the
   /// event announcing a change was answering with the state before it.
+  ///
+  /// Only the Socket.IO channel (the mobile app) carries that row. The desktop
+  /// listens on SSE, where every change arrives as `{'id': N}` — and parsing
+  /// that as a row "succeeded" with a blank name, no group, no dies and an
+  /// updatedAt of now, so it replaced the real part in every open window. An
+  /// id alone is now read as "this part changed; fetch it" ([_refetchAnnounced]).
   ItemDefinition? _itemFromEvent(dynamic data) {
     if (data is! Map || data['id'] == null) return null;
+    if (!data.containsKey('name')) return null;
     try {
       return ItemDto.fromJson(Map<String, dynamic>.from(data)).toDomain();
     } catch (_) {
@@ -259,45 +266,102 @@ class ItemsProvider extends ChangeNotifier {
     }
     _initialized = true;
 
-    SocketService.instance.on('item_added', (data) {
-      final announced = _itemFromEvent(data);
-      if (announced != null) {
-        // Dedupe: the creator already has this row, so a rail echo must
-        // replace-if-present rather than blindly append.
-        _acceptAnnounced(announced);
-      } else {
-        refresh();
-      }
-    });
-
-    SocketService.instance.on('item_updated', (data) {
-      final announced = _itemFromEvent(data);
-      if (announced != null) {
-        _acceptAnnounced(announced);
-      } else {
-        refresh();
-      }
-    });
-
-    SocketService.instance.on('item_deleted', (data) {
-      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
-        final id = data['id'] as int;
-        _writtenHere.remove(id);
-        _items = _items.where((i) => i.id != id).toList();
-        notifyListeners();
-      } else {
-        refresh();
-      }
-    });
+    SocketService.instance.on('item_added', _onItemAnnounced);
+    SocketService.instance.on('item_updated', _onItemAnnounced);
+    SocketService.instance.on('item_deleted', _onItemDeleted);
+    // Events missed while the stream was down are replayed after this fires,
+    // and each replayed id goes through the fresh fetch; the refresh covers
+    // anything older than the replay window.
+    SocketService.instance.on('realtime:reconnected', _onReconnected);
 
     await refresh();
   }
 
+  void _onItemAnnounced(dynamic data) {
+    final announced = _itemFromEvent(data);
+    if (announced != null) {
+      // Dedupe: the creator already has this row, so a rail echo must
+      // replace-if-present rather than blindly append.
+      _acceptAnnounced(announced);
+      return;
+    }
+    final id = _eventId(data);
+    if (id != null) {
+      _refetchAnnounced(id);
+    } else {
+      refresh();
+    }
+  }
+
+  void _onItemDeleted(dynamic data) {
+    final id = _eventId(data);
+    if (id == null) {
+      refresh();
+      return;
+    }
+    _forgetItem(id);
+  }
+
+  void _onReconnected(dynamic _) => refresh();
+
+  static int? _eventId(dynamic data) {
+    if (data is! Map) return null;
+    final raw = data['id'];
+    return raw is int ? raw : int.tryParse('$raw');
+  }
+
+  void _forgetItem(int id) {
+    _writtenHere.remove(id);
+    if (!_items.any((i) => i.id == id)) return;
+    _items = _items.where((i) => i.id != id).toList();
+    notifyListeners();
+  }
+
+  /// Ids announced and waiting to be fetched, collected for a moment so the
+  /// burst one save makes (the row, its variation nodes, its die links, each
+  /// a changelog row) costs one request, not five.
+  final Set<int> _pendingFetches = <int>{};
+  Timer? _fetchTimer;
+  bool _disposed = false;
+
+  void _refetchAnnounced(int id) {
+    if (_deletedHere.contains(id)) return;
+    _pendingFetches.add(id);
+    _fetchTimer ??= Timer(const Duration(milliseconds: 100), _flushFetches);
+  }
+
+  Future<void> _flushFetches() async {
+    _fetchTimer = null;
+    final ids = _pendingFetches.toList();
+    _pendingFetches.clear();
+    for (final id in ids) {
+      if (_disposed) return;
+      ItemDefinition? fresh;
+      try {
+        // From the server, not the replica: the replica applies this same
+        // event on its own, later, and reading it now answers with the state
+        // before the change.
+        fresh = await _repository.getItemFresh(id);
+      } catch (_) {
+        continue; // Unreachable for now; the next event or refresh catches up.
+      }
+      if (_disposed) return;
+      if (fresh == null) {
+        _forgetItem(id);
+      } else {
+        _acceptAnnounced(fresh);
+      }
+    }
+  }
+
   @override
   void dispose() {
-    SocketService.instance.off('item_added');
-    SocketService.instance.off('item_updated');
-    SocketService.instance.off('item_deleted');
+    _disposed = true;
+    _fetchTimer?.cancel();
+    SocketService.instance.off('item_added', _onItemAnnounced);
+    SocketService.instance.off('item_updated', _onItemAnnounced);
+    SocketService.instance.off('item_deleted', _onItemDeleted);
+    SocketService.instance.off('realtime:reconnected', _onReconnected);
     super.dispose();
   }
 

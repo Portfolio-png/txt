@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/services/socket_service.dart';
 
 import '../../data/machine_repository.dart';
 import '../../domain/machine.dart';
 
 class MachinesProvider extends ChangeNotifier {
   MachinesProvider({required MachineRepository repository})
-    : _repository = repository;
+    : _repository = repository {
+    SocketService.instance.on('machines_changed', _onRemoteChange);
+  }
+
+  /// A machine edited in another window. The item sheet copies a machine's
+  /// photos, notes and capabilities from this list when it corrects one from
+  /// beside a part, so a list loaded once wrote stale values back.
+  void _onRemoteChange(dynamic _) {
+    if (_initialized && !_isLoading && !_disposed) refresh();
+  }
 
   final MachineRepository _repository;
 
@@ -87,6 +97,7 @@ class MachinesProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    SocketService.instance.off('machines_changed', _onRemoteChange);
     super.dispose();
   }
 

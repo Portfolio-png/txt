@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/services/socket_service.dart';
+
 import '../../data/die_maker_repository.dart';
 import '../../domain/die_maker.dart';
 
@@ -14,7 +16,21 @@ import '../../domain/die_maker.dart';
 /// materials on the item sheet.
 class DieMakersProvider extends ChangeNotifier {
   DieMakersProvider({required DieMakerRepository repository})
-      : _repository = repository;
+      : _repository = repository {
+    SocketService.instance.on('die_makers_changed', _onRemoteChange);
+  }
+
+  /// A maker added, renamed or archived in another window — the die sheet's
+  /// picker kept the list it first loaded until the app restarted.
+  void _onRemoteChange(dynamic _) {
+    if (_initialized && !_isLoading) refresh();
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('die_makers_changed', _onRemoteChange);
+    super.dispose();
+  }
 
   final DieMakerRepository _repository;
 

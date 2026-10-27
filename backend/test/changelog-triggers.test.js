@@ -331,6 +331,81 @@ test('draining twice does not deliver the same change twice', async (t) => {
   assert.equal(seen.length, afterFirst, 'the second drain had nothing new to say');
 });
 
+test('a write nobody drains still goes out on its own', async (t) => {
+  // In production the push used to drain only when some route called
+  // logChange, so trigger-only writes (dies, machines, contacts…) sat unseen
+  // until an unrelated save. The sweep now runs everywhere.
+  const backend = await boot('paper-changelog-sweep-');
+  t.after(async () => {
+    await backend.closeDb();
+  });
+  const seen = [];
+  const listener = (event) => seen.push(event);
+  backend.changeEmitter.on('table-change', listener);
+  t.after(() => backend.changeEmitter.off('table-change', listener));
+
+  await backend.run(
+    "UPDATE clients SET name = name || '' WHERE id = (SELECT MIN(id) FROM clients)",
+  );
+  // No drain called: the sweep has to find it.
+  for (let i = 0; i < 30 && !seen.some((e) => e.table === 'clients'); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(seen.some((e) => e.table === 'clients'), 'swept within 3 s');
+});
+
+test('two drains at once deliver a change once', async (t) => {
+  const backend = await boot('paper-changelog-race-');
+  t.after(async () => {
+    await backend.closeDb();
+  });
+  const seen = [];
+  const listener = (event) => seen.push(event);
+  backend.changeEmitter.on('table-change', listener);
+  t.after(() => backend.changeEmitter.off('table-change', listener));
+
+  await backend.run(
+    "UPDATE materials SET name = name || '' WHERE id = (SELECT MIN(id) FROM materials)",
+  );
+  await Promise.all([backend.drainChangelog(), backend.drainChangelog()]);
+  assert.equal(seen.filter((e) => e.table === 'materials').length, 1);
+});
+
+test('a die edit is announced on every part that uses it', async (t) => {
+  // A part's read carries its dies, so a die corrected on the Dies screen
+  // changes what the part reads. 060 says so; before it, the part's other
+  // windows kept the old die.
+  const backend = await boot('paper-changelog-die-parts-');
+  t.after(async () => {
+    await backend.closeDb();
+  });
+  const item = await backend.get('SELECT id FROM items ORDER BY id LIMIT 1');
+  assert.ok(item, 'the seed has an item');
+  const now = new Date().toISOString();
+  const made = await backend.run(
+    "INSERT INTO dies (tool_code, status, ownership, created_at, updated_at) VALUES (?, 'ready', 'inHouse', ?, ?)",
+    ['T-060', now, now],
+  );
+  const die = { id: made.lastID };
+  await backend.run(
+    'INSERT OR IGNORE INTO item_dies (item_id, die_id, created_at) VALUES (?, ?, ?)',
+    [item.id, die.id, new Date().toISOString()],
+  );
+  await backend.drainChangelog();
+
+  const seen = [];
+  const listener = (event) => seen.push(event);
+  backend.changeEmitter.on('table-change', listener);
+  t.after(() => backend.changeEmitter.off('table-change', listener));
+  await backend.run("UPDATE dies SET rack_no = 'R-60' WHERE id = ?", [die.id]);
+  await backend.drainChangelog();
+
+  assert.ok(
+    seen.some((e) => e.table === 'items' && Number(e.recordId) === Number(item.id)),
+    `delivered: ${JSON.stringify(seen)}`,
+  );
+});
+
 test('a change is announced on the row it is VISIBLE on, not only where it happened', async (t) => {
   // The dangerous class, and the reason 040 alone is not enough.
   //

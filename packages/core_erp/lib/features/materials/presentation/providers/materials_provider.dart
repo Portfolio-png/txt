@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/services/socket_service.dart';
+
 import '../../data/material_repository.dart';
 import '../../domain/material_definition.dart';
 
@@ -10,7 +12,23 @@ import '../../domain/material_definition.dart';
 /// request each time.
 class MaterialsProvider extends ChangeNotifier {
   MaterialsProvider({required MaterialRepository repository})
-    : _repository = repository;
+    : _repository = repository {
+    SocketService.instance.on('material_types_changed', _onRemoteChange);
+  }
+
+  /// A material added or edited in another window. Loaded once and kept used
+  /// to mean kept stale: the item sheet's Alloy picker never offered it.
+  /// Only reloaded once something has loaded it — nobody waits on a master
+  /// that nothing on screen reads.
+  void _onRemoteChange(dynamic _) {
+    if (_initialized && !_isLoading) load();
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('material_types_changed', _onRemoteChange);
+    super.dispose();
+  }
 
   final MaterialRepository _repository;
 

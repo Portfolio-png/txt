@@ -141,6 +141,15 @@ test('the material master seeds, lists, edits and archives', async () => {
     assert.equal(created.success, true, JSON.stringify(created));
     assert.equal(created.materialType.densityGCm3, 8.44);
 
+    // The create reaches the changelog, so another window's Alloy picker
+    // hears of it. Logged as 'materials' it was skipped (that table is
+    // trigger-logged) and no row was ever written.
+    const logged = await backend.get(
+      "SELECT id FROM changelog WHERE table_name = 'material_types' AND record_id = ?",
+      [created.materialType.id],
+    );
+    assert.ok(logged, 'a material_types changelog row');
+
     // A shop's own brass is whatever its supplier ships.
     const edited = await fetch(
       `${baseUrl}/api/material-types/${byName.get('Brass').id}`,

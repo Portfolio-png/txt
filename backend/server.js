@@ -199,7 +199,33 @@ async function pruneChangelog() {
   }
 }
 
+// One drain at a time. Two overlapping drains read past the same cursor and
+// pushed the same rows twice — possible whenever two saves landed together,
+// and routine once the sweep below runs every second.
+let drainInFlight = null;
+let drainAgain = false;
+
 async function drainChangelog() {
+  if (drainInFlight) {
+    drainAgain = true;
+    return drainInFlight;
+  }
+  drainInFlight = (async () => {
+    let total = 0;
+    do {
+      drainAgain = false;
+      total += await drainChangelogOnce();
+    } while (drainAgain);
+    return total;
+  })();
+  try {
+    return await drainInFlight;
+  } finally {
+    drainInFlight = null;
+  }
+}
+
+async function drainChangelogOnce() {
   try {
     const rows = await all(
       `SELECT id, table_name, record_id, event_type
@@ -215,6 +241,8 @@ async function drainChangelog() {
         eventType: row.event_type,
       });
     }
+    // A full page means more are waiting.
+    if (rows.length === 500) drainAgain = true;
     return rows.length;
   } catch (error) {
     console.error('[Realtime] Failed to drain the changelog:', error.message);
@@ -6465,12 +6493,13 @@ async function initDb() {
     lastEmittedChangeId = 0;
   }
 
-  // The push otherwise only drains when this process writes, so rows written
-  // from outside it — a seed script, a hand edit in sqlite — sat in the
-  // changelog unseen until the next unrelated save. Locally, sweep for them.
-  if (!IS_PRODUCTION) {
-    setInterval(drainChangelog, 2000).unref();
-  }
+  // The push otherwise only drains when something calls logChange. Locally
+  // that left seed scripts and hand edits unseen; in PRODUCTION it left every
+  // route that relies on its triggers alone — dies, machines, die makers,
+  // contacts, a part's group move or archive — unpushed until some unrelated
+  // save happened to drain them, so an edit on the Dies screen never reached
+  // a part open in another window. One indexed read a second covers them all.
+  setInterval(drainChangelog, IS_PRODUCTION ? 1000 : 2000).unref();
 
   dbReady = true;
 }

@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/network/sitting_scope.dart';
-import '../../../../core/services/socket_service.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../sheet/sheet.dart';
@@ -198,12 +197,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // until the sheet was reopened.
     _clients = _maybeRead<ClientsProvider>()?..addListener(_onMastersChanged);
 
-    // Saves show up in real time. Items and clients patch themselves from the
-    // server's events already; dies and machines had no listener at all, so a
-    // die edited elsewhere stayed stale on an open part.
-    for (final event in _remoteEvents) {
-      SocketService.instance.on(event, _onRemoteChange);
-    }
+    // Saves elsewhere show up through the providers above. A die or machine
+    // edited anywhere arrives as a change to every part that uses it
+    // (migration 060), which ItemsProvider fetches fresh. This used to call
+    // ItemsProvider.refresh() itself — a read of the local replica, which had
+    // not applied the change yet, so it answered with the old die.
 
     // Commit whichever row the cursor leaves, however it left — a click, Tab
     // or Enter past the end, or Add row.
@@ -224,13 +222,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         _controller.loadItems(widget.initialItems);
       }
     });
-  }
-
-  /// Dies and machines changed somewhere — this window, another one, another
-  /// person. The part's lists come from the item, so re-read it.
-  void _onRemoteChange(dynamic _) {
-    if (!mounted) return;
-    unawaited(context.read<ItemsProvider>().refresh());
   }
 
   bool _mastersReloadScheduled = false;
@@ -310,9 +301,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _groups?.removeListener(_onMastersChanged);
     _materials?.removeListener(_onMastersChanged);
     _clients?.removeListener(_onMastersChanged);
-    for (final event in _remoteEvents) {
-      SocketService.instance.off(event, _onRemoteChange);
-    }
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _scroll.dispose();
@@ -936,11 +924,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
-  static const List<String> _remoteEvents = [
-    'dies_changed',
-    'machines_changed',
-    'realtime:reconnected',
-  ];
 
   static const List<String> _sectionIds = [
     'group_item',

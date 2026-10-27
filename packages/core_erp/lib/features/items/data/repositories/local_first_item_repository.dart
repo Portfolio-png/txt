@@ -72,6 +72,9 @@ class LocalFirstItemRepository implements ItemRepository {
   // --- everything below only the server can do -------------------------------
 
   @override
+  Future<ItemDefinition?> getItemFresh(int id) => _remote.getItemFresh(id);
+
+  @override
   Future<ItemDefinition> createItem(CreateItemInput input) => _remote.createItem(input);
 
   @override

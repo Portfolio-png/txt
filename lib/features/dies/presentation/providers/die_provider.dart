@@ -1,10 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/services/socket_service.dart';
 
 import '../../data/die_repository.dart';
 import '../../domain/die.dart';
 
 class DiesProvider extends ChangeNotifier {
-  DiesProvider({required DieRepository repository}) : _repository = repository;
+  DiesProvider({required DieRepository repository}) : _repository = repository {
+    SocketService.instance.on('dies_changed', _onRemoteChange);
+  }
+
+  bool _disposed = false;
+
+  /// A die edited in another window. The item sheet copies a die's photos,
+  /// notes and client from this list when it corrects one from beside a part,
+  /// so a list loaded once wrote stale values back over the other edit.
+  void _onRemoteChange(dynamic _) {
+    if (_initialized && !_isLoading && !_disposed) refresh();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    SocketService.instance.off('dies_changed', _onRemoteChange);
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
 
   final DieRepository _repository;
 

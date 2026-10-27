@@ -105,11 +105,11 @@ function registerMaterialTypeRoutes(ctx) {
         result.lastID,
       ]);
       if (typeof logChange === 'function') {
-        // 'material' is not a table and 'create' is not one of the three event
-        // types the changelog's CHECK allows, so this insert was rejected and
-        // swallowed on every call. `materials` is trigger-logged now, so this
-        // only needs to be valid enough to push the notification.
-        await logChange('materials', String(result.lastID), 'INSERT', {
+        // material_types has no trigger, so this row is the whole record of
+        // the change. Logged as 'materials' it was a no-op — that table IS
+        // trigger-logged, so logChange skipped the insert — and a material
+        // added here never reached another window's Alloy picker.
+        await logChange('material_types', String(result.lastID), 'INSERT', {
           name: parsed.name,
         });
       }
@@ -170,7 +170,7 @@ function registerMaterialTypeRoutes(ctx) {
           req.params.id,
         ]);
         if (typeof logChange === 'function') {
-          await logChange('materials', String(req.params.id), 'UPDATE', {
+          await logChange('material_types', String(req.params.id), 'UPDATE', {
             name: parsed.name,
           });
         }
@@ -198,7 +198,7 @@ function registerMaterialTypeRoutes(ctx) {
           return;
         }
         if (typeof logChange === 'function') {
-          await logChange('materials', String(req.params.id), 'UPDATE', {});
+          await logChange('material_types', String(req.params.id), 'UPDATE', {});
         }
         res.json({ success: true });
       } catch (error) {

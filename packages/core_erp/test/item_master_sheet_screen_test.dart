@@ -52,8 +52,15 @@ class _FakeItemRepository implements ItemRepository {
     return List.of(stored);
   }
 
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    freshReads.add(id);
+    return stored.where((item) => item.id == id).firstOrNull;
+  }
+
   final List<Map<String, String>> savedTrees = [];
   int reads = 0;
+  final List<int> freshReads = [];
   final List<UpdateItemInput> updated = [];
 
   @override
@@ -141,6 +148,8 @@ Future<void> _pumpScreen(
   List<ItemDefinition> stored = const [],
   Size? size,
   _FakeItemRepository? repository,
+  // Subscribed to the change stream, as the app's provider is after start-up.
+  bool live = false,
 }) async {
   final groups = GroupsProvider(
     repository: _FakeGroupRepository([
@@ -154,7 +163,14 @@ Future<void> _pumpScreen(
   // sheet is ever opened in, and testing it there measures the wrong thing.
   final itemsProvider =
       ItemsProvider(repository: repository ?? _FakeItemRepository(List.of(stored)));
-  if (repository != null) await tester.runAsync(itemsProvider.refresh);
+  if (live) {
+    await tester.runAsync(itemsProvider.initialize);
+    // Its listeners are on the app-wide stream; leaving them would deliver
+    // the next test's events to this one's provider.
+    addTearDown(itemsProvider.dispose);
+  } else if (repository != null) {
+    await tester.runAsync(itemsProvider.refresh);
+  }
 
   tester.view.physicalSize = size ?? const Size(1600, 1000);
   tester.view.devicePixelRatio = 1.0;
@@ -601,18 +617,22 @@ void main() {
 
     testWidgets('a die changed anywhere re-reads the open part (real time)',
         (tester) async {
+      // The server announces a die edit on every part that uses it
+      // (migration 060). That part is fetched from the server — not re-read
+      // from the local replica, which has not applied the change yet.
       final patti = _item(id: 500, name: 'Patti', groupId: 11);
       final repo = _FakeItemRepository([patti]);
-      await _pumpScreen(tester, initialItems: [patti], repository: repo);
-      final before = repo.reads;
+      await _pumpScreen(tester, initialItems: [patti], repository: repo, live: true);
 
-      final data = jsonEncode({'table_name': 'dies', 'record_id': 7, 'event_type': 'UPDATE'});
+      final data = jsonEncode({'table_name': 'items', 'record_id': 500, 'event_type': 'UPDATE'});
       await tester.runAsync(() async {
         SocketService.instance.processEventForTest('event: table-change\ndata: $data');
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
       });
       await tester.pump();
-      expect(repo.reads, greaterThan(before), reason: 'the part is re-read');
+      expect(repo.freshReads, contains(500), reason: 'the part is fetched fresh');
+      // And it is not blanked by the id-only event on the way.
+      expect(find.text('Patti'), findsWidgets);
     });
 
     testWidgets('the raw sheet panel folds to a tab', (tester) async {
