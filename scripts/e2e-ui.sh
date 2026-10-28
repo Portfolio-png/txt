@@ -99,7 +99,11 @@ say "Starting the backend on ${BASE_URL}"
 # carried on holding the port with its database open. That is how three
 # orphaned servers accumulated here — one of them for three days — each making
 # the next run bind nothing and silently test against a stale database.
-( cd "${REPO}" && exec env PORT="${PORT}" DB_PATH="${DB}" node backend/server.js ) \
+# No S3 bucket, as on a dev machine: photos go to the local store, kept in
+# this run's own folder and linked at this run's own address.
+( cd "${REPO}" && exec env PORT="${PORT}" DB_PATH="${DB}" \
+    PAPER_UPLOAD_DIR="${WORK}/uploads" PAPER_PUBLIC_URL="${BASE_URL}" \
+    PAPER_S3_BUCKET_NAME= S3_BUCKET= node backend/server.js ) \
   >"${WORK}/server.log" 2>&1 &
 SERVER_PID=$!
 
@@ -121,7 +125,7 @@ echo "ready"
 # the next boot.
 TESTS=("${1:-}")
 if [[ -z "${TESTS[0]}" ]]; then
-  TESTS=(app_boot sheet_route sheet_bulk)
+  TESTS=(app_boot sheet_route sheet_bulk sheet_photo)
 fi
 
 for name in "${TESTS[@]}"; do
@@ -163,6 +167,25 @@ if [[ "${BULK}" != "0" ]]; then
     SELECT '  ' || name || '  ' || COALESCE(NULLIF(part_code,''),'(unstamped)')
       FROM items WHERE name LIKE 'E2E Bulk%' ORDER BY id;"
 fi
+# A part's photo, uploaded from its row: one asset row, and the file on disk.
+PHOTOS="$(sqlite3 "${DB}" "
+  SELECT COUNT(*) FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
+   WHERE a.entity_type = 'item' AND a.status = 'uploaded'
+     AND i.name = 'E2E Photo Part';")"
+if [[ "${PHOTOS}" != "0" ]]; then
+  echo "part photos written: ${PHOTOS}"
+  [[ "${PHOTOS}" == "1" ]] || fail "one upload made ${PHOTOS} photos"
+  KEY="$(sqlite3 "${DB}" "
+    SELECT a.object_key FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
+     WHERE a.entity_type = 'item' AND i.name = 'E2E Photo Part' LIMIT 1;")"
+  [[ -s "${WORK}/uploads/${KEY}" ]] || fail "the photo's file is not in the local store"
+  echo "  ${KEY}"
+fi
+[[ "${TESTS[0]}" == "sheet_photo" ]] && {
+  [[ "${PHOTOS}" == "1" ]] || fail "the part photo was not stored"
+  say "OK — part photo only"; exit 0;
+}
+
 # A property column added with +: one row, with the option it was given.
 PROPS="$(sqlite3 "${DB}" \
   "SELECT COUNT(*) FROM item_sheet_properties WHERE property_key = 'e2e finish';")"

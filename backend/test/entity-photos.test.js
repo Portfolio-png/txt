@@ -113,8 +113,10 @@ test('a logo and a person\'s photo store and read back without S3', async () => 
     assert.equal(fetched.headers.get('content-type'), 'image/png');
     assert.deepEqual(Buffer.from(await fetched.arrayBuffer()), PNG);
 
-    const photo = await upload('party_contact', person.id, 'ravi.png');
-    assert.ok(photo.readUrl);
+    // A name with no extension is still served as the picture it is.
+    const photo = await upload('party_contact', person.id, 'ravi');
+    const served = await fetch(local(photo.readUrl));
+    assert.equal(served.headers.get('content-type'), 'image/png');
 
     // Many at once, for a table of thumbnails.
     const logos = await call('POST', '/api/assets/primary', {

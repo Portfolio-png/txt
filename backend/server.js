@@ -22233,7 +22233,17 @@ app.get('/api/assets/local/*key', async (req, res) => {
       res.status(404).json({ success: false, error: 'Not found.' });
       return;
     }
+    // The type the upload declared, which the asset row keeps; the file's
+    // extension only when there is no row (a name without one served every
+    // photo as a download rather than an image).
+    const recorded = await get(
+      'SELECT content_type FROM uploaded_assets WHERE object_key = ? LIMIT 1',
+      [objectKey],
+    );
     const type =
+      (recorded?.content_type &&
+        ALLOWED_ASSET_CONTENT_TYPES.has(recorded.content_type) &&
+        recorded.content_type) ||
       LOCAL_UPLOAD_CONTENT_TYPES[path.extname(file).toLowerCase()] ||
       'application/octet-stream';
     res.setHeader('Content-Type', type);

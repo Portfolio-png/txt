@@ -103,6 +103,13 @@ class EntityPhotoRepository {
     final contentType =
         lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
         'application/octet-stream';
+    // Named for what it is, with an extension: a file handed over without a
+    // name became a stored object nothing could tell was a picture.
+    final named = file.name.trim();
+    final extension = extensionFromMime(contentType) ?? 'png';
+    final fileName = named.isEmpty
+        ? 'photo.$extension'
+        : (named.contains('.') ? named : '$named.$extension');
     if (useMockResponses) {
       final assetId = _mockIds++;
       // The picture every demo upload in the app shows.
@@ -115,7 +122,7 @@ class EntityPhotoRepository {
       'uploadType': PhotoOwner.uploadTypeOf(owner),
       'entityType': owner,
       'entityId': int.tryParse(id) ?? id,
-      'fileName': file.name,
+      'fileName': fileName,
       'contentType': contentType,
       'sizeBytes': bytes.length,
       'sha256': sha256.convert(bytes).toString(),
