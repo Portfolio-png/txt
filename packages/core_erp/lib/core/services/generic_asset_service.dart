@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 
 class GenericAssetUploadIntentInput {
   const GenericAssetUploadIntentInput({
@@ -40,6 +42,25 @@ class GenericAssetService {
   final String baseUrl;
   final bool useMockResponses;
 
+  /// The app's own service: signed in, and real outside demo mode.
+  ///
+  /// Editors used to build `GenericAssetService(baseUrl: …)` themselves, which
+  /// is unauthenticated and defaults to mock mode — so their logo and photo
+  /// "uploads" stored a stock picture and sent nothing. Only a host with no
+  /// provider at all (a bare test) gets the mock.
+  static GenericAssetService resolve(BuildContext context) {
+    try {
+      return Provider.of<GenericAssetService>(context, listen: false);
+    } on ProviderNotFoundException {
+      return GenericAssetService(
+        baseUrl: const String.fromEnvironment(
+          'PAPER_API_BASE_URL',
+          defaultValue: 'http://localhost:8080',
+        ),
+      );
+    }
+  }
+
   Future<GenericAssetUploadTarget> createUploadIntent(
     GenericAssetUploadIntentInput input,
   ) async {
@@ -79,11 +100,13 @@ class GenericAssetService {
     final uploadMap = data['upload'] as Map<String, dynamic>;
     final headersMap = uploadMap['headers'] as Map<String, dynamic>? ?? {};
 
-    // In the generic asset flow, readUrl is returned immediately or constructed since there's no completion callback
-    // (Wait, the backend returns readUrl inside intent if it's already generated, or we might need to construct it).
-    // Let's assume readUrl is returned in the intent or upload map.
+    // What gets saved on the record. `viewUrl` is a link that never expires;
+    // the presigned `readUrl` stops working in seven days, which is how saved
+    // logos and photos used to go blank on their own.
     final readUrl =
-        data['readUrl'] as String? ?? uploadMap['readUrl'] as String?;
+        uploadMap['viewUrl'] as String? ??
+        data['readUrl'] as String? ??
+        uploadMap['readUrl'] as String?;
 
     return GenericAssetUploadTarget(
       uploadUrl: Uri.parse(uploadMap['uploadUrl'] as String? ?? ''),

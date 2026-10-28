@@ -1041,11 +1041,7 @@ class _EmployeeImagePickerFieldState extends State<_EmployeeImagePickerField> {
     }
 
     setState(() => _isUploading = true);
-    final baseUrl = const String.fromEnvironment(
-      'PAPER_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
-    );
-    final service = GenericAssetService(baseUrl: baseUrl);
+    final service = GenericAssetService.resolve(context);
 
     try {
       final bytes = await file.readAsBytes();

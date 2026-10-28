@@ -231,7 +231,9 @@ class ApiDieRepository implements DieRepository {
     String? finalUrl;
     if (alreadyUploaded && data['asset'] != null) {
       final assetMap = data['asset'] as Map<String, dynamic>;
-      finalUrl = assetMap['readUrl'] as String?;
+      // The link that does not expire: this URL is saved on the record.
+      finalUrl =
+          assetMap['viewUrl'] as String? ?? assetMap['readUrl'] as String?;
     }
 
     return DieAssetUploadIntent(
@@ -270,7 +272,7 @@ class ApiDieRepository implements DieRepository {
     }
 
     final asset = payload['asset'] as Map<String, dynamic>?;
-    return asset?['readUrl'] as String?;
+    return asset?['viewUrl'] as String? ?? asset?['readUrl'] as String?;
   }
 
   Map<String, dynamic> _decodeJsonObject(String body) {

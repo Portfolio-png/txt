@@ -127,6 +127,19 @@ test('a logo and a person\'s photo store and read back without S3', async () => 
     assert.deepEqual(Object.keys(logos.body.photos), [String(client.id)]);
     assert.equal(logos.body.photos[client.id].assetId, logo.id);
 
+    // The client's own logo field now holds a link that does not expire, and
+    // it leads to the picture.
+    const listedClient = (await call('GET', `/api/clients/${client.id}`)).body.client;
+    assert.match(listedClient.logoUrl, /\/api\/assets\/view\//);
+    assert.equal(listedClient.logoUrl, logo.viewUrl);
+    const viaView = await fetch(local(logo.viewUrl), { redirect: 'manual' });
+    assert.equal(viaView.status, 302);
+    const followed = await fetch(local(viaView.headers.get('location')));
+    assert.deepEqual(Buffer.from(await followed.arrayBuffer()), PNG);
+    const forged = new URL(logo.viewUrl);
+    forged.searchParams.set('sig', 'f'.repeat(64));
+    assert.equal((await fetch(local(forged.toString()), { redirect: 'manual' })).status, 403);
+
     // A tampered or expired link is refused; so is a key that climbs out.
     const bad = new URL(logo.readUrl);
     bad.searchParams.set('sig', '0'.repeat(64));
@@ -152,6 +165,18 @@ test('a logo and a person\'s photo store and read back without S3', async () => 
       entityIds: [client.id],
     });
     assert.deepEqual(after.body.photos, {});
+    const cleared = (await call('GET', `/api/clients/${client.id}`)).body.client;
+    assert.equal(cleared.logoUrl, '', 'the removed logo is off the record too');
+
+    // A presigned S3 URL saved before the permanent links existed becomes one
+    // on the next boot.
+    await backend.run(
+      'UPDATE clients SET photo_url = ? WHERE id = ?',
+      ['https://bucket.s3.amazonaws.com/masters/old/face.png?X-Amz-Signature=abc&X-Amz-Expires=300', client.id],
+    );
+    await backend.initDb();
+    const healed = await backend.get('SELECT photo_url FROM clients WHERE id = ?', [client.id]);
+    assert.match(healed.photo_url, /\/api\/assets\/view\/masters\/old\/face\.png\?sig=/);
   } finally {
     await closeServer(server);
     delete process.env.PAPER_UPLOAD_DIR;

@@ -5,6 +5,8 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../core/widgets/mini_photo.dart';
+import '../../../clients/presentation/providers/clients_provider.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../sheet/column_option.dart';
@@ -139,6 +141,19 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
 
   // --- the deal --------------------------------------------------------------
 
+  String? _companyLogo(int? partyId) {
+    if (partyId == null) return null;
+    try {
+      final clients = Provider.of<ClientsProvider>(context, listen: false);
+      for (final client in clients.clients) {
+        if (client.id == partyId) return client.logoUrl;
+      }
+    } on ProviderNotFoundException {
+      return null;
+    }
+    return null;
+  }
+
   Widget _dealRow() {
     final partyColumn = _column(_deal, SheetBindsTo.developedForParty);
     final quotationColumn = _column(_deal, SheetBindsTo.developedForQuotation);
@@ -167,6 +182,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           id: partyId?.toString(),
           size: 44,
           what: 'company logo',
+          // The logo set on the Clients screen, until one is uploaded here.
+          fallbackUrl: _companyLogo(partyId),
           disabledReason: 'Pick the company first to add its logo',
         ),
         FitToText(

@@ -692,6 +692,11 @@ app.disable('x-powered-by');
 app.use(morgan('combined'));
 app.use(compression());
 app.use(cors(buildCorsOptions()));
+// Which address the caller reached this server on, so a link made for them
+// points back at it — localhost on this machine, the LAN address from another.
+app.use((req, _res, next) => {
+  requestOrigin.run(`${req.protocol}://${req.get('host')}`, next);
+});
 app.use(express.json());
 
 const cacheMasterData = (req, res, next) => {
@@ -2911,6 +2916,8 @@ function rowToAssetDto(row, readUrlPayload = null) {
     uploadedAt: row.uploaded_at,
     readUrl: readUrlPayload?.readUrl || null,
     readUrlExpiresAt: readUrlPayload?.expiresAt || null,
+    // What to SAVE on a record: the read URL above expires in minutes.
+    viewUrl: row.object_key ? assetViewUrl(row.object_key) : null,
   };
 }
 
@@ -6164,6 +6171,7 @@ async function initDb() {
   // migration 051's family rows with no units linked to them, so every family
   // read back empty and no screen could offer dozens or gross. Idempotent.
   await seedUnitsIfEmpty();
+  await backfillExpiringPhotoUrls();
   await bootstrapUnitsFromMaterials();
   await backfillMaterialUnitIds();
   if (SEED_DEMO_DATA_ON_BOOT) {
@@ -15249,6 +15257,8 @@ function getS3Config() {
 // this machine. The URLs are signed (HMAC over method, key and expiry) so an
 // <img> can load them without a login, exactly as it loads an S3 one.
 
+const requestOrigin = new (require('node:async_hooks').AsyncLocalStorage)();
+
 const LOCAL_UPLOAD_ROOT = path.resolve(
   process.env.PAPER_UPLOAD_DIR || path.join(__dirname, 'uploads'),
 );
@@ -15259,7 +15269,175 @@ function usesLocalUploads() {
 
 function localUploadBaseUrl() {
   const configured = String(process.env.PAPER_PUBLIC_URL || '').trim();
-  return (configured || `http://localhost:${PORT}`).replace(/\/+$/, '');
+  return (configured || requestOrigin.getStore() || `http://localhost:${PORT}`)
+    .replace(/\/+$/, '');
+}
+
+// --- permanent photo links ----------------------------------------------------
+//
+// A record's photo field (an item's photo, a client's logo, a machine's or a
+// die's photo) held a presigned read URL, which stops working in minutes or
+// days — so stored photos went blank on their own. It holds this instead: a
+// link signed once for the object, never expiring, that answers with a fresh
+// short-lived read URL each time it is opened. Every screen that shows the
+// field keeps working unchanged.
+
+function assetViewSignature(objectKey) {
+  return crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`asset-view\n${objectKey}`)
+    .digest('hex');
+}
+
+function encodeObjectKey(objectKey) {
+  return String(objectKey)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function assetViewUrl(objectKey) {
+  if (!objectKey) return null;
+  return `${localUploadBaseUrl()}/api/assets/view/${encodeObjectKey(objectKey)}?sig=${assetViewSignature(objectKey)}`;
+}
+
+function isAssetViewUrlFor(value, objectKey) {
+  return (
+    typeof value === 'string' &&
+    value.includes(`/api/assets/view/${encodeObjectKey(objectKey)}?`)
+  );
+}
+
+function isAssetViewUrl(value) {
+  return typeof value === 'string' && value.includes('/api/assets/view/');
+}
+
+/**
+ * Puts a record's primary photo onto the record's own photo field, so screens
+ * that read the field (lists, cards, the item join) show what was uploaded.
+ * [removedKey] is a photo just deleted, taken off the field. Never throws: a
+ * stored photo is not undone by its record failing to note it.
+ */
+async function syncRecordPhotoField(entityType, entityId, removedKey = null) {
+  try {
+    const primary = await get(
+      `
+      SELECT object_key FROM uploaded_assets
+      WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded' AND is_primary = 1
+      ORDER BY id DESC LIMIT 1
+      `,
+      [entityType, Number(entityId)],
+    );
+    const url = primary ? assetViewUrl(primary.object_key) : null;
+    const single = {
+      item: ['items', 'photo_url'],
+      client: ['clients', 'logo_url'],
+      machine: ['machines', 'primary_photo_url'],
+    }[entityType];
+    if (single) {
+      const [table, column] = single;
+      const row = await get(`SELECT ${column} AS value FROM ${table} WHERE id = ?`, [
+        Number(entityId),
+      ]);
+      if (!row) return;
+      const next = url || (isAssetViewUrl(row.value) ? '' : row.value);
+      if (next !== row.value) {
+        await run(`UPDATE ${table} SET ${column} = ? WHERE id = ?`, [
+          next,
+          Number(entityId),
+        ]);
+      }
+      return;
+    }
+    if (entityType === 'die') {
+      const row = await get('SELECT photo_urls FROM dies WHERE id = ?', [Number(entityId)]);
+      if (!row) return;
+      let list;
+      try {
+        list = JSON.parse(row.photo_urls || '[]');
+      } catch (_) {
+        list = [];
+      }
+      if (!Array.isArray(list)) list = [];
+      const primaryKey = primary?.object_key;
+      const kept = list.filter(
+        (value) =>
+          typeof value === 'string' &&
+          !(removedKey && isAssetViewUrlFor(value, removedKey)) &&
+          !(primaryKey && isAssetViewUrlFor(value, primaryKey)),
+      );
+      const next = JSON.stringify(url ? [url, ...kept] : kept);
+      if (next !== (row.photo_urls || '[]')) {
+        await run('UPDATE dies SET photo_urls = ? WHERE id = ?', [next, Number(entityId)]);
+      }
+    }
+  } catch (error) {
+    console.warn('Could not note a photo on its record:', error.message);
+  }
+}
+
+/**
+ * Presigned S3 read URLs saved into photo fields before the permanent links
+ * existed. They have long since expired; the object they name is still there,
+ * so each becomes that object's permanent link. Run at boot, idempotent.
+ */
+async function backfillExpiringPhotoUrls() {
+  const config = getS3Config();
+  const keyOf = (value) => {
+    if (typeof value !== 'string' || !value.includes('X-Amz-Signature')) return null;
+    try {
+      let pathname = decodeURIComponent(new URL(value).pathname).replace(/^\/+/, '');
+      if (config.bucket && pathname.startsWith(`${config.bucket}/`)) {
+        pathname = pathname.slice(config.bucket.length + 1);
+      }
+      return pathname || null;
+    } catch (_) {
+      return null;
+    }
+  };
+  const columns = [
+    ['items', 'photo_url'],
+    ['clients', 'logo_url'],
+    ['clients', 'photo_url'],
+    ['vendors', 'logo_url'],
+    ['vendors', 'photo_url'],
+    ['machines', 'primary_photo_url'],
+  ];
+  for (const [table, column] of columns) {
+    let rows;
+    try {
+      rows = await all(
+        `SELECT id, ${column} AS value FROM ${table} WHERE ${column} LIKE '%X-Amz-Signature%'`,
+      );
+    } catch (_) {
+      continue; // a table or column this database does not have
+    }
+    for (const row of rows) {
+      const key = keyOf(row.value);
+      if (key) {
+        await run(`UPDATE ${table} SET ${column} = ? WHERE id = ?`, [assetViewUrl(key), row.id]);
+      }
+    }
+  }
+  try {
+    const dies = await all("SELECT id, photo_urls FROM dies WHERE photo_urls LIKE '%X-Amz-Signature%'");
+    for (const die of dies) {
+      let list = [];
+      try {
+        list = JSON.parse(die.photo_urls || '[]');
+      } catch (_) {
+        continue;
+      }
+      if (!Array.isArray(list)) continue;
+      const next = list.map((value) => {
+        const key = keyOf(value);
+        return key ? assetViewUrl(key) : value;
+      });
+      await run('UPDATE dies SET photo_urls = ? WHERE id = ?', [JSON.stringify(next), die.id]);
+    }
+  } catch (_) {
+    // no dies table yet
+  }
 }
 
 function localUploadSignature(method, objectKey, expires) {
@@ -15284,10 +15462,7 @@ function localUploadPath(objectKey) {
 function localUploadUrl(method, objectKey, expiresSeconds) {
   localUploadPath(objectKey);
   const expires = Math.floor(Date.now() / 1000) + Number(expiresSeconds || 300);
-  const encodedKey = String(objectKey)
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
+  const encodedKey = encodeObjectKey(objectKey);
   const signature = localUploadSignature(method, objectKey, expires);
   return `${localUploadBaseUrl()}/api/assets/local/${encodedKey}?exp=${expires}&sig=${signature}`;
 }
@@ -16048,6 +16223,7 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
     'SELECT * FROM uploaded_assets WHERE object_key = ?',
     [session.object_key],
   );
+  await syncRecordPhotoField(session.entity_type, Number(session.entity_id));
   return rowToAssetDto(asset, await assetReadUrlPayload(asset.object_key));
 }
 
@@ -16097,6 +16273,7 @@ async function setPrimaryAsset(assetId) {
     await run('ROLLBACK');
     throw error;
   }
+  await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id));
   const updated = await get('SELECT * FROM uploaded_assets WHERE id = ?', [
     asset.id,
   ]);
@@ -16134,6 +16311,7 @@ async function deleteAsset(assetId) {
       ]);
     }
   }
+  await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id), asset.object_key);
 }
 
 function normalizeMaterialRequirementNumber(value, fieldName) {
@@ -22254,6 +22432,28 @@ app.get('/api/assets/local/*key', async (req, res) => {
   }
 });
 
+// A photo field's permanent link: checked once, then sent on to a fresh read
+// URL for wherever the object lives (S3, or the local store above).
+app.get('/api/assets/view/*key', async (req, res) => {
+  try {
+    const objectKey = localObjectKeyFrom(req);
+    const given = String(req.query?.sig || '');
+    const wanted = assetViewSignature(objectKey);
+    if (
+      given.length !== wanted.length ||
+      !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(wanted))
+    ) {
+      res.status(403).json({ success: false, error: 'This photo link is not valid.' });
+      return;
+    }
+    const readUrl = await presignS3Url({ method: 'GET', objectKey, expiresSeconds: 300 });
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.redirect(302, readUrl);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -27415,6 +27615,8 @@ app.post('/api/upload/generic', requireGenericUploadPermission, async (req, res)
         headers: { 'Content-Type': contentType },
         expiresAt,
         readUrl,
+        // What to save: readUrl stops working in seven days.
+        viewUrl: assetViewUrl(objectKey),
       }
     };
 

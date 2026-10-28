@@ -264,6 +264,8 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   }
 
   Future<void> _pickSetPhoto() async {
+    // Taken before the picker's await, while the context is certainly live.
+    final service = GenericAssetService.resolve(context);
     const typeGroup = XTypeGroup(
       label: 'Images',
       extensions: <String>['png', 'jpg', 'jpeg', 'webp'],
@@ -274,11 +276,6 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     setState(() => _isUploadingPhoto = true);
     try {
       final bytes = await file.readAsBytes();
-      const baseUrl = String.fromEnvironment(
-        'PAPER_API_BASE_URL',
-        defaultValue: 'http://localhost:8080',
-      );
-      final service = GenericAssetService(baseUrl: baseUrl);
       final intent = await service.createUploadIntent(
         GenericAssetUploadIntentInput(
           fileName: file.name,
