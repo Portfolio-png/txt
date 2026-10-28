@@ -140,12 +140,19 @@ function validateRouteSteps(steps, stages) {
 }
 
 module.exports = function createProcessRouteService({ get, all, run }) {
+  /// Routes still standing on a stage: drafts and active ones. A retired
+  /// route is history and keeps its steps whatever happens to the stage.
+  const USES = `(SELECT COUNT(DISTINCT s.route_id)
+                   FROM process_route_steps s
+                   JOIN process_routes r ON r.id = s.route_id
+                  WHERE s.stage_id = g.id AND r.status <> 'retired') AS uses`;
+
   async function listStages({ includeInactive = false } = {}) {
-    const where = includeInactive ? '' : 'WHERE active = 1';
+    const where = includeInactive ? '' : 'WHERE g.active = 1';
     return all(
-      `SELECT id, code, name, position, repeatable, active
-         FROM process_stages ${where}
-        ORDER BY position, id`,
+      `SELECT g.id, g.code, g.name, g.position, g.repeatable, g.active, ${USES}
+         FROM process_stages g ${where}
+        ORDER BY g.position, g.id`,
     );
   }
 
@@ -317,6 +324,15 @@ module.exports = function createProcessRouteService({ get, all, run }) {
          FROM process_stages WHERE name = ? COLLATE NOCASE`,
       [clean],
     );
+    // A name somebody deleted and now wants back is that same stage, brought
+    // back — its code is taken, so a second one could not be made anyway.
+    if (existing && Number(existing.active) !== 1) {
+      await run(
+        "UPDATE process_stages SET active = 1, updated_at = datetime('now') WHERE id = ?",
+        [existing.id],
+      );
+      return { ok: true, stage: { ...existing, active: 1 } };
+    }
     if (existing) {
       return {
         ok: false,
@@ -369,9 +385,46 @@ module.exports = function createProcessRouteService({ get, all, run }) {
     return { ok: true, stage };
   }
 
+  /// Deletes a stage from the master — the delete in the step dropdown.
+  ///
+  /// Retired, never removed: a retired route still names it in its steps,
+  /// and those must read the same tomorrow. Refused while a draft or active
+  /// route stands on it, because the next save of that route would then be
+  /// refused for naming a stage no longer in use.
+  async function retireStage(id) {
+    const stageId = Number(id);
+    if (!Number.isInteger(stageId) || stageId <= 0) {
+      return { ok: false, status: 400, code: 'stage_id_invalid', error: 'Invalid stage id.' };
+    }
+    const stage = await get(
+      `SELECT g.id, g.code, g.name, g.position, g.repeatable, g.active, ${USES}
+         FROM process_stages g WHERE g.id = ?`,
+      [stageId],
+    );
+    if (!stage || Number(stage.active) !== 1) {
+      return { ok: false, status: 404, code: 'stage_not_found', error: 'That stage is not in the list.' };
+    }
+    const uses = Number(stage.uses || 0);
+    if (uses > 0) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'stage_in_use',
+        uses,
+        error: `${stage.name} is in ${uses} route${uses === 1 ? '' : 's'}. Take it out of ${uses === 1 ? 'that route' : 'them'} first.`,
+      };
+    }
+    await run(
+      "UPDATE process_stages SET active = 0, updated_at = datetime('now') WHERE id = ?",
+      [stageId],
+    );
+    return { ok: true, stage: { ...stage, active: 0 } };
+  }
+
   return {
     listStages,
     createStage,
+    retireStage,
     routesFor,
     activeRoute,
     stepsFor,

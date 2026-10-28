@@ -308,6 +308,56 @@ test('a stage can be added by name alone, and used at once', async () => {
   }
 });
 
+test('a stage no route stands on can be deleted, and comes back by name', async () => {
+  const ctx = await boot('paper-route-del-stage-', 'route-del-stage@paper.local');
+  try {
+    const { call, partId } = ctx;
+    const stages = (await call('GET', '/api/process-stages')).body.stages;
+    const id = (code) => stages.find((s) => s.code === code).id;
+    assert.ok(stages.every((s) => s.uses === 0), 'a fresh master is used by nothing');
+
+    const lapping = (await call('POST', '/api/process-stages', { name: 'Lapping' })).body.stage;
+    const typo = (await call('POST', '/api/process-stages', { name: 'Debur' })).body.stage;
+    await call('POST', `/api/items/${partId}/routes`, { steps: [id('die'), lapping.id] });
+
+    const listed = (await call('GET', '/api/process-stages')).body.stages;
+    assert.equal(listed.find((s) => s.id === lapping.id).uses, 1);
+    assert.equal(listed.find((s) => s.id === typo.id).uses, 0);
+
+    // In a route: refused, with how many, so the dropdown can say so.
+    const held = await call('DELETE', `/api/process-stages/${lapping.id}`);
+    assert.equal(held.status, 409);
+    assert.equal(held.body.code, 'stage_in_use');
+    assert.equal(held.body.uses, 1);
+
+    // In none: gone from the list, kept as a row.
+    const gone = await call('DELETE', `/api/process-stages/${typo.id}`);
+    assert.equal(gone.status, 200, JSON.stringify(gone.body));
+    const after = (await call('GET', '/api/process-stages')).body.stages;
+    assert.ok(!after.some((s) => s.id === typo.id));
+    const all = (await call('GET', '/api/process-stages?includeInactive=true')).body.stages;
+    assert.equal(all.find((s) => s.id === typo.id).active, 0);
+    assert.equal((await call('DELETE', `/api/process-stages/${typo.id}`)).status, 404);
+
+    // Typed again, it is the same stage brought back — not a second one.
+    const back = await call('POST', '/api/process-stages', { name: 'debur' });
+    assert.equal(back.status, 201, JSON.stringify(back.body));
+    assert.equal(back.body.stage.id, typo.id);
+    assert.equal(back.body.stage.active, 1);
+
+    // Once its route moves on, a stage is free to go — and the retired
+    // version still reads its name.
+    await call('POST', `/api/items/${partId}/routes/versions`, { steps: [id('die')] });
+    const freed = await call('DELETE', `/api/process-stages/${lapping.id}`);
+    assert.equal(freed.status, 200, JSON.stringify(freed.body));
+    const routes = (await call('GET', `/api/items/${partId}/routes`)).body.routes;
+    const v1 = routes.find((r) => r.version === 1);
+    assert.deepEqual(v1.steps.map((s) => s.stage_name), ['Die', 'Lapping']);
+  } finally {
+    await closeServer(ctx.server);
+  }
+});
+
 test('a route belongs to the sitting it was made in', async () => {
   const ctx = await boot('paper-route-sitting-', 'route-sitting@paper.local');
   try {

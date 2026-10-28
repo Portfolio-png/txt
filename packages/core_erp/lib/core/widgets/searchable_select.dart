@@ -52,6 +52,16 @@ typedef SearchableSelectCreateOption<T> =
     Future<SearchableSelectOption<T>?> Function(String query);
 typedef SearchableSelectCreateLabelBuilder = String Function(String query);
 
+/// Deletes [option] from wherever the list is kept, answering whether it
+/// went. The caller asks first if it wants to; the picker only drops the row.
+typedef SearchableSelectDeleteOption<T> =
+    Future<bool> Function(SearchableSelectOption<T> option);
+
+/// Why [option] cannot be deleted right now, or null when it can. Its
+/// delete button is then drawn disabled with this as the tooltip.
+typedef SearchableSelectDeleteBlocked<T> =
+    String? Function(SearchableSelectOption<T> option);
+
 /// What an inline panel is given to work with.
 ///
 /// The panel is driven by the picker's own search field — it must not grow a
@@ -99,6 +109,8 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder,
   Rect? anchorRect,
   TextInputType? keyboardType,
+  SearchableSelectDeleteOption<T>? onDeleteOption,
+  SearchableSelectDeleteBlocked<T>? deleteBlockedReason,
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
@@ -134,6 +146,8 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           secondaryCreateOptionLabelBuilder: secondaryCreateOptionLabelBuilder,
           inlinePanelBuilder: inlinePanelBuilder,
           keyboardType: keyboardType,
+          onDeleteOption: onDeleteOption,
+          deleteBlockedReason: deleteBlockedReason,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
       final curvedAnimation = CurvedAnimation(
@@ -329,6 +343,8 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     this.inlinePanelBuilder,
     this.title,
     this.keyboardType,
+    this.onDeleteOption,
+    this.deleteBlockedReason,
   });
 
   final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
@@ -338,6 +354,8 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
   final String emptyText;
   final T? selectedValue;
   final Rect? anchorRect;
+  final SearchableSelectDeleteOption<T>? onDeleteOption;
+  final SearchableSelectDeleteBlocked<T>? deleteBlockedReason;
   final SearchableSelectCanCreateOption<T>? canCreateOption;
   final SearchableSelectCreateOption<T>? onCreateOption;
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
@@ -354,6 +372,10 @@ class _SearchableSelectDialogState<T>
     extends State<_SearchableSelectDialog<T>> {
   final TextEditingController _searchController = TextEditingController();
 
+  /// Rows deleted while the picker is open: gone from it at once, without
+  /// waiting for the caller to hand over a new list.
+  final Set<T> _deleted = <T>{};
+
   static const double _screenPadding = 16;
   static const double _verticalGap = 8;
   static const double _preferredWidth = 300;
@@ -369,9 +391,14 @@ class _SearchableSelectDialogState<T>
   @override
   Widget build(BuildContext context) {
     final query = _searchController.text.trim().toLowerCase();
-    final visibleOptions = widget.options
+    final options = [
+      for (final option in widget.options)
+        if (!_deleted.contains(option.value)) option,
+    ];
+    final visibleOptions = options
         .where((option) => option.matchesQuery(query))
         .toList(growable: false);
+    final onDelete = widget.onDeleteOption;
     return Material(
       color: Colors.transparent,
       child: LayoutBuilder(
@@ -383,7 +410,7 @@ class _SearchableSelectDialogState<T>
             emptyText: widget.emptyText,
             selectedValue: widget.selectedValue,
             options: visibleOptions,
-            allOptions: widget.options,
+            allOptions: options,
             onQueryChanged: (_) => setState(() {}),
             searchController: _searchController,
             maxHeight: layout.maxHeight,
@@ -395,6 +422,15 @@ class _SearchableSelectDialogState<T>
             secondaryCreateOptionLabelBuilder:
                 widget.secondaryCreateOptionLabelBuilder,
             keyboardType: widget.keyboardType,
+            onDeleteOption: onDelete == null
+                ? null
+                : (option) async {
+                    final gone = await onDelete(option);
+                    if (gone && mounted) {
+                      setState(() => _deleted.add(option.value));
+                    }
+                  },
+            deleteBlockedReason: widget.deleteBlockedReason,
           );
 
           if (layout.centered) {
@@ -493,9 +529,13 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     this.inlinePanelBuilder,
     this.title,
     this.keyboardType,
+    this.onDeleteOption,
+    this.deleteBlockedReason,
   });
 
   final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
+  final Future<void> Function(SearchableSelectOption<T> option)? onDeleteOption;
+  final SearchableSelectDeleteBlocked<T>? deleteBlockedReason;
   final List<SearchableSelectOption<T>> options;
   final T? selectedValue;
   final List<SearchableSelectOption<T>> allOptions;
@@ -718,6 +758,12 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                           return _SearchableSelectOptionTile<T>(
                             option: option,
                             isSelected: option.value == selectedValue,
+                            onDelete: onDeleteOption == null
+                                ? null
+                                : () => onDeleteOption!(option),
+                            deleteBlockedReason: deleteBlockedReason?.call(
+                              option,
+                            ),
                           );
                         },
                       ),
@@ -734,10 +780,18 @@ class _SearchableSelectOptionTile<T> extends StatefulWidget {
   const _SearchableSelectOptionTile({
     required this.option,
     required this.isSelected,
+    this.onDelete,
+    this.deleteBlockedReason,
   });
 
   final SearchableSelectOption<T> option;
   final bool isSelected;
+
+  /// Null draws no delete button.
+  final Future<void> Function()? onDelete;
+
+  /// Draws the delete button disabled, with this as the reason.
+  final String? deleteBlockedReason;
 
   @override
   State<_SearchableSelectOptionTile<T>> createState() =>
@@ -879,6 +933,22 @@ class _SearchableSelectOptionTileState<T>
                     color: const Color(0xFF6C63FF),
                   ),
                 ),
+                if (widget.onDelete != null)
+                  // Drawn disabled, with the reason, rather than hidden.
+                  IconButton(
+                    key: ValueKey<String>(
+                      'searchable_select_delete_${widget.option.label}',
+                    ),
+                    tooltip:
+                        widget.deleteBlockedReason ??
+                        'Delete “${widget.option.label}”',
+                    visualDensity: VisualDensity.compact,
+                    color: const Color(0xFFB91C1C),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                    onPressed: widget.deleteBlockedReason != null
+                        ? null
+                        : widget.onDelete,
+                  ),
               ],
             ),
           ),

@@ -154,6 +154,59 @@ void main() {
       expect(find.text('Bending'), findsOneWidget, reason: 'the second box shows it');
     });
 
+    testWidgets('a step box finds another stage as you type, and swaps it',
+        (tester) async {
+      List<RouteStep> steps = const [];
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [RouteStep(stageId: 1, seq: 1, stageName: 'Die')],
+        lens: RouteLens.classic,
+        onChanged: (next) => steps = next,
+      )));
+
+      await tester.tap(find.byKey(const ValueKey('route_step_dropdown_0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'deli');
+      await tester.pumpAndSettle();
+      expect(find.text('Shearing'), findsNothing, reason: 'the list filters');
+      await tester.tap(find.text('Delivery'));
+      await tester.pumpAndSettle();
+
+      expect(steps.map((s) => s.stageId), [9], reason: 'swapped, not appended');
+      expect(find.text('Delivery'), findsOneWidget);
+    });
+
+    testWidgets('a step box adds a stage nobody has made, and takes it',
+        (tester) async {
+      final asked = <String>[];
+      List<RouteStep> steps = const [];
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [
+          RouteStep(stageId: 1, seq: 1, stageName: 'Die'),
+          RouteStep(stageId: 2, seq: 2, stageName: 'Shearing'),
+        ],
+        lens: RouteLens.classic,
+        onChanged: (next) => steps = next,
+        // The host's list is not refreshed: the box must still name it.
+        onCreateStage: (name) async {
+          asked.add(name);
+          return const ProcessStage(id: 40, code: 'bending', name: 'Bending', position: 10);
+        },
+      )));
+
+      await tester.tap(find.byKey(const ValueKey('route_step_dropdown_1')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Bending');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add “Bending” as a new stage'));
+      await tester.pumpAndSettle();
+
+      expect(asked, ['Bending']);
+      expect(steps.map((s) => s.stageId), [1, 40]);
+      expect(find.text('Bending'), findsOneWidget);
+    });
+
     testWidgets('a stage already in this route is neither listed nor offered as new',
         (tester) async {
       await tester.pumpWidget(_host(RouteEditor(
@@ -170,6 +223,82 @@ void main() {
 
       expect(find.textContaining('as a new stage'), findsNothing);
       expect(find.textContaining('Already in this route'), findsOneWidget);
+    });
+
+    testWidgets('a stage nothing uses is deleted from the dropdown; one in use '
+        'is drawn disabled, saying why', (tester) async {
+      final deleted = <int>[];
+      final stages = [
+        ..._stages,
+        const ProcessStage(id: 20, code: 'debur', name: 'Debur', position: 20),
+        const ProcessStage(
+            id: 21, code: 'polish', name: 'Polish', position: 21, uses: 2),
+      ];
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: stages,
+        steps: const [RouteStep(stageId: 1, seq: 1, stageName: 'Die')],
+        lens: RouteLens.classic,
+        onChanged: (_) {},
+        onCreateStage: (name) async =>
+            ProcessStage(id: 30, code: 'x', name: name, position: 30),
+        onDeleteStage: (stage) async {
+          deleted.add(stage.id);
+          return true;
+        },
+      )));
+
+      await tester.tap(find.byKey(const ValueKey('route_step_dropdown_0')));
+      await tester.pumpAndSettle();
+      IconButton delete(String label) => tester.widget<IconButton>(
+            find.byKey(ValueKey('searchable_select_delete_$label')),
+          );
+      // This step's own stage, and one two routes stand on, stay.
+      expect(delete('Die').onPressed, isNull);
+      expect(delete('Die').tooltip, 'In this route — take the step out first');
+      await tester.enterText(find.byType(TextField).last, 'pol');
+      await tester.pumpAndSettle();
+      expect(delete('Polish').onPressed, isNull);
+      expect(delete('Polish').tooltip, contains('In 2 routes'));
+
+      await tester.enterText(find.byType(TextField).last, 'deb');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('searchable_select_delete_Debur')));
+      await tester.pumpAndSettle();
+      expect(deleted, [20]);
+      expect(find.text('Debur'), findsNothing, reason: 'gone while still open');
+
+      // Its name is free again: typed, it is offered as a new stage.
+      await tester.enterText(find.byType(TextField).last, 'Debur');
+      await tester.pumpAndSettle();
+      expect(find.text('Add “Debur” as a new stage'), findsOneWidget);
+    });
+
+    testWidgets('a refused delete keeps the stage listed', (tester) async {
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [],
+        lens: RouteLens.classic,
+        onChanged: (_) {},
+        onDeleteStage: (_) async => false,
+      )));
+      await tester.tap(find.byKey(const ValueKey('route_new_stage')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('searchable_select_delete_Shearing')));
+      await tester.pumpAndSettle();
+      expect(find.text('Shearing'), findsOneWidget);
+    });
+
+    testWidgets('with no delete from the host, no delete button is drawn',
+        (tester) async {
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [],
+        lens: RouteLens.classic,
+        onChanged: (_) {},
+      )));
+      await tester.tap(find.byKey(const ValueKey('route_new_stage')));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
     });
 
     testWidgets('a locked route draws New stage disabled, saying why',

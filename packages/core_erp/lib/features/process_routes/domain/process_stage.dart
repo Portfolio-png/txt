@@ -11,6 +11,7 @@ class ProcessStage {
     this.position = 0,
     this.repeatable = false,
     this.active = true,
+    this.uses = 0,
   });
 
   final int id;
@@ -25,6 +26,10 @@ class ProcessStage {
 
   final bool active;
 
+  /// Draft and active routes standing on this stage. While any do, it cannot
+  /// be deleted from the master.
+  final int uses;
+
   static ProcessStage? fromJson(Map<String, dynamic> json) {
     final id = (json['id'] as num?)?.toInt();
     if (id == null) return null;
@@ -35,6 +40,7 @@ class ProcessStage {
       position: (json['position'] as num?)?.toInt() ?? 0,
       repeatable: _flag(json['repeatable']),
       active: _flag(json['active'], fallback: true),
+      uses: (json['uses'] as num?)?.toInt() ?? 0,
     );
   }
 

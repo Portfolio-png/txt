@@ -114,6 +114,17 @@ class ProcessRouteService {
     return stage;
   }
 
+  /// Deletes a stage from the master. The server retires it, so routes
+  /// already versioned keep reading its name, and refuses (409
+  /// `stage_in_use`) while a draft or active route stands on it.
+  Future<void> retireStage(int id) async {
+    if (useMockResponses) {
+      _mockStageList.removeWhere((stage) => stage.id == id);
+      return;
+    }
+    await _delete('/api/process-stages/$id');
+  }
+
   /// Every version of a part's route, active first then newest.
   Future<List<PartRoute>> routesFor(int partId) async {
     if (useMockResponses) return _mock[partId] ?? const [];
@@ -245,6 +256,9 @@ class ProcessRouteService {
 
   Future<Map<String, dynamic>> _get(String path) =>
       _request(() => _client.get(Uri.parse('$baseUrl$path')));
+
+  Future<Map<String, dynamic>> _delete(String path) =>
+      _request(() => _client.delete(Uri.parse('$baseUrl$path')));
 
   Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body) {
     final uri = Uri.parse('$baseUrl$path');

@@ -77,7 +77,13 @@ class RouteEditor extends StatefulWidget {
     this.onDeclareVersion,
     this.enabled = true,
     this.onCreateStage,
+    this.onDeleteStage,
   });
+
+  /// Deletes a stage from the factory's master, answering whether it went
+  /// (the host asks first and shows any refusal). Null draws no delete
+  /// button in the stage dropdowns.
+  final Future<bool> Function(ProcessStage stage)? onDeleteStage;
 
   /// Adds a stage to the factory's master by name and answers it, or null
   /// when it could not (the creator shows its own error). Null means this
@@ -179,6 +185,8 @@ class _RouteEditorState extends State<RouteEditor> {
         available: _available(),
         allStages: widget.stages,
         onCreate: widget.onCreateStage,
+        onDelete: widget.onDeleteStage,
+        inRoute: {for (final step in _steps) step.stageId},
         onPick: (stage) {
           // A stage the server handed back for a name it already had may be
           // one this route goes through; adding it twice is only refused later.
@@ -207,11 +215,13 @@ class _RouteEditorState extends State<RouteEditor> {
           RouteLens.classic => _ClassicLens(
               steps: _steps,
               optionsFor: (id) => _available(keepStageId: id),
-              stageOf: _stage,
               editable: _editable,
               onEmit: _emit,
               canAdd: _available().isNotEmpty,
               newStage: _newStageBox(),
+              allStages: widget.stages,
+              onCreate: widget.onCreateStage,
+              onDelete: widget.onDeleteStage,
             ),
           RouteLens.list => _ListLens(
               steps: _steps,
@@ -238,20 +248,24 @@ class _ClassicLens extends StatelessWidget {
   const _ClassicLens({
     required this.steps,
     required this.optionsFor,
-    required this.stageOf,
     required this.editable,
     required this.onEmit,
     required this.canAdd,
     required this.newStage,
+    required this.allStages,
+    required this.onCreate,
+    required this.onDelete,
   });
 
   final List<RouteStep> steps;
   final List<ProcessStage> Function(int? keepStageId) optionsFor;
-  final ProcessStage? Function(int id) stageOf;
   final bool editable;
   final ValueChanged<List<RouteStep>> onEmit;
   final bool canAdd;
   final Widget newStage;
+  final List<ProcessStage> allStages;
+  final Future<ProcessStage?> Function(String name)? onCreate;
+  final Future<bool> Function(ProcessStage stage)? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -266,15 +280,24 @@ class _ClassicLens extends StatelessWidget {
             index: i,
             step: steps[i],
             options: optionsFor(steps[i].stageId),
+            allStages: allStages,
+            onCreate: onCreate,
+            onDelete: onDelete,
+            inRoute: {for (final step in steps) step.stageId},
             editable: editable,
-            onPick: (value) {
+            onPick: (stage) {
+              // A stage the server handed back for a name it already had may
+              // be one another step goes through.
+              if (stage.id == steps[i].stageId) return;
+              if (!stage.repeatable && steps.any((s) => s.stageId == stage.id)) {
+                return;
+              }
               final next = [...steps];
-              final stage = stageOf(value);
               next[i] = RouteStep(
-                stageId: value,
+                stageId: stage.id,
                 seq: steps[i].seq,
-                stageCode: stage?.code ?? '',
-                stageName: stage?.name ?? '',
+                stageCode: stage.code,
+                stageName: stage.name,
                 notes: steps[i].notes,
                 machineId: steps[i].machineId,
                 dieId: steps[i].dieId,
@@ -332,6 +355,10 @@ class _StepBox extends StatelessWidget {
     required this.index,
     required this.step,
     required this.options,
+    required this.allStages,
+    required this.onCreate,
+    required this.onDelete,
+    required this.inRoute,
     required this.editable,
     required this.onPick,
     required this.onRemove,
@@ -343,34 +370,18 @@ class _StepBox extends StatelessWidget {
   final int index;
   final RouteStep step;
   final List<ProcessStage> options;
+  final List<ProcessStage> allStages;
+  final Future<ProcessStage?> Function(String name)? onCreate;
+  final Future<bool> Function(ProcessStage stage)? onDelete;
+  final Set<int> inRoute;
   final bool editable;
-  final ValueChanged<int> onPick;
+  final ValueChanged<ProcessStage> onPick;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    // The step's own stage must be among the items or the dropdown asserts —
-    // a stage retired since this route was made is still what it holds.
-    final items = [
-      for (final stage in options)
-        DropdownMenuItem<int>(
-          value: stage.id,
-          child: Text(
-            stage.name,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14),
-          ),
-        ),
-      if (!options.any((stage) => stage.id == step.stageId))
-        DropdownMenuItem<int>(
-          value: step.stageId,
-          child: Text(
-            step.stageName.isEmpty ? 'Stage #${step.stageId}' : step.stageName,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14),
-          ),
-        ),
-    ];
+    final name =
+        step.stageName.isEmpty ? 'Stage #${step.stageId}' : step.stageName;
 
     return Container(
       width: width,
@@ -402,23 +413,49 @@ class _StepBox extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
+            // A Builder so the picker anchors to this box, not to the editor.
+            child: Builder(
+              builder: (anchor) => InkWell(
                 key: ValueKey<String>('route_step_dropdown_$index'),
-                value: step.stageId,
-                isExpanded: true,
-                isDense: true,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: SoftErpTheme.textPrimary,
-                ),
-                items: items,
-                onChanged: editable
-                    ? (value) {
-                        if (value != null) onPick(value);
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+                onTap: editable
+                    ? () async {
+                        final stage = await _pickStage(
+                          anchor,
+                          options: options,
+                          allStages: allStages,
+                          onCreate: onCreate,
+                          onDelete: onDelete,
+                          inRoute: inRoute,
+                          selectedId: step.stageId,
+                        );
+                        if (stage != null) onPick(stage);
                       }
                     : null,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: editable
+                              ? SoftErpTheme.textPrimary
+                              : SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_drop_down,
+                      size: 22,
+                      color: editable
+                          ? SoftErpTheme.textPrimary
+                          : SoftErpTheme.textSecondary,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -440,6 +477,84 @@ class _StepBox extends StatelessWidget {
   }
 }
 
+String _norm(String value) =>
+    value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+/// The house searchable dropdown over [options], anchored to [anchor]: filters
+/// as you type and, when [onCreate] is given and nothing in [allStages] has the
+/// name typed, offers to add it as a new stage. Answers the stage picked or
+/// made, or null when dismissed.
+///
+/// Both ways onto a route use it — a step box swapping its stage and the box
+/// that appends one — so a stage can be found or made from either.
+Future<ProcessStage?> _pickStage(
+  BuildContext anchor, {
+  required List<ProcessStage> options,
+  required List<ProcessStage> allStages,
+  required Future<ProcessStage?> Function(String name)? onCreate,
+  Future<bool> Function(ProcessStage stage)? onDelete,
+  Set<int> inRoute = const {},
+  int? selectedId,
+}) async {
+  ProcessStage? created;
+  // Deleted while the dropdown is open: its name is free to add again.
+  final deleted = <int>{};
+  ProcessStage? stageOf(int id) =>
+      allStages.where((s) => s.id == id).firstOrNull ??
+      options.where((s) => s.id == id).firstOrNull;
+  final picked = await showSearchableSelectDialog<int>(
+    context: anchor,
+    searchHintText: 'Find a stage, or type a new one',
+    selectedValue: selectedId,
+    emptyText: onCreate == null
+        ? 'No stage by that name'
+        : 'Already in this route — each stage goes through once',
+    options: [
+      for (final stage in options)
+        SearchableSelectOption<int>(value: stage.id, label: stage.name),
+    ],
+    // A name the master already has — even one this route has used up — is
+    // that stage, never a second one.
+    canCreateOption: (query, _) => !allStages.any(
+      (stage) =>
+          !deleted.contains(stage.id) && _norm(stage.name) == _norm(query),
+    ),
+    onCreateOption: onCreate == null
+        ? null
+        : (query) async {
+            final stage = await onCreate(query);
+            if (stage == null) return null; // the host has said why
+            created = stage;
+            return SearchableSelectOption<int>(value: stage.id, label: stage.name);
+          },
+    createOptionLabelBuilder: (query) => 'Add “${query.trim()}” as a new stage',
+    // A stage something still stands on stays, and the button says why.
+    deleteBlockedReason: (option) {
+      if (inRoute.contains(option.value)) {
+        return 'In this route — take the step out first';
+      }
+      final uses = stageOf(option.value)?.uses ?? 0;
+      if (uses > 0) {
+        return 'In $uses route${uses == 1 ? '' : 's'} — take it out of '
+            '${uses == 1 ? 'that route' : 'them'} first';
+      }
+      return null;
+    },
+    onDeleteOption: onDelete == null
+        ? null
+        : (option) async {
+            final stage = stageOf(option.value);
+            if (stage == null) return false;
+            final gone = await onDelete(stage);
+            if (gone) deleted.add(stage.id);
+            return gone;
+          },
+  );
+  if (picked == null) return null;
+  if (created?.id == picked.value) return created;
+  return options.where((s) => s.id == picked.value).firstOrNull;
+}
+
 /// Finds a stage, or adds one the master does not have yet — by name alone.
 ///
 /// Opens the house searchable dropdown anchored to the box: it lists the
@@ -453,6 +568,8 @@ class _NewStageBox extends StatelessWidget {
     required this.available,
     required this.allStages,
     required this.onCreate,
+    required this.onDelete,
+    required this.inRoute,
     required this.onPick,
   });
 
@@ -467,42 +584,19 @@ class _NewStageBox extends StatelessWidget {
 
   /// Null means this host cannot add stages; the dropdown then only finds.
   final Future<ProcessStage?> Function(String name)? onCreate;
+  final Future<bool> Function(ProcessStage stage)? onDelete;
+  final Set<int> inRoute;
   final ValueChanged<ProcessStage> onPick;
 
-  static String _norm(String value) =>
-      value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-
   Future<void> _open(BuildContext anchor) async {
-    ProcessStage? created;
-    final create = onCreate;
-    final picked = await showSearchableSelectDialog<int>(
-      context: anchor,
-      searchHintText: 'Find a stage, or type a new one',
-      emptyText: create == null
-          ? 'No stage by that name'
-          : 'Already in this route — each stage goes through once',
-      options: [
-        for (final stage in available)
-          SearchableSelectOption<int>(value: stage.id, label: stage.name),
-      ],
-      // A name the master already has — even one this route has used up — is
-      // that stage, never a second one.
-      canCreateOption: (query, _) =>
-          !allStages.any((stage) => _norm(stage.name) == _norm(query)),
-      onCreateOption: create == null
-          ? null
-          : (query) async {
-              final stage = await create(query);
-              if (stage == null) return null; // the host has said why
-              created = stage;
-              return SearchableSelectOption<int>(value: stage.id, label: stage.name);
-            },
-      createOptionLabelBuilder: (query) => 'Add “${query.trim()}” as a new stage',
+    final stage = await _pickStage(
+      anchor,
+      options: available,
+      allStages: allStages,
+      onCreate: onCreate,
+      onDelete: onDelete,
+      inRoute: inRoute,
     );
-    if (picked == null) return;
-    final stage = created?.id == picked.value
-        ? created
-        : available.where((s) => s.id == picked.value).firstOrNull;
     if (stage != null) onPick(stage);
   }
 

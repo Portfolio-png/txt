@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -107,6 +108,33 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
     } on ProcessRouteException catch (error) {
       if (mounted) setState(() => _error = error.message);
       return null;
+    }
+  }
+
+  /// Deletes a stage from the master after asking, and from this panel's
+  /// list. False, with the server's reason shown, when it could not go.
+  Future<bool> _deleteStage(ProcessStage stage) async {
+    final service = _service;
+    if (service == null) return false;
+    final sure = await showConfirmDialog(
+      context,
+      title: 'Delete the stage “${stage.name}”?',
+      message: 'It leaves the stage list for everyone. Routes already '
+          'versioned still read it.',
+      confirmLabel: 'Delete',
+    );
+    if (!sure || !mounted) return false;
+    try {
+      await service.retireStage(stage.id);
+      if (!mounted) return true;
+      setState(() {
+        _error = null;
+        _stages = [for (final known in _stages) if (known.id != stage.id) known];
+      });
+      return true;
+    } on ProcessRouteException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+      return false;
     }
   }
 
@@ -375,6 +403,7 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
             onDeclareVersion: _active == null ? null : _unlockForVersion,
             onChanged: (steps) => setState(() => _steps = steps),
             onCreateStage: _service == null ? null : _createStage,
+            onDeleteStage: _service == null ? null : _deleteStage,
           ),
         const SizedBox(height: 18),
         Row(
