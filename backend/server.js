@@ -88,6 +88,7 @@ const S3_UPLOAD_PREFIXES = Object.freeze({
   MACHINE_IMAGE: 'masters/machines/',
   DIE_IMAGE: 'masters/dies/',
   DEPARTMENT_IMAGE: 'masters/departments/',
+  PARTY_IMAGE: 'masters/parties/',
 });
 const COMMON_WEAK_PASSWORDS = new Set([
   'password',
@@ -2297,6 +2298,8 @@ const ASSET_ENTITY_PERMISSIONS = {
   delivery_challan: { write: 'challans.asset.upload', read: 'challans.read' },
   machine: { write: 'machines.update', read: 'machines.read' },
   die: { write: 'dies.update', read: 'dies.read' },
+  client: { write: 'clients.update', read: 'clients.read' },
+  party_contact: { write: 'clients.update', read: 'clients.read' },
 };
 
 function requireAssetEntityPermission(op, resolveEntityType) {
@@ -15092,8 +15095,22 @@ function assertValidAssetUploadInput({
   const normalizedSha = String(sha256 || '').toLowerCase().trim();
   const normalizedName = normalizeAssetFileName(fileName);
 
-  const validUploadTypes = new Set(['ITEM_IMAGE', 'MACHINE_IMAGE', 'DIE_IMAGE']);
-  const validEntityTypes = new Set(['item', 'machine', 'die']);
+  const validUploadTypes = new Set([
+    'ITEM_IMAGE',
+    'MACHINE_IMAGE',
+    'DIE_IMAGE',
+    'PARTY_IMAGE',
+  ]);
+  // A company's logo and a person's photo live in the same store as a part's,
+  // so all of them are kept as object keys and signed when read — not as a
+  // presigned URL saved on the record, which stops working in days.
+  const validEntityTypes = new Set([
+    'item',
+    'machine',
+    'die',
+    'client',
+    'party_contact',
+  ]);
 
   if (!validUploadTypes.has(normalizedUploadType)) {
     const error = new Error('Invalid uploadType.');
@@ -15224,6 +15241,87 @@ function getS3Config() {
   };
 }
 
+// --- local disk, when no S3 bucket is configured ---------------------------
+//
+// Uploads were S3-only: with no PAPER_S3_BUCKET_NAME every upload answered
+// 503, so a workspace without a bucket could hold no photo at all. Without
+// one, the same presign / verify / read calls are served from a folder on
+// this machine. The URLs are signed (HMAC over method, key and expiry) so an
+// <img> can load them without a login, exactly as it loads an S3 one.
+
+const LOCAL_UPLOAD_ROOT = path.resolve(
+  process.env.PAPER_UPLOAD_DIR || path.join(__dirname, 'uploads'),
+);
+
+function usesLocalUploads() {
+  return !getS3Config().bucket;
+}
+
+function localUploadBaseUrl() {
+  const configured = String(process.env.PAPER_PUBLIC_URL || '').trim();
+  return (configured || `http://localhost:${PORT}`).replace(/\/+$/, '');
+}
+
+function localUploadSignature(method, objectKey, expires) {
+  return crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`local-upload\n${method}\n${objectKey}\n${expires}`)
+    .digest('hex');
+}
+
+/** The file for [objectKey], refusing anything that climbs out of the root. */
+function localUploadPath(objectKey) {
+  const key = String(objectKey || '');
+  const full = path.resolve(LOCAL_UPLOAD_ROOT, key);
+  if (!key || key.includes('\0') || !full.startsWith(LOCAL_UPLOAD_ROOT + path.sep)) {
+    const error = new Error('Invalid object key.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return full;
+}
+
+function localUploadUrl(method, objectKey, expiresSeconds) {
+  localUploadPath(objectKey);
+  const expires = Math.floor(Date.now() / 1000) + Number(expiresSeconds || 300);
+  const encodedKey = String(objectKey)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  const signature = localUploadSignature(method, objectKey, expires);
+  return `${localUploadBaseUrl()}/api/assets/local/${encodedKey}?exp=${expires}&sig=${signature}`;
+}
+
+/** Throws 403 unless [req] carries a live signature for [method] on [objectKey]. */
+function assertLocalUploadSigned(req, method, objectKey) {
+  const expires = Number(req.query?.exp || 0);
+  const given = String(req.query?.sig || '');
+  const wanted = localUploadSignature(method, objectKey, expires);
+  const ok =
+    Number.isFinite(expires) &&
+    expires * 1000 >= Date.now() &&
+    given.length === wanted.length &&
+    crypto.timingSafeEqual(Buffer.from(given), Buffer.from(wanted));
+  if (!ok) {
+    const error = new Error('This upload link is not valid, or has expired.');
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+function localObjectKeyFrom(req) {
+  const raw = req.params?.key;
+  const segments = Array.isArray(raw) ? raw : String(raw || '').split('/');
+  return segments.map((segment) => decodeURIComponent(String(segment))).join('/');
+}
+
+const LOCAL_UPLOAD_CONTENT_TYPES = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+};
+
 function assertS3Configured() {
   const config = getS3Config();
   if (!config.bucket) {
@@ -15269,6 +15367,9 @@ async function presignS3Url({
   contentType = null,
   expiresSeconds = 900,
 }) {
+  if (usesLocalUploads() && (method === 'PUT' || method === 'GET')) {
+    return localUploadUrl(method, objectKey, expiresSeconds);
+  }
   const config = assertS3Configured();
   const client = getS3Client();
   let command;
@@ -15293,6 +15394,14 @@ async function assertS3ObjectExists(objectKey) {
   if (String(process.env.S3_SKIP_OBJECT_VERIFY || '').toLowerCase() === 'true') {
     return;
   }
+  if (usesLocalUploads()) {
+    if (!fs.existsSync(localUploadPath(objectKey))) {
+      const error = new Error('The uploaded file did not arrive.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return;
+  }
   const config = assertS3Configured();
   try {
     await getS3Client().send(
@@ -15309,6 +15418,9 @@ async function assertS3ObjectExists(objectKey) {
 }
 
 async function readS3ObjectBuffer(objectKey) {
+  if (usesLocalUploads()) {
+    return fs.promises.readFile(localUploadPath(objectKey));
+  }
   const config = assertS3Configured();
   const result = await getS3Client().send(
     new GetObjectCommand({
@@ -15728,6 +15840,18 @@ async function assertAssetEntityExists(entityType, entityId) {
   if (entityType === 'delivery_challan') {
     const challan = await get('SELECT id FROM delivery_challans WHERE id = ?', [entityId]);
     if (challan) {
+      return;
+    }
+  }
+  if (entityType === 'client') {
+    const client = await get('SELECT id FROM clients WHERE id = ?', [entityId]);
+    if (client) {
+      return;
+    }
+  }
+  if (entityType === 'party_contact') {
+    const contact = await get('SELECT id FROM party_contacts WHERE id = ?', [entityId]);
+    if (contact) {
       return;
     }
   }
@@ -22071,6 +22195,55 @@ app.get('/api/delivery-challans/health', (_req, res) => {
   });
 });
 
+// The local store's two doors. Before the login gate: the signature in the
+// URL is the permission, as it is for a presigned S3 URL, and an <img> sends
+// no bearer token.
+app.put(
+  '/api/assets/local/*key',
+  express.raw({ type: () => true, limit: '11mb' }),
+  async (req, res) => {
+    try {
+      const objectKey = localObjectKeyFrom(req);
+      assertLocalUploadSigned(req, 'PUT', objectKey);
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      if (!ALLOWED_ASSET_CONTENT_TYPES.has(contentType.split(';')[0].trim())) {
+        res.status(415).json({ success: false, error: 'Only PNG, JPG and WEBP images can be stored.' });
+        return;
+      }
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        res.status(400).json({ success: false, error: 'The file was empty.' });
+        return;
+      }
+      const target = localUploadPath(objectKey);
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      await fs.promises.writeFile(target, req.body);
+      res.status(200).end();
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  },
+);
+
+app.get('/api/assets/local/*key', async (req, res) => {
+  try {
+    const objectKey = localObjectKeyFrom(req);
+    assertLocalUploadSigned(req, 'GET', objectKey);
+    const file = localUploadPath(objectKey);
+    if (!fs.existsSync(file)) {
+      res.status(404).json({ success: false, error: 'Not found.' });
+      return;
+    }
+    const type =
+      LOCAL_UPLOAD_CONTENT_TYPES[path.extname(file).toLowerCase()] ||
+      'application/octet-stream';
+    res.setHeader('Content-Type', type);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    fs.createReadStream(file).pipe(res);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -27767,6 +27940,53 @@ app.patch('/api/assets/:id/primary', requireAssetEntityPermission('write', asset
       asset: null,
       error: error.message,
     });
+  }
+});
+
+// The primary photo of many records of one kind, signed, in one request — a
+// table of parts or people shows a thumbnail per row, and a request per row
+// was the alternative.
+app.post('/api/assets/primary', requireAssetEntityPermission('read', assetEntityTypeFromBody), async (req, res) => {
+  try {
+    const entityType = String(req.body?.entityType || '').trim().toLowerCase();
+    if (!ASSET_ENTITY_PERMISSIONS[entityType]) {
+      res.status(400).json({ success: false, photos: {}, error: 'Entity type not supported.' });
+      return;
+    }
+    const ids = [
+      ...new Set(
+        (Array.isArray(req.body?.entityIds) ? req.body.entityIds : [])
+          .map((id) => Number(id))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ].slice(0, 500);
+    const photos = {};
+    if (ids.length > 0) {
+      const rows = await all(
+        `
+        SELECT *
+        FROM uploaded_assets
+        WHERE entity_type = ? AND status = 'uploaded' AND is_primary = 1
+          AND entity_id IN (${ids.map(() => '?').join(',')})
+        `,
+        [entityType, ...ids],
+      );
+      for (const row of rows) {
+        try {
+          const payload = await assetReadUrlPayload(row.object_key);
+          photos[String(row.entity_id)] = {
+            assetId: row.id,
+            readUrl: payload.readUrl,
+            expiresAt: payload.expiresAt,
+          };
+        } catch (_) {
+          // One unreadable object does not cost the rest their thumbnails.
+        }
+      }
+    }
+    res.json({ success: true, photos, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, photos: {}, error: error.message });
   }
 });
 

@@ -56,6 +56,7 @@ import 'package:core_erp/features/delivery_challans/presentation/providers/deliv
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/core/services/generic_asset_service.dart';
+import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/items/data/services/item_link_options_service.dart';
 import 'package:core_erp/core/devtools/mark_tool.dart';
@@ -667,6 +668,17 @@ class MyApp extends StatelessWidget {
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: _apiBaseUrl,
             useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // Photos of parts, dies, machines, companies and people, kept as
+        // object keys and signed when shown — the item sheet's thumbnails.
+        ChangeNotifierProvider<EntityPhotosProvider>(
+          create: (context) => EntityPhotosProvider(
+            repository: EntityPhotoRepository(
+              baseUrl: _apiBaseUrl,
+              client: _authClient(context.read<AuthProvider>()),
+              useMockResponses: _effectiveDemoMode,
+            ),
           ),
         ),
         ChangeNotifierProvider<ItemFormSectionsProvider>(

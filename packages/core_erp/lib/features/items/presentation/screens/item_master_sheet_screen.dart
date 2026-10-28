@@ -10,6 +10,8 @@ import '../../../../core/network/sitting_scope.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
+import '../../../../core/services/entity_photos.dart';
+import '../../../../core/widgets/mini_photo.dart';
 import '../../../../sheet/sheet.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
@@ -1931,9 +1933,44 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           controller: _controller.groupItemController,
           selectedRowIndex: _controller.groupItemController.row,
           onRowSelected: _controller.groupItemController.selectRow,
-          rowStatusBuilder: _rowStatus,
+          rowStatusBuilder: _photosOn ? _rowGutter : _rowStatus,
+          gutterExtra: _photosOn ? _rowPhotoSize + 6 : 0,
           onAddPropertyColumn: _addProperty,
         ),
+      ],
+    );
+  }
+
+  /// Whether this app keeps photos (an [EntityPhotosProvider] is provided).
+  bool get _photosOn {
+    try {
+      Provider.of<EntityPhotosProvider>(context, listen: false);
+      return true;
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
+  static const double _rowPhotoSize = 32;
+
+  /// A part row's photo beside its status chip.
+  Widget _rowGutter(int row) {
+    final sheet = _controller.groupItemController;
+    final id = sheet.draftAt(row).entityId;
+    final part = id == null ? null : _partById(id);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MiniPhoto(
+          owner: PhotoOwner.item,
+          id: id?.toString(),
+          size: _rowPhotoSize,
+          what: 'part photo',
+          fallbackUrl: part?.photoUrl,
+          disabledReason: 'Save the part first to add its photo',
+        ),
+        const SizedBox(width: 2),
+        SizedBox(width: 28, child: _rowStatus(row)),
       ],
     );
   }

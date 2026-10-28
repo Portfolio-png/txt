@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/fit_to_text.dart';
+import '../../../../core/widgets/mini_photo.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../sheet/column_option.dart';
@@ -158,6 +160,15 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 12,
       crossAxisAlignment: WrapCrossAlignment.start,
       children: [
+        // The company's logo, kept on the company: every part for it shows
+        // the same one.
+        MiniPhoto(
+          owner: PhotoOwner.client,
+          id: partyId?.toString(),
+          size: 44,
+          what: 'company logo',
+          disabledReason: 'Pick the company first to add its logo',
+        ),
         FitToText(
           texts: ['Company', widget.controller.dealPartyName],
           minWidth: 260,
@@ -418,6 +429,13 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        MiniPhoto(
+          owner: PhotoOwner.person,
+          id: _people.draftAt(row).entityId?.toString(),
+          size: 40,
+          what: 'photo',
+          disabledReason: 'Save this person first to add a photo',
+        ),
         Tooltip(
           message: 'Dealt with on this part',
           child: Checkbox(

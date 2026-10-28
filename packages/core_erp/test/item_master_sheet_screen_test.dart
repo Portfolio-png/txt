@@ -6,6 +6,7 @@ import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
 import 'package:core_erp/core/app_flow_hooks.dart';
+import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
@@ -126,6 +127,8 @@ ItemDefinition _item({
   required int groupId,
   String partCode = 'SADP48',
   List<ItemVariationNodeDefinition> variationTree = const [],
+  List<ItemDieLink> dies = const [],
+  List<ItemMachineLink> machines = const [],
 }) =>
     ItemDefinition(
       id: id,
@@ -143,6 +146,8 @@ ItemDefinition _item({
       createdAt: DateTime(2026, 5, 15, 10, 5),
       updatedAt: DateTime(2026, 5, 15, 10, 5),
       variationTree: variationTree,
+      dies: dies,
+      machines: machines,
     );
 
 Future<void> _pumpScreen(
@@ -153,6 +158,7 @@ Future<void> _pumpScreen(
   _FakeItemRepository? repository,
   // Subscribed to the change stream, as the app's provider is after start-up.
   bool live = false,
+  EntityPhotosProvider? photos,
 }) async {
   final groups = GroupsProvider(
     repository: _FakeGroupRepository([
@@ -184,6 +190,8 @@ Future<void> _pumpScreen(
       providers: [
         ChangeNotifierProvider<ItemsProvider>.value(value: itemsProvider),
         ChangeNotifierProvider<GroupsProvider>.value(value: groups),
+        if (photos != null)
+          ChangeNotifierProvider<EntityPhotosProvider>.value(value: photos),
       ],
       child: MaterialApp(
         home: ItemMasterSheetScreen(initialItems: initialItems),
@@ -758,6 +766,81 @@ void main() {
       );
       await tester.pump();
       expect(dies().staged.single.toolCode, 'D1');
+    });
+
+    testWidgets('each saved part row has a photo; a new row waits for its save',
+        (tester) async {
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      expect(find.byKey(const ValueKey<String>('photo-item-500')), findsOneWidget);
+
+      await tester.tap(find.text('Add row').first);
+      await tester.pump();
+      expect(find.byTooltip('Save the part first to add its photo'),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('each die and machine on the part has its photo', (tester) async {
+      // The lists show only where dies and machines can be made.
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError();
+      AppFlowHooks.createMachineFromSheet = (context, draft) async =>
+          throw UnimplementedError();
+      addTearDown(() {
+        AppFlowHooks.createDieFromSheet = null;
+        AppFlowHooks.createMachineFromSheet = null;
+      });
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        dies: const [ItemDieLink(id: '31', toolCode: 'PGESP1')],
+        machines: const [ItemMachineLink(id: '41', name: 'Press 1')],
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      expect(find.byKey(const ValueKey<String>('photo-die-31')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('photo-machine-41')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the photo gutter fits a 1366px window', (tester) async {
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1366, 900),
+        photos: photos,
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a die changed anywhere re-reads the open part (real time)',

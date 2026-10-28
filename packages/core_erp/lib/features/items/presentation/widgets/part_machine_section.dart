@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/services/entity_photos.dart';
+import '../../../../core/widgets/mini_photo.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/force_capacity_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
@@ -955,6 +957,19 @@ class _MachineRow extends StatelessWidget {
             ),
             child: Row(
               children: [
+                if (MiniPhoto.isAvailable(context)) ...[
+                  MiniPhoto(
+                    owner: PhotoOwner.machine,
+                    // A held machine is not in the master yet.
+                    id: pending || machine.id.isEmpty ? null : machine.id,
+                    size: _kPhotoSize,
+                    what: 'machine photo',
+                    fallbackUrl: machine.photoUrl,
+                    disabledReason: 'The machine is added when the part saves — '
+                        'add its photo then',
+                  ),
+                  const SizedBox(width: _kPhotoGap),
+                ],
                 // Aligned under the strip above, rather than one joined
                 // sentence that stops being readable past a machine or two.
                 _MachineCell(
@@ -1033,6 +1048,9 @@ const List<String> _kMachineHeads = [
   '',
 ];
 
+const double _kPhotoSize = 36;
+const double _kPhotoGap = 8;
+
 class _MachineHeaderStrip extends StatelessWidget {
   const _MachineHeaderStrip();
 
@@ -1042,6 +1060,8 @@ class _MachineHeaderStrip extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 0, 44, 4),
       child: Row(
         children: [
+          if (MiniPhoto.isAvailable(context))
+            const SizedBox(width: _kPhotoSize + _kPhotoGap),
           for (var i = 0; i < _kMachineHeads.length; i += 1)
             Expanded(
               flex: _kMachineFlex[i],

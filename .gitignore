@@ -69,3 +69,6 @@ analyze.txt
 dump.txt
 test_results.txt
 **/diff.txt
+
+# Photos stored on this machine when no S3 bucket is configured.
+backend/uploads/

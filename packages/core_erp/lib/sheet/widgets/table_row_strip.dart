@@ -23,6 +23,7 @@ class TableRowStrip extends StatefulWidget {
     this.primaryGroupTitle = 'Primary Group',
     this.createdTitle = 'Created',
     this.rowStatusBuilder,
+    this.gutterExtra = 0,
   });
 
   /// The band container, so a test can measure what the strip actually drew
@@ -53,6 +54,9 @@ class TableRowStrip extends StatefulWidget {
   /// in. Only the first, because one gutter per table would repeat the same
   /// four chips four times across one row.
   final Widget? Function(int row)? rowStatusBuilder;
+
+  /// Width the gutter needs beyond its status chip — a photo per row.
+  final double gutterExtra;
 
   @override
   State<TableRowStrip> createState() => _TableRowStripState();
@@ -87,7 +91,10 @@ class _TableRowStripState extends State<TableRowStrip> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final base = SheetMetrics.forWidth(constraints.maxWidth);
+        final plain = SheetMetrics.forWidth(constraints.maxWidth);
+        final base = widget.rowStatusBuilder != null && widget.gutterExtra > 0
+            ? plain.copyWith(gutterWidth: plain.gutterWidth + widget.gutterExtra)
+            : plain;
 
         // Everything that must not scale. Counted off the tables that actually
         // render: the old sum charged 2px for an empty table and three gaps

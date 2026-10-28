@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/services/entity_photos.dart';
+import '../../../../core/widgets/mini_photo.dart';
 import '../../../../core/utils/stamp_format.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/length_unit_field.dart';
@@ -1258,6 +1260,19 @@ class _DieRow extends StatelessWidget {
             ),
             child: Row(
               children: [
+                if (MiniPhoto.isAvailable(context)) ...[
+                  MiniPhoto(
+                    owner: PhotoOwner.die,
+                    // A held die is not in the master yet: nowhere to keep it.
+                    id: pending || die.id.isEmpty ? null : die.id,
+                    size: _kPhotoSize,
+                    what: 'die photo',
+                    fallbackUrl: die.photoUrl,
+                    disabledReason: 'The die is made when the part saves — add '
+                        'its photo then',
+                  ),
+                  const SizedBox(width: _kPhotoGap),
+                ],
                 // Aligned under the strip above. These used to be one joined
                 // sentence — "Cutting · Ashok Dies · 0.8 mm · 2 sets · Rack
                 // R-12" — which reads fine for one die and not at all for six.
@@ -1358,6 +1373,9 @@ const List<String> _kDieHeads = [
   '',
 ];
 
+const double _kPhotoSize = 36;
+const double _kPhotoGap = 8;
+
 class _DieHeaderStrip extends StatelessWidget {
   const _DieHeaderStrip();
 
@@ -1367,6 +1385,8 @@ class _DieHeaderStrip extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 0, 44, 4),
       child: Row(
         children: [
+          if (MiniPhoto.isAvailable(context))
+            const SizedBox(width: _kPhotoSize + _kPhotoGap),
           for (var i = 0; i < _kDieHeads.length; i += 1)
             Expanded(
               flex: _kDieFlex[i],
