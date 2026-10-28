@@ -124,6 +124,8 @@ echo "ready"
 # app, and running them together lets one teardown's in-flight HTTP land during
 # the next boot.
 TESTS=("${1:-}")
+# The full journey's point is the data it leaves: keep the database to browse.
+[[ "${TESTS[0]}" == "full_journey" ]] && KEEP_DB=1
 if [[ -z "${TESTS[0]}" ]]; then
   TESTS=(app_boot sheet_route sheet_bulk sheet_photo)
 fi
@@ -132,9 +134,49 @@ for name in "${TESTS[@]}"; do
   say "flutter test integration_test/${name}_test.dart -d macos"
   ( cd "${REPO}" && flutter test "integration_test/${name}_test.dart" -d macos \
       --dart-define=PAPER_API_BASE_URL="${BASE_URL}" \
-      --dart-define=PAPER_SKIP_ACTIVATION=true ) \
+      --dart-define=PAPER_SKIP_ACTIVATION=true ) 2>&1 | tee "${WORK}/${name}.log" \
     || fail "integration_test/${name}_test.dart"
 done
+
+# --- the full journey: how long each step took, and every row it wrote ------
+if [[ "${TESTS[0]}" == "full_journey" ]]; then
+  say "Step timings (from tap to the app confirming it)"
+  grep -o 'JOURNEY step=[^ ]* ms=[0-9]*' "${WORK}/full_journey.log" \
+    | sed -E 's/JOURNEY step=([^ ]*) ms=([0-9]*)/\2 \1/' \
+    | awk '{ printf "  %7d ms  %s\n", $1, $2 }'
+  grep -o 'JOURNEY total ms=[0-9]* part=[0-9]*' "${WORK}/full_journey.log" | sed 's/^/  /'
+
+  say "What the run wrote (database kept: ${DB})"
+  q() { printf '\n\033[1m%s\033[0m\n' "$1"; sqlite3 -header -column "${DB}" "$2"; }
+  PART="SELECT id FROM items WHERE name LIKE 'E2E UI Patti%'"
+  q "Part" "SELECT id, name, part_code, developed_for_kind AS deal, developed_for_client_id AS client,
+              developed_for_quotation_amount AS quotation, photo_url <> '' AS has_photo
+         FROM items WHERE id IN (${PART});"
+  q "Alloy and thickness" "SELECT p.name AS property, v.name AS value
+         FROM item_variation_nodes p JOIN item_variation_nodes v ON v.parent_node_id = p.id
+        WHERE p.item_id IN (${PART}) AND p.parent_node_id IS NULL;"
+  q "Company" "SELECT id, name, logo_url <> '' AS has_logo FROM clients WHERE name LIKE 'E2E UI Company%';"
+  q "People" "SELECT id, name, designation, phone, email FROM party_contacts WHERE name LIKE 'E2E UI Ravi%';"
+  q "People ticked on the deal" "SELECT item_id, contact_id FROM item_deal_contacts WHERE item_id IN (${PART});"
+  q "Dies on the part" "SELECT d.id, d.tool_code, d.die_type, json_array_length(d.photo_urls) AS photos
+         FROM item_dies l JOIN dies d ON d.id = l.die_id WHERE l.item_id IN (${PART});"
+  q "Machines on the part" "SELECT m.id, m.asset_id, m.name, m.primary_photo_url <> '' AS has_photo
+         FROM item_machines l JOIN machines m ON m.id = l.machine_id WHERE l.item_id IN (${PART});"
+  q "Route" "SELECT r.version, r.status, GROUP_CONCAT(s.seq || ':' || g.code, ' -> ') AS steps
+         FROM process_routes r JOIN process_route_steps s ON s.route_id = r.id
+         JOIN process_stages g ON g.id = s.stage_id WHERE r.part_id IN (${PART}) GROUP BY r.id;"
+  q "Raw sheet" "SELECT json_extract(pen_paper_baseline_json, '$.sheetWidthInches') AS width_in,
+              json_extract(pen_paper_baseline_json, '$.sheetHeightInches') AS length_in,
+              json_extract(pen_paper_baseline_json, '$.vendorName') AS vendor,
+              json_extract(pen_paper_baseline_json, '$.stageReconciliations[0].inputKg') AS in_kg,
+              json_extract(pen_paper_baseline_json, '$.stageReconciliations[0].outputKg') AS out_kg,
+              json_extract(pen_paper_baseline_json, '$.stageReconciliations[0].outputPieces') AS pieces
+         FROM items WHERE id IN (${PART});"
+  q "Photos" "SELECT id, entity_type, entity_id, status, is_primary, size_bytes FROM uploaded_assets ORDER BY id;"
+  printf '\nBrowse it: sqlite3 %s\n' "${DB}"
+  say "OK — full journey"
+  exit 0
+fi
 
 # --- 4. what actually landed -------------------------------------------------
 # Driving the UI is the point; rows in the database are the proof.

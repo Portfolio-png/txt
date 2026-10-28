@@ -72,3 +72,6 @@ test_results.txt
 
 # Photos stored on this machine when no S3 bucket is configured.
 backend/uploads/
+
+# Full-journey reports: the data one run wrote and read back.
+journey-*.json
