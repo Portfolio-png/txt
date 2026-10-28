@@ -223,6 +223,32 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
     }
   });
 
+  // Takes one option off the list, matched in any case — the delete button in
+  // the column's dropdown. One label rather than a whole new list, for the
+  // same reason adding is: two windows at once must not undo each other.
+  // Parts that carry the value keep it; the list only offers it no more.
+  app.delete('/api/item-sheet-properties/:id/options', requirePermission('items.delete'), async (req, res) => {
+    try {
+      const before = await load(req.params.id);
+      const label = cleanOption(req.query.label);
+      if (!label) throw badRequest('Say which option to delete.');
+      const options = parseOptions(before.options_json);
+      const kept = options.filter((o) => o.toLowerCase() !== label.toLowerCase());
+      if (kept.length === options.length) {
+        return res.json({ success: true, property: rowToDto(before) });
+      }
+      await run(
+        'UPDATE item_sheet_properties SET options_json = ?, updated_at = ? WHERE id = ?',
+        [JSON.stringify(kept), new Date().toISOString(), before.id],
+      );
+      const after = await load(before.id);
+      if (trackUpdate) trackUpdate('item_sheet_properties', before.id, before, after, req);
+      res.json({ success: true, property: rowToDto(after) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   app.delete('/api/item-sheet-properties/:id', requirePermission('items.delete'), async (req, res) => {
     try {
       const before = await load(req.params.id);

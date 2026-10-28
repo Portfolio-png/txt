@@ -85,6 +85,15 @@ test('a property column is kept with its options until it is removed', async () 
     added = await call('POST', `/api/item-sheet-properties/${plating.id}/options`, { label: 'satin' });
     assert.deepEqual(added.body.property.options, ['Nickel', 'Chrome', 'Gold', 'Satin']);
 
+    // The dropdown's delete takes one option off, in any case, and only it.
+    let gone = await call('DELETE', `/api/item-sheet-properties/${plating.id}/options?label=${encodeURIComponent('GOLD')}`);
+    assert.equal(gone.status, 200, JSON.stringify(gone.body));
+    assert.deepEqual(gone.body.property.options, ['Nickel', 'Chrome', 'Satin']);
+    gone = await call('DELETE', `/api/item-sheet-properties/${plating.id}/options?label=Gold`);
+    assert.deepEqual(gone.body.property.options, ['Nickel', 'Chrome', 'Satin'], 'already gone is fine');
+    const nameless = await call('DELETE', `/api/item-sheet-properties/${plating.id}/options`);
+    assert.equal(nameless.status, 400);
+
     // Rename is the label only; the key the parts carry stays.
     const renamed = await call('PATCH', `/api/item-sheet-properties/${plating.id}`, {
       displayName: 'Plating finish',

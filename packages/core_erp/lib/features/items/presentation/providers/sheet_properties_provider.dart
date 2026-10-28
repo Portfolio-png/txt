@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/services/socket_service.dart';
@@ -31,8 +33,11 @@ class SheetPropertiesProvider extends ChangeNotifier {
     return _properties.where((p) => p.key == wanted).firstOrNull;
   }
 
+  /// Also a retry: a window whose first read failed (the server restarting,
+  /// a request before sign-in landed) catches up on the next change anywhere,
+  /// instead of holding nothing for the rest of the session.
   void _onRemoteChange(dynamic _) {
-    if (_loaded && !_loading) refresh();
+    if (!_loading) refresh();
   }
 
   Future<void> ensureLoaded() async {
@@ -63,6 +68,9 @@ class SheetPropertiesProvider extends ChangeNotifier {
     try {
       final made = await _repository.create(name: name, kind: kind, options: options);
       _put(made);
+      // The server answered, so the read that failed earlier can be had now —
+      // and with it the columns this window never saw.
+      if (!_loaded && !_loading) unawaited(refresh());
       return made;
     } on SheetPropertyException catch (error) {
       if (error.code == 'property_exists' && error.existing != null) {
@@ -84,6 +92,11 @@ class SheetPropertiesProvider extends ChangeNotifier {
   /// A value typed into the column joins its list for everyone.
   Future<SheetProperty?> addOption(int id, String label) =>
       _write(() => _repository.addOption(id, label));
+
+  /// The delete in the column's dropdown: the option leaves its list for
+  /// everyone.
+  Future<SheetProperty?> removeOption(int id, String label) =>
+      _write(() => _repository.removeOption(id, label));
 
   Future<bool> remove(int id) async {
     try {

@@ -335,6 +335,12 @@ class SheetController extends ChangeNotifier {
   /// here joins that list for everyone.
   void Function(ColumnDef column, String label)? onOptionAdded;
 
+  /// Whether [ColumnOption] can be deleted from [ColumnDef]'s list, asked
+  /// for every row of the dropdown. Null — the hook, or its answer — draws no
+  /// delete button: only lists the host keeps (the item sheet's property
+  /// columns) have anything to delete from.
+  OptionRemoval? Function(ColumnDef column, ColumnOption option)? removalFor;
+
   /// Asked before a column is removed; false keeps it. Null removes at once.
   Future<bool> Function(ColumnDef column)? confirmRemoveColumn;
 
@@ -685,6 +691,25 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Takes a deleted option off [columnId]'s dropdown, and out of every row
+  /// still holding it — those are unsaved typing, since the host refuses to
+  /// delete a value a saved part carries.
+  void dropOption(int columnId, String label) {
+    final drop = label.trim().toLowerCase();
+    _options.removeWhere(
+      (opt) => opt.columnId == columnId && opt.label.toLowerCase() == drop,
+    );
+    _optionIndex = null;
+    for (final draft in _drafts) {
+      final value = draft.get(columnId);
+      if ((value?.optionLabel ?? '').trim().toLowerCase() == drop) {
+        draft.clear(columnId);
+      }
+    }
+    _deriveAndValidate();
+    notifyListeners();
+  }
+
   static int _nextNewOptionId = 900000000;
 
   void addNewOption(int columnId, String label, {int? row}) {
@@ -982,4 +1007,17 @@ class _CodesWith extends SetBase<String> {
 
   @override
   Set<String> toSet() => {..._base, if (_extra != null) _extra};
+}
+
+/// How one option leaves a dropdown's list: [remove] does it (answering
+/// whether it went), or [blockedBecause] says why it cannot — drawn as a
+/// disabled delete button with that reason, never hidden.
+class OptionRemoval {
+  const OptionRemoval(Future<bool> Function() this.remove)
+      : blockedBecause = null;
+
+  const OptionRemoval.blocked(String this.blockedBecause) : remove = null;
+
+  final Future<bool> Function()? remove;
+  final String? blockedBecause;
 }

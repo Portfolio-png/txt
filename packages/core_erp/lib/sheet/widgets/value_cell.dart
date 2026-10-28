@@ -1065,25 +1065,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                                 color: Color(0xFF64748B),
                               ),
                             ),
-                      trailing: opt.isNew
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFD1FAE5),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'New',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF065F46),
-                                ),
-                              ),
-                            )
-                          : null,
+                      trailing: _trailingFor(opt),
                       onTap: () => widget.onSelectOption(opt),
                     ),
                   ),
@@ -1116,6 +1098,49 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  /// The "New" badge on a value typed this session, and the delete button on
+  /// a value the host keeps a list of.
+  Widget? _trailingFor(ColumnOption opt) {
+    final removal = widget.controller.removalFor?.call(widget.column, opt);
+    final badge = opt.isNew
+        ? Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFFD1FAE5),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text(
+              'New',
+              style: TextStyle(fontSize: 13, color: Color(0xFF065F46)),
+            ),
+          )
+        : null;
+    if (removal == null) return badge;
+    final remove = removal.remove;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ?badge,
+        // Drawn disabled, with the reason, rather than hidden: a button that
+        // comes and goes reads as broken.
+        IconButton(
+          key: ValueKey<String>('sheet_option_delete_${opt.label}'),
+          tooltip: removal.blockedBecause ?? 'Delete “${opt.label}” from this list',
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.delete_outline_rounded, size: 20),
+          color: const Color(0xFFB91C1C),
+          onPressed: remove == null
+              ? null
+              : () async {
+                  final gone = await remove();
+                  if (!gone || !mounted) return;
+                  widget.controller.dropOption(widget.column.id, opt.label);
+                },
+        ),
+      ],
     );
   }
 

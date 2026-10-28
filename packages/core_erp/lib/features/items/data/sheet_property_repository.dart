@@ -21,6 +21,10 @@ abstract class SheetPropertyRepository {
   /// Adds one option unless it is already listed (ignoring case).
   Future<SheetProperty> addOption(int id, String label);
 
+  /// Takes one option off the list (matched ignoring case). Parts carrying
+  /// the value keep it.
+  Future<SheetProperty> removeOption(int id, String label);
+
   Future<void> remove(int id);
 }
 
@@ -162,6 +166,23 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
       _uri('/$id/options'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'label': label}),
+    ));
+  }
+
+  @override
+  Future<SheetProperty> removeOption(int id, String label) async {
+    if (useMockResponses) {
+      final at = _mock.indexWhere((p) => p.id == id);
+      if (at < 0) throw const SheetPropertyException('No such property column.');
+      final drop = label.trim().toLowerCase();
+      _mock[at] = _mock[at].copyWith(options: [
+        for (final option in _mock[at].options)
+          if (option.toLowerCase() != drop) option,
+      ]);
+      return _mock[at];
+    }
+    return _read(await _client.delete(
+      _uri('/$id/options').replace(queryParameters: {'label': label}),
     ));
   }
 

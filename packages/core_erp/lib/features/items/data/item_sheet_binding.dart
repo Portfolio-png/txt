@@ -1170,6 +1170,11 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     return draft;
   }
 
+  /// The value [item] carries for the top-level property [property], or
+  /// null — how the sheet tells whether a list option is still in use.
+  static String? propertyValueOf(ItemDefinition item, String property) =>
+      _valueOfProperty(item, property);
+
   static String? _valueOfProperty(ItemDefinition item, String property) {
     final wanted = _normalize(property);
     for (final node in item.topLevelProperties) {
