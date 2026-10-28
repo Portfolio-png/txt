@@ -61,6 +61,35 @@ const SHEET_PLAN = {
   edgeTrimAxis: 'rows',
   plannedPartId: 42,
   plannedPartName: 'MS Bracket 60x40',
+  // The other forms the part can be pressed from: a width, a length that is
+  // usually undefined (absent), and a pitch — in nanometres — each with its
+  // own vendor; thickness and grade are the part's, stamped on.
+  forms: {
+    coil: {
+      widthNm: 250000000,
+      thicknessNm: 800000,
+      pitchNm: 3000000,
+      widthUnit: 'mm',
+      lengthUnit: 'mm',
+      thicknessUnit: 'mm',
+      pitchUnit: 'mm',
+      vendorId: 3,
+      vendorName: 'Hindalco',
+      grade: 'Second',
+      reconciliation: { inputKg: 120, outputKg: 110, outputPieces: 900 },
+    },
+    strip: {
+      widthNm: 40000000,
+      lengthNm: 2000000000,
+      widthUnit: 'mm',
+      lengthUnit: 'm',
+      thicknessUnit: 'mm',
+      pitchUnit: 'mm',
+      grade: 'First',
+      reconciliation: {},
+    },
+  },
+  lastForm: 'coil',
 };
 
 test('a sheet plan survives being saved and reopened', async () => {
@@ -142,6 +171,14 @@ test('a sheet plan survives being saved and reopened', async () => {
     // The offcut region's negative key is the one most likely to be mangled.
     assert.deepEqual(stored.subCuts['-1'], [{ sizeMm: 400, count: 1 }]);
     assert.deepEqual(stored.subCuts['0'], [{ sizeMm: 1200, count: 2 }]);
+    assert.equal(stored.forms.coil.widthNm, 250000000);
+    assert.equal(stored.forms.coil.pitchNm, 3000000);
+    assert.equal(stored.forms.coil.lengthNm, undefined, 'undefined stays undefined');
+    assert.equal(stored.forms.strip.lengthNm, 2000000000);
+    assert.equal(stored.forms.coil.vendorName, 'Hindalco');
+    assert.equal(stored.forms.coil.grade, 'Second');
+    assert.equal(stored.forms.strip.grade, 'First');
+    assert.equal(stored.lastForm, 'coil');
 
     // Editing the plan replaces it rather than merging into the old one.
     const edited = await send('PATCH', `/api/items/${itemId}`, {
@@ -161,6 +198,20 @@ test('a sheet plan survives being saved and reopened', async () => {
       afterEdit.body.item.penPaperBaseline.bands.length,
       1,
       'the removed band is gone, not merged back in'
+    );
+
+    // A save that does not carry the plan leaves it — coil and all.
+    const renamed = await send('PATCH', `/api/items/${itemId}`, {
+      name: 'Sheet Plan Round Trip (renamed)',
+      groupId,
+      unitId,
+    });
+    assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
+    const afterRename = await get(`/api/items/${itemId}`);
+    assert.deepEqual(
+      afterRename.body.item.penPaperBaseline.forms,
+      SHEET_PLAN.forms,
+      'saving without the plan must not drop the other forms'
     );
 
     // A plan on the pipeline template persists the same way, which is what

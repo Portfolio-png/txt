@@ -230,11 +230,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SheetDimensionFigure), findsOneWidget);
       expect(find.text('WIDTH'), findsOneWidget);
-      expect(find.text('HEIGHT'), findsOneWidget);
+      expect(find.text('LENGTH'), findsOneWidget);
+      expect(find.text('HEIGHT'), findsNothing);
       expect(find.text('THICKNESS'), findsOneWidget);
       // Nothing typed yet, so the panel asks rather than printing zeros.
       expect(
-        find.text('Enter width and height to draw the sheet.'),
+        find.text('Enter width and length to draw the sheet.'),
         findsOneWidget,
       );
     });
@@ -246,11 +247,12 @@ void main() {
 
       await open(tester);
 
+      // Width first, then length: the order the fields are in.
       await tester.enterText(find.byType(TextField).at(0), '48');
       await tester.pump();
       // One side is not an area, so it still asks for the other.
       expect(
-        find.text('Enter width and height to draw the sheet.'),
+        find.text('Enter width and length to draw the sheet.'),
         findsOneWidget,
       );
 
@@ -299,6 +301,7 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
+      // Width, length, thickness.
       await tester.enterText(find.byType(TextField).at(0), '48');
       await tester.enterText(find.byType(TextField).at(1), '96');
       await tester.enterText(find.byType(TextField).at(2), '1.6');

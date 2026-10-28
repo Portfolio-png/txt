@@ -8,6 +8,8 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/mast
 import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
+import 'package:core_erp/features/process_routes/data/process_route_service.dart';
+import 'package:core_erp/features/process_routes/domain/part_route.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -158,6 +160,7 @@ Future<void> _pumpScreen(
   _FakeItemRepository? repository,
   // Subscribed to the change stream, as the app's provider is after start-up.
   bool live = false,
+  ProcessRouteService? routes,
   EntityPhotosProvider? photos,
 }) async {
   final groups = GroupsProvider(
@@ -190,6 +193,7 @@ Future<void> _pumpScreen(
       providers: [
         ChangeNotifierProvider<ItemsProvider>.value(value: itemsProvider),
         ChangeNotifierProvider<GroupsProvider>.value(value: groups),
+        if (routes != null) Provider<ProcessRouteService>.value(value: routes),
         if (photos != null)
           ChangeNotifierProvider<EntityPhotosProvider>.value(value: photos),
       ],
@@ -626,6 +630,48 @@ void main() {
       expect(repo.updated.single.id, 500);
     });
 
+    testWidgets('the raw sheet panel runs on the part\'s route — the route is its pipeline',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      final routes = ProcessRouteService(baseUrl: '', useMockResponses: true);
+      await routes.save(500, const [
+        RouteStep(stageId: 1, seq: 1, stageCode: 'die', stageName: 'Die'),
+        RouteStep(stageId: 2, seq: 2, stageCode: 'shearing', stageName: 'Shearing'),
+      ]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        routes: routes,
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+
+      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel.pipelineId, startsWith('route:'));
+      expect(panel.pipelineName, 'Route v1 · Die → Shearing');
+      expect(panel.stageNodes.map((node) => node.name), ['Die', 'Shearing']);
+    });
+
+    testWidgets('an unrouted part says to author a route, not to pick a pipeline',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        routes: ProcessRouteService(baseUrl: '', useMockResponses: true),
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+
+      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel.pipelineId, isNull);
+      expect(panel.unattachedHint, contains('Author route'));
+    });
+
     testWidgets('the footer Edit, typed pieces, Save: the pieces are on the part',
         (tester) async {
       final patti = _item(id: 500, name: 'Patti', groupId: 11);
@@ -703,6 +749,72 @@ void main() {
       expect(panel.alloy, 'Brass');
       expect(panel.materials, isEmpty,
           reason: 'no picker of its own: alloy is changed in its column');
+    });
+
+    testWidgets('the raw panel\'s thickness is the part\'s Thickness cell, both '
+        'ways, and saves with the plan', (tester) async {
+      ItemVariationNodeDefinition node(int id, String name,
+              {ItemVariationNodeKind kind = ItemVariationNodeKind.property,
+              int? parent,
+              List<ItemVariationNodeDefinition> children = const []}) =>
+          ItemVariationNodeDefinition(
+            id: id,
+            itemId: 500,
+            parentNodeId: parent,
+            kind: kind,
+            name: name,
+            displayName: name,
+            position: 0,
+            isArchived: false,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+            children: children,
+            inputType: kind == ItemVariationNodeKind.property ? 'Gauge' : 'Text',
+          );
+      final patti = _item(id: 500, name: 'Patti', groupId: 11, variationTree: [
+        node(10, 'Thickness', children: [
+          node(11, '18 Gauge', kind: ItemVariationNodeKind.value, parent: 10),
+        ]),
+      ]);
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      MasterDataPanel panel() =>
+          tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel().thickness, '18 Gauge');
+      expect(panel().grade, '', reason: 'no Grade column on this sheet yet');
+
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+      await tester.pump();
+      // Typed in the panel: the part's cell takes it, in its own words.
+      panel().onThicknessChanged!('1.2 mm');
+      await tester.pump();
+      expect(panel().thickness, '1.2 mm');
+      // A gauge is the gauge option itself.
+      panel().onThicknessChanged!('20 Gauge');
+      await tester.pump();
+      expect(panel().thickness, '20 Gauge');
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('master-data-save')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      // The row went first, carrying the new thickness; then the plan.
+      final rowSave = repo.updated.firstWhere(
+        (input) => input.variationTree.isNotEmpty,
+      );
+      final thickness = rowSave.variationTree
+          .firstWhere((n) => n.name == 'Thickness')
+          .children
+          .single
+          .name;
+      expect(thickness, '20 Gauge');
+      expect(repo.updated.last.penPaperBaseline, isNotNull);
     });
 
     testWidgets('selecting a saved row moves the sections onto its part',

@@ -9,7 +9,9 @@ import 'package:printing/printing.dart';
 import '../../../units/domain/quantity.dart';
 import '../../../units/domain/unit_family.dart';
 import '../../../units/domain/units.dart';
+import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
+import '../../domain/raw_stock_form.dart';
 
 /// One block of the Raw sheet review: a heading and its label–value lines.
 class RawSheetReviewSection {
@@ -61,7 +63,6 @@ List<RawSheetReviewSection> rawSheetReviewSections({
       if (parts.isEmpty) ('Pieces', 'Nothing planned on the sheet yet'),
       for (final entry in parts)
         (entry.label, '${entry.count} × ${entry.sizeLabel}'),
-      if (baseline.kerfMm > 0) ('Pitch', mm(baseline.kerfMm)),
       if (baseline.edgeTrimMm > 0) ('Edge trim', mm(baseline.edgeTrimMm)),
       ('Pieces per sheet', _pieces(baseline.pieceCount, countFamily)),
       if (sheetAreaMm2 > 0) ('Yield', '${yieldPct.toStringAsFixed(1)}%'),
@@ -98,6 +99,34 @@ List<RawSheetReviewSection> rawSheetReviewSections({
       RawSheetReviewSection('Material stage by stage', [
         for (final row in rows)
           (row.stageName, '${kg(row.inputKg)} in · ${kg(row.outputKg)} out'),
+      ]),
+    );
+  }
+
+  // Strip, coil and roll after the sheet, each that holds anything — all
+  // four stand equal, so the order is just the order they are offered in.
+  for (final form in RawForm.values.where((f) => f.isBand)) {
+    final plan = baseline.forms[form];
+    if (plan == null || !plan.hasData) continue;
+    String length(int? nm, String unit) =>
+        nm == null ? 'Not set' : '${formatLengthFromNanometres(nm, unit)} $unit';
+    final row = plan.reconciliation;
+    final parts = plan.partsFromLength();
+    sections.add(
+      RawSheetReviewSection(form.label, [
+        ('Width', length(plan.widthNm, plan.widthUnit)),
+        ('Length', plan.lengthKnown
+            ? length(plan.lengthNm, plan.lengthUnit)
+            : 'Undefined'),
+        ('Thickness', length(plan.thicknessNm, plan.thicknessUnit)),
+        ('Pitch', length(plan.pitchNm, plan.pitchUnit)),
+        if (parts != null) ('Parts from the length', '$parts'),
+        ('Alloy', said(baseline.materialName)),
+        ('Grade', plan.grade.isEmpty ? 'Not set' : '${plan.grade} grade'),
+        ('Vendor', said(plan.vendorName)),
+        if (row.inputKg > 0) ('Weight in', kg(row.inputKg)),
+        if (row.piecesOut > 0) ('Out', _pieces(row.piecesOut, countFamily)),
+        if (row.outputKg > 0) ('Weight out', kg(row.outputKg)),
       ]),
     );
   }
@@ -394,7 +423,7 @@ Future<void> showRawSheetReviewPrint(
                 children: [
                   const Expanded(
                     child: Text(
-                      'Raw sheet review',
+                      'Raw material review',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,

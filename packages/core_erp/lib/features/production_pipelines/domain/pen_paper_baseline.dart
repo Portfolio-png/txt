@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import 'pipeline_stage_node.dart';
+import 'raw_stock_form.dart';
 import '../../units/domain/global_length_units.dart';
 import 'sheet_part.dart';
 
@@ -409,6 +410,8 @@ class PenPaperBaseline {
     this.materialGrade = '',
     this.vendorId,
     this.vendorName = '',
+    this.forms = const <RawForm, RawStockForm>{},
+    this.lastForm = RawForm.sheet,
   });
 
   /// The units the sheet's own measurements are read in, by symbol.
@@ -437,6 +440,33 @@ class PenPaperBaseline {
   /// when picked, so an archived vendor still reads on an old record.
   final int? vendorId;
   final String vendorName;
+
+  /// The strip, coil and roll this part can also be pressed from, each with
+  /// its own plan. The sheet is not in here: it is this record's own fields,
+  /// where every plan saved before the other forms existed keeps it. All four
+  /// stand equal — none is the default.
+  final Map<RawForm, RawStockForm> forms;
+
+  /// The form last worked on, so the panel reopens on it.
+  final RawForm lastForm;
+
+  /// [form]'s plan, or an empty one. Never asked for the sheet.
+  RawStockForm formOf(RawForm form) => forms[form] ?? RawStockForm.empty;
+
+  /// Whether [form] has anything recorded — the sheet by its size or plan.
+  bool hasForm(RawForm form) => form == RawForm.sheet
+      ? sheetWidthInches > 0 || sheetHeightInches > 0 || bands.isNotEmpty
+      : formOf(form).hasData;
+
+  /// This record with [form]'s plan replaced.
+  PenPaperBaseline withForm(RawForm form, RawStockForm plan) =>
+      copyWith(forms: {...forms, form: plan});
+
+  /// Without the forms that hold nothing, as a save records it.
+  Map<RawForm, RawStockForm> get filledForms => {
+        for (final entry in forms.entries)
+          if (entry.key.isBand && entry.value.hasData) entry.key: entry.value,
+      };
 
   /// The part this plan is cutting, when it came from the catalogue rather than
   /// from typed sizes. Stamped so the record says what it was planning, and so
@@ -1181,6 +1211,8 @@ class PenPaperBaseline {
     String? materialGrade,
     Object? vendorId = _keepVendor,
     String? vendorName,
+    Map<RawForm, RawStockForm>? forms,
+    RawForm? lastForm,
   }) {
     return PenPaperBaseline(
       isGranular: isGranular ?? this.isGranular,
@@ -1210,6 +1242,8 @@ class PenPaperBaseline {
       materialGrade: materialGrade ?? this.materialGrade,
       vendorId: vendorId == _keepVendor ? this.vendorId : vendorId as int?,
       vendorName: vendorName ?? this.vendorName,
+      forms: forms ?? this.forms,
+      lastForm: lastForm ?? this.lastForm,
     );
   }
 
@@ -1246,6 +1280,12 @@ class PenPaperBaseline {
       'materialGrade': materialGrade,
       if (vendorId != null) 'vendorId': vendorId,
       'vendorName': vendorName,
+      if (filledForms.isNotEmpty)
+        'forms': {
+          for (final entry in filledForms.entries)
+            entry.key.name: entry.value.toJson(),
+        },
+      'lastForm': lastForm.name,
     };
   }
 
@@ -1295,6 +1335,30 @@ class PenPaperBaseline {
       materialGrade: json['materialGrade']?.toString() ?? '',
       vendorId: (json['vendorId'] as num?)?.toInt(),
       vendorName: json['vendorName']?.toString() ?? '',
+      // Absent on every plan from before strip, coil and roll: none of them.
+      forms: _readForms(
+        json['forms'],
+        legacyPitchMm: (json['kerfMm'] as num?)?.toDouble() ?? 0,
+      ),
+      lastForm: RawForm.fromName(json['lastForm']?.toString()) ?? RawForm.sheet,
     );
+  }
+
+  /// [legacyPitchMm] is the sheet-wide pitch plans used to keep: a band
+  /// saved before bands had a pitch of their own takes it.
+  static Map<RawForm, RawStockForm> _readForms(
+    Object? raw, {
+    double legacyPitchMm = 0,
+  }) {
+    if (raw is! Map) return const <RawForm, RawStockForm>{};
+    return {
+      for (final entry in raw.entries)
+        if (RawForm.fromName('${entry.key}') case final form?)
+          if (form.isBand && entry.value is Map<String, dynamic>)
+            form: RawStockForm.fromJson(
+              entry.value as Map<String, dynamic>,
+              legacyPitchMm: legacyPitchMm,
+            ),
+    };
   }
 }

@@ -1,7 +1,10 @@
 import 'package:core_erp/features/materials/domain/material_definition.dart';
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
+import 'package:core_erp/features/production_pipelines/domain/raw_stock_form.dart';
 import 'package:core_erp/features/production_pipelines/domain/sheet_part.dart';
+import 'package:core_erp/features/production_pipelines/presentation/widgets/band_form_animation.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
+import 'package:core_erp/features/production_pipelines/presentation/widgets/pen_paper_baseline_widget.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/raw_sheet_review.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/sheet_dimension_figure.dart';
 import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
@@ -92,6 +95,9 @@ void main() {
     VoidCallback? onEdit,
     bool showHeader = true,
     String? alloy,
+    String? grade,
+    String? thickness,
+    ValueChanged<String>? onThicknessChanged,
     VendorsProvider? vendors,
   }) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -115,6 +121,9 @@ void main() {
                   child: MasterDataPanel(
                     key: const ValueKey<String>('panel'),
                     alloy: alloy,
+                    grade: grade,
+                    thickness: thickness,
+                    onThicknessChanged: onThicknessChanged,
                     baseline: baseline,
                     itemName: 'Alloy - 16A - MS Sheet',
                     pipelineName: 'Cut → Punch',
@@ -194,6 +203,7 @@ void main() {
     await tester.pump();
     expect(cancelled, 2);
 
+    // Width is the first field, length the second.
     await tester.enterText(find.byType(TextField).at(0), '50');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save Master Data'));
@@ -226,7 +236,7 @@ void main() {
 
   testWidgets('while editing, the working copy is kept', (tester) async {
     await mount(tester);
-    await tester.enterText(find.byType(TextField).at(0), '50');
+    await tester.enterText(find.byType(TextField).at(0), '50'); // the width
     await tester.pumpAndSettle();
 
     await mount(tester, baseline: planned.copyWith(sheetHeightInches: 120));
@@ -256,10 +266,19 @@ void main() {
     await openStep(tester, 'Material data');
 
     expect(text(tester, 'material-input-name'), contains('Steel / MS'));
+    // Length × width, as the fields are typed.
     expect(text(tester, 'material-input-name'), contains('48 × 96 in'));
     expect(text(tester, 'material-output-name'), 'Alloy - 16A - MS Sheet');
     expect(find.text('TYPE'), findsNothing);
-    expect(find.text('Sheet'), findsNothing, reason: 'the old noun guess');
+    // Inside Material data: the form switcher above has a "Sheet" tile.
+    expect(
+      find.descendant(
+        of: find.byType(PenPaperBaselineWidget),
+        matching: find.text('Sheet'),
+      ),
+      findsNothing,
+      reason: 'the old noun guess',
+    );
 
     final sheets = tester.widget<TextField>(
       find.descendant(
@@ -512,5 +531,351 @@ void main() {
     await mount(tester, vendors: vendors);
     expect(tester.takeException(), isNull);
     expect(vendors.vendors.map((v) => v.name), ['Tata Steel']);
+  });
+
+  group('the four forms', () {
+    testWidgets('Sheet, Strip, Coil and Roll sit side by side, the sheet dotted',
+        (tester) async {
+      await mount(tester);
+      for (final form in RawForm.values) {
+        expect(find.byKey(ValueKey<String>('raw-form-${form.name}')), findsOneWidget);
+      }
+      // The plan above has a sheet and nothing else.
+      expect(find.byKey(const ValueKey<String>('raw-form-dot-sheet')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('raw-form-dot-coil')), findsNothing);
+      expect(find.text('Sheet planning'), findsOneWidget);
+    });
+
+    testWidgets('the sheet is quoted Width, then Length — and has no pitch', (
+      tester,
+    ) async {
+      await mount(tester);
+      // The labels are drawn in capitals.
+      expect(find.text('HEIGHT'), findsNothing);
+      final width = tester.getTopLeft(find.text('WIDTH').first).dx;
+      final length = tester.getTopLeft(find.text('LENGTH').first).dx;
+      expect(width, lessThan(length), reason: 'Width sits first again');
+      expect(find.text('PITCH'), findsNothing);
+      expect(find.byKey(const ValueKey<String>('sheet-kerf')), findsNothing);
+      expect(find.text('EDGE TRIM'), findsOneWidget);
+    });
+
+    testWidgets('a strip, coil or roll is its own stock, animated once — '
+        'never shown as cut from the sheet', (tester) async {
+      await mount(tester);
+      for (final form in [RawForm.strip, RawForm.coil, RawForm.roll]) {
+        await tester.tap(find.byKey(ValueKey<String>('raw-form-${form.name}')));
+        await tester.pump();
+        expect(
+          find.byKey(ValueKey<String>('band-animation-${form.name}')),
+          findsOneWidget,
+        );
+        // Mid-way, then to rest: it plays once and stops.
+        await tester.pump(const Duration(milliseconds: 700));
+        expect(tester.hasRunningAnimations, isTrue);
+        await tester.pumpAndSettle();
+        expect(find.textContaining('From the sheet'), findsNothing);
+        expect(find.byType(SheetDimensionFigure), findsNothing);
+      }
+      await tester.tap(find.byKey(const ValueKey<String>('band-animation-replay')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.hasRunningAnimations, isTrue, reason: 'replay plays it again');
+      await tester.pumpAndSettle();
+    });
+
+    /// Scrolls the step until [key] is built and on screen: in a side panel
+    /// the step is one tall list, and a list builds only what it shows.
+    Future<void> reveal(WidgetTester tester, String key) async {
+      await tester.scrollUntilVisible(
+        find.byKey(ValueKey<String>(key)),
+        150,
+        scrollable: find
+            .byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a coil is laid out like the sheet: width, an undefined '
+        'length, the thickness, and an operation', (tester) async {
+      PenPaperBaseline? saved;
+      await mount(
+        tester,
+        baseline: planned.copyWith(plannedPartId: 7),
+        onSave: (b) => saved = b,
+        alloy: 'Brass',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-coil')));
+      await tester.pumpAndSettle();
+      expect(find.text('Coil planning'), findsOneWidget);
+
+      await reveal(tester, 'coil-width');
+      expect(find.byKey(const ValueKey<String>('coil-length-undefined')), findsOneWidget);
+      expect(find.text('Undefined'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('raw-thickness')), findsOneWidget);
+      // No edge trim and no parts across on a band.
+      expect(find.text('EDGE TRIM'), findsNothing);
+      expect(find.text('ACROSS'), findsNothing);
+      expect(find.byKey(const ValueKey<String>('coil-trim')), findsNothing);
+      expect(find.byKey(const ValueKey<String>('coil-lanes')), findsNothing);
+
+      await tester.enterText(find.byKey(const ValueKey<String>('coil-width')), '250');
+      await reveal(tester, 'coil-pitch');
+      expect(find.text('OPERATION'), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey<String>('coil-pitch')), '3');
+      await reveal(tester, 'coil-yield');
+      expect(find.text('One part every 3 mm of coil.'), findsOneWidget);
+
+      // The day the length is known, it is a count.
+      await reveal(tester, 'coil-length');
+      await tester.tap(find.byKey(const ValueKey<String>('coil-length')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Known length'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('coil-length-value')),
+        '2000',
+      );
+      await reveal(tester, 'coil-yield');
+      expect(
+        find.text('≈ 666 parts from 2000 mm of coil — one every 3 mm.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Save Master Data'));
+      await tester.pump();
+      final coil = saved!.formOf(RawForm.coil);
+      expect(coil.widthNm, 250 * 1000000);
+      expect(coil.lengthNm, 2000 * 1000000);
+      expect(coil.pitchNm, 3 * 1000000);
+      expect(coil.thicknessNm, 1600000, reason: 'the part’s, stamped on');
+      expect(saved!.lastForm, RawForm.coil);
+      // The sheet is untouched, and has no pitch any more.
+      expect(saved!.sheetWidthInches, 48);
+      expect(saved!.kerfMm, 0);
+    });
+
+    testWidgets('back to Undefined clears the length', (tester) async {
+      PenPaperBaseline? saved;
+      await mount(
+        tester,
+        baseline: planned.withForm(
+          RawForm.strip,
+          const RawStockForm(widthNm: 40 * 1000000, lengthNm: 900 * 1000000),
+        ).copyWith(lastForm: RawForm.strip),
+        onSave: (b) => saved = b,
+      );
+      await reveal(tester, 'strip-length');
+      expect(find.byKey(const ValueKey<String>('strip-length-value')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey<String>('strip-length')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Undefined').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('strip-length-undefined')), findsOneWidget);
+      await tester.tap(find.text('Save Master Data'));
+      await tester.pump();
+      expect(saved!.formOf(RawForm.strip).lengthNm, isNull);
+    });
+
+    testWidgets('the animation carries the measures as typed', (tester) async {
+      await mount(
+        tester,
+        thickness: '1.6 mm',
+        baseline: planned.withForm(
+          RawForm.coil,
+          const RawStockForm(widthNm: 250 * 1000000, pitchNm: 45 * 1000000),
+        ).copyWith(lastForm: RawForm.coil),
+      );
+      BandFormPainter painter() => tester
+          .widget<CustomPaint>(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey<String>('band-animation-coil')),
+                  matching: find.byType(CustomPaint),
+                )
+                .last,
+          )
+          .painter! as BandFormPainter;
+      expect(painter().widthLabel, '250 mm');
+      expect(painter().thicknessLabel, '1.6 mm');
+      expect(painter().pitchLabel, '45 mm');
+      expect(painter().lengthMm, isNull, reason: 'undefined');
+
+      await reveal(tester, 'coil-width');
+      await tester.enterText(find.byKey(const ValueKey<String>('coil-width')), '300');
+      await tester.pump();
+      expect(painter().widthLabel, '300 mm', reason: 'follows the typing');
+      expect(painter().t, 1, reason: 'without playing again');
+    });
+
+    testWidgets('every form has the operation, with the part’s alloy and '
+        'grade read-only', (tester) async {
+      PenPaperBaseline? saved;
+      await mount(
+        tester,
+        alloy: 'Brass',
+        grade: 'A',
+        onSave: (b) => saved = b,
+        baseline: planned.withForm(
+          RawForm.roll,
+          const RawStockForm(widthNm: 100 * 1000000, grade: 'Old'),
+        ),
+      );
+      for (final form in RawForm.values) {
+        await tester.tap(find.byKey(ValueKey<String>('raw-form-${form.name}')));
+        await tester.pumpAndSettle();
+        await reveal(tester, 'part-grade');
+        expect(find.text('OPERATION'), findsOneWidget, reason: form.label);
+        expect(find.byKey(const ValueKey<String>('sheet-part')), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('sheet-alloy')),
+            matching: find.text('Brass'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('part-grade')),
+            matching: find.text('A'),
+          ),
+          findsOneWidget,
+        );
+        // Read-only: no grade picker of the panel's own.
+        expect(find.byKey(ValueKey<String>('${form.name}-grade')), findsNothing);
+      }
+      await tester.tap(find.text('Save Master Data'));
+      await tester.pump();
+      expect(saved!.materialGrade, 'A');
+      expect(saved!.formOf(RawForm.roll).grade, 'A');
+    });
+
+    testWidgets('a part with no grade says where to give it one', (tester) async {
+      await mount(tester, alloy: 'Brass', grade: '');
+      await reveal(tester, 'part-grade');
+      expect(find.text('Not set — add a Grade column in Properties'), findsOneWidget);
+    });
+
+    testWidgets('the thickness is the part’s: it opens on it, follows it, '
+        'and sends back what is typed', (tester) async {
+      final sent = <String>[];
+      await mount(tester, thickness: '1.2 mm', onThicknessChanged: sent.add);
+      final field = find.descendant(
+        of: find.byKey(const ValueKey<String>('raw-thickness')),
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(field).controller!.text, '1.2');
+
+      // Changed in the Thickness column: the panel follows.
+      await mount(tester, thickness: '18 Gauge', onThicknessChanged: sent.add);
+      expect(tester.widget<TextField>(field).controller!.text, '18');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('raw-thickness')),
+          matching: find.text('ga'),
+        ),
+        findsOneWidget,
+      );
+
+      // Typed here: the Thickness column is told, in its own words.
+      await tester.enterText(field, '20');
+      await tester.pump();
+      expect(sent.last, '20 Gauge');
+
+      await mount(tester, thickness: 'thick', onThicknessChanged: sent.add);
+      expect(
+        find.text('“thick” in the Thickness column is not a measurement.'),
+        findsNothing,
+        reason: 'not while the field is being typed in',
+      );
+    });
+
+    testWidgets('a Thickness cell that is not a measurement says so', (tester) async {
+      await mount(tester, thickness: 'thick');
+      expect(
+        find.text('“thick” in the Thickness column is not a measurement.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a vendor and grade on the coil are the coil\'s, not the sheet\'s',
+        (tester) async {
+      final vendors = VendorsProvider(repository: _Vendors());
+      await vendors.refresh();
+      PenPaperBaseline? saved;
+      await mount(
+        tester,
+        vendors: vendors,
+        baseline: planned.copyWith(materialGrade: 'First'),
+        onSave: (b) => saved = b,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-coil')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey<String>('coil-vendor')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tata Steel').last);
+      await tester.pumpAndSettle();
+      // Below the sheet-to-coil picture, so scrolled to first.
+      await tester.ensureVisible(find.byKey(const ValueKey<String>('coil-grade')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('coil-grade')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Third grade').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save Master Data'));
+      await tester.pump();
+      expect(saved!.formOf(RawForm.coil).vendorName, 'Tata Steel');
+      expect(saved!.formOf(RawForm.coil).grade, 'Third');
+      expect(saved!.vendorId, isNull, reason: 'the sheet has no vendor yet');
+      expect(saved!.materialGrade, 'First');
+    });
+
+    testWidgets('it reopens on the form last worked on, and Review lists it',
+        (tester) async {
+      await mount(
+        tester,
+        baseline: planned
+            .withForm(
+              RawForm.roll,
+              const RawStockForm(widthNm: 100 * 1000000, grade: 'Second'),
+            )
+            .copyWith(lastForm: RawForm.roll),
+      );
+      expect(find.text('Roll planning'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('roll-width')), findsOneWidget);
+
+      await tester.tap(find.text('Review'));
+      await tester.pumpAndSettle();
+      expect(find.text('Roll'), findsWidgets);
+      expect(find.text('Second grade'), findsOneWidget);
+    });
+
+    testWidgets('a coil\'s Material data is its own, counted in coils',
+        (tester) async {
+      PenPaperBaseline? saved;
+      await mount(tester, onSave: (b) => saved = b);
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-coil')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Material data'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('coils'), findsOneWidget);
+      expect(find.text('Stage by Stage'), findsNothing);
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('material-input-kg')),
+        '120',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save Master Data'));
+      await tester.pump();
+      expect(saved!.formOf(RawForm.coil).reconciliation.inputKg, 120);
+      expect(saved!.totalInputKg, isNot(120), reason: 'the sheet row is apart');
+    });
   });
 }

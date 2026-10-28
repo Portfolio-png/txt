@@ -16,8 +16,11 @@ import '../../../../sheet/sheet.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../materials/presentation/providers/materials_provider.dart';
+import '../../../process_routes/data/process_route_service.dart';
+import '../../../process_routes/domain/part_route.dart';
 import '../../../process_routes/presentation/widgets/route_creation_panel.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../../production_pipelines/domain/pipeline_stage_node.dart';
 import '../../../production_pipelines/domain/sheet_part.dart';
 import '../../../production_pipelines/presentation/widgets/master_data_dialog.dart';
 import '../../data/item_sheet_binding.dart';
@@ -131,6 +134,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   int? _rawPartId;
   static const double _rawPanelWidth = 520;
 
+  /// The part's authored route, which IS its pipeline — Author route is only
+  /// the way a pipeline is drawn. Read for the raw sheet panel, so its stages
+  /// and its "attached to" follow the route rather than the legacy
+  /// `defaultPipelineId`, which a routed part never sets.
+  PartRoute? _route;
+  int? _routeForPartId;
+
   /// The left rail folded to an icon strip (remembered on this device).
   bool _railCollapsed = false;
   static const _railPrefKey = 'item_sheet.rail_collapsed';
@@ -239,6 +249,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // and removing, renaming or editing a stored column changes it for all.
     _controller.groupItemController
       ..onOptionAdded = _onOptionAdded
+      ..removalFor = _optionRemovalFor
       ..confirmRemoveColumn = _confirmRemoveColumn
       ..onColumnRemoved = _onColumnRemoved
       ..onColumnRenamed = _onColumnRenamed
@@ -257,6 +268,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // their options are built with them.
       await _sheetProps?.ensureLoaded();
       if (!mounted) return;
+      final props = _sheetProps;
+      if (props != null && !props.isLoaded) {
+        // Said, not swallowed: the columns stay off the sheet until a read
+        // gets through, and nobody should think the sheet has none.
+        _toast(
+          'The sheet\'s property columns did not load: '
+          '${props.errorMessage ?? 'no answer from the server'}',
+          isError: true,
+        );
+      }
       _syncPropertyColumns();
       await _controller.loadReferenceData();
       if (!mounted) return;
@@ -343,6 +364,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _controller.groupItemController
       ..onRowLeft = null
       ..onOptionAdded = null
+      ..removalFor = null
       ..confirmRemoveColumn = null
       ..onColumnRemoved = null
       ..onColumnRenamed = null
@@ -790,7 +812,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             const RotatedBox(
               quarterTurns: 1,
               child: Text(
-                'Raw sheet & strips',
+                'Raw material',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -808,6 +830,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       _rawPartId = part?.id;
       _rawEditing = false;
     }
+    if (part?.id != _routeForPartId) {
+      _routeForPartId = part?.id;
+      _route = null;
+      final id = part?.id;
+      if (id != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_loadRoute(id)));
+      }
+    }
+    final route = _route;
     final baseline = part?.penPaperBaseline ?? PenPaperBaseline.createDefault();
     final panel = MasterDataPanel(
       // Bumped on Cancel, so the edits are thrown away with the old state.
@@ -821,12 +852,33 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       itemName: part == null
           ? _partLabelNow
           : (part.displayName.trim().isEmpty ? part.name : part.displayName),
-      pipelineId: part?.defaultPipelineId,
-      pipelineName: part?.defaultPipelineName ?? '',
+      // A new version is a new route id, so a baseline recorded on the old
+      // one is flagged to be re-recorded.
+      pipelineId: route != null ? 'route:${route.id}' : part?.defaultPipelineId,
+      pipelineName: route != null
+          ? 'Route v${route.version} · '
+              '${route.steps.map((step) => step.stageName).join(' → ')}'
+          : part?.defaultPipelineName ?? '',
+      stageNodes: [
+        for (final step in route?.steps ?? const <RouteStep>[])
+          PipelineStageNode(
+            id: 'route-step-${step.seq}',
+            name: step.stageName,
+            stageIndex: step.seq - 1,
+          ),
+      ],
+      unattachedHint: 'No route yet — use Author route below, so stages and '
+          'yields have a route to describe.',
       parts: _plannableParts(),
       // Alloy and the sheet's material are one thing: the panel shows the
       // part's Alloy cell and is not given a picker of its own.
       alloy: _alloyNow,
+      // Grade is a property column like any other; the panel shows it.
+      grade: _propertyNow('grade'),
+      // One thickness in two places: the part's Thickness cell, edited from
+      // either side.
+      thickness: _cellNow(SheetBindsTo.variation('Thickness')),
+      onThicknessChanged: _setThickness,
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
@@ -858,7 +910,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Raw sheet & strips',
+                    'Raw material',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                   ),
                 ),
@@ -899,12 +951,35 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
+  /// Reads [partId]'s route — the active one, else the newest draft, which is
+  /// the order the service answers in. A build with no route service, or a
+  /// read that fails, leaves the part unrouted rather than throwing.
+  Future<void> _loadRoute(int partId) async {
+    PartRoute? route;
+    try {
+      final routes = await context.read<ProcessRouteService>().routesFor(partId);
+      route = routes.firstOrNull;
+    } catch (_) {
+      route = null;
+    }
+    if (!mounted || _livePart?.id != partId) return;
+    setState(() => _route = route);
+  }
+
   Future<void> _saveRawSheet(PenPaperBaseline baseline) async {
     final part = _livePart;
     if (part == null) return;
     if (_rawSaving) return;
     final items = context.read<ItemsProvider>();
     setState(() => _rawSaving = true);
+    // A thickness typed in the panel went into the part's row; it is saved
+    // with the plan rather than waiting for the cursor to leave the row.
+    // commitRow turns an edited saved row into an update of its part.
+    final sheet = _controller.groupItemController;
+    if (sheet.draft.isDirtySinceSave) {
+      await _controller.commitRow(sheet.row);
+      if (!mounted) return;
+    }
     final saved = await items.setItemPenPaperBaseline(part.id, baseline);
     if (!mounted) return;
     setState(() {
@@ -915,7 +990,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _toast(
       saved == null
           ? (items.errorMessage ?? 'The raw sheet did not save.')
-          : 'Raw sheet saved on ${saved.displayName.isEmpty ? saved.name : saved.displayName}.',
+          : 'Raw material saved on ${saved.displayName.isEmpty ? saved.name : saved.displayName}.',
       isError: saved == null,
     );
   }
@@ -1651,9 +1726,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   ///
   /// A column somebody has typed into and not saved stays until it is saved,
   /// rather than vanishing under them because another window removed it.
+  ///
+  /// A column it holds goes on even before a full read has succeeded — one
+  /// just added here, say. Only removal waits for a successful read: an
+  /// empty list that merely failed to load must not take columns off.
   void _syncPropertyColumns() {
     final provider = _sheetProps;
-    if (provider == null || !provider.isLoaded) return;
+    if (provider == null) return;
     final sheet = _controller.groupItemController;
     final onSheet = <String, ColumnDef>{
       for (final column in sheet.sheetDef.columns)
@@ -1675,6 +1754,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       }
     }
     final keep = {for (final property in stored) property.key};
+    if (!provider.isLoaded) {
+      _storedKeys = _storedKeys.union(keep);
+      return;
+    }
     for (final key in _storedKeys.difference(keep)) {
       final column = onSheet[key];
       if (column == null || _hasUnsavedTyping(column)) continue;
@@ -1705,6 +1788,54 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final property = _storedFor(column);
     if (property == null) return;
     unawaited(_sheetProps!.addOption(property.id, label));
+  }
+
+  /// The delete button on a value in a stored column's dropdown.
+  ///
+  /// The dropdown is the column's list plus every value a saved part
+  /// carries, so a value still on a part cannot be deleted — it would be back
+  /// on the next read. Drawn disabled, saying how many parts hold it.
+  OptionRemoval? _optionRemovalFor(ColumnDef column, ColumnOption option) {
+    final property = _storedFor(column);
+    final provider = _sheetProps;
+    if (property == null || provider == null) return null;
+    // Gauges and materials are masters of their own, not this list.
+    if (column.kind == ColumnKind.gauge || column.kind == ColumnKind.material) {
+      return null;
+    }
+    final wanted = _keyOf(option.label);
+    final parts = context
+        .read<ItemsProvider>()
+        .items
+        .where((item) => !item.isArchived)
+        .where((item) {
+          final value =
+              ItemSheetBinding.propertyValueOf(item, property.propertyName);
+          return value != null && _keyOf(value) == wanted;
+        })
+        .length;
+    if (parts > 0) {
+      return OptionRemoval.blocked(
+        'On $parts saved part${parts == 1 ? '' : 's'} — change '
+        '${parts == 1 ? 'it' : 'them'} first',
+      );
+    }
+    return OptionRemoval(() async {
+      final sure = await showConfirmDialog(
+        context,
+        title: 'Delete “${option.label}”?',
+        message: 'It leaves the ${column.label} list for everyone.',
+        confirmLabel: 'Delete',
+      );
+      if (!sure || !mounted) return false;
+      final saved = await provider.removeOption(property.id, option.label);
+      if (!mounted) return false;
+      if (saved == null) {
+        _toast(provider.errorMessage ?? 'The option was not deleted.', isError: true);
+        return false;
+      }
+      return true;
+    });
   }
 
   Future<bool> _confirmRemoveColumn(ColumnDef column) async {
@@ -1777,12 +1908,57 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// The part's Alloy as the sheet shows it now — typed or picked, saved or
   /// not — so the raw sheet panel never names a different alloy.
-  String get _alloyNow {
-    final sheet = _controller.groupItemController.sheetDef;
-    final column = sheet.columnBoundTo(SheetBindsTo.variation('Alloy'));
+  String get _alloyNow => _cellNow(SheetBindsTo.variation('Alloy'));
+
+  /// What the cursor row's cell bound to [binds] holds now, saved or not.
+  String _cellNow(String binds) {
+    final column = _controller.groupItemController.sheetDef.columnBoundTo(
+      binds,
+    );
     if (column == null) return '';
     final value = _controller.groupItemController.draft.get(column.id);
     return (value?.optionLabel ?? value?.textValue ?? '').trim();
+  }
+
+  /// The cursor row's value for the property column called [key] (any case),
+  /// or empty when there is no such column or nothing in it.
+  String _propertyNow(String key) {
+    for (final column in _controller.groupItemController.sheetDef.columns) {
+      final binds = column.bindsTo;
+      if (!SheetBindsTo.isVariation(binds)) continue;
+      if (_keyOf(SheetBindsTo.variationProperty(binds!)) != _keyOf(key)) {
+        continue;
+      }
+      return _cellNow(binds);
+    }
+    return '';
+  }
+
+  /// A thickness typed in the raw material panel, into the part's Thickness
+  /// cell: the gauge option itself when it is one ("23 Gauge"), else the
+  /// measurement as text, the way a typed thickness is kept.
+  void _setThickness(String label) {
+    final sheet = _controller.groupItemController;
+    final column = sheet.sheetDef.columnBoundTo(
+      SheetBindsTo.variation('Thickness'),
+    );
+    if (column == null) return;
+    if (label.isEmpty) {
+      sheet.updateValue(column.id, CellValue(columnId: column.id));
+      return;
+    }
+    final wanted = label.toLowerCase();
+    final option = sheet.options
+        .where((o) => o.columnId == column.id && o.label.toLowerCase() == wanted)
+        .firstOrNull;
+    if (option != null) {
+      sheet.setOption(column.id, option);
+      return;
+    }
+    sheet.updateValue(
+      column.id,
+      CellValue(columnId: column.id, optionLabel: label),
+    );
   }
 
   String get _partLabelNow {
@@ -2153,6 +2329,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         onSaved: (record) {
           setState(() => _showRoutePanel = false);
           _toast('Route saved for ${record.title}.');
+          final id = _livePart?.id;
+          if (id != null) unawaited(_loadRoute(id));
         },
         onCancel: () => setState(() => _showRoutePanel = false),
       );
@@ -2486,8 +2664,8 @@ class _NewProperty {
   final List<String> options;
 }
 
-/// Names a new property, says what kind of answer it takes and, for a list
-/// or free text, lists the answers to offer. Opened with [editing] it edits
+/// Names a new property, says what kind of answer it takes and, for free
+/// text, lists the answers to offer. Opened with [editing] it edits
 /// that column's options only.
 ///
 /// A `StatefulWidget` rather than a `StatefulBuilder` because of the text
@@ -2515,7 +2693,7 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
   late final List<String> _options = [...?widget.editing?.options];
 
   bool get _editing => widget.editing != null;
-  bool get _takesOptions => _kind == 'list' || _kind == 'text';
+  bool get _takesOptions => _kind == 'text';
 
   @override
   void dispose() {
@@ -2548,9 +2726,9 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
     _addOption();
     if (_editing) {
       final editing = widget.editing!;
-      Navigator.of(context).pop(
-        _NewProperty(editing.name, editing.kind, List.of(_options)),
-      );
+      Navigator.of(
+        context,
+      ).pop(_NewProperty(editing.name, editing.kind, List.of(_options)));
       return;
     }
     final name = _name.text.trim();
@@ -2559,6 +2737,12 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
       _NewProperty(name, _kind, _takesOptions ? List.of(_options) : const []),
     );
   }
+
+  static const _heading = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    color: Color(0xFF475569),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -2575,14 +2759,6 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (!_editing) ...[
-                const Text(
-                  'A property is what varies between one part and the next — '
-                  'the alloy it is pressed from, the gauge, the finish. Every '
-                  'one you add shows in the part code, and stays on the sheet '
-                  'for everyone until it is removed.',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
-                ),
-                const SizedBox(height: 14),
                 TextField(
                   key: const ValueKey('property_name'),
                   controller: _name,
@@ -2595,91 +2771,85 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
                   ),
                   onSubmitted: (_) => _submit(),
                 ),
-                const SizedBox(height: 14),
-                const Text(
-                  'What kind of answer does it take?',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF475569),
-                  ),
-                ),
+                const SizedBox(height: 20),
+                const Text('Answer type', style: _heading),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final option in const [
-                      ('list', 'A list of values'),
-                      ('material', 'A material'),
-                      ('gauge', 'A gauge'),
-                      ('text', 'Free text'),
-                    ])
-                      ChoiceChip(
-                        label: Text(
-                          option.$2,
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        selected: _kind == option.$1,
-                        onSelected: (_) => setState(() => _kind = option.$1),
-                      ),
-                  ],
-                ),
-              ],
-              if (_editing || _takesOptions) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Options',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF475569),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Offered in this column\'s dropdown on every part. A new '
-                  'value typed into the column is added here too.',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  key: const ValueKey('property_option'),
-                  controller: _option,
-                  autofocus: _editing,
-                  style: const TextStyle(fontSize: 15),
-                  decoration: InputDecoration(
-                    labelText: 'Add an option',
-                    hintText: 'Nickel, Chrome… then Enter',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      tooltip: 'Add',
-                      icon: const Icon(Icons.add_rounded),
-                      onPressed: _addOption,
-                    ),
-                  ),
-                  onSubmitted: (_) => _addOption(),
-                ),
-                if (_options.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                // Two equal rows rather than a Wrap: picking one never
+                // reflows the others.
+                for (final row in const [
+                  [('list', 'A list of values'), ('material', 'A material')],
+                  [('gauge', 'A gauge'), ('text', 'Free text')],
+                ]) ...[
+                  Row(
                     children: [
-                      for (final option in _options)
-                        InputChip(
-                          key: ValueKey('property_option_$option'),
-                          label: Text(
-                            option,
-                            style: const TextStyle(fontSize: 14),
+                      for (final (i, option) in row.indexed) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        Expanded(
+                          child: _KindTile(
+                            label: option.$2,
+                            selected: _kind == option.$1,
+                            onTap: () => setState(() => _kind = option.$1),
                           ),
-                          onDeleted: () =>
-                              setState(() => _options.remove(option)),
                         ),
+                      ],
                     ],
                   ),
+                  const SizedBox(height: 8),
                 ],
               ],
+              AnimatedSize(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                alignment: Alignment.topCenter,
+                child: _editing || _takesOptions
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!_editing) ...[
+                            const SizedBox(height: 12),
+                            const Text('Options', style: _heading),
+                            const SizedBox(height: 8),
+                          ],
+                          TextField(
+                            key: const ValueKey('property_option'),
+                            controller: _option,
+                            autofocus: _editing,
+                            style: const TextStyle(fontSize: 15),
+                            decoration: InputDecoration(
+                              labelText: 'Add an option',
+                              hintText: 'Nickel, Chrome… then Enter',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                tooltip: 'Add',
+                                icon: const Icon(Icons.add_rounded),
+                                onPressed: _addOption,
+                              ),
+                            ),
+                            onSubmitted: (_) => _addOption(),
+                          ),
+                          if (_options.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final option in _options)
+                                  InputChip(
+                                    key: ValueKey('property_option_$option'),
+                                    label: Text(
+                                      option,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                    onDeleted: () =>
+                                        setState(() => _options.remove(option)),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
             ],
           ),
         ),
@@ -2689,15 +2859,65 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel', style: TextStyle(fontSize: 14)),
         ),
-        FilledButton(
-          key: const ValueKey('property_submit'),
-          onPressed: _submit,
-          child: Text(
-            _editing ? 'Save options' : 'Add',
-            style: const TextStyle(fontSize: 14),
+        // A new property needs a name before it can be added.
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _name,
+          builder: (context, name, _) => FilledButton(
+            key: const ValueKey('property_submit'),
+            onPressed: _editing || name.text.trim().isNotEmpty ? _submit : null,
+            child: Text(
+              _editing ? 'Save options' : 'Add',
+              style: const TextStyle(fontSize: 14),
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// One answer type in [_AddPropertyDialog]'s picker: fills its half of the
+/// row, so selecting it changes colour and weight but never its size.
+class _KindTile extends StatelessWidget {
+  const _KindTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? SoftErpTheme.accent.withValues(alpha: 0.10)
+          : Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: selected ? SoftErpTheme.accent : const Color(0xFFCBD5E1),
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? SoftErpTheme.accent : const Color(0xFF334155),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

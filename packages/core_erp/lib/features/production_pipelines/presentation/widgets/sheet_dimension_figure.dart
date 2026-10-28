@@ -10,9 +10,9 @@ import '../../domain/pen_paper_baseline.dart' show SheetCutAxis;
 /// dimensioned the way a shop drawing dimensions one.
 ///
 /// Cabinet oblique rather than isometric, because of what a sheet is: a face
-/// with a gauge. The face is drawn **true** — an undistorted width × height
+/// with a gauge. The face is drawn **true** — an undistorted width × length
 /// rectangle — so the cut plan lands on it as a real grid whose strip
-/// proportions can be judged by eye, and a transposed width and height read as
+/// proportions can be judged by eye, and a transposed width and length read as
 /// the wrong shape rather than as two swapped numbers. The gauge recedes at 45°
 /// and half scale, which is what makes the projection cabinet rather than
 /// cavalier: a receding axis drawn full length reads far too long.
@@ -640,13 +640,13 @@ class _SheetPainter extends CustomPainter {
       vertical: false,
     );
 
-    // Height, standing on the left.
+    // Length, standing on the left.
     _straightDimension(
       canvas,
       from: frontTL,
       to: frontBL,
       outward: const Offset(-1, 0),
-      label: shape.height > 0 ? 'y  ${_fmt(shape.height)} in' : 'y  height',
+      label: shape.height > 0 ? 'y  ${_fmt(shape.height)} in' : 'y  length',
       known: shape.height > 0,
       vertical: true,
     );

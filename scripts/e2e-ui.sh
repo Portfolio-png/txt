@@ -163,6 +163,21 @@ if [[ "${BULK}" != "0" ]]; then
     SELECT '  ' || name || '  ' || COALESCE(NULLIF(part_code,''),'(unstamped)')
       FROM items WHERE name LIKE 'E2E Bulk%' ORDER BY id;"
 fi
+# A property column added with +: one row, with the option it was given.
+PROPS="$(sqlite3 "${DB}" \
+  "SELECT COUNT(*) FROM item_sheet_properties WHERE property_key = 'e2e finish';")"
+if [[ "${PROPS}" != "0" ]]; then
+  echo "property columns written: ${PROPS}"
+  [[ "${PROPS}" == "1" ]] || fail "one + made ${PROPS} property columns"
+  sqlite3 -noheader "${DB}" \
+    "SELECT '  ' || display_name || ' (' || kind || ') ' || options_json
+       FROM item_sheet_properties WHERE property_key = 'e2e finish';"
+fi
+[[ "${TESTS[0]}" == "sheet_property_column" ]] && {
+  [[ "${PROPS}" == "1" ]] || fail "the property column was not written"
+  say "OK — property column only"; exit 0;
+}
+
 ROUTES="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM process_routes WHERE status='active';")"
 if [[ "${ROUTES}" == "0" ]]; then
   echo "No active route was written."

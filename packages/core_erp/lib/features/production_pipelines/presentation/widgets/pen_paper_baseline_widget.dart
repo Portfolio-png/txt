@@ -25,10 +25,13 @@ class PenPaperBaselineWidget extends StatefulWidget {
     this.showChrome = true,
     this.pipelineId,
     this.pipelineName = '',
+    this.unattachedHint,
     this.itemName = '',
     this.sheetLabel = '',
     this.countFamily,
     this.followsSheetPlan = false,
+    this.stockNoun = 'sheet',
+    this.allowStageByStage = true,
   });
 
   final PenPaperBaseline baseline;
@@ -51,6 +54,11 @@ class PenPaperBaselineWidget extends StatefulWidget {
   final String? pipelineId;
   final String pipelineName;
 
+  /// What the strip says when there is no [pipelineId], in place of the
+  /// default "pick a default pipeline". A host whose parts are routed rather
+  /// than pointed at a pipeline names its own way to attach one.
+  final String? unattachedHint;
+
   /// The part being made: what the Output row is called.
   final String itemName;
 
@@ -66,6 +74,14 @@ class PenPaperBaselineWidget extends StatefulWidget {
   /// panel). Off, the widget is the plain trial-run record it always was:
   /// it shows what is stored and writes only when someone types.
   final bool followsSheetPlan;
+
+  /// What one unit of the input is called — "sheet", "strip", "coil",
+  /// "roll" — for the input count and its per-unit average.
+  final String stockNoun;
+
+  /// Whether Stage by Stage is offered. A strip, coil or roll records one
+  /// row, weight in and pieces out, so the toggle is not drawn for them.
+  final bool allowStageByStage;
 
   @override
   State<PenPaperBaselineWidget> createState() => _PenPaperBaselineWidgetState();
@@ -502,8 +518,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             SoftErpTheme.warningText,
             SoftErpTheme.warningBg,
             Icons.link_off_rounded,
-            'Not attached to a pipeline — pick a default pipeline so stages '
-                'and yields have a route to describe.',
+            widget.unattachedHint ??
+                'Not attached to a pipeline — pick a default pipeline so stages '
+                    'and yields have a route to describe.',
           )
         : drifted
         ? (
@@ -598,6 +615,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
   }
 
   Widget _buildModeToggle() {
+    if (!widget.allowStageByStage) return const SizedBox.shrink();
     return IgnorePointer(
       ignoring: widget.readOnly,
       child: Opacity(
@@ -662,11 +680,11 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               readOnly: widget.readOnly,
               onChanged: _weightsChanged,
               perPiece: draft.inputKgPerPiece,
-              perWhat: 'sheet',
+              perWhat: widget.stockNoun,
               qtyField: _CellField(
                 key: const ValueKey<String>('material-input-sheets'),
                 controller: _wholeInputQtyCtrl,
-                suffix: 'sheets',
+                suffix: '${widget.stockNoun}s',
                 hint: '1',
                 readOnly: widget.readOnly,
                 wholeOnly: true,

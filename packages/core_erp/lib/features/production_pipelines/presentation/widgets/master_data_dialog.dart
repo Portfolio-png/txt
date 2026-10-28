@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/pipeline_stage_node.dart';
 import '../../../../core/widgets/searchable_select.dart';
@@ -17,7 +18,10 @@ import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../../units/domain/global_length_units.dart';
 import '../../../units/domain/unit_family.dart';
 import '../../../materials/domain/material_definition.dart';
+import '../../domain/raw_stock_form.dart';
+import '../../domain/thickness_label.dart';
 import '../../domain/sheet_part.dart';
+import 'band_form_animation.dart';
 import 'pen_paper_baseline_widget.dart';
 import 'raw_sheet_review.dart';
 import 'sheet_dimension_figure.dart';
@@ -88,6 +92,7 @@ class MasterDataPanel extends StatefulWidget {
     this.onCancel,
     this.pipelineId,
     this.pipelineName = '',
+    this.unattachedHint,
     this.itemName = '',
     this.stageNodes = const <PipelineStageNode>[],
     this.parts = const <SheetPart>[],
@@ -98,6 +103,9 @@ class MasterDataPanel extends StatefulWidget {
     this.onEdit,
     this.saving = false,
     this.alloy,
+    this.grade,
+    this.thickness,
+    this.onThicknessChanged,
   });
 
   /// The baseline the panel opens on. Edits are made to a working copy, so the
@@ -111,6 +119,8 @@ class MasterDataPanel extends StatefulWidget {
   final String? pipelineId;
   final String pipelineName;
 
+  /// See [PenPaperBaselineWidget.unattachedHint].
+  final String? unattachedHint;
   final String itemName;
   final List<PipelineStageNode> stageNodes;
 
@@ -153,6 +163,18 @@ class MasterDataPanel extends StatefulWidget {
   /// Alloy column, which keeps the panel's own picker.
   final String? alloy;
 
+  /// The part's own Grade, from the sheet's Grade column — shown read-only,
+  /// like [alloy]. Empty when the part has none yet; null for a host with no
+  /// Grade column, which keeps the panel's own grade picker.
+  final String? grade;
+
+  /// The part's Thickness cell as the sheet shows it — "23 Gauge", "1.2 mm".
+  /// Given, the panel's thickness IS the part's: it opens on it, follows it,
+  /// and every change made here goes back through [onThicknessChanged]. Null
+  /// keeps a thickness of the panel's own.
+  final String? thickness;
+  final ValueChanged<String>? onThicknessChanged;
+
   @override
   State<MasterDataPanel> createState() => _MasterDataPanelState();
 }
@@ -175,8 +197,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   late final TextEditingController _widthController;
   late final TextEditingController _heightController;
   late final TextEditingController _thicknessController;
-  late final TextEditingController _kerfController;
   late final TextEditingController _trimController;
+
+  /// So the part's thickness arriving does not overwrite one being typed.
+  final FocusNode _thicknessFocus = FocusNode();
+
+  /// The part's Thickness cell when it holds something that is not a
+  /// measurement — shown under the field rather than guessed at.
+  String? _thicknessUnreadable;
 
   /// The sheet-wide split's own key, so it sits in the same map as the
   /// per-strip sub-cuts and one walk reads them all.
@@ -201,6 +229,22 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   _MasterStep _step = _MasterStep.sheet;
 
+  /// Which form of stock the steps are showing. All four stand equal; the
+  /// panel opens on the one last worked on.
+  late RawForm _form;
+
+  /// The strip, coil or roll on screen. Rewritten when the form changes.
+  final TextEditingController _bandWidthController = TextEditingController();
+  final TextEditingController _bandLengthController = TextEditingController();
+  final TextEditingController _bandPitchController = TextEditingController();
+
+  /// Forms whose length was set to Known but not typed yet: the field stays
+  /// open rather than snapping back to Undefined while it is empty.
+  final Set<RawForm> _lengthOpen = <RawForm>{};
+
+  /// A measurement typed that cannot be stored exactly, by field.
+  final Map<String, String> _bandErrors = <String, String>{};
+
   /// The unit each axis is being typed in. Storage is always millimetres; this
   /// only decides what the fields show, because a 40 mm band and a 1.575 in
   /// band are the same cut and should not be two records.
@@ -222,13 +266,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   @override
   void initState() {
     super.initState();
-    _baseline = widget.baseline;
+    _baseline = _withoutSheetPitch(widget.baseline);
     _widthController = TextEditingController();
     _heightController = TextEditingController();
     _thicknessController = TextEditingController();
-    _kerfController = TextEditingController();
     _trimController = TextEditingController();
+    _form = widget.baseline.lastForm;
     _writeFields();
+    _writeBandFields();
     _loadCountFamily();
     _watchVendors();
   }
@@ -294,23 +339,65 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       _baseline.sheetThicknessMm,
       lengthUnitBySymbol(_baseline.gaugeUnit),
     );
-    _kerfController.text = _initial(_baseline.kerfMm);
     _trimController.text = _initial(_baseline.edgeTrimMm);
     _seedControllers();
     _ensureTrailingBlank(_primaryRegion);
+    _adoptPartThickness();
+  }
+
+  /// The sheet no longer has a pitch: blanks sit edge to edge, and a gap an
+  /// older plan kept is not carried on as a number nobody can see. (A strip,
+  /// coil or roll took that pitch as its own when it was read.)
+  static PenPaperBaseline _withoutSheetPitch(PenPaperBaseline baseline) =>
+      baseline.kerfMm == 0 ? baseline : baseline.copyWith(kerfMm: 0);
+
+  /// Takes the part's thickness, when the host gives one, as this plan's.
+  void _adoptPartThickness() {
+    final text = widget.thickness;
+    if (text == null) return;
+    final reading = readThickness(text);
+    _thicknessUnreadable =
+        reading == null && text.trim().isNotEmpty ? text.trim() : null;
+    final unit = reading?.unit ?? lengthUnitBySymbol(_baseline.gaugeUnit);
+    _baseline = _baseline.copyWith(
+      gaugeUnit: unit.symbol,
+      sheetThicknessMm: reading?.mm ?? 0,
+    );
+    _thicknessController.text =
+        reading == null ? '' : _showUnit(reading.mm, unit);
+  }
+
+  /// Tells the host the thickness typed here, as the part's cell writes it.
+  void _sendThickness() {
+    final send = widget.onThicknessChanged;
+    if (send == null) return;
+    final unit = lengthUnitBySymbol(_baseline.gaugeUnit);
+    final typed = double.tryParse(_thicknessController.text.trim()) ?? 0;
+    send(writeThickness(typed, unit));
+  }
+
+  void _onThicknessTyped() {
+    _onDimensionChanged();
+    setState(() => _thicknessUnreadable = null);
+    _sendThickness();
   }
 
   @override
   void didUpdateWidget(covariant MasterDataPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The part's thickness is followed whatever the panel is doing — it is
+    // one value in two places — unless it is the one being typed here.
+    if (widget.thickness != oldWidget.thickness && !_thicknessFocus.hasFocus) {
+      _adoptPartThickness();
+    }
     // Only a panel nobody is typing into follows its input. A read-only panel
     // is a view of the record, so a save made elsewhere belongs on it the
     // moment it lands; an editing panel holds a working copy that is the
     // person's, and replacing it would discard what they typed.
     if (!widget.readOnly) return;
     if (identical(oldWidget.baseline, widget.baseline)) return;
-    if (_sameRecord(widget.baseline, _baseline)) return;
-    _baseline = widget.baseline;
+    if (_sameRecord(_withoutSheetPitch(widget.baseline), _baseline)) return;
+    _baseline = _withoutSheetPitch(widget.baseline);
     // Region units are a typing convenience, not part of the record, and the
     // incoming plan may not have the regions they were set for.
     _regionUnit.clear();
@@ -318,6 +405,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       _openRegion = null;
     }
     _writeFields();
+    _writeBandFields();
   }
 
   /// Whether two baselines record the same thing. The baseline has no value
@@ -363,8 +451,11 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     _widthController.dispose();
     _heightController.dispose();
     _thicknessController.dispose();
-    _kerfController.dispose();
+    _thicknessFocus.dispose();
     _trimController.dispose();
+    _bandWidthController.dispose();
+    _bandLengthController.dispose();
+    _bandPitchController.dispose();
     for (final list in _bandControllers.values) {
       for (final band in list) {
         band.dispose();
@@ -436,6 +527,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       _baseline = _baseline.copyWith(gaugeUnit: unit.symbol);
       _thicknessController.text = _showUnit(mm, unit);
     });
+    _sendThickness();
   }
 
   static const double _mmPerInch = 25.4;
@@ -564,7 +656,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   String get _sheetLabel {
     final face = lengthUnitBySymbol(_baseline.faceUnit, fallback: 'in');
     final width = _faceText(_baseline.sheetWidthInches, face.symbol);
-    final height = _faceText(_baseline.sheetHeightInches, face.symbol);
+    // The record's height is the sheet's length.
+    final length = _faceText(_baseline.sheetHeightInches, face.symbol);
     final gauge = lengthUnitBySymbol(_baseline.gaugeUnit);
     final thickness = _baseline.sheetThicknessMm > 0
         ? _showUnit(_baseline.sheetThicknessMm, gauge)
@@ -573,8 +666,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return <String>[
       _alloy.isEmpty ? 'Sheet' : _alloy,
       if (grade.isNotEmpty) '$grade grade',
-      if (width.isNotEmpty && height.isNotEmpty)
-        '$width × $height ${face.symbol}',
+      // Width × length, the order the fields are typed in.
+      if (width.isNotEmpty && length.isNotEmpty)
+        '$width × $length ${face.symbol}',
       if (thickness.isNotEmpty) '$thickness ${gauge.symbol}',
     ].join(' · ');
   }
@@ -582,7 +676,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   void _onMachineChanged() {
     setState(() {
       _baseline = _baseline.copyWith(
-        kerfMm: double.tryParse(_kerfController.text.trim()) ?? 0,
         edgeTrimMm: double.tryParse(_trimController.text.trim()) ?? 0,
       );
     });
@@ -732,6 +825,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return Column(
       children: [
         if (widget.showHeader) _header(),
+        _formBar(width),
         _stepBar(width),
         Expanded(
           child: Padding(
@@ -740,6 +834,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 : const EdgeInsets.fromLTRB(20, 14, 20, 8),
             child: switch (_step) {
               _MasterStep.sheet => _sheetStep(width),
+              _MasterStep.material when _form.isBand => _bandMaterialStep(),
               _MasterStep.material => _materialStep(),
               _MasterStep.review => _reviewStep(),
             },
@@ -765,7 +860,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           ),
         _StepChip(
           index: step.index + 1,
-          label: step.title,
+          label: _stepTitle(step),
           selected: step == _step,
           onTap: () => setState(() => _step = step),
         ),
@@ -808,7 +903,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               ),
             _StepChip(
               index: step.index + 1,
-              label: step.title,
+              label: _stepTitle(step),
               selected: step == _step,
               // Every step is reachable: this is a record being described, not
               // a wizard with prerequisites, and forcing an order would only
@@ -835,20 +930,25 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     );
   }
 
-  /// Step one. The drawing takes the room now rather than sitting in a band:
-  /// it is the thing being reasoned about, and a plan you cannot see the shape
-  /// of is just a column of numbers again.
+  /// Step one, the same for all four forms: who supplied it, the drawing,
+  /// then its sizes and the operation beside it. The drawing takes the room
+  /// rather than sitting in a band: it is the thing being reasoned about, and
+  /// a plan you cannot see the shape of is just a column of numbers again.
   Widget _sheetStep(double panelWidth) {
     const controlsWidth = 392.0;
     final vendor = _vendors == null
         ? const <Widget>[]
         : <Widget>[_vendorRow(), const SizedBox(height: 12)];
+    final band = _form.isBand;
     if (panelWidth < _sideBySideWidth) {
       return ListView(
         children: [
-          // Who it came from first, then the sheet itself.
+          // Who it came from first, then the stock itself.
           ...vendor,
-          SizedBox(height: 320, child: _sheetPanel()),
+          if (band)
+            _bandDrawing()
+          else
+            SizedBox(height: 320, child: _sheetPanel()),
           const SizedBox(height: 12),
           _dimensionFields(),
           const SizedBox(height: 12),
@@ -864,7 +964,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: _sheetPanel()),
+              Expanded(
+                child: band
+                    ? ListView(
+                        padding: EdgeInsets.zero,
+                        children: [_bandDrawing()],
+                      )
+                    : _sheetPanel(),
+              ),
               const SizedBox(width: 18),
               SizedBox(
                 width: controlsWidth,
@@ -878,6 +985,441 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- the form of stock: sheet, strip, coil, roll ------------------------
+
+  String _stepTitle(_MasterStep step) =>
+      step == _MasterStep.sheet ? '${_form.label} planning' : step.title;
+
+  /// Vendor and grade are the current form's own: the sheet's are the
+  /// record's fields, the others' sit on their form.
+  int? get _vendorId =>
+      _form.isBand ? _baseline.formOf(_form).vendorId : _baseline.vendorId;
+
+  String get _vendorName =>
+      _form.isBand ? _baseline.formOf(_form).vendorName : _baseline.vendorName;
+
+  String get _grade =>
+      widget.grade?.trim() ??
+      (_form.isBand ? _baseline.formOf(_form).grade : _baseline.materialGrade);
+
+  void _setVendor(int? id, String name) {
+    _baseline = _form.isBand
+        ? _baseline.withForm(
+            _form,
+            _baseline.formOf(_form).copyWith(vendorId: id, vendorName: name),
+          )
+        : _baseline.copyWith(vendorId: id, vendorName: name);
+  }
+
+  void _setGrade(String grade) {
+    _baseline = _form.isBand
+        ? _baseline.withForm(_form, _baseline.formOf(_form).copyWith(grade: grade))
+        : _baseline.copyWith(materialGrade: grade);
+  }
+
+  void _updateBand(RawStockForm Function(RawStockForm plan) change) {
+    setState(() {
+      _baseline = _baseline.withForm(_form, change(_baseline.formOf(_form)));
+    });
+  }
+
+  void _switchForm(RawForm form) {
+    if (form == _form) return;
+    setState(() {
+      _form = form;
+      _bandErrors.clear();
+      // Recorded, so the panel reopens here — none of the four is a default.
+      _baseline = _baseline.copyWith(lastForm: form);
+      _writeBandFields();
+    });
+  }
+
+  void _writeBandFields() {
+    if (!_form.isBand) return;
+    final plan = _baseline.formOf(_form);
+    _bandWidthController.text =
+        formatLengthFromNanometres(plan.widthNm, plan.widthUnit);
+    _bandLengthController.text =
+        formatLengthFromNanometres(plan.lengthNm, plan.lengthUnit);
+    _bandPitchController.text =
+        formatLengthFromNanometres(plan.pitchNm, plan.pitchUnit);
+  }
+
+  /// A measurement typed into a band field: stored exactly, or refused with
+  /// the reason beside the field rather than rounded.
+  void _onBandLength(
+    String field,
+    TextEditingController controller,
+    String unit,
+    RawStockForm Function(RawStockForm plan, int? nanometres) apply,
+  ) {
+    final parsed = parseLengthToNanometres(controller.text, unit);
+    if (parsed.isFailure) {
+      setState(() => _bandErrors[field] = parsed.error!);
+      return;
+    }
+    _bandErrors.remove(field);
+    _updateBand((plan) => apply(plan, parsed.nanometres));
+  }
+
+  /// The four forms, side by side and equal. A dot marks the ones that hold
+  /// something; none is marked as the default.
+  Widget _formBar(double width) {
+    final compact = width < _compactStepBarWidth;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(compact ? 12 : 22, 10, compact ? 12 : 22, 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFDFDFD),
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Row(
+        children: [
+          for (final (index, form) in RawForm.values.indexed) ...[
+            if (index > 0) const SizedBox(width: 8),
+            Expanded(
+              child: _FormTile(
+                key: ValueKey<String>('raw-form-${form.name}'),
+                form: form,
+                selected: form == _form,
+                hasData: _baseline.hasForm(form),
+                onTap: () => _switchForm(form),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _nmLabel(int? nm, String unit) =>
+      nm == null ? '' : '${formatLengthFromNanometres(nm, unit)} $unit';
+
+  static double? _mmOf(int? nm) =>
+      nm == null ? null : nm / nanometresPerMillimetre;
+
+  /// The strip, coil or roll, drawn as its own stock — never as cut from the
+  /// sheet — with its measurements on it. Keyed by form, so a switch plays
+  /// the new one; typing only redraws it.
+  Widget _bandDrawing() {
+    final plan = _baseline.formOf(_form);
+    return BandFormAnimation(
+      key: ValueKey<String>('band-animation-${_form.name}'),
+      form: _form,
+      widthMm: _mmOf(plan.widthNm),
+      thicknessMm: _baseline.sheetThicknessMm > 0
+          ? _baseline.sheetThicknessMm
+          : null,
+      lengthMm: plan.lengthKnown ? _mmOf(plan.lengthNm) : null,
+      pitchMm: _mmOf(plan.pitchNm),
+      widthLabel: _nmLabel(plan.widthNm, plan.widthUnit),
+      thicknessLabel: _thicknessShown,
+      lengthLabel: _nmLabel(plan.lengthNm, plan.lengthUnit),
+      pitchLabel: _nmLabel(plan.pitchNm, plan.pitchUnit),
+    );
+  }
+
+  /// The thickness as the fields show it — "1.2 mm", "23 ga" — or empty.
+  String get _thicknessShown {
+    final text = _thicknessController.text.trim();
+    if (text.isEmpty) return '';
+    return '$text ${lengthUnitBySymbol(_baseline.gaugeUnit).symbol}';
+  }
+
+  /// A band's width, laid out like the sheet's so the four forms read alike.
+  Widget _bandWidthField() {
+    final plan = _baseline.formOf(_form);
+    return _DimensionField(
+      key: ValueKey<String>('${_form.name}-width'),
+      controller: _bandWidthController,
+      label: 'Width',
+      unit: plan.widthUnit,
+      readOnly: widget.readOnly,
+      errorText: _bandErrors['width'],
+      onChanged: () => _onBandLength(
+        'width',
+        _bandWidthController,
+        plan.widthUnit,
+        (p, nm) => p.copyWith(widthNm: nm),
+      ),
+      unitWidget: _UnitPicker(
+        symbol: plan.widthUnit,
+        options: faceLengthUnits,
+        onChanged: widget.readOnly
+            ? null
+            : (unit) {
+                _updateBand((p) => p.copyWith(widthUnit: unit.symbol));
+                _bandWidthController.text =
+                    formatLengthFromNanometres(plan.widthNm, unit.symbol);
+              },
+      ),
+    );
+  }
+
+  /// A band's length: Undefined, which it usually is — nobody knows when a
+  /// coil's length comes down — or a length, once somebody does.
+  Widget _bandLengthField() {
+    final plan = _baseline.formOf(_form);
+    final known = plan.lengthKnown || _lengthOpen.contains(_form);
+    final enabled = !widget.readOnly;
+    final choice = Builder(
+      builder: (anchor) => Tooltip(
+        message: known ? 'Back to undefined' : 'Undefined, or a known length',
+        child: InkWell(
+          key: ValueKey<String>('${_form.name}-length'),
+          borderRadius: BorderRadius.circular(5),
+          onTap: enabled ? () => _pickLength(anchor) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Icon(
+              Icons.arrow_drop_down_rounded,
+              size: 22,
+              color: enabled
+                  ? SoftErpTheme.textPrimary
+                  : SoftErpTheme.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!known) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('LENGTH', style: _fieldLabel),
+          const SizedBox(height: 5),
+          Container(
+            key: ValueKey<String>('${_form.name}-length-undefined'),
+            height: 44,
+            padding: const EdgeInsets.only(left: 10, right: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Undefined',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                choice,
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    return _DimensionField(
+      key: ValueKey<String>('${_form.name}-length-value'),
+      controller: _bandLengthController,
+      label: 'Length',
+      unit: plan.lengthUnit,
+      readOnly: widget.readOnly,
+      errorText: _bandErrors['length'],
+      onChanged: () => _onBandLength(
+        'length',
+        _bandLengthController,
+        plan.lengthUnit,
+        (p, nm) => p.copyWith(lengthNm: nm),
+      ),
+      unitWidget: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _UnitPicker(
+            symbol: plan.lengthUnit,
+            options: faceLengthUnits,
+            onChanged: widget.readOnly
+                ? null
+                : (unit) {
+                    _updateBand((p) => p.copyWith(lengthUnit: unit.symbol));
+                    _bandLengthController.text =
+                        formatLengthFromNanometres(plan.lengthNm, unit.symbol);
+                  },
+          ),
+          choice,
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickLength(BuildContext anchor) async {
+    final box = anchor.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(anchor).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final at = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final picked = await showMenu<bool>(
+      context: anchor,
+      position: RelativeRect.fromLTRB(
+        at.dx,
+        at.dy + box.size.height,
+        overlay.size.width - at.dx - box.size.width,
+        0,
+      ),
+      items: const [
+        PopupMenuItem<bool>(
+          value: false,
+          child: Text('Undefined', style: TextStyle(fontSize: 14)),
+        ),
+        PopupMenuItem<bool>(
+          value: true,
+          child: Text('Known length', style: TextStyle(fontSize: 14)),
+        ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _bandErrors.remove('length');
+      if (picked) {
+        _lengthOpen.add(_form);
+      } else {
+        _lengthOpen.remove(_form);
+        _bandLengthController.clear();
+        _baseline = _baseline.withForm(
+          _form,
+          _baseline.formOf(_form).copyWith(lengthNm: null),
+        );
+      }
+    });
+  }
+
+  static const TextStyle _fieldLabel = TextStyle(
+    color: SoftErpTheme.textSecondary,
+    fontSize: 12,
+    fontWeight: FontWeight.w800,
+    letterSpacing: 0.5,
+  );
+
+  /// The press's advance per part, for this form.
+  Widget _bandPitchRow() {
+    final plan = _baseline.formOf(_form);
+    return _DimensionField(
+      key: ValueKey<String>('${_form.name}-pitch'),
+      controller: _bandPitchController,
+      label: 'Pitch — one part every',
+      unit: plan.pitchUnit,
+      readOnly: widget.readOnly,
+      errorText: _bandErrors['pitch'],
+      onChanged: () => _onBandLength(
+        'pitch',
+        _bandPitchController,
+        plan.pitchUnit,
+        (p, nm) => p.copyWith(pitchNm: nm),
+      ),
+      unitWidget: _UnitPicker(
+        symbol: plan.pitchUnit,
+        options: faceLengthUnits,
+        onChanged: widget.readOnly
+            ? null
+            : (unit) {
+                _updateBand((p) => p.copyWith(pitchUnit: unit.symbol));
+                _bandPitchController.text =
+                    formatLengthFromNanometres(plan.pitchNm, unit.symbol);
+              },
+      ),
+    );
+  }
+
+  /// What a band yields: a rate while its length is undefined, a count once
+  /// it is known. One part across — a band is fed, not nested.
+  Widget _bandYield() {
+    final plan = _baseline.formOf(_form);
+    final noun = _form.label.toLowerCase();
+    final pitch = _nmLabel(plan.pitchNm, plan.pitchUnit);
+    final parts = plan.partsFromLength();
+    final String line;
+    if ((plan.pitchNm ?? 0) <= 0) {
+      line = 'Set the pitch to say how often a part comes off the $noun.';
+    } else if (parts == null) {
+      line = 'One part every $pitch of $noun.';
+    } else {
+      line = '≈ $parts parts from '
+          '${_nmLabel(plan.lengthNm, plan.lengthUnit)} of $noun — '
+          'one every $pitch.';
+    }
+    return Text(
+      key: ValueKey<String>('${_form.name}-yield'),
+      line,
+      style: const TextStyle(
+        color: SoftErpTheme.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  /// What a strip, coil or roll is called on the Input row.
+  String get _bandLabel {
+    final plan = _baseline.formOf(_form);
+    final grade = _grade;
+    final thickness = _thicknessShown;
+    final bits = <String>[
+      if (_alloy.isNotEmpty) _alloy,
+      if (grade.isNotEmpty) '$grade grade',
+      if (plan.widthNm != null) '${_nmLabel(plan.widthNm, plan.widthUnit)} wide',
+      if (thickness.isNotEmpty) thickness,
+    ];
+    final noun = _form.label.toLowerCase();
+    return bits.isEmpty ? noun : '$noun · ${bits.join(' · ')}';
+  }
+
+  /// Step two for a strip, coil or roll: one row, weight in and pieces out,
+  /// both typed — there is no plan to fill them from and no density.
+  Widget _bandMaterialStep() {
+    final plan = _baseline.formOf(_form);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _dataHeading(),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: SingleChildScrollView(
+              child: PenPaperBaselineWidget(
+                key: ValueKey<String>('material-${_form.name}'),
+                baseline: PenPaperBaseline(
+                  stageReconciliations: plan.hasData
+                      ? [plan.reconciliation]
+                      : const <PenPaperStageReconciliation>[],
+                  notes: '',
+                ),
+                readOnly: widget.readOnly,
+                showChrome: false,
+                pipelineId: widget.pipelineId,
+                pipelineName: widget.pipelineName,
+                unattachedHint: widget.unattachedHint,
+                itemName: widget.itemName,
+                sheetLabel: _bandLabel,
+                countFamily: _countFamily,
+                stockNoun: _form.label.toLowerCase(),
+                allowStageByStage: false,
+                onChanged: (updated) {
+                  final row = updated.stageReconciliations.firstOrNull;
+                  if (row == null) return;
+                  _updateBand((p) => p.copyWith(reconciliation: row));
+                },
+              ),
+            ),
           ),
         ),
       ],
@@ -902,7 +1444,27 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   PenPaperBaseline get _recorded {
     // The part's alloy is stamped on, so the record says what it was cut from
     // even after the part's Alloy is changed.
-    final baseline = _baseline.withoutEmptyBands.copyWith(materialName: _alloy);
+    // So are its grade and thickness, onto every form it holds.
+    var baseline = _baseline.withoutEmptyBands.copyWith(materialName: _alloy);
+    final partGrade = widget.grade?.trim();
+    if (partGrade != null) {
+      baseline = baseline.copyWith(materialGrade: partGrade);
+    }
+    final thicknessMm = baseline.sheetThicknessMm;
+    final gauge = lengthUnitBySymbol(baseline.gaugeUnit);
+    for (final entry in baseline.forms.entries) {
+      baseline = baseline.withForm(
+        entry.key,
+        entry.value.copyWith(
+          grade: partGrade ?? entry.value.grade,
+          thicknessNm: thicknessMm > 0
+              ? (thicknessMm * nanometresPerMillimetre).round()
+              : null,
+          // A gauge is a lookup, not a length; the band keeps millimetres.
+          thicknessUnit: gauge.isGauge ? 'mm' : gauge.symbol,
+        ),
+      );
+    }
     if (!baseline.materialFromPlan || baseline.isGranular) return baseline;
     return baseline.copyWith(
       stageReconciliations: [
@@ -1105,7 +1667,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// gauge. Stays quiet rather than printing zeros for what has not been typed.
   String _summaryLine() {
     final area = _baseline.sheetAreaSqInches;
-    if (area <= 0) return 'Enter width and height to draw the sheet.';
+    if (area <= 0) return 'Enter width and length to draw the sheet.';
     final volume = _baseline.sheetVolumeCc;
     final areaText = '${_trim(area)} in²';
     if (volume <= 0) return '$areaText · add a thickness for volume';
@@ -1132,46 +1694,81 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       options: faceLengthUnits,
       onChanged: widget.readOnly ? null : _onFaceUnitChanged,
     );
-    return Row(
+    final fromPart = widget.thickness != null;
+    // Width, length, thickness — the same three, in the same places, for all
+    // four forms. A band's length is usually undefined.
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: _DimensionField(
-            controller: _widthController,
-            label: 'Width',
-            unit: face.symbol,
-            readOnly: widget.readOnly,
-            onChanged: _onDimensionChanged,
-            unitWidget: facePicker(),
-          ),
+          child: _form.isBand
+              ? _bandWidthField()
+              : _DimensionField(
+                  key: const ValueKey<String>('sheet-width'),
+                  controller: _widthController,
+                  label: 'Width',
+                  // The face is one measurement in two directions, so both
+                  // sides read in the same unit — a sheet quoted 96 in by
+                  // 1219 mm is a mistake waiting to be made.
+                  unit: face.symbol,
+                  readOnly: widget.readOnly,
+                  onChanged: _onDimensionChanged,
+                  unitWidget: facePicker(),
+                ),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: _DimensionField(
-            controller: _heightController,
-            label: 'Height',
-            // The face is one measurement in two directions, so both sides read
-            // in the same unit — a sheet quoted 48 in by 1219 mm is a mistake
-            // waiting to be made.
-            unit: face.symbol,
-            readOnly: widget.readOnly,
-            onChanged: _onDimensionChanged,
-            unitWidget: facePicker(),
-          ),
+          child: _form.isBand
+              ? _bandLengthField()
+              : _DimensionField(
+                  key: const ValueKey<String>('sheet-length'),
+                  // The record's height is the sheet's length.
+                  controller: _heightController,
+                  label: 'Length',
+                  unit: face.symbol,
+                  readOnly: widget.readOnly,
+                  onChanged: _onDimensionChanged,
+                  unitWidget: facePicker(),
+                ),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: _DimensionField(
-            controller: _thicknessController,
-            label: 'Thickness',
-            unit: gauge.symbol,
-            readOnly: widget.readOnly,
-            onChanged: _onDimensionChanged,
-            // Gauge belongs here and nowhere else, so this picker keeps the
-            // whole catalogue.
-            unitWidget: _UnitPicker(
-              symbol: gauge.symbol,
-              onChanged: widget.readOnly ? null : _onGaugeUnitChanged,
+          child: Tooltip(
+            message: fromPart
+                ? 'The part’s Thickness — a change here changes it there'
+                : '',
+            child: _DimensionField(
+              key: const ValueKey<String>('raw-thickness'),
+              controller: _thicknessController,
+              focusNode: _thicknessFocus,
+              label: 'Thickness',
+              unit: gauge.symbol,
+              readOnly: widget.readOnly,
+              onChanged: _onThicknessTyped,
+              // Gauge belongs here and nowhere else, so this picker keeps the
+              // whole catalogue.
+              unitWidget: _UnitPicker(
+                symbol: gauge.symbol,
+                onChanged: widget.readOnly ? null : _onGaugeUnitChanged,
+              ),
             ),
+          ),
+        ),
+      ],
+    );
+    final unreadable = _thicknessUnreadable;
+    if (unreadable == null) return row;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        row,
+        const SizedBox(height: 6),
+        Text(
+          '“$unreadable” in the Thickness column is not a measurement.',
+          style: const TextStyle(
+            color: SoftErpTheme.warningText,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -1214,46 +1811,30 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const <Widget>[
+                      children: <Widget>[
                         Text(
-                          'Pitch',
-                          style: TextStyle(
+                          _form.isBand ? 'Pitch' : 'Edge trim',
+                          style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12.5,
+                            fontSize: 13,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'The web left between blanks so the strip does not '
-                          'tear under the punch — or the kerf, if the cut '
-                          'removes material. A shear removes none, so leave it '
-                          'at zero for shearing.',
-                          style: TextStyle(
+                          _form.isBand
+                              ? 'How far the ${_form.label.toLowerCase()} '
+                                  'advances for each part — one part comes '
+                                  'off every pitch, the blank and the web '
+                                  'left between blanks together.'
+                              : 'The strip nobody cuts into — the damaged '
+                                  'mill edge, the machine clamp, the straight '
+                                  'edge you gauge from. Comes off one pair of '
+                                  'sides only: left & right (across the '
+                                  'width) or top & bottom (along the length).',
+                          style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Edge trim',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'The strip nobody cuts into — the damaged mill edge, '
-                          'the machine clamp, the straight edge you gauge '
-                          'from. Comes off one pair of sides only: left & '
-                          'right (the width, across the columns) or top & '
-                          'bottom (the height, across the rows).',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
+                            fontSize: 13,
                             height: 1.35,
                           ),
                         ),
@@ -1275,15 +1856,25 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             _partPicker(),
             const SizedBox(height: 10),
           ],
-          if (widget.alloy != null || widget.materials.isNotEmpty) ...[
+          if (widget.alloy != null ||
+              widget.grade != null ||
+              widget.materials.isNotEmpty) ...[
             _alloyRow(),
             const SizedBox(height: 10),
           ],
-          _machineRow(),
-          const SizedBox(height: 10),
-          _primaryBlock(),
-          _regionBlocks(),
-          _yieldBlock(),
+          // The sheet is sheared into strips and blanks; a strip, coil or
+          // roll is fed through the press, one part every pitch.
+          if (_form.isBand) ...[
+            _bandPitchRow(),
+            const SizedBox(height: 10),
+            _bandYield(),
+          ] else ...[
+            _machineRow(),
+            const SizedBox(height: 10),
+            _primaryBlock(),
+            _regionBlocks(),
+            _yieldBlock(),
+          ],
         ],
       ),
     );
@@ -1396,36 +1987,51 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// column, never here) when the host gives one; the grade is the sheet's.
   /// No density and no weight: what an alloy weighs depends on its grade, so
   /// the weights in Material data are what went on the scale.
+  /// A value the part owns, shown here and changed in its own column.
+  static Widget _partValueBox({
+    required Key key,
+    required String value,
+    required String column,
+    required String unset,
+  }) {
+    return Tooltip(
+      message: 'Change it in the $column column of the part',
+      child: Container(
+        key: key,
+        height: 40,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Text(
+          value.isEmpty ? unset : value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: value.isEmpty
+                ? SoftErpTheme.textSecondary
+                : SoftErpTheme.textPrimary,
+            fontSize: 14,
+            fontWeight: value.isEmpty ? FontWeight.w600 : FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _alloyRow() {
     final alloy = _alloy;
     final fromPart = widget.alloy != null;
     final enabled = !widget.readOnly;
     final Widget alloyField = fromPart
-        ? Tooltip(
-            message: 'Change it in the Alloy column of the part',
-            child: Container(
-              key: const ValueKey<String>('sheet-alloy'),
-              height: 40,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: SoftErpTheme.border),
-              ),
-              child: Text(
-                alloy.isEmpty ? 'Not set — pick it in the Alloy column' : alloy,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: alloy.isEmpty
-                      ? SoftErpTheme.textSecondary
-                      : SoftErpTheme.textPrimary,
-                  fontSize: 14,
-                  fontWeight: alloy.isEmpty ? FontWeight.w600 : FontWeight.w800,
-                ),
-              ),
-            ),
+        ? _partValueBox(
+            key: const ValueKey<String>('sheet-alloy'),
+            value: alloy,
+            column: 'Alloy',
+            unset: 'Not set — pick it in the Alloy column',
           )
         : _MaterialPickerField(
             key: const ValueKey<String>('sheet-material'),
@@ -1443,9 +2049,17 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                   }
                 : null,
           );
-    final grade = _baseline.materialGrade;
-    final gradeField = DropdownButtonFormField<String>(
-      key: const ValueKey<String>('sheet-grade'),
+    final grade = _grade;
+    final Widget gradeField = widget.grade != null
+        ? _partValueBox(
+            key: const ValueKey<String>('part-grade'),
+            value: grade,
+            column: 'Grade',
+            unset: 'Not set — add a Grade column in Properties',
+          )
+        : DropdownButtonFormField<String>(
+      // Per form, so switching forms shows that form's grade.
+      key: ValueKey<String>('${_form.name}-grade'),
       initialValue: PenPaperBaseline.grades.contains(grade) ? grade : '',
       isDense: true,
       isExpanded: true,
@@ -1468,9 +2082,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           DropdownMenuItem(value: g, child: Text('$g grade')),
       ],
       onChanged: enabled
-          ? (value) => setState(
-              () => _baseline = _baseline.copyWith(materialGrade: value ?? ''),
-            )
+          ? (value) => setState(() => _setGrade(value ?? ''))
           : null,
     );
     return Column(
@@ -1499,16 +2111,16 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     if (vendors == null) return const SizedBox.shrink();
     final listed = [
       for (final vendor in vendors.vendors)
-        if (!vendor.isArchived || vendor.id == _baseline.vendorId) vendor,
+        if (!vendor.isArchived || vendor.id == _vendorId) vendor,
     ];
-    final current = _baseline.vendorId;
+    final current = _vendorId;
     final enabled = !widget.readOnly;
     return Row(
       children: [
         const SizedBox(width: 74, child: Text('VENDOR', style: _rowLabel)),
         Expanded(
           child: SearchableSelectField<int>(
-            key: const ValueKey<String>('sheet-vendor'),
+            key: ValueKey<String>('${_form.name}-vendor'),
             value: listed.any((v) => v.id == current) ? current : null,
             fieldEnabled: enabled,
             dialogTitle: 'Vendor',
@@ -1524,9 +2136,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             ],
             decoration: InputDecoration(
               isDense: true,
-              hintText: _baseline.vendorName.isNotEmpty
-                  ? _baseline.vendorName
-                  : 'Who supplied the sheet',
+              hintText: _vendorName.isNotEmpty
+                  ? _vendorName
+                  : 'Who supplied the ${_form.label.toLowerCase()}',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1543,14 +2155,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 CreateVendorInput(name: query.trim()),
               );
               if (created == null) return null;
-              if (mounted) {
-                setState(() {
-                  _baseline = _baseline.copyWith(
-                    vendorId: created.id,
-                    vendorName: created.name,
-                  );
-                });
-              }
+              if (mounted) setState(() => _setVendor(created.id, created.name));
               return SearchableSelectOption<int>(
                 value: created.id,
                 label: created.displayLabel,
@@ -1558,12 +2163,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             },
             onChanged: (id) {
               final vendor = vendors.findById(id);
-              setState(() {
-                _baseline = _baseline.copyWith(
-                  vendorId: id,
-                  vendorName: vendor?.name ?? '',
-                );
-              });
+              setState(() => _setVendor(id, vendor?.name ?? ''));
             },
           ),
         ),
@@ -1596,55 +2196,16 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     );
   }
 
-  /// What the machine costs before any part is planned: the blade, and the
-  /// edge nobody will cut into.
-  ///
-  /// These sit above both axes because they are properties of the shear and the
-  /// stock, not of a band — and they are the two figures a paper plan leaves
-  /// out, which is most of why a paper plan comes up short on the floor.
+  /// What the sheet costs before any part is planned: the edge nobody will
+  /// cut into, and which pair of sides it comes off. Above both axes, because
+  /// it belongs to the stock, not to a band — and it is the figure a paper
+  /// plan leaves out, which is much of why one comes up short on the floor.
   Widget _machineRow() {
-    final kerf = _baseline.kerfMm;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            SizedBox(
-              width: 78,
-              child: Text(
-                'PITCH',
-                style: TextStyle(
-                  color: kerf > 0
-                      ? SoftErpTheme.textPrimary
-                      : SoftErpTheme.warningText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            Expanded(
-              child: _PlainNumberField(
-                fieldKey: const ValueKey<String>('sheet-kerf'),
-                controller: _kerfController,
-                hint: '0',
-                readOnly: widget.readOnly,
-                onChanged: _onMachineChanged,
-              ),
-            ),
-            const SizedBox(width: 6),
-            const SizedBox(
-              width: 28,
-              child: Text(
-                'mm',
-                style: TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
             const SizedBox(
               width: 74,
               child: Text(
@@ -1712,18 +2273,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             ),
           ],
         ),
-        if (kerf <= 0 && _baseline.hasCutPlan) ...[
-          const SizedBox(height: 6),
-          const Text(
-            'No gap set — counts assume blanks touching edge to edge.',
-            style: TextStyle(
-              color: SoftErpTheme.warningText,
-              fontSize: 12,
-              height: 1.3,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -2182,6 +2731,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           showChrome: false,
           pipelineId: widget.pipelineId,
           pipelineName: widget.pipelineName,
+          unattachedHint: widget.unattachedHint,
           stageNodes: widget.stageNodes,
           itemName: widget.itemName,
           sheetLabel: _sheetLabel,
@@ -2296,6 +2846,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 /// given the unit is a control: tapping it switches what the number is read in.
 class _DimensionField extends StatelessWidget {
   const _DimensionField({
+    super.key,
     required this.controller,
     required this.label,
     required this.unit,
@@ -2304,7 +2855,14 @@ class _DimensionField extends StatelessWidget {
     this.unitWidget,
     this.integerOnly = false,
     this.hint = '0',
+    this.focusNode,
+    this.errorText,
   });
+
+  final FocusNode? focusNode;
+
+  /// Why what was typed cannot be stored, under the field.
+  final String? errorText;
 
   final TextEditingController controller;
   final String label;
@@ -2354,6 +2912,7 @@ class _DimensionField extends StatelessWidget {
           height: 44,
           child: TextField(
             controller: controller,
+            focusNode: focusNode,
             readOnly: readOnly,
             keyboardType: TextInputType.numberWithOptions(
               decimal: !integerOnly,
@@ -2400,6 +2959,17 @@ class _DimensionField extends StatelessWidget {
             ),
           ),
         ),
+        if (errorText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText!,
+            style: const TextStyle(
+              color: SoftErpTheme.warningText,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2527,6 +3097,87 @@ class _BandSwatch extends StatelessWidget {
 }
 
 /// One step in the workflow's bar.
+/// One form of stock in the panel's switcher: its picture, its name, and a
+/// dot when something is recorded for it.
+class _FormTile extends StatelessWidget {
+  const _FormTile({
+    super.key,
+    required this.form,
+    required this.selected,
+    required this.hasData,
+    required this.onTap,
+  });
+
+  final RawForm form;
+  final bool selected;
+  final bool hasData;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary;
+    return Tooltip(
+      message: hasData
+          ? '${form.label}: recorded'
+          : '${form.label}: nothing recorded yet',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+          child: Ink(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: selected ? SoftErpTheme.accentSurface : Colors.white,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(
+                color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 16,
+                  child: CustomPaint(
+                    painter: RawFormGlyphPainter(form, color: tone),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    form.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected
+                          ? SoftErpTheme.accentDeeper
+                          : SoftErpTheme.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (hasData) ...[
+                  const SizedBox(width: 5),
+                  Container(
+                    key: ValueKey<String>('raw-form-dot-${form.name}'),
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StepChip extends StatelessWidget {
   const _StepChip({
     required this.index,
