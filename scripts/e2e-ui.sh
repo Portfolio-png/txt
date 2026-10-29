@@ -134,7 +134,8 @@ for name in "${TESTS[@]}"; do
   say "flutter test integration_test/${name}_test.dart -d macos"
   ( cd "${REPO}" && flutter test "integration_test/${name}_test.dart" -d macos \
       --dart-define=PAPER_API_BASE_URL="${BASE_URL}" \
-      --dart-define=PAPER_SKIP_ACTIVATION=true ) 2>&1 | tee "${WORK}/${name}.log" \
+      --dart-define=PAPER_SKIP_ACTIVATION=true \
+      --dart-define=E2E_SHOTS="${E2E_SHOTS:-false}" ) 2>&1 | tee "${WORK}/${name}.log" \
     || fail "integration_test/${name}_test.dart"
 done
 

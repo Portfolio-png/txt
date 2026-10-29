@@ -413,6 +413,18 @@ void main() {
     });
 
     dumpVisibleText(tester, 'E2E journey, after reopening');
+
+    // The reopened part, section by section, as the app draws it.
+    await snapshot(tester, 'sheet_item');
+    for (final (section, name) in const [
+      ('Client / Vendor', 'sheet_client'),
+      ('Die Process Master', 'sheet_die'),
+      ('Machines & Routing', 'sheet_machine'),
+    ]) {
+      await tester.tap(find.text(section).first);
+      await tester.pump(const Duration(milliseconds: 600));
+      await snapshot(tester, name);
+    }
     final total = _timings.values.fold<int>(0, (a, b) => a + b);
     // ignore: avoid_print
     print('JOURNEY total ms=$total part=$partId');

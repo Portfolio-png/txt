@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -95,6 +99,31 @@ String visibleText(WidgetTester tester, {int limit = 250}) {
   if (seen.isEmpty) return '(no text at all)';
   final truncated = seen.length >= limit;
   return seen.join(' | ') + (truncated ? ' …(truncated at $limit)' : '');
+}
+
+/// Saves what the app is drawing as `<name>.png` when the run asks for it
+/// (`E2E_SHOTS=1 scripts/e2e-ui.sh …`), and prints where.
+///
+/// Into the app's own temp directory: the macOS app is sandboxed, so that is
+/// the one place it can write without an entitlement.
+///
+/// A widget test renders text in the Ahem test font, so it cannot show what a
+/// screen looks like; this is the one place the real fonts, real data and real
+/// layout are all present. Off unless asked for, so a normal run writes nothing.
+Future<void> snapshot(WidgetTester tester, String name) async {
+  if (!const bool.fromEnvironment('E2E_SHOTS')) return;
+  final dir = '${Directory.systemTemp.path}/paper-e2e-shots';
+  await tester.pump(const Duration(milliseconds: 300));
+  final view = tester.binding.renderViews.first;
+  final layer = view.debugLayer! as OffsetLayer;
+  await tester.runAsync(() async {
+    final image = await layer.toImage(view.paintBounds);
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+    final file = File('$dir/$name.png');
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(png!.buffer.asUint8List());
+    debugPrint('SNAPSHOT $name -> ${file.path}');
+  });
 }
 
 /// Pumps until [finder] matches nothing — a dialog closing, a spinner going.
