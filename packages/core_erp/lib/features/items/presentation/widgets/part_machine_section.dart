@@ -770,7 +770,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFB45309),
+                  color: SoftErpTheme.warningText,
                 ),
               ),
             ],

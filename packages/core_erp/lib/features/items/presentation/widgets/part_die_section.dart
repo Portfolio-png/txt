@@ -796,7 +796,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFB45309),
+                  color: SoftErpTheme.warningText,
                 ),
               ),
             ],
@@ -1516,7 +1516,7 @@ class _CustomDieTypeDialogState extends State<_CustomDieTypeDialog> {
               'Cutting, bending, riveting and assembly are already here. '
               'Anything else the press runs — deep drawing, coining, forming '
               '— goes in as the words you use for it.',
-              style: TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
+              style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             ),
             const SizedBox(height: 14),
             TextField(
@@ -1540,7 +1540,7 @@ class _CustomDieTypeDialogState extends State<_CustomDieTypeDialog> {
                   ? 'The die code is built from the first letter of each word.'
                   : 'A die of this type is coded '
                         '${partCodeInitials(preview.label)}D + the part code.',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
             ),
           ],
         ),
