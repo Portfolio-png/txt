@@ -2081,23 +2081,14 @@ class _PartIdentityFields extends StatelessWidget {
       keyboardType: keyboardType,
       onChanged: onChanged,
       onSubmitted: (_) => onSubmit(),
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      // The same field as Part name just above: the app theme's. These two
+      // had their own (radius 12, tighter padding, white, a 13px label), so
+      // one card showed two kinds of field.
+      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(fontSize: 13),
         hintText: hintText.isEmpty ? null : hintText,
-        isDense: true,
-        filled: true,
-        fillColor: SoftErpTheme.cardSurface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-          borderSide: const BorderSide(color: SoftErpTheme.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-          borderSide: const BorderSide(color: SoftErpTheme.border),
-        ),
+        border: const OutlineInputBorder(),
       ),
     );
   }
