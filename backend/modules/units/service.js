@@ -271,9 +271,16 @@ const STANDARD_FAMILIES = [
  */
 async function seedStandardUnitFamilies({ run, get, all }) {
   for (const family of STANDARD_FAMILIES) {
+    // The row that already holds the code, when there is one. A database can
+    // also have its own group of the same name with no code (made before the
+    // families existed); taking that one first and coding it gave one code to
+    // two rows, and the unique index then stopped the server from booting.
     let group = await get(
-      'SELECT id, code, base_unit_id FROM unit_groups WHERE code = ? OR LOWER(name) = ?',
-      [family.code, family.name.toLowerCase()],
+      `SELECT id, code, base_unit_id FROM unit_groups
+        WHERE code = ? OR LOWER(name) = ?
+        ORDER BY (code = ?) DESC, id ASC
+        LIMIT 1`,
+      [family.code, family.name.toLowerCase(), family.code],
     );
 
     if (!group) {

@@ -15,6 +15,29 @@ ALTER TABLE units ADD COLUMN uqc TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_groups_code ON unit_groups(code);
 
 -- 4. Seed the 6 canonical families
+-- A group already named for a family takes its code FIRST — only the oldest
+-- such group, and only while the code is free. The other way round (insert
+-- the family, then code the existing group) handed one code to two rows, and
+-- the unique index stopped every boot of a database that had its own "Count".
+UPDATE unit_groups SET code = 'count', dimension = 'count', integral_only = 1
+ WHERE id = (SELECT MIN(id) FROM unit_groups WHERE LOWER(name) = 'count' AND (code IS NULL OR code = ''))
+   AND NOT EXISTS (SELECT 1 FROM unit_groups WHERE code = 'count');
+UPDATE unit_groups SET code = 'mass', dimension = 'mass', integral_only = 0
+ WHERE id = (SELECT MIN(id) FROM unit_groups WHERE LOWER(name) = 'mass' AND (code IS NULL OR code = ''))
+   AND NOT EXISTS (SELECT 1 FROM unit_groups WHERE code = 'mass');
+UPDATE unit_groups SET code = 'length', dimension = 'length', integral_only = 0
+ WHERE id = (SELECT MIN(id) FROM unit_groups WHERE LOWER(name) = 'length' AND (code IS NULL OR code = ''))
+   AND NOT EXISTS (SELECT 1 FROM unit_groups WHERE code = 'length');
+UPDATE unit_groups SET code = 'area', dimension = 'area', integral_only = 0
+ WHERE id = (SELECT MIN(id) FROM unit_groups WHERE LOWER(name) = 'area' AND (code IS NULL OR code = ''))
+   AND NOT EXISTS (SELECT 1 FROM unit_groups WHERE code = 'area');
+UPDATE unit_groups SET code = 'volume', dimension = 'volume', integral_only = 0
+ WHERE id = (SELECT MIN(id) FROM unit_groups WHERE LOWER(name) = 'volume' AND (code IS NULL OR code = ''))
+   AND NOT EXISTS (SELECT 1 FROM unit_groups WHERE code = 'volume');
+UPDATE unit_groups SET code = 'time', dimension = 'time', integral_only = 0
+ WHERE id = (SELECT MIN(id) FROM unit_groups WHERE LOWER(name) = 'time' AND (code IS NULL OR code = ''))
+   AND NOT EXISTS (SELECT 1 FROM unit_groups WHERE code = 'time');
+
 INSERT OR IGNORE INTO unit_groups (name, dimension, code, integral_only, created_at, updated_at)
 VALUES
   ('Count', 'count', 'count', 1, datetime('now'), datetime('now')),
@@ -23,10 +46,3 @@ VALUES
   ('Area', 'area', 'area', 0, datetime('now'), datetime('now')),
   ('Volume', 'volume', 'volume', 0, datetime('now'), datetime('now')),
   ('Time', 'time', 'time', 0, datetime('now'), datetime('now'));
-
-UPDATE unit_groups SET code = 'count', dimension = 'count', integral_only = 1 WHERE LOWER(name) = 'count' AND (code IS NULL OR code = '');
-UPDATE unit_groups SET code = 'mass', dimension = 'mass', integral_only = 0 WHERE LOWER(name) = 'mass' AND (code IS NULL OR code = '');
-UPDATE unit_groups SET code = 'length', dimension = 'length', integral_only = 0 WHERE LOWER(name) = 'length' AND (code IS NULL OR code = '');
-UPDATE unit_groups SET code = 'area', dimension = 'area', integral_only = 0 WHERE LOWER(name) = 'area' AND (code IS NULL OR code = '');
-UPDATE unit_groups SET code = 'volume', dimension = 'volume', integral_only = 0 WHERE LOWER(name) = 'volume' AND (code IS NULL OR code = '');
-UPDATE unit_groups SET code = 'time', dimension = 'time', integral_only = 0 WHERE LOWER(name) = 'time' AND (code IS NULL OR code = '');
