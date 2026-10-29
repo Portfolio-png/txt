@@ -106,7 +106,8 @@ class SheetSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _identityCard(name: name, code: code, groupPath: groupPath),
+          if (showIdentity)
+            _identityCard(name: name, code: code, groupPath: groupPath),
           // One scrollable below the identity card, rather than a fixed stack
           // over an Expanded tree: the sections, the headings and the tree
           // together are taller than a short window, and a Column of fixed

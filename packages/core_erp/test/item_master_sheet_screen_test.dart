@@ -261,6 +261,33 @@ void main() {
       expect(find.text('SADP48'), findsWidgets);
     });
 
+    testWidgets('showIdentity: false leaves the naming to the host', (tester) async {
+      // The item sheet pins the part above its content, so the rail naming it
+      // too said it twice. The flag existed from the start and was never read.
+      final controller = _controllerWith(values: {
+        1: const CellValue(columnId: 1, optionLabel: 'Switch Action'),
+        2: const CellValue(columnId: 2, optionLabel: 'Dolly'),
+        3: const CellValue(columnId: 3, optionLabel: 'Patti'),
+      }, counters: {'Switch Action › Dolly › Patti': 47});
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SheetSidebar(
+            controller: controller,
+            sections: const [],
+            activeSection: '',
+            onSelectSection: (_) {},
+            showIdentity: false,
+          ),
+        ),
+      ));
+
+      expect(find.text('SECTIONS'), findsOneWidget);
+      expect(find.text('Patti'), findsNothing);
+      expect(find.text('SADP48'), findsNothing);
+    });
+
     testWidgets('an unnamed row says so rather than showing a name nobody '
         'typed', (tester) async {
       final controller = _controllerWith();
