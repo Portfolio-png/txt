@@ -7,6 +7,7 @@ export 'sheet_draft.dart';
 export 'sheet_binding.dart';
 export 'item_sheet_columns.dart';
 export 'sheet_metrics.dart';
+export 'sheet_style.dart';
 export 'sheet_engine.dart';
 export 'sheet_controller.dart';
 export 'item_master_controller.dart';

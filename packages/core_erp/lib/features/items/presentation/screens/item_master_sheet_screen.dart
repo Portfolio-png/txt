@@ -796,8 +796,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         key: const ValueKey<String>('raw_panel_closed'),
         width: 44,
         decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(left: BorderSide(color: Color(0xFFE2E8F0))),
+          color: SoftErpTheme.cardSurface,
+          border: Border(left: BorderSide(color: SoftErpTheme.border)),
         ),
         child: Column(
           children: [
@@ -896,23 +896,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       key: const ValueKey<String>('raw_panel'),
       width: _rawPanelWidth,
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(left: BorderSide(color: Color(0xFFE2E8F0))),
+        color: SoftErpTheme.cardSurface,
+        border: Border(left: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+            padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 10, 8, 6),
             child: Row(
               children: [
-                const Icon(Icons.grid_on_rounded, size: 20, color: SoftErpTheme.accent),
-                const SizedBox(width: 8),
+                SheetStyle.iconTile(Icons.grid_on_rounded),
+                const SizedBox(width: 10),
                 const Expanded(
-                  child: Text(
-                    'Raw material',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-                  ),
+                  child: Text('Raw material', style: SheetStyle.sectionTitle),
                 ),
                 if (part != null && !_rawEditing)
                   OutlinedButton.icon(
@@ -932,10 +929,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
           if (part == null)
             const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: EdgeInsets.fromLTRB(SheetStyle.cardPadding, 0, SheetStyle.cardPadding, 8),
               child: Text(
                 'Opens once the part is saved — the raw sheet is stored on the part.',
-                style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+                style: SheetStyle.hint,
               ),
             ),
           const Divider(height: 1),
@@ -1979,6 +1976,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// else; this section was a note saying it was not wired.
   Widget _dieSheet() {
     return PartDieSection(
+      // The section card is the frame here; the die list draws its own only
+      // where it stands alone, in the quick-entry dialog.
+      framed: false,
       part: _livePart,
       partCode: _partCodeNow,
       partLabel: _partLabelNow,
@@ -1995,6 +1995,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         PartMachineSection(
+          framed: false,
           part: _livePart,
           partCode: _partCodeNow,
           partLabel: _partLabelNow,
@@ -2461,13 +2462,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final body = child;
     return Container(
       key: _sectionKeys[id],
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      margin: const EdgeInsets.only(bottom: SheetStyle.cardGap),
+      padding: const EdgeInsets.all(SheetStyle.cardPadding),
+      decoration: SheetStyle.card(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2480,7 +2477,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   data: id,
                   feedback: Material(
                     elevation: 6,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       child: Text(
@@ -2517,31 +2514,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 ),
               ),
               const SizedBox(width: 4),
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(icon, size: 18, color: SoftErpTheme.accent),
-              ),
+              SheetStyle.iconTile(icon),
               const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      heading,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: Text(heading, style: SheetStyle.sectionTitle)),
               if (trailing != null) ...[
                 const SizedBox(width: 12),
                 trailing,
@@ -2554,7 +2529,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             // Folded: one row of what is in it. Tap to open.
             InkWell(
               key: ValueKey<String>('section_summary_$id'),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
               onTap: () => _toggle(id),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
@@ -2627,12 +2602,14 @@ class _TreeGuidePainter extends CustomPainter {
   final bool isLast;
 
   static const double _offset = 22;
-  static const double _elbowY = 34;
+  // Level with the middle of a section's header row, which sits one card
+  // padding below the card's top edge.
+  static const double _elbowY = SheetStyle.cardPadding + 18;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFB8C2D3)
+      ..color = SoftErpTheme.textMuted
       ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke;
     // Ancestors with siblings still to come keep their line running past.

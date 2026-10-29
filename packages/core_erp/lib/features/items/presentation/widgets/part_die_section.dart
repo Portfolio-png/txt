@@ -52,7 +52,12 @@ class PartDieSection extends StatefulWidget {
     required this.onStage,
     required this.onUnstage,
     required this.onDiesChanged,
+    this.framed = true,
   });
+
+  /// Whether the section draws its own card. Off where a host already frames
+  /// it — the item sheet's section card — so it is not a card inside a card.
+  final bool framed;
 
   /// The part the sheet is about, or null while it is still being typed.
   ///
@@ -635,12 +640,14 @@ class _PartDieSectionState extends State<PartDieSection> {
     final holding = part == null;
 
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
+      padding: widget.framed ? const EdgeInsets.all(14) : EdgeInsets.zero,
+      decoration: widget.framed
+          ? BoxDecoration(
+              color: SoftErpTheme.cardSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              border: Border.all(color: SoftErpTheme.border),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
