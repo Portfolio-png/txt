@@ -694,6 +694,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   Widget _topBar() {
     return Container(
+      // Edge to edge: in the screen's Column it took its content's width and
+      // sat centred, its white and its rule stopping short of either side.
+      width: double.infinity,
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
