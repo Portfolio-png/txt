@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../sheet/sheet_style.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
@@ -795,7 +796,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           final width = constraints.hasBoundedWidth
               ? constraints.maxWidth
               : _sideBySideWidth;
-          return ColoredBox(color: Colors.white, child: _body(width));
+          return ColoredBox(color: SoftErpTheme.cardSurface, child: _body(width));
         },
       );
     }
@@ -809,8 +810,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       height: height,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
         border: Border.all(color: SoftErpTheme.border),
         boxShadow: SoftErpTheme.raisedShadow,
       ),
@@ -873,7 +874,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: const BoxDecoration(
-          color: Color(0xFFFDFDFD),
+          color: SoftErpTheme.shellSurface,
           border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
         ),
         child: SingleChildScrollView(
@@ -886,7 +887,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 10, 22, 10),
       decoration: const BoxDecoration(
-        color: Color(0xFFFDFDFD),
+        color: SoftErpTheme.shellSurface,
         border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Row(
@@ -920,7 +921,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: SoftErpTheme.textSecondary,
-                fontSize: 11.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1076,7 +1077,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(compact ? 12 : 22, 10, compact ? 12 : 22, 10),
       decoration: const BoxDecoration(
-        color: Color(0xFFFDFDFD),
+        color: SoftErpTheme.shellSurface,
         border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Row(
@@ -1173,7 +1174,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         message: known ? 'Back to undefined' : 'Undefined, or a known length',
         child: InkWell(
           key: ValueKey<String>('${_form.name}-length'),
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
           onTap: enabled ? () => _pickLength(anchor) : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -1199,8 +1200,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             height: 44,
             padding: const EdgeInsets.only(left: 10, right: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              color: SoftErpTheme.shellSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
               border: Border.all(color: SoftErpTheme.border),
             ),
             child: Row(
@@ -1297,12 +1298,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     });
   }
 
-  static const TextStyle _fieldLabel = TextStyle(
-    color: SoftErpTheme.textSecondary,
-    fontSize: 12,
-    fontWeight: FontWeight.w800,
-    letterSpacing: 0.5,
-  );
+  static const TextStyle _fieldLabel = SheetStyle.label;
 
   /// The press's advance per part, for this form.
   Widget _bandPitchRow() {
@@ -1390,7 +1386,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           child: Container(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: SoftErpTheme.cardSurface,
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
               border: Border.all(color: SoftErpTheme.border),
             ),
@@ -1497,12 +1493,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             const Expanded(
               child: Text(
                 'AS IT WILL BE RECORDED',
-                style: TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.7,
-                ),
+                style: SheetStyle.eyebrow,
               ),
             ),
             TextButton.icon(
@@ -1526,7 +1517,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: SoftErpTheme.cardSurface,
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
               border: Border.all(color: SoftErpTheme.border),
             ),
@@ -1550,7 +1541,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 16, 14, 14),
       decoration: const BoxDecoration(
-        color: Color(0xFFFBFBFB),
+        color: SoftErpTheme.shellSurface,
         border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Row(
@@ -1575,7 +1566,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                       : '${widget.itemName.trim()} · on $on',
                   style: const TextStyle(
                     color: SoftErpTheme.textSecondary,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1587,9 +1578,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               tooltip: 'Close',
               onPressed: widget.onCancel,
               style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFFF8FAFC),
-                foregroundColor: const Color(0xFF334155),
-                side: const BorderSide(color: Color(0xFFD9E2F2)),
+                backgroundColor: SoftErpTheme.shellSurface,
+                foregroundColor: SoftErpTheme.textPrimary,
+                side: const BorderSide(color: SoftErpTheme.borderStrong),
               ),
               icon: const Icon(Icons.close_rounded),
             ),
@@ -1604,7 +1595,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       decoration: BoxDecoration(
         // White, not the section wash: the drawing is ink on paper and the
         // hairlines only read that way against it.
-        color: Colors.white,
+        color: SoftErpTheme.cardSurface,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
         border: Border.all(color: SoftErpTheme.border),
       ),
@@ -1613,12 +1604,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         children: [
           const Text(
             'THE SHEET',
-            style: TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.7,
-            ),
+            style: SheetStyle.eyebrow,
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -1654,7 +1640,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             _summaryLine(),
             style: const TextStyle(
               color: SoftErpTheme.textSecondary,
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1790,12 +1776,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             children: [
               const Text(
                 'OPERATION',
-                style: TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.7,
-                ),
+                style: SheetStyle.eyebrow,
               ),
               const SizedBox(width: 6),
               // The definitions live under a hover rather than on the panel:
@@ -1890,15 +1871,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return Row(
       children: [
         const SizedBox(
-          width: 74,
+          width: _labelWidth,
           child: Text(
             'PART',
-            style: TextStyle(
-              color: SoftErpTheme.textPrimary,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.6,
-            ),
+            style: _rowLabel,
           ),
         ),
         Expanded(
@@ -1917,13 +1893,13 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: SoftErpTheme.textSecondary,
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               style: const TextStyle(
                 color: SoftErpTheme.textPrimary,
-                fontSize: 12.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
               decoration: InputDecoration(
@@ -1933,13 +1909,13 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                   vertical: 6,
                 ),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: SoftErpTheme.cardSurface,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
                   borderSide: const BorderSide(color: SoftErpTheme.border),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
                   borderSide: const BorderSide(color: SoftErpTheme.border),
                 ),
               ),
@@ -1976,12 +1952,11 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// column, else whatever this record was given.
   String get _alloy => (widget.alloy ?? _baseline.materialName).trim();
 
-  static const TextStyle _rowLabel = TextStyle(
-    color: SoftErpTheme.textPrimary,
-    fontSize: 11.5,
-    fontWeight: FontWeight.w800,
-    letterSpacing: 0.6,
-  );
+  static const TextStyle _rowLabel = SheetStyle.label;
+
+  /// The label column beside a value — wide enough for TRIM SIDES at 13px,
+  /// which the old 74 (and one stray 78) wrapped.
+  static const double _labelWidth = 96;
 
   /// Alloy and its grade. The alloy is the part's (changed in its Alloy
   /// column, never here) when the host gives one; the grade is the sheet's.
@@ -2002,8 +1977,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(10),
+          color: SoftErpTheme.sectionSurface,
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           border: Border.all(color: SoftErpTheme.border),
         ),
         child: Text(
@@ -2074,7 +2049,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           horizontal: 10,
           vertical: 10,
         ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl)),
       ),
       items: [
         const DropdownMenuItem(value: '', child: Text('Not set')),
@@ -2089,14 +2064,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       children: [
         Row(
           children: [
-            const SizedBox(width: 74, child: Text('ALLOY', style: _rowLabel)),
+            const SizedBox(width: _labelWidth, child: Text('ALLOY', style: _rowLabel)),
             Expanded(child: alloyField),
           ],
         ),
         const SizedBox(height: 8),
         Row(
           children: [
-            const SizedBox(width: 74, child: Text('GRADE', style: _rowLabel)),
+            const SizedBox(width: _labelWidth, child: Text('GRADE', style: _rowLabel)),
             Expanded(child: gradeField),
           ],
         ),
@@ -2117,7 +2092,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     final enabled = !widget.readOnly;
     return Row(
       children: [
-        const SizedBox(width: 74, child: Text('VENDOR', style: _rowLabel)),
+        const SizedBox(width: _labelWidth, child: Text('VENDOR', style: _rowLabel)),
         Expanded(
           child: SearchableSelectField<int>(
             key: ValueKey<String>('${_form.name}-vendor'),
@@ -2140,7 +2115,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                   ? _vendorName
                   : 'Who supplied the ${_form.label.toLowerCase()}',
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
               ),
             ),
             canCreateOption: (query, options) =>
@@ -2207,15 +2182,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         Row(
           children: [
             const SizedBox(
-              width: 74,
+              width: _labelWidth,
               child: Text(
                 'EDGE TRIM',
-                style: TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
+                style: _rowLabel,
               ),
             ),
             Expanded(
@@ -2234,7 +2204,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 'mm',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -2248,15 +2218,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           runSpacing: 4,
           children: [
             const SizedBox(
-              width: 78,
+              width: _labelWidth,
               child: Text(
                 'TRIM SIDES',
-                style: TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
+                style: _rowLabel,
               ),
             ),
             _AxisChoice(
@@ -2290,12 +2255,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           children: [
             const Text(
               'SHEAR INTO',
-              style: TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
-              ),
+              style: SheetStyle.subHeading,
             ),
             const Spacer(),
             _UnitPicker(
@@ -2316,7 +2276,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 'into',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -2348,7 +2308,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                   _baseline.usableSpanMm(axis) <= 0 || _baseline.overruns(axis)
                   ? SoftErpTheme.warningText
                   : SoftErpTheme.textSecondary,
-              fontSize: 12,
+              fontSize: 13,
               height: 1.35,
               fontWeight: FontWeight.w700,
             ),
@@ -2376,12 +2336,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         const SizedBox(height: 10),
         const Text(
           'THEN CUT A REGION',
-          style: TextStyle(
-            color: SoftErpTheme.textSecondary,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.7,
-          ),
+          style: SheetStyle.eyebrow,
         ),
         const SizedBox(height: 8),
         for (final region in regions) _regionRow(region),
@@ -2398,7 +2353,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
       decoration: BoxDecoration(
-        color: open ? Colors.white : Colors.transparent,
+        color: open ? SoftErpTheme.cardSurface : Colors.transparent,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
         border: Border.all(
           color: open ? SoftErpTheme.accent : SoftErpTheme.border,
@@ -2431,7 +2386,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                     '${region.copies > 1 ? '  ·  ${region.copies}×' : ''}',
                     style: const TextStyle(
                       color: SoftErpTheme.textSecondary,
-                      fontSize: 12,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -2443,7 +2398,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                       '$made cut${made == 1 ? '' : 's'}',
                       style: const TextStyle(
                         color: SoftErpTheme.successText,
-                        fontSize: 11.5,
+                        fontSize: 13,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -2462,12 +2417,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               children: [
                 Text(
                   'CUT ALONG ${_baseline.secondaryAxis.letter.toUpperCase()}',
-                  style: const TextStyle(
-                    color: SoftErpTheme.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
-                  ),
+                  style: _rowLabel,
                 ),
                 const Spacer(),
                 _UnitPicker(
@@ -2566,7 +2516,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                   : (asks > fits
                         ? SoftErpTheme.dangerText
                         : SoftErpTheme.successText),
-              fontSize: 12.5,
+              fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -2638,12 +2588,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         const SizedBox(height: 8),
         const Text(
           'THIS SHEET YIELDS',
-          style: TextStyle(
-            color: SoftErpTheme.textSecondary,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.7,
-          ),
+          style: SheetStyle.eyebrow,
         ),
         const SizedBox(height: 6),
         for (final entry in parts) _yieldRow(entry),
@@ -2664,7 +2609,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               color: entry.isOffcut
                   ? SoftErpTheme.warningText.withValues(alpha: 0.5)
                   : sheetBandColour(entry.colourIndex).withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(3),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
             ),
           ),
           const SizedBox(width: 8),
@@ -2686,7 +2631,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 color: entry.isOffcut
                     ? SoftErpTheme.textSecondary
                     : SoftErpTheme.textPrimary,
-                fontSize: 12.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -2695,7 +2640,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             entry.isOffcut ? 'offcut' : entry.label,
             style: const TextStyle(
               color: SoftErpTheme.textSecondary,
-              fontSize: 11.5,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -2707,12 +2652,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   Widget _dataHeading() {
     return const Text(
       'WHAT IT PRODUCED',
-      style: TextStyle(
-        color: SoftErpTheme.textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.7,
-      ),
+      style: SheetStyle.eyebrow,
     );
   }
 
@@ -2720,7 +2660,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: SoftErpTheme.cardSurface,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
         border: Border.all(color: SoftErpTheme.border),
       ),
@@ -2781,7 +2721,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         ? 'Read only.'
         : '';
     const decoration = BoxDecoration(
-      color: Color(0xFFFBFBFB),
+      color: SoftErpTheme.shellSurface,
       border: Border(top: BorderSide(color: SoftErpTheme.border)),
     );
 
@@ -2900,12 +2840,7 @@ class _DimensionField extends StatelessWidget {
       children: [
         Text(
           label.toUpperCase(),
-          style: const TextStyle(
-            color: SoftErpTheme.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
+          style: SheetStyle.label,
         ),
         const SizedBox(height: 5),
         SizedBox(
@@ -2943,17 +2878,17 @@ class _DimensionField extends StatelessWidget {
               suffixIcon: suffix,
               suffixIconConstraints: const BoxConstraints(minWidth: 0),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: SoftErpTheme.cardSurface,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
                 borderSide: const BorderSide(color: SoftErpTheme.border),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
                 borderSide: const BorderSide(color: SoftErpTheme.border),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
                 borderSide: const BorderSide(color: SoftErpTheme.accent),
               ),
             ),
@@ -3011,7 +2946,7 @@ class _AxisChoice extends StatelessWidget {
                     ? null
                     : ValueKey<String>('$keyPrefix-${option.name}'),
                 onTap: onChanged == null ? null : () => onChanged!(option),
-                borderRadius: BorderRadius.circular(5),
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
                 child: Ink(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -3020,8 +2955,8 @@ class _AxisChoice extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: option == axis
                         ? SoftErpTheme.accentSurface
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(5),
+                        : SoftErpTheme.cardSurface,
+                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
                     border: Border.all(
                       color: option == axis
                           ? SoftErpTheme.accent
@@ -3034,7 +2969,7 @@ class _AxisChoice extends StatelessWidget {
                       color: option == axis
                           ? SoftErpTheme.accentDeeper
                           : SoftErpTheme.textSecondary,
-                      fontSize: 12,
+                      fontSize: 13,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -3075,7 +3010,7 @@ class _BandSwatch extends StatelessWidget {
           height: 13,
           decoration: BoxDecoration(
             color: live ? colour.withValues(alpha: 0.85) : Colors.transparent,
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
             border: Border.all(
               color: live ? colour : SoftErpTheme.border,
               width: 1.4,
@@ -3129,7 +3064,7 @@ class _FormTile extends StatelessWidget {
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: selected ? SoftErpTheme.accentSurface : Colors.white,
+              color: selected ? SoftErpTheme.accentSurface : SoftErpTheme.cardSurface,
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
               border: Border.all(
                 color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
@@ -3211,8 +3146,8 @@ class _StepChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 17,
-                height: 17,
+                width: 20,
+                height: 20,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected
@@ -3224,7 +3159,7 @@ class _StepChip extends StatelessWidget {
                   '$index',
                   style: TextStyle(
                     color: selected ? Colors.white : SoftErpTheme.textSecondary,
-                    fontSize: 10,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -3236,7 +3171,7 @@ class _StepChip extends StatelessWidget {
                   color: selected
                       ? SoftErpTheme.accentDeeper
                       : SoftErpTheme.textPrimary,
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -3270,12 +3205,7 @@ class _BandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(
-      color: SoftErpTheme.textSecondary,
-      fontSize: 10,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0.5,
-    );
+    const style = SheetStyle.label;
     return const Row(
       children: [
         Expanded(flex: 4, child: Text('SIZE', style: style)),
@@ -3364,7 +3294,7 @@ class _MaterialPickerField extends StatelessWidget {
     return SizedBox(
       height: 32,
       child: Material(
-        color: Colors.white,
+        color: SoftErpTheme.cardSurface,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
         child: InkWell(
           onTap: onPressed == null ? null : () => onPressed!(context),
@@ -3396,7 +3326,7 @@ class _MaterialPickerField extends StatelessWidget {
                     trailing,
                     style: const TextStyle(
                       color: SoftErpTheme.textSecondary,
-                      fontSize: 11.5,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                       fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
                     ),
@@ -3485,7 +3415,7 @@ class _MaterialMenuState extends State<_MaterialMenu> {
               width: width,
               constraints: const BoxConstraints(maxHeight: maxHeight),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: SoftErpTheme.cardSurface,
                 borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
                 border: Border.all(color: SoftErpTheme.border),
               ),
@@ -3533,7 +3463,7 @@ class _MaterialMenuState extends State<_MaterialMenu> {
                               'No material by that name.',
                               style: TextStyle(
                                 color: SoftErpTheme.textSecondary,
-                                fontSize: 12.5,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -3572,7 +3502,7 @@ class _MaterialMenuState extends State<_MaterialMenu> {
           'Not set',
           style: TextStyle(
             color: SoftErpTheme.textSecondary,
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -3644,12 +3574,12 @@ class _UnitPicker extends StatelessWidget {
                   if (picked != null) onChanged!(picked);
                 }
               : null,
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
           child: Ink(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
               color: enabled ? SoftErpTheme.accentSurface : Colors.transparent,
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
               border: Border.all(
                 color: enabled
                     ? SoftErpTheme.accent.withValues(alpha: 0.4)
@@ -3665,7 +3595,7 @@ class _UnitPicker extends StatelessWidget {
                     color: enabled
                         ? SoftErpTheme.accentDeeper
                         : SoftErpTheme.textSecondary,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -3772,7 +3702,7 @@ class _UnitMenuState extends State<_UnitMenu> {
               width: width,
               constraints: const BoxConstraints(maxHeight: maxHeight),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: SoftErpTheme.cardSurface,
                 borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
                 border: Border.all(color: SoftErpTheme.border),
               ),
@@ -3820,7 +3750,7 @@ class _UnitMenuState extends State<_UnitMenu> {
                               'No unit by that name.',
                               style: TextStyle(
                                 color: SoftErpTheme.textSecondary,
-                                fontSize: 12.5,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -3870,7 +3800,7 @@ class _UnitMenuState extends State<_UnitMenu> {
                 unit.name,
                 style: const TextStyle(
                   color: SoftErpTheme.textSecondary,
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -3882,7 +3812,7 @@ class _UnitMenuState extends State<_UnitMenu> {
                 'SWG',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
-                  fontSize: 10,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -3939,7 +3869,7 @@ class _PlainNumberField extends StatelessWidget {
           hintText: hint,
           hintStyle: const TextStyle(
             color: SoftErpTheme.textSecondary,
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
           contentPadding: const EdgeInsets.symmetric(
@@ -3947,17 +3877,17 @@ class _PlainNumberField extends StatelessWidget {
             vertical: 8,
           ),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: SoftErpTheme.cardSurface,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
             borderSide: const BorderSide(color: SoftErpTheme.border),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
             borderSide: const BorderSide(color: SoftErpTheme.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
             borderSide: const BorderSide(color: SoftErpTheme.accent),
           ),
         ),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../sheet/sheet_style.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/pm_segmented_control.dart';
@@ -556,7 +557,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               text,
               style: TextStyle(
                 color: tone,
-                fontSize: 11.5,
+                fontSize: 13,
                 height: 1.35,
                 fontWeight: FontWeight.w600,
               ),
@@ -575,7 +576,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
           padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
             color: SoftErpTheme.accentSoft,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
           ),
           child: const Icon(
             Icons.science_outlined,
@@ -601,7 +602,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                 'Weights from a trial run, in kilograms, for yield calculations.',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
-                  fontSize: 12,
+                  fontSize: 13,
                   height: 1.35,
                 ),
               ),
@@ -671,7 +672,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             final stacked = constraints.maxWidth < 720;
             final input = _MeasureColumn(
               title: 'Input material',
-              accent: const Color(0xFF3F5BD9),
+              accent: SoftErpTheme.infoText,
               nameHeading: 'Material',
               name: draft.inputName,
               nameKey: const ValueKey<String>('material-input-name'),
@@ -693,7 +694,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             );
             final output = _MeasureColumn(
               title: 'Output material',
-              accent: const Color(0xFF15803D),
+              accent: SoftErpTheme.successText,
               nameHeading: 'Part',
               name: draft.outputName,
               nameKey: const ValueKey<String>('material-output-name'),
@@ -873,7 +874,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     if (stages.isEmpty) {
       return const Text(
         'No stages to record yet.',
-        style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12.5),
+        style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 13),
       );
     }
     return Column(
@@ -914,12 +915,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
 
 Widget _fieldLabel(String text) => Text(
   text.toUpperCase(),
-  style: const TextStyle(
-    color: SoftErpTheme.textSecondary,
-    fontSize: 10,
-    fontWeight: FontWeight.w800,
-    letterSpacing: 0.6,
-  ),
+  style: SheetStyle.label,
 );
 
 InputDecoration _softDecoration({
@@ -928,7 +924,7 @@ InputDecoration _softDecoration({
   String? suffix,
 }) {
   OutlineInputBorder border(Color color) => OutlineInputBorder(
-    borderRadius: BorderRadius.circular(10),
+    borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
     borderSide: BorderSide(color: color),
   );
   return InputDecoration(
@@ -946,7 +942,7 @@ InputDecoration _softDecoration({
     hintStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 13),
     suffixStyle: const TextStyle(
       color: SoftErpTheme.textSecondary,
-      fontSize: 12.5,
+      fontSize: 13,
       fontWeight: FontWeight.w700,
     ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
@@ -1049,7 +1045,7 @@ class _LossToggle extends StatelessWidget {
                   color: selected
                       ? SoftErpTheme.accentDeeper
                       : SoftErpTheme.textPrimary,
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1117,7 +1113,7 @@ class _BalanceStrip extends StatelessWidget {
                             '${delta.abs().toStringAsFixed(1)} kg',
                   style: TextStyle(
                     color: tone,
-                    fontSize: 11.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1187,7 +1183,7 @@ class _StageRow extends StatelessWidget {
             child: Text(
               '${index + 1}',
               style: const TextStyle(
-                fontSize: 11,
+                fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: SoftErpTheme.accent,
               ),
@@ -1214,7 +1210,7 @@ class _StageRow extends StatelessWidget {
                   '${stage.yieldPercentage.toStringAsFixed(1)}% yield',
                   style: const TextStyle(
                     color: SoftErpTheme.textSecondary,
-                    fontSize: 11.5,
+                    fontSize: 13,
                   ),
                 ),
               ],
@@ -1242,7 +1238,7 @@ class _StageRow extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: SoftErpTheme.accent,
                 textStyle: const TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
                 visualDensity: VisualDensity.compact,
@@ -1516,20 +1512,15 @@ class _MeasureColumn extends StatelessWidget {
   final String perWhat;
   final Widget? trailing;
 
-  static const _heading = TextStyle(
-    color: Color(0xFF94A3B8),
-    fontSize: 11,
-    fontWeight: FontWeight.w800,
-    letterSpacing: 0.6,
-  );
+  static const _heading = SheetStyle.eyebrow;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1539,10 +1530,10 @@ class _MeasureColumn extends StatelessWidget {
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.07),
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(11),
+                top: Radius.circular(SoftErpTheme.radiusSm - 1),
               ),
               border: const Border(
-                bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                bottom: BorderSide(color: SoftErpTheme.border),
               ),
             ),
             child: Text(
@@ -1568,7 +1559,7 @@ class _MeasureColumn extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF0F172A),
+                    color: SoftErpTheme.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1614,7 +1605,7 @@ class _MeasureColumn extends StatelessWidget {
                   Text(
                     'Averages ${perPiece.toStringAsFixed(3)} kg per $perWhat',
                     style: const TextStyle(
-                      color: Color(0xFF64748B),
+                      color: SoftErpTheme.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1622,7 +1613,7 @@ class _MeasureColumn extends StatelessWidget {
                 ],
                 if (trailing != null) ...[
                   const SizedBox(height: 10),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const Divider(height: 1, color: SoftErpTheme.border),
                   const SizedBox(height: 8),
                   trailing!,
                 ],
@@ -1670,7 +1661,7 @@ class _CellField extends StatelessWidget {
       ],
       onChanged: (_) => onChanged(),
       style: const TextStyle(
-        color: Color(0xFF0F172A),
+        color: SoftErpTheme.textPrimary,
         fontSize: 14,
         fontWeight: FontWeight.w700,
       ),
@@ -1679,20 +1670,20 @@ class _CellField extends StatelessWidget {
         hintText: hint,
         suffixText: suffix,
         suffixStyle: const TextStyle(
-          color: Color(0xFF94A3B8),
-          fontSize: 11,
+          color: SoftErpTheme.textMuted,
+          fontSize: 13,
           fontWeight: FontWeight.w700,
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         filled: true,
-        fillColor: readOnly ? const Color(0xFFF1F5F9) : Colors.white,
+        fillColor: readOnly ? SoftErpTheme.sectionSurface : SoftErpTheme.cardSurface,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(9),
-          borderSide: const BorderSide(color: Color(0xFFD8E0EA)),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+          borderSide: const BorderSide(color: SoftErpTheme.borderStrong),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(9),
-          borderSide: const BorderSide(color: Color(0xFFD8E0EA)),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+          borderSide: const BorderSide(color: SoftErpTheme.borderStrong),
         ),
       ),
     );
@@ -1739,7 +1730,7 @@ class _LossRow extends StatelessWidget {
           Expanded(
             flex: 3,
             child: InkWell(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
               onTap: readOnly ? null : onToggle,
               child: Row(
                 children: [
@@ -1749,8 +1740,8 @@ class _LossRow extends StatelessWidget {
                         : Icons.circle_outlined,
                     size: 15,
                     color: enabled
-                        ? const Color(0xFF6049E3)
-                        : const Color(0xFF94A3B8),
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.textMuted,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
@@ -1760,9 +1751,9 @@ class _LossRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: enabled
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFF94A3B8),
-                        fontSize: 12,
+                            ? SoftErpTheme.textPrimary
+                            : SoftErpTheme.textMuted,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1794,8 +1785,8 @@ class _LossRow extends StatelessWidget {
                   resolved ?? '',
                   textAlign: TextAlign.left,
                   style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 11,
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 import '../../../units/domain/quantity.dart';
 import '../../../units/domain/unit_family.dart';
 import '../../../units/domain/units.dart';
+import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/raw_stock_form.dart';
@@ -173,11 +174,11 @@ class RawSheetReviewCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final (index, section) in sections.indexed) ...[
-          if (index > 0) const Divider(height: 22, color: Color(0xFFE2E8F0)),
+          if (index > 0) const Divider(height: 22, color: SoftErpTheme.border),
           Text(
             section.title.toUpperCase(),
             style: const TextStyle(
-              color: Color(0xFF64748B),
+              color: SoftErpTheme.textSecondary,
               fontSize: 13,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.6,
@@ -197,7 +198,7 @@ class RawSheetReviewCard extends StatelessWidget {
                           child: Text(
                             label,
                             style: const TextStyle(
-                              color: Color(0xFF475569),
+                              color: SoftErpTheme.textSecondary,
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -207,7 +208,7 @@ class RawSheetReviewCard extends StatelessWidget {
                           child: Text(
                             value,
                             style: const TextStyle(
-                              color: Color(0xFF0F172A),
+                              color: SoftErpTheme.textPrimary,
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
