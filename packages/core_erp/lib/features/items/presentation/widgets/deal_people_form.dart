@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
+import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
@@ -16,6 +17,7 @@ import '../../../../sheet/item_master_controller.dart';
 import '../../../../sheet/sheet_binding.dart';
 import '../../../../sheet/sheet_controller.dart';
 import '../../../../sheet/sheet_draft.dart';
+import '../../../../sheet/sheet_style.dart';
 
 /// The Client / Vendor section as an ordinary form: the deal (company,
 /// quotation, when it was recorded) and the people at that company, each a
@@ -298,11 +300,20 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   /// The deal line's own Save, or its Edit once saved.
   Widget _dealAction(bool locked) {
     if (!widget.partSaved) {
+      // A note, not a disabled button: there is nothing here to press, ever —
+      // the part row's own Save carries the deal.
       return const Tooltip(
         message: 'The deal is saved with the part — save the part row first',
-        child: FilledButton(
-          onPressed: null,
-          child: Text('Saved with the part', style: TextStyle(fontSize: 14)),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline_rounded, size: 18, color: SoftErpTheme.textSecondary),
+              SizedBox(width: 6),
+              Text('Saved with the part', style: SheetStyle.hint),
+            ],
+          ),
         ),
       );
     }
@@ -314,11 +325,14 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         label: const Text('Edit', style: TextStyle(fontSize: 14)),
       );
     }
-    return FilledButton.icon(
+    return AppButton(
       key: const ValueKey<String>('deal_save'),
-      onPressed: _savingDeal ||
-              widget.onSaveDeal == null ||
-              widget.controller.isSavingNow
+      label: 'Save',
+      icon: Icons.save_outlined,
+      variant: AppButtonVariant.secondary,
+      dense: true,
+      isLoading: _savingDeal,
+      onPressed: widget.onSaveDeal == null || widget.controller.isSavingNow
           ? null
           : () async {
               setState(() => _savingDeal = true);
@@ -329,8 +343,6 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                 if (ok) _dealEditing = false;
               });
             },
-      icon: const Icon(Icons.save_outlined, size: 18),
-      label: const Text('Save', style: TextStyle(fontSize: 14)),
     );
   }
 
@@ -344,16 +356,12 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       children: [
         Text(
           hasCompany ? 'People at $company' : 'People',
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: SoftErpTheme.textPrimary,
-          ),
+          style: SheetStyle.subHeading,
         ),
         const SizedBox(height: 2),
         const Text(
           'Everyone you deal with there. Tick whoever this part’s deal was done with.',
-          style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+          style: SheetStyle.hint,
         ),
         const SizedBox(height: 10),
         for (var row = 0; row < rows; row += 1) ...[
@@ -487,14 +495,15 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             label: const Text('Edit', style: TextStyle(fontSize: 14)),
           )
         else
-          FilledButton.icon(
+          AppButton(
             key: ValueKey<String>('deal_person_${row}_save'),
+            label: 'Save',
+            icon: Icons.save_outlined,
+            variant: AppButtonVariant.secondary,
+            dense: true,
             // Off while that person is saving: a second click added them twice.
-            onPressed: blank || widget.controller.isSavingPerson(row)
-                ? null
-                : () => widget.controller.savePersonRow(row),
-            icon: const Icon(Icons.save_outlined, size: 18),
-            label: const Text('Save', style: TextStyle(fontSize: 14)),
+            isLoading: widget.controller.isSavingPerson(row),
+            onPressed: blank ? null : () => widget.controller.savePersonRow(row),
           ),
         Tooltip(
           message: saved

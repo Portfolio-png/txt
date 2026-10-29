@@ -551,10 +551,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Leave with unsaved work?', style: TextStyle(fontSize: 18)),
+        title: const Text('Leave with unsaved work?'),
         content: const Text(
           'Some rows, edits or held dies and machines have not been saved yet.',
-          style: TextStyle(fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -1294,11 +1293,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             child: const Text('Undo', style: TextStyle(fontSize: 14)),
           ),
           if (saved)
-            FilledButton.icon(
+            AppButton(
               key: const ValueKey<String>('tree_save'),
-              onPressed: _savingTree ? null : _saveTree,
-              icon: const Icon(Icons.save_outlined, size: 18),
-              label: const Text('Save nesting', style: TextStyle(fontSize: 14)),
+              label: 'Save nesting',
+              icon: Icons.save_outlined,
+              variant: AppButtonVariant.secondary,
+              dense: true,
+              isLoading: _savingTree,
+              onPressed: _saveTree,
             ),
         ],
       ),
@@ -1369,26 +1371,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           'The machines stay in the machine master. The route is left as it is.',
         ),
     };
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontSize: 17)),
-        content: Text(detail, style: const TextStyle(fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep', style: TextStyle(fontSize: 14)),
-          ),
-          FilledButton(
-            key: const ValueKey<String>('section_clear_confirm'),
-            style: FilledButton.styleFrom(backgroundColor: SoftErpTheme.dangerText),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Clear', style: TextStyle(fontSize: 14)),
-          ),
-        ],
-      ),
+    final ok = await showConfirmDialog(
+      context,
+      title: title,
+      message: detail,
+      confirmLabel: 'Clear',
+      cancelLabel: 'Keep',
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
 
     String? error;
     if (id == 'client_vendor') {
@@ -2721,18 +2711,13 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
     );
   }
 
-  static const _heading = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w700,
-    color: SoftErpTheme.textSecondary,
-  );
+  static const _heading = SheetStyle.subHeading;
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(
         _editing ? 'Options for ${widget.editing!.name}' : 'Add a property',
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
       ),
       content: SizedBox(
         width: 440,

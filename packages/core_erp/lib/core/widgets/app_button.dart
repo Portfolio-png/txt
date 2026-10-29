@@ -10,6 +10,7 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.variant = AppButtonVariant.primary,
     this.isLoading = false,
+    this.dense = false,
   });
 
   final String label;
@@ -18,9 +19,13 @@ class AppButton extends StatelessWidget {
   final AppButtonVariant variant;
   final bool isLoading;
 
+  /// The phone size at every width: for a commit that sits in a row of fields
+  /// or a slim bar, where the full desktop height would make the row grow.
+  final bool dense;
+
   @override
   Widget build(BuildContext context) {
-    final isTablet = MediaQuery.of(context).size.width >= 600;
+    final isTablet = !dense && MediaQuery.of(context).size.width >= 600;
     final isPrimary = variant == AppButtonVariant.primary;
     final foregroundColor = isPrimary ? Colors.white : SoftErpTheme.textPrimary;
     final backgroundColor = isPrimary

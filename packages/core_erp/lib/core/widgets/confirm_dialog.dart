@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/soft_erp_theme.dart';
+
 /// A small yes/no confirmation dialog. Returns true only if the user confirms.
 ///
 /// Used for immediate (hard) deletes now that archiving is gone — the message
@@ -25,7 +27,7 @@ Future<bool> showConfirmDialog(
         ),
         FilledButton(
           style: destructive
-              ? FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545))
+              ? FilledButton.styleFrom(backgroundColor: SoftErpTheme.dangerText)
               : null,
           onPressed: () => Navigator.of(dialogContext).pop(true),
           child: Text(confirmLabel),
