@@ -11,6 +11,9 @@ class SoftErpTheme {
   static const Color borderStrong = Color(0xFFDDE0F0);
   static const Color textPrimary = Color(0xFF303646);
   static const Color textSecondary = Color(0xFF6C7386);
+  // Placeholders, separators and anything greyed out — a step lighter than
+  // textSecondary so an empty value never reads as an entered one.
+  static const Color textMuted = Color(0xFF94A3B8);
   static const Color accent = Color(0xFF5E49E6);
   static const Color accentDark = Color(0xFF4F43E8);
   static const Color accentDeeper = Color(0xFF4740B7);
@@ -21,6 +24,7 @@ class SoftErpTheme {
 
   static const Color warningBg = Color(0xFFFFF6E9);
   static const Color warningText = Color(0xFF946200);
+  static const Color warningBorder = Color(0xFFFDE68A);
   static const Color infoBg = Color(0xFFEBF2FF);
   static const Color infoText = Color(0xFF2E57C7);
   static const Color dangerBg = Color(0xFFFDEDEE);
@@ -43,7 +47,12 @@ class SoftErpTheme {
   static const Color completedRowEdgeTint = Color(0x1417A85C);
   static const Color delayedRowEdgeTint = Color(0x17D35A5A);
 
+  // Small chrome inside a card: chips, tags, state badges, icon tiles.
+  static const double radiusXs = 6;
   static const double radiusSm = 12;
+  // Every field and button the app theme draws (inputs, text/outlined/filled
+  // buttons) — named so a hand-built control can match them.
+  static const double radiusControl = 14;
   static const double radiusMd = 18;
   static const double radiusLg = 24;
   static const double radiusXl = 30;

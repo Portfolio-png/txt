@@ -336,23 +336,23 @@ class MyApp extends StatelessWidget {
           vertical: 14,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           borderSide: const BorderSide(color: SoftErpTheme.dangerBg),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           borderSide: const BorderSide(
             color: SoftErpTheme.dangerText,
             width: 1.5,
@@ -394,7 +394,7 @@ class MyApp extends StatelessWidget {
           backgroundColor: SoftErpTheme.accent,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
             side: const BorderSide(color: SoftErpTheme.accentDark),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -410,7 +410,7 @@ class MyApp extends StatelessWidget {
           foregroundColor: SoftErpTheme.accent,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           ),
           textStyle: const TextStyle(
             fontWeight: FontWeight.w600,
@@ -424,7 +424,22 @@ class MyApp extends StatelessWidget {
           foregroundColor: SoftErpTheme.textPrimary,
           side: const BorderSide(color: SoftErpTheme.border),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontFamily: 'Segoe UI',
+          ),
+        ),
+      ),
+      // Without this a FilledButton fell back to Material 3's pill at 40 high,
+      // so a dialog's confirm never matched the buttons beside it.
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           textStyle: const TextStyle(
