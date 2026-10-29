@@ -533,7 +533,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       SnackBar(
         content: Text(message, style: const TextStyle(fontSize: 14)),
         backgroundColor:
-            isError ? const Color(0xFFDC2626) : const Color(0xFF059669),
+            isError ? SoftErpTheme.dangerText : SoftErpTheme.successText,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -599,7 +599,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   Widget _buildScaffold(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: SoftErpTheme.shellSurface,
       body: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.keyS, control: true):
@@ -657,7 +657,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               ),
               SheetStatusBar(
                 isEditing: _controller.isEditing,
-                location: _controller.activeSection,
+                // The section's name — this printed its id, `group_item`.
+                location: _sectionTitle(_controller.activeSection),
                 message: _controller.statusBarMessage,
                 isError: false,
               ),
@@ -666,6 +667,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         ),
       ),
     );
+  }
+
+  String _sectionTitle(String id) {
+    for (final section in _sections) {
+      if (section.id == id) return section.title;
+    }
+    return id;
   }
 
   /// Who the part was developed for, named only when a party is actually
@@ -690,11 +698,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-        boxShadow: [
-          BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2)),
-        ],
+        color: SoftErpTheme.cardSurface,
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+        boxShadow: SoftErpTheme.insetShadow,
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -737,7 +743,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
+                    color: SoftErpTheme.textPrimary,
                   ),
                 ),
               ],
@@ -767,13 +773,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         style: TextStyle(
           fontSize: 14,
           fontWeight: isLast ? FontWeight.w800 : FontWeight.w600,
-          color: isLast ? SoftErpTheme.textPrimary : const Color(0xFF5A6A80),
+          color: isLast ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
         ),
       );
 
   Widget _crumbSep() => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 6),
-        child: Text('›', style: TextStyle(fontSize: 14, color: Color(0xFF94A3B8))),
+        child: Text('›', style: TextStyle(fontSize: 14, color: SoftErpTheme.textMuted)),
       );
 
   /// The section the rail has selected, and only that one.
@@ -1060,8 +1066,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       key: const ValueKey<String>('rail_collapsed'),
       width: 56,
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(right: BorderSide(color: Color(0xFFE2E8F0))),
+        color: SoftErpTheme.cardSurface,
+        border: Border(right: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Column(
         children: [
@@ -1266,20 +1272,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        color: SoftErpTheme.warningBg,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.warningBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.account_tree_outlined, size: 18, color: Color(0xFF92400E)),
+          const Icon(Icons.account_tree_outlined, size: 18, color: SoftErpTheme.warningText),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               saved
                   ? 'Nesting changed — save to re-link this part\'s client, dies and machines to match.'
                   : 'Nesting changed — it is saved with the part.',
-              style: const TextStyle(fontSize: 14, color: Color(0xFF92400E)),
+              style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
             ),
           ),
           TextButton(
@@ -1310,9 +1316,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (!hovering && !refused) return child;
         return Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
             border: Border.all(
-              color: hovering ? SoftErpTheme.accent : const Color(0xFFDC2626),
+              color: hovering ? SoftErpTheme.accent : SoftErpTheme.dangerText,
               width: 2,
             ),
           ),
@@ -1375,7 +1381,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
           FilledButton(
             key: const ValueKey<String>('section_clear_confirm'),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            style: FilledButton.styleFrom(backgroundColor: SoftErpTheme.dangerText),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Clear', style: TextStyle(fontSize: 14)),
           ),
@@ -1515,7 +1521,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         icon: Icons.delete_outline_rounded,
         tip: root ? 'The part itself is deleted from the Items list' : 'Clear $heading for this part',
         onPressed: root ? null : () => _clearSection(id),
-        color: const Color(0xFFDC2626),
+        color: SoftErpTheme.dangerText,
       ),
     ];
   }
@@ -1585,8 +1591,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+        color: SoftErpTheme.cardSurface,
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Row(
         children: [
@@ -1594,9 +1600,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: _controller.isSaved
-                  ? const Color(0xFFD1FAE5)
-                  : const Color(0xFFFEF3C7),
-              borderRadius: BorderRadius.circular(4),
+                  ? SoftErpTheme.successBg
+                  : SoftErpTheme.warningBg,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
             ),
             child: Text(
               _controller.isSaved
@@ -1606,8 +1612,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: _controller.isSaved
-                    ? const Color(0xFF065F46)
-                    : const Color(0xFF92400E),
+                    ? SoftErpTheme.successText
+                    : SoftErpTheme.warningText,
               ),
             ),
           ),
@@ -1620,13 +1626,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF5A6A80),
+                  color: SoftErpTheme.textSecondary,
                 ),
               ),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 6),
-              child: Text('›', style: TextStyle(color: Color(0xFF94A3B8))),
+              child: Text('›', style: TextStyle(color: SoftErpTheme.textMuted)),
             ),
           ],
           Flexible(
@@ -1637,8 +1643,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 fontSize: 17,
                 fontWeight: FontWeight.w900,
                 color: (name == null || name.trim().isEmpty)
-                    ? const Color(0xFF94A3B8)
-                    : const Color(0xFF0F172A),
+                    ? SoftErpTheme.textMuted
+                    : SoftErpTheme.textPrimary,
               ),
             ),
           ),
@@ -2051,22 +2057,22 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+        border: Border.all(color: SoftErpTheme.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text('Identity: ',
-              style: TextStyle(fontSize: 13, color: Color(0xFF5A6A80))),
+              style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
           Text(
             (code == null || code.isEmpty) ? 'stamped on save' : code,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
               color: (code == null || code.isEmpty)
-                  ? const Color(0xFF94A3B8)
+                  ? SoftErpTheme.textMuted
                   : SoftErpTheme.accent,
             ),
           ),
@@ -2193,7 +2199,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         key: 'row_gone_$row',
         icon: Icons.block_rounded,
         tip: error ?? 'This part is no longer in the catalogue.',
-        color: const Color(0xFF94A3B8),
+        color: SoftErpTheme.textMuted,
       );
     }
     if (saved && locked) {
@@ -2214,7 +2220,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       key: 'row_save_$row',
       icon: error != null ? Icons.error_outline_rounded : Icons.save_outlined,
       tip: error ?? (saved ? 'Save the changes to this part' : 'Save this part'),
-      color: error != null ? const Color(0xFFDC2626) : const Color(0xFF059669),
+      color: error != null ? SoftErpTheme.dangerText : SoftErpTheme.successText,
       onPressed: _controller.isSavingNow ? null : () => _saveRow(row),
     );
   }
@@ -2346,7 +2352,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 ? 'This part can be routed through the process stages.'
                 : 'Save the part first — a route attaches to a part, so there '
                     'is nothing to attach one to yet.',
-            style: const TextStyle(fontSize: 14, color: Color(0xFF475569)),
+            style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
           ),
         ),
         const SizedBox(width: 12),
@@ -2380,9 +2386,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+        border: Border.all(color: SoftErpTheme.border),
       ),
       child: Row(
         children: [
@@ -2393,7 +2399,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF475569),
+                color: SoftErpTheme.textSecondary,
               ),
             ),
           ),
@@ -2424,9 +2430,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        color: SoftErpTheme.warningBg,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.warningBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2436,13 +2442,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF92400E),
+              color: SoftErpTheme.warningText,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             detail,
-            style: const TextStyle(fontSize: 14, color: Color(0xFF92400E)),
+            style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
           ),
         ],
       ),
@@ -2718,7 +2724,7 @@ class _AddPropertyDialogState extends State<_AddPropertyDialog> {
   static const _heading = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w700,
-    color: Color(0xFF475569),
+    color: SoftErpTheme.textSecondary,
   );
 
   @override
@@ -2873,14 +2879,14 @@ class _KindTile extends StatelessWidget {
           ? SoftErpTheme.accent.withValues(alpha: 0.10)
           : Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
         side: BorderSide(
-          color: selected ? SoftErpTheme.accent : const Color(0xFFCBD5E1),
+          color: selected ? SoftErpTheme.accent : SoftErpTheme.borderStrong,
           width: selected ? 1.5 : 1,
         ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
@@ -2890,7 +2896,7 @@ class _KindTile extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? SoftErpTheme.accent : const Color(0xFF334155),
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
             ),
           ),
         ),

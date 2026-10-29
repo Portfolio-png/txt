@@ -100,8 +100,8 @@ class SheetSidebar extends StatelessWidget {
     return Container(
       width: width,
       decoration: const BoxDecoration(
-        color: Color(0xFFFFFFFF),
-        border: Border(right: BorderSide(color: Color(0xFFE2E8F0))),
+        color: SoftErpTheme.cardSurface,
+        border: Border(right: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,7 +124,7 @@ class SheetSidebar extends StatelessWidget {
                 const Divider(
                   height: 24,
                   thickness: 1,
-                  color: Color(0xFFF1F5F9),
+                  color: SoftErpTheme.sectionSurface,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -138,7 +138,7 @@ class SheetSidebar extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFF7C8AA0),
+                            color: SoftErpTheme.textSecondary,
                             letterSpacing: 0.8,
                           ),
                         ),
@@ -148,7 +148,7 @@ class SheetSidebar extends StatelessWidget {
                         '${sheet.columns.length} columns',
                         style: const TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF7C8AA0),
+                          color: SoftErpTheme.textSecondary,
                         ),
                       ),
                     ],
@@ -178,10 +178,10 @@ class SheetSidebar extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             SoftErpTheme.accent.withValues(alpha: 0.08),
-            const Color(0xFFFFFFFF),
+            SoftErpTheme.cardSurface,
           ],
         ),
-        border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+        border: const Border(bottom: BorderSide(color: SoftErpTheme.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,9 +201,9 @@ class SheetSidebar extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: badgeIsPositive
-                          ? const Color(0xFFD1FAE5)
-                          : const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(4),
+                          ? SoftErpTheme.successBg
+                          : SoftErpTheme.warningBg,
+                      borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
                     ),
                     child: Text(
                       badgeText!,
@@ -212,8 +212,8 @@ class SheetSidebar extends StatelessWidget {
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         color: badgeIsPositive
-                            ? const Color(0xFF065F46)
-                            : const Color(0xFF92400E),
+                            ? SoftErpTheme.successText
+                            : SoftErpTheme.warningText,
                       ),
                     ),
                   ),
@@ -246,8 +246,8 @@ class SheetSidebar extends StatelessWidget {
               fontSize: 22,
               fontWeight: FontWeight.w900,
               color: (name == null || name.isEmpty)
-                  ? const Color(0xFF94A3B8)
-                  : const Color(0xFF0F172A),
+                  ? SoftErpTheme.textMuted
+                  : SoftErpTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -256,7 +256,7 @@ class SheetSidebar extends StatelessWidget {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF5A6A80),
+              color: SoftErpTheme.textSecondary,
             ),
           ),
           if (footnote != null) ...[
@@ -266,7 +266,7 @@ class SheetSidebar extends StatelessWidget {
                 Icon(
                   footnoteIcon ?? Icons.info_outline_rounded,
                   size: 15,
-                  color: const Color(0xFF5A6A80),
+                  color: SoftErpTheme.textSecondary,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
@@ -276,7 +276,7 @@ class SheetSidebar extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF475569),
+                      color: SoftErpTheme.textSecondary,
                     ),
                   ),
                 ),
@@ -295,7 +295,7 @@ class SheetSidebar extends StatelessWidget {
       style: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w800,
-        color: Color(0xFF7C8AA0),
+        color: SoftErpTheme.textSecondary,
         letterSpacing: 0.8,
       ),
     ),
@@ -308,28 +308,28 @@ class SheetSidebar extends StatelessWidget {
         color: isSelected
             ? SoftErpTheme.accent.withValues(alpha: 0.1)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
       ),
       child: ListTile(
         dense: true,
         leading: Icon(
           section.icon,
           size: 20,
-          color: isSelected ? SoftErpTheme.accent : const Color(0xFF5A6A80),
+          color: isSelected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
         ),
         title: Text(
           section.title,
           style: TextStyle(
             fontSize: 15,
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected ? SoftErpTheme.accent : const Color(0xFF1E293B),
+            color: isSelected ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
           ),
         ),
         subtitle: Text(
           section.subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 13, color: Color(0xFF7C8AA0)),
+          style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
         ),
         onTap: () => onSelectSection(section.id),
       ),
@@ -405,7 +405,7 @@ class SheetSidebar extends StatelessWidget {
                 ? Icons.folder_open_rounded
                 : Icons.subdirectory_arrow_right_rounded,
             size: 15,
-            color: color ?? const Color(0xFF7C8AA0),
+            color: color ?? SoftErpTheme.textSecondary,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -415,7 +415,7 @@ class SheetSidebar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-                color: color ?? const Color(0xFF334155),
+                color: color ?? SoftErpTheme.textPrimary,
               ),
             ),
           ),

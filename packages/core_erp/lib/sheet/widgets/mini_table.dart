@@ -126,16 +126,10 @@ class MiniTable extends StatelessWidget {
 
     final table = Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.borderStrong),
+        boxShadow: SoftErpTheme.insetShadow,
       ),
       // Bound to what the columns need, less the border this Container draws,
       // so the table cannot be wider than `tableWidth()` reports.
@@ -156,9 +150,9 @@ class MiniTable extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: const BoxDecoration(
-              color: Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              color: SoftErpTheme.sectionSurface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(SoftErpTheme.radiusSm - 1)),
+              border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -174,7 +168,7 @@ class MiniTable extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF475569),
+                      color: SoftErpTheme.textSecondary,
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -186,12 +180,12 @@ class MiniTable extends StatelessWidget {
                       'mini_table_add_${tableGroup.name}_${controller.sheetDef.key}',
                     ),
                     onTap: onAddHeaderAction,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
                     child: Container(
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
                         color: SoftErpTheme.accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
                       ),
                       child: const Icon(
                         Icons.add_rounded,
@@ -218,8 +212,8 @@ class MiniTable extends StatelessWidget {
                       height: metrics.headerHeight,
                       decoration: const BoxDecoration(
                         border: Border(
-                          right: BorderSide(color: Color(0xFFE2E8F0)),
-                          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                          right: BorderSide(color: SoftErpTheme.border),
+                          bottom: BorderSide(color: SoftErpTheme.border),
                         ),
                       ),
                     ),
@@ -237,8 +231,8 @@ class MiniTable extends StatelessWidget {
                         alignment: Alignment.center,
                         decoration: const BoxDecoration(
                           border: Border(
-                            right: BorderSide(color: Color(0xFFE2E8F0)),
-                            bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                            right: BorderSide(color: SoftErpTheme.border),
+                            bottom: BorderSide(color: SoftErpTheme.border),
                           ),
                         ),
                         // The gutter selects its row too — the way onto a saved

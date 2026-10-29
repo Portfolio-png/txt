@@ -79,7 +79,7 @@ class MiniPhoto extends StatelessWidget {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(fontSize: 14)),
-        backgroundColor: error ? const Color(0xFFDC2626) : null,
+        backgroundColor: error ? SoftErpTheme.dangerText : null,
       ),
     );
   }
@@ -98,7 +98,7 @@ class MiniPhoto extends StatelessWidget {
           child: const Icon(
             Icons.add_a_photo_outlined,
             size: 18,
-            color: Color(0xFFCBD5E1),
+            color: SoftErpTheme.borderStrong,
           ),
         ),
       );
@@ -121,7 +121,7 @@ class MiniPhoto extends StatelessWidget {
       message: url == null ? 'Add $what' : 'Open $what',
       child: InkWell(
         key: ValueKey<String>('photo-$owner-$id'),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
         onTap: busy
             ? null
             : url == null
@@ -158,9 +158,9 @@ class MiniPhoto extends StatelessWidget {
     alignment: Alignment.center,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
-      color: const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: const Color(0xFFE2E8F0)),
+      color: SoftErpTheme.shellSurface,
+      borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+      border: Border.all(color: SoftErpTheme.border),
     ),
     child: child,
   );
@@ -175,7 +175,7 @@ class MiniPhoto extends StatelessWidget {
       errorBuilder: (context, error, stack) => Icon(
         Icons.broken_image_outlined,
         size: size < 60 ? 18 : 40,
-        color: const Color(0xFF94A3B8),
+        color: SoftErpTheme.textMuted,
       ),
     );
   }

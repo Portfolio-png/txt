@@ -210,20 +210,20 @@ class _ValueCellState extends State<ValueCell> {
           height: widget.metrics.rowHeight,
           decoration: BoxDecoration(
             color: widget.isHighlighted
-                ? const Color(0xFFDCFCE7)
+                ? SoftErpTheme.successBg
                 : (widget.isSelected
                       ? SoftErpTheme.accent.withValues(alpha: 0.05)
-                      : Colors.white),
+                      : SoftErpTheme.cardSurface),
             border: widget.isHighlighted
-                ? Border.all(color: const Color(0xFF10B981), width: 2)
+                ? Border.all(color: SoftErpTheme.successText, width: 2)
                 : Border(
-                    right: const BorderSide(color: Color(0xFFE2E8F0)),
-                    bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+                    right: const BorderSide(color: SoftErpTheme.border),
+                    bottom: const BorderSide(color: SoftErpTheme.border),
                     top: isFocused
                         ? const BorderSide(color: SoftErpTheme.accent, width: 2)
                         : BorderSide.none,
                     left: error != null
-                        ? const BorderSide(color: Color(0xFFEF4444), width: 3)
+                        ? const BorderSide(color: SoftErpTheme.dangerText, width: 3)
                         : (widget.isSelected && widget.column.position == 0
                               ? const BorderSide(
                                   color: SoftErpTheme.accent,
@@ -234,7 +234,7 @@ class _ValueCellState extends State<ValueCell> {
             boxShadow: widget.isHighlighted
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                      color: SoftErpTheme.successText.withValues(alpha: 0.35),
                       blurRadius: 6,
                       spreadRadius: 1,
                     ),
@@ -280,7 +280,7 @@ class _ValueCellState extends State<ValueCell> {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       alignment: Alignment.centerLeft,
       // The selected row reads as selected, saved or not.
-      color: widget.isSelected ? const Color(0xFFEEF2FF) : null,
+      color: widget.isSelected ? SoftErpTheme.accentSoft : null,
       child: Text(
         text.isEmpty ? '—' : text,
         maxLines: 1,
@@ -288,7 +288,7 @@ class _ValueCellState extends State<ValueCell> {
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: text.isEmpty ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+          color: text.isEmpty ? SoftErpTheme.textMuted : SoftErpTheme.textPrimary,
         ),
       ),
     );
@@ -353,7 +353,7 @@ class _ValueCellState extends State<ValueCell> {
         Icon(
           isSet ? Icons.lock_clock_rounded : Icons.lock_outline_rounded,
           size: 13,
-          color: isSet ? const Color(0xFF059669) : const Color(0xFF94A3B8),
+          color: isSet ? SoftErpTheme.successText : SoftErpTheme.textMuted,
         ),
         const SizedBox(width: 4),
         Expanded(
@@ -363,7 +363,7 @@ class _ValueCellState extends State<ValueCell> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: isSet ? FontWeight.w700 : FontWeight.w500,
-              color: isSet ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+              color: isSet ? SoftErpTheme.textPrimary : SoftErpTheme.textMuted,
             ),
           ),
         ),
@@ -428,15 +428,15 @@ class _ValueCellState extends State<ValueCell> {
     final (label, bg, fg) = switch (mode) {
       ValueMode.auto => (
         'Auto',
-        const Color(0xFFEFF6FF),
-        const Color(0xFF2563EB),
+        SoftErpTheme.infoBg,
+        SoftErpTheme.infoText,
       ),
       ValueMode.edit => (
         'Edit',
-        const Color(0xFFFEF3C7),
-        const Color(0xFFD97706),
+        SoftErpTheme.warningBg,
+        SoftErpTheme.warningText,
       ),
-      ValueMode.ok => ('OK', const Color(0xFFECFDF5), const Color(0xFF059669)),
+      ValueMode.ok => ('OK', SoftErpTheme.successBg, SoftErpTheme.successText),
     };
 
     return PopupMenuButton<ValueMode>(
@@ -446,7 +446,7 @@ class _ValueCellState extends State<ValueCell> {
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
           border: Border.all(color: fg.withValues(alpha: 0.3)),
         ),
         child: Text(
@@ -495,11 +495,11 @@ class _ValueCellState extends State<ValueCell> {
                     : FontWeight.w400,
                 color: label.isNotEmpty
                     ? SoftErpTheme.textPrimary
-                    : const Color(0xFF94A3B8),
+                    : SoftErpTheme.textMuted,
               ),
             ),
           ),
-          const Icon(Icons.arrow_drop_down, size: 18, color: Color(0xFFCBD5E1)),
+          const Icon(Icons.arrow_drop_down, size: 18, color: SoftErpTheme.borderStrong),
         ],
       );
     }
@@ -520,7 +520,7 @@ class _ValueCellState extends State<ValueCell> {
                     : FontWeight.w400,
                 color: label.isNotEmpty
                     ? SoftErpTheme.textPrimary
-                    : const Color(0xFF94A3B8),
+                    : SoftErpTheme.textMuted,
               ),
             ),
           ),
@@ -529,19 +529,19 @@ class _ValueCellState extends State<ValueCell> {
               margin: const EdgeInsets.only(right: 3),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               decoration: BoxDecoration(
-                color: const Color(0xFFD1FAE5),
-                borderRadius: BorderRadius.circular(3),
+                color: SoftErpTheme.successBg,
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
               ),
               child: const Text(
                 'New',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF065F46),
+                  color: SoftErpTheme.successText,
                 ),
               ),
             ),
-          const Icon(Icons.arrow_drop_down, size: 18, color: Color(0xFF94A3B8)),
+          const Icon(Icons.arrow_drop_down, size: 18, color: SoftErpTheme.textMuted),
         ],
       ),
     );
@@ -589,7 +589,7 @@ class _ValueCellState extends State<ValueCell> {
           hintText: widget.column.kind == ColumnKind.money
               ? '0.00'
               : 'Type here...',
-          hintStyle: const TextStyle(fontSize: 14, color: Color(0xFFCBD5E1)),
+          hintStyle: const TextStyle(fontSize: 14, color: SoftErpTheme.borderStrong),
         ),
         onChanged: (val) {
           widget.controller.updateTextValue(
@@ -916,9 +916,9 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       // No margin and no height of its own: _AnchoredPicker decides where this
       // goes and how tall it may be, from the cell it belongs to.
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        border: Border.all(color: SoftErpTheme.border),
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
@@ -933,8 +933,8 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
             decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+              color: SoftErpTheme.shellSurface,
+              border: Border(bottom: BorderSide(color: SoftErpTheme.sectionSurface)),
             ),
             child: Row(
               children: [
@@ -945,7 +945,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF475569),
+                      color: SoftErpTheme.textSecondary,
                     ),
                   ),
                 ),
@@ -972,7 +972,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                 prefixIcon: const Icon(Icons.search_rounded, size: 20),
                 isDense: true,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
                 ),
               ),
               onSubmitted: (val) {
@@ -1000,7 +1000,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                       trailing: const Icon(
                         Icons.business_rounded,
                         size: 16,
-                        color: Color(0xFF94A3B8),
+                        color: SoftErpTheme.textMuted,
                       ),
                       onTap: () => widget.onSelectParty(p),
                     ),
@@ -1019,7 +1019,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                       trailing: const Icon(
                         Icons.person_outline_rounded,
                         size: 16,
-                        color: Color(0xFF94A3B8),
+                        color: SoftErpTheme.textMuted,
                       ),
                       onTap: () => widget.onSelectContact(c),
                     ),
@@ -1062,7 +1062,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                               opt.detail,
                               style: const TextStyle(
                                 fontSize: 13,
-                                color: Color(0xFF64748B),
+                                color: SoftErpTheme.textSecondary,
                               ),
                             ),
                       trailing: _trailingFor(opt),
@@ -1109,12 +1109,12 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
         ? Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFD1FAE5),
-              borderRadius: BorderRadius.circular(4),
+              color: SoftErpTheme.successBg,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
             ),
             child: const Text(
               'New',
-              style: TextStyle(fontSize: 13, color: Color(0xFF065F46)),
+              style: TextStyle(fontSize: 13, color: SoftErpTheme.successText),
             ),
           )
         : null;
@@ -1131,7 +1131,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           tooltip: removal.blockedBecause ?? 'Delete “${opt.label}” from this list',
           visualDensity: VisualDensity.compact,
           icon: const Icon(Icons.delete_outline_rounded, size: 20),
-          color: const Color(0xFFB91C1C),
+          color: SoftErpTheme.dangerText,
           onPressed: remove == null
               ? null
               : () async {
@@ -1175,13 +1175,13 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           Icon(
             needsParent ? Icons.north_west_rounded : Icons.info_outline_rounded,
             size: 18,
-            color: const Color(0xFF94A3B8),
+            color: SoftErpTheme.textMuted,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(fontSize: 14, color: Color(0xFF5A6A80)),
+              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             ),
           ),
         ],
@@ -1193,7 +1193,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
 class _ErrorCornerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFFEF4444);
+    final paint = Paint()..color = SoftErpTheme.dangerText;
     final path = Path()
       ..moveTo(0, 0)
       ..lineTo(size.width, 0)

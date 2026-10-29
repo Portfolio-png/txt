@@ -104,10 +104,10 @@ class _HeaderCellState extends State<HeaderCell> {
         height: widget.metrics.headerHeight,
         padding: const EdgeInsets.symmetric(horizontal: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: SoftErpTheme.shellSurface,
           border: Border(
-            right: const BorderSide(color: Color(0xFFE2E8F0)),
-            bottom: const BorderSide(color: Color(0xFFCBD5E1), width: 1.5),
+            right: const BorderSide(color: SoftErpTheme.border),
+            bottom: const BorderSide(color: SoftErpTheme.borderStrong, width: 1.5),
             top: isFocused
                 ? const BorderSide(color: SoftErpTheme.accent, width: 2)
                 : BorderSide.none,
@@ -168,7 +168,7 @@ class _HeaderCellState extends State<HeaderCell> {
                             fontWeight: FontWeight.w700,
                             color: widget.column.isDefault
                                 ? SoftErpTheme.textPrimary
-                                : const Color(0xFF1E293B),
+                                : SoftErpTheme.textPrimary,
                           ),
                         ),
                       ),
@@ -204,7 +204,7 @@ class _HeaderCellState extends State<HeaderCell> {
           ? 'Sits under ${widget.sheetDef.getColumn(widget.column.parentId!)?.label}. Click to reparent.'
           : 'Primary Group. Click to reparent.',
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
         onTap: () => _showReparentMenu(context),
         child: Padding(
           padding: const EdgeInsets.all(2),
@@ -214,8 +214,8 @@ class _HeaderCellState extends State<HeaderCell> {
                 : Icons.crop_square_rounded,
             size: 14,
             color: isDependent
-                ? const Color(0xFF2563EB)
-                : const Color(0xFF94A3B8),
+                ? SoftErpTheme.infoText
+                : SoftErpTheme.textMuted,
           ),
         ),
       ),
@@ -227,8 +227,8 @@ class _HeaderCellState extends State<HeaderCell> {
       margin: const EdgeInsets.symmetric(horizontal: 2),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
-        color: const Color(0xFFE2E8F0),
-        borderRadius: BorderRadius.circular(4),
+        color: SoftErpTheme.border,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -238,7 +238,7 @@ class _HeaderCellState extends State<HeaderCell> {
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF475569),
+              color: SoftErpTheme.textSecondary,
             ),
           ),
           if (widget.column.isDefault)
@@ -247,7 +247,7 @@ class _HeaderCellState extends State<HeaderCell> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFFDC2626),
+                color: SoftErpTheme.dangerText,
               ),
             ),
         ],
@@ -270,7 +270,7 @@ class _HeaderCellState extends State<HeaderCell> {
         icon: const Icon(
           Icons.more_vert_rounded,
           size: 13,
-          color: Color(0xFF94A3B8),
+          color: SoftErpTheme.textMuted,
         ),
         itemBuilder: (ctx) => [
           PopupMenuItem(
@@ -307,7 +307,7 @@ class _HeaderCellState extends State<HeaderCell> {
             enabled: canRem,
             child: const Text(
               'Remove column',
-              style: TextStyle(fontSize: 14, color: Color(0xFFDC2626)),
+              style: TextStyle(fontSize: 14, color: SoftErpTheme.dangerText),
             ),
           ),
         ],

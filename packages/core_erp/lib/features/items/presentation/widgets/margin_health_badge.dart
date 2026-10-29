@@ -62,16 +62,16 @@ class _MarginHealthBadgeState extends State<MarginHealthBadge> {
   /// Three bands, as the badge this replaces had them.
   Color get _tone {
     if (!_known) return SoftErpTheme.textSecondary;
-    if (_percent >= 20) return const Color(0xFF15803D);
-    if (_percent >= 10) return const Color(0xFFB45309);
-    return const Color(0xFFB91C1C);
+    if (_percent >= 20) return SoftErpTheme.successText;
+    if (_percent >= 10) return SoftErpTheme.warningText;
+    return SoftErpTheme.dangerText;
   }
 
   Color get _fill {
     if (!_known) return SoftErpTheme.sectionSurface;
-    if (_percent >= 20) return const Color(0xFFDCFCE7);
-    if (_percent >= 10) return const Color(0xFFFEF3C7);
-    return const Color(0xFFFEE2E2);
+    if (_percent >= 20) return SoftErpTheme.successBg;
+    if (_percent >= 10) return SoftErpTheme.warningBg;
+    return SoftErpTheme.dangerBg;
   }
 
   String get _label {
@@ -147,7 +147,7 @@ class _MarginHealthBadgeState extends State<MarginHealthBadge> {
               width: 320,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: SoftErpTheme.cardSurface,
                 borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
                 border: Border.all(color: SoftErpTheme.border),
               ),
