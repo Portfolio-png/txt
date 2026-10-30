@@ -1590,8 +1590,20 @@ function rowToEntityActivityDto(row) {
 }
 
 
+/// The kind of device a request comes from: 'mobile' for the phone app (which
+/// sends X-Client-Platform: mobile/ios/android), 'desktop' for everything else.
+function clientPlatformOf(req) {
+  const raw = String(req?.headers?.['x-client-platform'] || '').trim().toLowerCase();
+  return raw === 'mobile' || raw === 'ios' || raw === 'android' ? 'mobile' : 'desktop';
+}
+
 async function createAuthSession({ user, req }) {
-  await revokeSessionsForUser(user.id, { reason: 'new_login_revoked_others' });
+  // One session per user PER KIND OF DEVICE. Logging in on the phone used to
+  // sign the same person out of the desktop, so the two could never be open
+  // together — and the phone is where the desktop sends photos to be taken.
+  // A second desktop login still ends the first; so does a second phone.
+  const platform = clientPlatformOf(req);
+  await revokeSessionsForUser(user.id, { reason: 'new_login_revoked_others', platform });
   const sessionId = `sess-${crypto.randomUUID()}`;
   const token = signJwt({ sub: user.id, role: user.role, sid: sessionId });
   const tokenHash = hashToken(token);
@@ -1599,8 +1611,8 @@ async function createAuthSession({ user, req }) {
   await run(
     `
     INSERT INTO auth_sessions (
-      id, user_id, token_hash, created_at, last_used_at, expires_at, revoked_at, revoked_reason, ip_address, user_agent
-    ) VALUES (?, ?, ?, ?, ?, ?, NULL, '', ?, ?)
+      id, user_id, token_hash, created_at, last_used_at, expires_at, revoked_at, revoked_reason, ip_address, user_agent, client_platform
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, '', ?, ?, ?)
     `,
     [
       sessionId,
@@ -1611,6 +1623,7 @@ async function createAuthSession({ user, req }) {
       secondsFromNow(JWT_TTL_SECONDS),
       getRequestIp(req),
       getRequestUserAgent(req),
+      platform,
     ],
   );
   await run(
@@ -1659,7 +1672,20 @@ async function revokeSession(sessionId, reason) {
   );
 }
 
-async function revokeSessionsForUser(userId, { exceptSessionId = null, reason = '' } = {}) {
+async function revokeSessionsForUser(userId, { exceptSessionId = null, reason = '', platform = null } = {}) {
+  if (platform) {
+    // A login's own kind of device only. Sessions from before the column were
+    // all desktop logins in practice, hence the COALESCE.
+    await run(
+      `
+      UPDATE auth_sessions
+      SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = CASE WHEN revoked_reason = '' THEN ? ELSE revoked_reason END
+      WHERE user_id = ? AND revoked_at IS NULL AND COALESCE(client_platform, 'desktop') = ?
+      `,
+      [nowIso(), String(reason || ''), userId, platform],
+    );
+    return;
+  }
   if (exceptSessionId) {
     await run(
       `
@@ -2087,6 +2113,9 @@ function moduleOpForRequest(req) {
     // A variation tree's module is named by the entity type in the path, which
     // this map cannot express — modules/variations/routes.js gates it.
     'variations',
+    // A photo request's module is its record's (part, company, die…); the
+    // route asks for that record's photo right itself, like /assets.
+    'photo-requests',
   ]);
   if (EXCLUDED.has(seg)) return null;
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
@@ -2245,6 +2274,12 @@ function requireApiWritePermission(req, res, next) {
   // guards (requireAssetEntityPermission / requireGenericUploadPermission);
   // admin-gating them here would block first-time uploads by regular users.
   if (req.path.startsWith('/assets/') || req.path.startsWith('/upload/')) {
+    return next();
+  }
+  // A photo request checks the record's own photo right (the same key the
+  // asset routes ask), and is owner-only; the admin write gate would stop the
+  // floor staff it exists for.
+  if (req.path === '/photo-requests' || req.path.startsWith('/photo-requests/')) {
     return next();
   }
   // Same for the link graph: modules/links/routes.js gates every write on
@@ -4239,6 +4274,7 @@ async function initDb() {
     )
   `);
 
+  try { await run("ALTER TABLE auth_sessions ADD COLUMN client_platform TEXT DEFAULT 'desktop'"); } catch (e) {}
   await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked ON auth_sessions(revoked_at)');
 
@@ -16224,7 +16260,20 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
     [session.object_key],
   );
   await syncRecordPhotoField(session.entity_type, Number(session.entity_id));
+  announceAssetChanged(session.entity_type, session.entity_id);
   return rowToAssetDto(asset, await assetReadUrlPayload(asset.object_key));
+}
+
+/// Tells every open screen that a record's photos changed, so a slot showing
+/// it re-reads. Without it a photo taken on the phone (or added on another
+/// desktop) stayed invisible until the desktop's 4-minute photo cache ran out,
+/// and a person's photo — which writes no record field — never announced at
+/// all.
+function announceAssetChanged(entityType, entityId) {
+  changeEmitter.emit('custom-event', {
+    event: 'asset_changed',
+    data: { entityType: String(entityType || ''), entityId: Number(entityId || 0) },
+  });
 }
 
 async function createAssetReadUrl(assetId) {
@@ -16274,6 +16323,7 @@ async function setPrimaryAsset(assetId) {
     throw error;
   }
   await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id));
+  announceAssetChanged(asset.entity_type, asset.entity_id);
   const updated = await get('SELECT * FROM uploaded_assets WHERE id = ?', [
     asset.id,
   ]);
@@ -16312,6 +16362,120 @@ async function deleteAsset(assetId) {
     }
   }
   await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id), asset.object_key);
+  announceAssetChanged(asset.entity_type, asset.entity_id);
+}
+
+// --- photos the desktop asks the phone to take ------------------------------
+// (migrations/062). The item sheet is bulk entry; a click on a photo slot files
+// a request for the person who clicked, and their phone — logged in as them —
+// takes it. The photo itself goes up through the ordinary asset routes; these
+// only queue, describe and close the jobs.
+
+const PHOTO_REQUEST_TYPES = ['item', 'client', 'party_contact', 'die', 'machine'];
+
+function photoRequestError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function announcePhotoRequests(userId) {
+  changeEmitter.emit('custom-event', {
+    event: 'photo_requests_changed',
+    data: { userId: Number(userId) },
+    // Read by the event stream: only this user's own connections get it.
+    userId: Number(userId),
+  });
+}
+
+/// What the phone shows over the camera: what the record is and the few
+/// facts that tell it apart on the floor. Built when asked, so never stale.
+async function photoRequestDetails(entityType, entityId) {
+  const lines = [];
+  const add = (label, value) => {
+    const text = value == null ? '' : String(value).trim();
+    if (text) lines.push({ label, value: text });
+  };
+  if (entityType === 'item') {
+    const row = await get('SELECT * FROM items WHERE id = ?', [entityId]);
+    if (!row) return null;
+    const path = [];
+    let groupId = row.group_id;
+    for (let depth = 0; groupId && depth < 6; depth += 1) {
+      const group = await get('SELECT name, parent_group_id FROM groups WHERE id = ?', [groupId]);
+      if (!group) break;
+      path.unshift(group.name);
+      groupId = group.parent_group_id;
+    }
+    add('Group', path.join(' › '));
+    add('Part code', row.part_code);
+    add('Part no', row.part_no);
+    return { kind: 'Part', title: row.display_name || row.name, lines };
+  }
+  if (entityType === 'client') {
+    const row = await get('SELECT * FROM clients WHERE id = ?', [entityId]);
+    if (!row) return null;
+    add('GST', row.gst_number);
+    add('Address', row.address);
+    return { kind: 'Company logo', title: row.name, lines };
+  }
+  if (entityType === 'party_contact') {
+    const row = await get('SELECT * FROM party_contacts WHERE id = ?', [entityId]);
+    if (!row) return null;
+    const company = row.party_type === 'client'
+      ? await get('SELECT name FROM clients WHERE id = ?', [row.party_id])
+      : null;
+    add('Designation', row.designation);
+    add('Company', company?.name);
+    add('Phone', row.phone);
+    return { kind: 'Person', title: row.name, lines };
+  }
+  if (entityType === 'die') {
+    const row = await get('SELECT * FROM dies WHERE id = ?', [entityId]);
+    if (!row) return null;
+    const type = row.die_type_label
+      || (row.die_type ? row.die_type.charAt(0).toUpperCase() + row.die_type.slice(1) : '');
+    add('Type', type);
+    add('Made by', row.made_by);
+    add('Kept', [row.store_area, row.rack_no ? `Rack ${row.rack_no}` : ''].filter(Boolean).join(' · '));
+    return { kind: 'Die', title: row.tool_code || `Die ${row.id}`, lines };
+  }
+  if (entityType === 'machine') {
+    const row = await get('SELECT * FROM machines WHERE id = ?', [entityId]);
+    if (!row) return null;
+    add('Name', row.asset_id ? row.name : '');
+    add('Make', row.machine_make);
+    if (row.capacity_kind === 'free_hand') {
+      add('Capacity', 'Free hand');
+    } else if (row.capacity_kgf) {
+      const tons = Number(row.capacity_kgf) / 1000;
+      add('Capacity', `${Number.isInteger(tons) ? tons : tons.toFixed(2)} Ton`);
+    }
+    return { kind: 'Machine', title: row.asset_id || row.name || `Machine ${row.id}`, lines };
+  }
+  return null;
+}
+
+function photoRequestDto(row, details) {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    context: row.context || '',
+    status: row.status,
+    assetId: row.asset_id,
+    createdAt: row.created_at,
+    details,
+  };
+}
+
+async function ownPhotoRequest(req) {
+  const row = await get('SELECT * FROM photo_requests WHERE id = ?', [Number(req.params.id)]);
+  // Someone else's request is reported as not there at all.
+  if (!row || Number(row.user_id) !== Number(req.user?.id)) {
+    throw photoRequestError('Photo request not found.', 404);
+  }
+  return row;
 }
 
 function normalizeMaterialRequirementNumber(value, fieldName) {
@@ -22337,6 +22501,9 @@ app.get('/api/events', requireAuth, async (req, res) => {
   };
 
   const customEventListener = (payload) => {
+    // An event addressed to one user (a phone's photo queue) reaches only that
+    // user's own connections; everything else still goes to everyone.
+    if (payload && payload.userId != null && Number(payload.userId) !== Number(req.user?.id)) return;
     try {
       res.write(`event: custom-event\n`);
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -28213,6 +28380,91 @@ app.delete('/api/assets/:id', requireAssetEntityPermission('write', assetEntityT
     });
   }
 });
+
+app.post('/api/photo-requests', async (req, res) => {
+  try {
+    const entityType = String(req.body?.entityType || '').trim().toLowerCase();
+    const entityId = Number(req.body?.entityId || 0);
+    if (!PHOTO_REQUEST_TYPES.includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+      throw photoRequestError('A photo is asked for a part, company, person, die or machine by its id.', 400);
+    }
+    if (!hasPermission(req, ASSET_ENTITY_PERMISSIONS[entityType].write)) {
+      throw photoRequestError('You do not have permission to add photos to this record.', 403);
+    }
+    await assertAssetEntityExists(entityType, entityId);
+    const userId = Number(req.user.id);
+    const context = String(req.body?.context || '').trim().slice(0, 200);
+    // A second click on the same slot is the same job, not a second photo.
+    let row = await get(
+      "SELECT * FROM photo_requests WHERE user_id = ? AND entity_type = ? AND entity_id = ? AND status = 'pending'",
+      [userId, entityType, entityId],
+    );
+    let created = false;
+    if (!row) {
+      const now = nowIso();
+      const result = await run(
+        `INSERT INTO photo_requests (user_id, entity_type, entity_id, context, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+        [userId, entityType, entityId, context, now, now],
+      );
+      row = await get('SELECT * FROM photo_requests WHERE id = ?', [result.lastID]);
+      created = true;
+      announcePhotoRequests(userId);
+    }
+    res.status(created ? 201 : 200).json({
+      success: true,
+      request: photoRequestDto(row, await photoRequestDetails(entityType, entityId)),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/photo-requests', async (req, res) => {
+  try {
+    const status = String(req.query?.status || 'pending');
+    const rows = await all(
+      'SELECT * FROM photo_requests WHERE user_id = ? AND status = ? ORDER BY id ASC',
+      [Number(req.user.id), status],
+    );
+    const requests = [];
+    for (const row of rows) {
+      const details = await photoRequestDetails(row.entity_type, row.entity_id);
+      // A record deleted since it was asked for has nothing left to photograph.
+      if (details) requests.push(photoRequestDto(row, details));
+    }
+    res.json({ success: true, requests, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
+async function closePhotoRequest(req, res, status, assetId = null) {
+  try {
+    const row = await ownPhotoRequest(req);
+    if (row.status !== 'pending') {
+      throw photoRequestError(`This photo request is already ${row.status}.`, 409);
+    }
+    await run('UPDATE photo_requests SET status = ?, asset_id = ?, updated_at = ? WHERE id = ?', [
+      status,
+      assetId,
+      nowIso(),
+      row.id,
+    ]);
+    announcePhotoRequests(row.user_id);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+}
+
+app.post('/api/photo-requests/:id/complete', (req, res) => {
+  const assetId = Number(req.body?.assetId || 0);
+  return closePhotoRequest(req, res, 'done', assetId > 0 ? assetId : null);
+});
+app.post('/api/photo-requests/:id/skip', (req, res) => closePhotoRequest(req, res, 'skipped'));
+app.delete('/api/photo-requests/:id', (req, res) => closePhotoRequest(req, res, 'cancelled'));
 
 app.get('/api/orders/:id/po-documents', requirePermission('config.read'), async (req, res) => {
   try {
