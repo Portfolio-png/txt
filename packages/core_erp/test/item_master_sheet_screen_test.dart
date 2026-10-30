@@ -963,6 +963,18 @@ void main() {
         find.byKey(const ValueKey<String>('photo-machine-41')),
         findsOneWidget,
       );
+      // A bare camera at the start of the row went unnoticed; the empty slot
+      // says what it is for.
+      for (final key in ['photo-die-31', 'photo-machine-41']) {
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey<String>(key)),
+            matching: find.text('Photo'),
+          ),
+          findsOneWidget,
+          reason: '$key should be labelled',
+        );
+      }
       expect(tester.takeException(), isNull);
     });
 

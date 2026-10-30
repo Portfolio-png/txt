@@ -21,6 +21,7 @@ class MiniPhoto extends StatelessWidget {
     this.what = 'photo',
     this.fallbackUrl,
     this.disabledReason,
+    this.label,
   });
 
   /// [PhotoOwner] — what kind of record.
@@ -39,6 +40,11 @@ class MiniPhoto extends StatelessWidget {
 
   /// Why there is no record yet ("Save the part first").
   final String? disabledReason;
+
+  /// Words under the camera while there is no photo ("Photo"), for a row
+  /// where a bare 36px icon went unnoticed. Needs a [size] of about 48 or
+  /// more.
+  final String? label;
 
   /// Overrides the file picker, for tests.
   @visibleForTesting
@@ -95,11 +101,9 @@ class MiniPhoto extends StatelessWidget {
         message: disabledReason ?? 'Save it first to add a $what',
         child: _frame(
           key: ValueKey<String>('photo-$owner-$keyId'),
-          child: const Icon(
-            Icons.add_a_photo_outlined,
-            size: 18,
-            color: SoftErpTheme.borderStrong,
-          ),
+          // Muted, not border-faint: a slot that is not usable yet still has
+          // to be seen, or nobody knows photos are kept here at all.
+          child: _empty(SoftErpTheme.textMuted),
         ),
       );
     }
@@ -135,11 +139,7 @@ class MiniPhoto extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : url == null
-              ? const Icon(
-                  Icons.add_a_photo_outlined,
-                  size: 18,
-                  color: SoftErpTheme.accent,
-                )
+              ? _empty(SoftErpTheme.accent)
               : _image(url, size),
         ),
       ),
@@ -149,6 +149,25 @@ class MiniPhoto extends StatelessWidget {
   String? get _fallback {
     final url = fallbackUrl?.trim() ?? '';
     return url.startsWith('http') ? url : null;
+  }
+
+  /// The camera, and the [label] under it when there is one.
+  Widget _empty(Color color) {
+    const icon = Icons.add_a_photo_outlined;
+    final label = this.label;
+    if (label == null) return Icon(icon, size: 18, color: color);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color),
+        ),
+      ],
+    );
   }
 
   Widget _frame({Key? key, required Widget child}) => Container(

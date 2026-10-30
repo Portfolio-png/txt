@@ -970,6 +970,7 @@ class _MachineRow extends StatelessWidget {
                     // A held machine is not in the master yet.
                     id: pending || machine.id.isEmpty ? null : machine.id,
                     size: _kPhotoSize,
+                    label: 'Photo',
                     what: 'machine photo',
                     fallbackUrl: machine.photoUrl,
                     disabledReason: 'The machine is added when the part saves — '
@@ -1055,7 +1056,9 @@ const List<String> _kMachineHeads = [
   '',
 ];
 
-const double _kPhotoSize = 36;
+// Big enough to carry its "Photo" label: a bare 36px camera at the start of
+// the row was not seen as the place to add one.
+const double _kPhotoSize = 52;
 const double _kPhotoGap = 8;
 
 class _MachineHeaderStrip extends StatelessWidget {

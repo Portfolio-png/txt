@@ -1273,6 +1273,7 @@ class _DieRow extends StatelessWidget {
                     // A held die is not in the master yet: nowhere to keep it.
                     id: pending || die.id.isEmpty ? null : die.id,
                     size: _kPhotoSize,
+                    label: 'Photo',
                     what: 'die photo',
                     fallbackUrl: die.photoUrl,
                     disabledReason: 'The die is made when the part saves — add '
@@ -1380,7 +1381,9 @@ const List<String> _kDieHeads = [
   '',
 ];
 
-const double _kPhotoSize = 36;
+// Big enough to carry its "Photo" label: a bare 36px camera at the start of
+// the row was not seen as the place to add one.
+const double _kPhotoSize = 52;
 const double _kPhotoGap = 8;
 
 class _DieHeaderStrip extends StatelessWidget {
