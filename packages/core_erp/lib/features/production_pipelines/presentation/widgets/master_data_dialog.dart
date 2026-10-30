@@ -2374,7 +2374,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               children: [
                 _BandSwatch(
                   colour: region.isOffcut
-                      ? SoftErpTheme.warningText
+                      ? sheetOffcutColour
                       : sheetBandColour(region.index),
                   label: region.label,
                   live: true,
@@ -2607,7 +2607,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             height: 11,
             decoration: BoxDecoration(
               color: entry.isOffcut
-                  ? SoftErpTheme.warningText.withValues(alpha: 0.5)
+                  ? sheetOffcutColour
                   : sheetBandColour(entry.colourIndex).withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
             ),

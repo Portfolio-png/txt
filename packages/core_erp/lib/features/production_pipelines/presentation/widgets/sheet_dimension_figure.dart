@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/soft_erp_theme.dart';
 import '../../domain/pen_paper_baseline.dart' show SheetCutAxis;
 
 /// The sheet the Master Data was measured from, drawn in cabinet oblique and
@@ -423,17 +422,30 @@ class SheetFigureBand {
 }
 
 /// Colours that tell one band from the next, on the drawing and in the panel
-/// alike. Muted, because they sit under hairline linework that has to stay
-/// readable over them — and distinguishable from the amber the offcut uses,
-/// since "a different part" and "waste" must never be confusable.
+/// alike: slate blue, clay, plum, sea green, iris, olive — coloured pencil on
+/// a drawing, all at one lightness so no band shouts over another.
+///
+/// The order is the colour-blind safety, not taste: it was picked by running
+/// every ordering through the data-viz palette validator (OKLab, Machado 2009
+/// simulation) and keeping the one whose worst neighbour — counting the wrap
+/// from the last back to the first, since bands cycle — clears the
+/// normal-vision floor (ΔE 15.9) with deutan ΔE 7.6. The old saturated six
+/// failed it: blue and fuchsia were ΔE 5.0 apart for a protanope. Every band
+/// also has an ink boundary and a label in the panel, which the 6–8 band
+/// requires. Change a hue and re-run the validator.
 const List<Color> sheetBandPalette = <Color>[
-  Color(0xFF4F46E5),
-  Color(0xFF0D9488),
-  Color(0xFFC026D3),
-  Color(0xFF2563EB),
-  Color(0xFF65A30D),
-  Color(0xFFDB2777),
+  Color(0xFF4984BF),
+  Color(0xFFC7734B),
+  Color(0xFFA15E9C),
+  Color(0xFF2A9B7C),
+  Color(0xFF6863B1),
+  Color(0xFF909A45),
 ];
+
+/// Waste — the offcut — in warm grey, hatched on the drawing as a drawing
+/// office hatches what is not part of the job. Not a band hue and not the
+/// app's warning amber: "left over" is neither a part nor a problem.
+const Color sheetOffcutColour = Color(0xFFA39B8F);
 
 Color sheetBandColour(int index) =>
     sheetBandPalette[index % sheetBandPalette.length];
@@ -559,6 +571,7 @@ class _SheetPainter extends CustomPainter {
   static const Color _faceFront = Color(0xFFFCFCFD);
   static const Color _faceTopBand = Color(0xFFEFF1F4);
   static const Color _faceSideBand = Color(0xFFE2E6EB);
+  static const Color _trimHatch = Color(0xFFC9C5BD);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -700,14 +713,15 @@ class _SheetPainter extends CustomPainter {
     // four. The operator will not cut into it, so it is not part of the plan
     // and must not read as material the plan could have used.
     if (trimX > 0 || trimY > 0) {
-      final trimPaint = Paint()..color = const Color(0x14000000);
+      void trim(double x0, double y0, double x1, double y1) =>
+          _hatchQuad(canvas, at, x0, y0, x1, y1, _trimHatch, gap: 4, width: 0.8);
       if (trimY > 0) {
-        _quad(canvas, at, 0, 0, width, trimY, trimPaint);
-        _quad(canvas, at, 0, usableBottom, width, height, trimPaint);
+        trim(0, 0, width, trimY);
+        trim(0, usableBottom, width, height);
       }
       if (trimX > 0) {
-        _quad(canvas, at, 0, trimY, trimX, usableBottom, trimPaint);
-        _quad(canvas, at, usableRight, trimY, width, usableBottom, trimPaint);
+        trim(0, trimY, trimX, usableBottom);
+        trim(usableRight, trimY, width, usableBottom);
       }
 
       final boundary = Paint()
@@ -743,13 +757,21 @@ class _SheetPainter extends CustomPainter {
     final takenY = rowBands.isEmpty ? usableBottom : rowPlanEndInches;
     final offcut = _offcutProgress;
     if (offcut > 0) {
-      final waste = Paint()
-        ..color = SoftErpTheme.warningText.withValues(alpha: 0.20 * offcut);
+      final hatch = sheetOffcutColour.withValues(alpha: offcut);
+      final outline = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8
+        ..color = _ink.withValues(alpha: 0.45 * offcut);
+      void waste(double x0, double y0, double x1, double y1) {
+        _hatchQuad(canvas, at, x0, y0, x1, y1, hatch, gap: 6, width: 1.1);
+        _quad(canvas, at, x0, y0, x1, y1, outline);
+      }
+
       if (takenX < usableRight - 0.0001) {
-        _quad(canvas, at, takenX, trimY, usableRight, usableBottom, waste);
+        waste(takenX, trimY, usableRight, usableBottom);
       }
       if (takenY < usableBottom - 0.0001) {
-        _quad(canvas, at, trimX, takenY, takenX, usableBottom, waste);
+        waste(trimX, takenY, takenX, usableBottom);
       }
     }
 
@@ -803,13 +825,19 @@ class _SheetPainter extends CustomPainter {
           acrossTo: region.toInches,
           vertical: !primaryIsColumns,
           emphasis: region.highlighted ? 1.0 : 0.6,
+          nested: true,
         );
       }
     }
   }
 
-  /// One band: its region washed in its own colour, a firm line where it meets
-  /// the next, and its own cuts drawn only if they would be legible.
+  /// One band: a solid tint of its colour, one ink hairline where it meets the
+  /// next, and its own cuts — dashed in a darker shade of it — drawn only if
+  /// they would be legible.
+  ///
+  /// The tint is solid, not see-through: a strip re-cut inside a band is laid
+  /// over it, and two washes stacked mixed into mud. The boundary is ink, not
+  /// the band's own colour: a strip of five bands drew five bright lines.
   void _band(
     Canvas canvas,
     Offset Function(double, double, double) at,
@@ -819,21 +847,25 @@ class _SheetPainter extends CustomPainter {
     required double acrossTo,
     required bool vertical,
     double emphasis = 1.0,
+    bool nested = false,
   }) {
     if (acrossTo <= acrossFrom) return;
     final colour = sheetBandColour(band.colourIndex);
     final fillProgress = _fillProgress;
     if (!_counting && fillProgress > 0) {
-      final fill = Paint()
-        ..color = colour.withValues(alpha: 0.14 * emphasis * fillProgress);
+      // A nested strip a step stronger than the band it is cut from, so it
+      // reads as on top of it; a dimmed region a step weaker.
+      final strength = (nested ? 0.30 : 0.22) * (0.7 + 0.3 * emphasis);
+      final tint = Color.lerp(Colors.white, colour, strength)!;
+      final fill = Paint()..color = tint.withValues(alpha: fillProgress);
       _bandFill(canvas, at, band, acrossFrom, acrossTo, vertical, fill);
     }
 
     // Where this band ends and the next begins: always drawn, because it is the
     // boundary between one part and a different part.
     final edge = Paint()
-      ..strokeWidth = 1.1
-      ..color = colour.withValues(alpha: 0.9 * emphasis);
+      ..strokeWidth = 0.9
+      ..color = _ink.withValues(alpha: 0.8 * emphasis);
     for (final offset in <double>[band.startInches, band.endInches]) {
       final a = vertical
           ? at(offset, acrossFrom, 0)
@@ -848,8 +880,8 @@ class _SheetPainter extends CustomPainter {
     final pitchPx = band.sizeInches * scale;
     if (pitchPx < 6 || band.count < 2) return;
     final dash = Paint()
-      ..strokeWidth = 0.7
-      ..color = colour.withValues(alpha: 0.55 * emphasis);
+      ..strokeWidth = 0.8
+      ..color = Color.lerp(colour, _ink, 0.35)!.withValues(alpha: 0.8 * emphasis);
     for (var i = 1; i < band.count; i++) {
       final offset = band.startInches + band.sizeInches * i;
       if (offset >= band.endInches - 0.0001) break;
@@ -939,6 +971,43 @@ class _SheetPainter extends CustomPainter {
       ..lineTo(at(x0, y1, 0).dx, at(x0, y1, 0).dy)
       ..close();
     canvas.drawPath(path, paint);
+  }
+
+  /// [x0,y0]–[x1,y1] hatched at 45°, [gap] pixels apart on screen whatever
+  /// the drawing's scale — the drawing-office sign for "not part of the job".
+  void _hatchQuad(
+    Canvas canvas,
+    Offset Function(double, double, double) at,
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    Color colour, {
+    required double gap,
+    required double width,
+  }) {
+    if (x1 <= x0 || y1 <= y0 || colour.a == 0) return;
+    final path = Path()
+      ..moveTo(at(x0, y0, 0).dx, at(x0, y0, 0).dy)
+      ..lineTo(at(x1, y0, 0).dx, at(x1, y0, 0).dy)
+      ..lineTo(at(x1, y1, 0).dx, at(x1, y1, 0).dy)
+      ..lineTo(at(x0, y1, 0).dx, at(x0, y1, 0).dy)
+      ..close();
+    final bounds = path.getBounds();
+    final line = Paint()
+      ..color = colour
+      ..strokeWidth = width;
+    canvas.save();
+    canvas.clipPath(path);
+    // Lines x − y = c, stepping c across the box's whole diagonal span.
+    for (var c = bounds.left - bounds.height; c <= bounds.right; c += gap) {
+      canvas.drawLine(
+        Offset(c, bounds.bottom),
+        Offset(c + bounds.height, bounds.top),
+        line,
+      );
+    }
+    canvas.restore();
   }
 
   void _dashedRect(
