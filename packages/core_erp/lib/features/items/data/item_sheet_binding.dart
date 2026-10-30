@@ -435,12 +435,18 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     for (final column in _sheet.columns) {
       switch (column.bindsTo) {
         case SheetBindsTo.group:
-          // Top level as the SHEET sees it: parentless groups, and the groups
-          // the server filed under "Primary Group" — which is every group
-          // created without a parent, including every one typed here. Listing
-          // only parentless groups hid all of them after a restart.
+          // A Group is a group a part's Type can sit in: every top-level group
+          // (Primary Group, Raw Materials…), and any group that has sub-groups
+          // of its own. A Type is a sub-group — "Type" is the shop's word for
+          // one — so das under Primary Group is offered as Primary Group's Type,
+          // not as a Group of its own.
+          final parents = {
+            for (final group in groups.filableItemGroups)
+              if (group.parentGroupId != null && !group.isArchived) group.parentGroupId,
+          };
           for (final group in groups.filableItemGroups) {
-            if (!_isSheetTopLevel(group) || group.isArchived) continue;
+            if (group.isArchived) continue;
+            if (group.parentGroupId != null && !parents.contains(group.id)) continue;
             out.add(
               ColumnOption(
                 id: group.id,
@@ -453,7 +459,7 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
           // Cascaded: a Type belongs under the Group picked beside it, which is
           // what `parentOptionId` drives.
           for (final group in groups.filableItemGroups) {
-            if (_isSheetTopLevel(group) || group.isArchived) continue;
+            if (group.parentGroupId == null || group.isArchived) continue;
             out.add(
               ColumnOption(
                 id: group.id,
@@ -790,9 +796,8 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   String _pathOf(int groupId) {
     final group = groups.findById(groupId);
     if (group == null) return '';
-    // The path as the SHEET writes it: a group under Primary Group is top
-    // level there, so "Primary Group › Dolly" would never match a row.
-    if (_isSheetTopLevel(group)) return group.name;
+    // The path as the SHEET writes it, Group › Type.
+    if (group.parentGroupId == null) return group.name;
     final parent = groups.findById(group.parentGroupId);
     return parent == null ? group.name : '${parent.name} › ${group.name}';
   }
@@ -889,14 +894,6 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       _lastError = groups.errorMessage ?? 'Could not create the group "$name".';
     }
     return created;
-  }
-
-  /// A group the sheet's Group column treats as top level: parentless, or
-  /// filed under Primary Group (the server's default home for a new group).
-  bool _isSheetTopLevel(GroupDefinition group) {
-    if (group.parentGroupId == null) return true;
-    final primary = _primaryGroup();
-    return primary != null && group.parentGroupId == primary.id;
   }
 
   GroupDefinition? _primaryGroup() {
@@ -1120,11 +1117,12 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
         );
       } else if (binds == SheetBindsTo.group) {
         final group = groups.findById(item.groupId);
-        // The sheet's Group column is the TOP of the hierarchy, so a part filed
-        // under a Type shows its parent here and the Type beside it. "Under
-        // Primary Group" counts as the top, or a part filed straight under
-        // "action" would read as Primary Group › action.
-        final top = group == null || _isSheetTopLevel(group)
+        // A part filed under a Type (a sub-group) shows the Type's parent here
+        // and the Type beside it: Primary Group › das. Under a top-level group
+        // it shows that group and no Type. Treating everything under Primary
+        // Group as top level read Primary Group › das back as Group "das",
+        // Type "—".
+        final top = group == null || group.parentGroupId == null
             ? group
             : groups.findById(group.parentGroupId);
         draft.set(
@@ -1137,7 +1135,7 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
         );
       } else if (binds == SheetBindsTo.set) {
         final group = groups.findById(item.groupId);
-        final isType = group != null && !_isSheetTopLevel(group);
+        final isType = group != null && group.parentGroupId != null;
         draft.set(
           column.id,
           CellValue(

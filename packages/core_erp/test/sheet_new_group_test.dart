@@ -160,13 +160,48 @@ void main() {
     ];
     expect(groupOptions, contains('action'));
     expect(typeOptions, contains('dolly'));
-    expect(typeOptions, isNot(contains('action')),
-        reason: 'promoted to a Group, not offered as a Type of Primary Group');
+    // The server files a new group under Primary Group, so "action" is also
+    // a Type of Primary Group — a Type is a sub-group.
+    expect(typeOptions, contains('action'));
 
     // Opening the part reads action › dolly, not Primary Group › action.
     final draft = b.toDrafts([saved!]).single;
     expect(draft.get(1)?.optionLabel, 'action');
     expect(draft.get(2)?.optionLabel, 'dolly');
+  });
+
+  test('a Type is a sub-group: Primary Group › das reads back as itself', () async {
+    // "Type" is the shop's word for a sub-group. Everything under Primary
+    // Group used to count as top level, so a part saved as Primary Group ›
+    // das read back as Group "das", Type "—"; das was never offered as a
+    // Type, so typing it again made it "New", and the Part Name list under it
+    // was empty.
+    final b = await binding(primaryUnit: 7);
+    final first = await b.saveRow(_row('Primary Group', 'das', 'sasd'));
+    expect(first, isNotNull, reason: b.lastError);
+    expect(groupRepo.created.map((g) => g.name), ['das']);
+
+    final draft = b.toDrafts([first!]).single;
+    expect(draft.get(1)?.optionLabel, 'Primary Group');
+    expect(draft.get(2)?.optionLabel, 'das');
+
+    final data = await b.referenceData();
+    final groupOptions = [for (final o in data.options) if (o.columnId == 1) o.label];
+    final typeOptions = [for (final o in data.options) if (o.columnId == 2) (o.label, o.parentOptionId)];
+    expect(groupOptions, contains('Primary Group'));
+    expect(groupOptions, isNot(contains('das')), reason: 'a sub-group with none of its own is a Type');
+    final das = groupRepo.groups.firstWhere((g) => g.name == 'das');
+    expect(typeOptions, contains(('das', 1)), reason: 'offered under Primary Group');
+
+    // A second part under the same Type finds it rather than making another.
+    final second = await b.saveRow(_row('Primary Group', 'das', 'sas'));
+    expect(second, isNotNull, reason: b.lastError);
+    expect(groupRepo.created, hasLength(1));
+
+    // Picking the Type lists its parts.
+    final again = await b.referenceData();
+    final parts = [for (final o in again.options) if (o.columnId == 3 && o.parentOptionId == das.id) o.label];
+    expect(parts, containsAll(['sasd', 'sas']));
   });
 
   test('a refused group shows the server\'s reason, not a shrug', () async {
