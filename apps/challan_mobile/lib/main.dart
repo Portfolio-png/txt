@@ -40,7 +40,10 @@ import 'package:core_erp/features/search/presentation/providers/search_provider.
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/services/socket_service.dart' as core_socket;
 import 'package:core_erp/core/services/generic_asset_service.dart';
+import 'package:core_erp/core/services/entity_photos.dart';
+import 'package:core_erp/core/services/photo_requests.dart';
 
+import 'photos/photo_queue_gate.dart';
 import 'screens/home_screen.dart';
 import 'package:challan_mobile/screens/passcode_screen.dart';
 import 'services/network_discovery_service.dart';
@@ -562,6 +565,22 @@ class MyApp extends StatelessWidget {
             useMockResponses: false,
           ),
         ),
+        // Photos the desktop sends here to take: the queue, and the store each
+        // one uploads to (the same per-record asset routes the desktop uses).
+        Provider<EntityPhotoRepository>(
+          create: (context) => EntityPhotoRepository(
+            baseUrl: apiUrl,
+            client: _authClient(context.read<AuthProvider>()),
+          ),
+        ),
+        ChangeNotifierProvider<PhotoRequestsProvider>(
+          create: (context) => PhotoRequestsProvider(
+            repository: PhotoRequestRepository(
+              baseUrl: apiUrl,
+              client: _authClient(context.read<AuthProvider>()),
+            ),
+          ),
+        ),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProxyProvider<AuthProvider, SocketService>(
           create: (context) {
@@ -758,8 +777,9 @@ class _AuthGateState extends State<_AuthGate> {
       );
     }
     
-    return authenticated 
-        ? const HomeScreen() 
+    // Signed in, the camera opens by itself for a photo the desktop sends.
+    return authenticated
+        ? const PhotoQueueGate(child: HomeScreen())
         : const PasscodeScreen();
   }
 }
