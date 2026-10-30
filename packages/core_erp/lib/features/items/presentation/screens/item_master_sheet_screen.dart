@@ -34,6 +34,10 @@ import '../widgets/part_die_section.dart';
 import '../widgets/part_machine_section.dart';
 import '../widgets/deal_people_form.dart';
 import '../../../../core/app_flow_hooks.dart';
+import '../../../../core/utils/stamp_format.dart';
+import '../../../../core/widgets/force_capacity_field.dart';
+import '../../../../core/widgets/length_unit_field.dart';
+import '../../../dies/domain/die_code.dart';
 
 /// The item master as a sheet — the real screen behind the PM prototype.
 ///
@@ -1414,62 +1418,128 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _toast(error ?? 'Cleared.', isError: error != null);
   }
 
-  /// What a folded section shows instead of its body: what was entered, on
-  /// one line.
-  String _sectionSummary(String id) {
-    String join(Iterable<String> parts) =>
-        parts.where((p) => p.trim().isNotEmpty).join('  ·  ');
+  /// What a folded section shows instead of its body: everything entered, as
+  /// label–value pairs on one line, with the date and time of anything that
+  /// was stamped. A pair with no label is the record's own name (a die's
+  /// code, a machine's number). An empty section is one plain sentence.
+  List<(String?, String)> _sectionSummary(String id) {
+    final out = <(String?, String)>[];
+    void add(String? label, Object? value) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) out.add((label, text));
+    }
+
+    String? cell(SheetController sheet, String binds) {
+      final column = sheet.sheetDef.columnBoundTo(binds);
+      if (column == null) return null;
+      final value = sheet.draft.get(column.id);
+      return value?.optionLabel ?? value?.textValue ?? value?.intValue?.toString();
+    }
+
+    String? money(double? amount) => amount == null ? null : rupeeStamp(amount);
+    String? stamp(DateTime? at) => at == null ? null : partStamp(at);
+
     switch (id) {
       case 'client_vendor':
         final company = _controller.dealPartyName;
-        if (company.isEmpty) return 'No company chosen yet';
-        final deal = _controller.clientVendorController;
-        final q = deal.sheetDef.columnBoundTo(SheetBindsTo.developedForQuotation);
-        final quotation = q == null ? '' : (deal.draft.get(q.id)?.textValue ?? '').trim();
+        if (company.isEmpty) return const [(null, 'No company chosen yet')];
+        add('Company', company);
+        add('Quotation', money(_moneyBoundTo(SheetBindsTo.developedForQuotation)));
+        add('Cost', money(_moneyBoundTo(SheetBindsTo.developedForCost)));
         final people = _controller.peopleController;
         final tick = people.sheetDef.columnBoundTo(SheetBindsTo.personDealtWith);
         final name = people.sheetDef.columnBoundTo(SheetBindsTo.personName);
-        final ticked = <String>[
+        final role = people.sheetDef.columnBoundTo(SheetBindsTo.personDesignation);
+        final dealtWith = <String>[
           for (final d in people.drafts)
             if (tick != null && name != null && d.get(tick.id)?.intValue == 1)
-              (d.get(name.id)?.textValue ?? '').trim(),
-        ].where((n) => n.isNotEmpty).toList();
-        return join([
-          company,
-          if (quotation.isNotEmpty) '₹$quotation',
-          if (ticked.isNotEmpty) 'Dealt with ${ticked.join(', ')}',
-        ]);
+              [
+                (d.get(name.id)?.textValue ?? '').trim(),
+                if (role != null)
+                  (d.get(role.id)?.optionLabel ?? d.get(role.id)?.textValue ?? '').trim(),
+              ].where((p) => p.isNotEmpty).join(', '),
+        ].where((p) => p.isNotEmpty);
+        add('Dealt with', dealtWith.join('; '));
+        add('Recorded', stamp(_livePart?.developedFor.at));
       case 'die_master':
-        final codes = [
-          for (final d in _livePart?.dies ?? const <ItemDieLink>[]) d.toolCode,
-          for (final d in _stagedDies) '${d.toolCode} (held)',
-        ].where((c) => c.trim().isNotEmpty).toList();
-        if (codes.isEmpty) return 'No dies yet';
-        return '${codes.length} ${codes.length == 1 ? 'die' : 'dies'}: ${codes.join(', ')}';
+        final dies = [
+          for (final d in _livePart?.dies ?? const <ItemDieLink>[]) (d, false),
+          for (final d in _stagedDies) (heldDieLink(d), true),
+        ];
+        if (dies.isEmpty) return const [(null, 'No dies yet')];
+        for (final (die, held) in dies) {
+          add(null, '${die.toolCode.isEmpty ? 'Die' : die.toolCode}${held ? ' (held)' : ''}');
+          add('Type', DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label);
+          add('Made by', die.madeBy);
+          add('Ordered', stamp(die.poAt));
+          add('Arrived', stamp(die.dateInAt));
+          add(
+            'Liner',
+            die.linerSizeNm == null
+                ? null
+                : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} ${die.linerSizeUnit}',
+          );
+          add('Sets', die.noOfSet);
+          add('Kept', die.whereKept);
+        }
       case 'machine_master':
-        final names = [
-          for (final m in _livePart?.machines ?? const <ItemMachineLink>[])
-            m.name.isNotEmpty ? m.name : m.assetId,
+        final groups = context.read<GroupsProvider>();
+        final machines = [
+          for (final m in _livePart?.machines ?? const <ItemMachineLink>[]) (m, false),
           for (final m in _stagedMachines)
-            '${m.name.isNotEmpty ? m.name : m.assetId} (held)',
-        ].where((n) => n.trim().isNotEmpty).toList();
-        if (names.isEmpty) return 'No machines yet';
-        return '${names.length} ${names.length == 1 ? 'machine' : 'machines'}: ${names.join(', ')}';
+            (
+              heldMachineLink(
+                m,
+                typeName: m.groupId == null ? '' : groups.findById(m.groupId!)?.name ?? '',
+              ),
+              true,
+            ),
+        ];
+        final route = _route;
+        if (machines.isEmpty && route == null) return const [(null, 'No machines yet')];
+        for (final (machine, held) in machines) {
+          final number = machine.assetId.isNotEmpty ? machine.assetId : machine.name;
+          add(null, '${number.isEmpty ? 'Machine' : number}${held ? ' (held)' : ''}');
+          if (machine.assetId.isNotEmpty) add('Name', machine.name);
+          add('Type', machine.machineType);
+          add('Make', machine.machineMake);
+          add(
+            'Capacity',
+            capacityLabel(CapacityKind.fromWire(machine.capacityKind), machine.capacityKgf, 'Ton'),
+          );
+          add('Strokes/min', machine.strokesPerMinute);
+          add('Feed', machine.dieFeedType);
+          add('Feeder', machine.feederMake);
+          add('Built', machine.manufacturedYear);
+          add('Running', machine.runningHours == null ? null : '${machine.runningHours} h');
+        }
+        if (route != null) {
+          add(
+            'Route',
+            'v${route.version} · ${route.steps.map((step) => step.stageName).join(' → ')}',
+          );
+        }
       default:
-        final sheet = _controller.groupItemController.sheetDef;
-        final draft = _controller.groupItemController.draft;
-        final nameColumn = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
-        final path = nameColumn == null
-            ? ''
-            : SheetEngine.groupPathString(sheet, draft, nameColumn.id);
-        final properties = [
-          for (final column in sheet.columns)
-            if (SheetBindsTo.isVariation(column.bindsTo))
-              (draft.get(column.id)?.optionLabel ?? draft.get(column.id)?.textValue ?? '').trim(),
-        ].where((v) => v.isNotEmpty);
-        final summary = join([path, _partCodeNow, ...properties]);
-        return summary.isEmpty ? 'Nothing entered yet' : summary;
+        final sheet = _controller.groupItemController;
+        final nameColumn = sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ?? sheet.sheetDef.itemColumn;
+        add('Group', nameColumn == null ? null : SheetEngine.groupPathString(sheet.sheetDef, sheet.draft, nameColumn.id));
+        add('Part', cell(sheet, SheetBindsTo.name));
+        add('Part No', cell(sheet, SheetBindsTo.partNo));
+        add('Code', _partCodeNow);
+        for (final column in sheet.sheetDef.columns) {
+          if (!SheetBindsTo.isVariation(column.bindsTo)) continue;
+          final value = sheet.draft.get(column.id);
+          add(column.label, value?.optionLabel ?? value?.textValue);
+        }
+        final part = _livePart;
+        add('Created', stamp(part?.createdAt));
+        // Only when it says something the created stamp does not.
+        if (part != null && part.updatedAt.difference(part.createdAt).inMinutes.abs() >= 1) {
+          add('Updated', stamp(part.updatedAt));
+        }
+        if (out.isEmpty) return const [(null, 'Nothing entered yet')];
     }
+    return out;
   }
 
   /// The header controls of a section: move it, edit it, clear it.
@@ -2532,16 +2602,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               onTap: () => _toggle(id),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
-                child: Text(
-                  _sectionSummary(id),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: SoftErpTheme.textPrimary,
-                  ),
-                ),
+                child: _SummaryLine(_sectionSummary(id)),
               ),
             ),
           if (!collapsed) ...[
@@ -2549,6 +2610,57 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             body,
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A folded section's one line: labels muted, what was entered in the ink,
+/// pairs split by a dot. Clipped at the card's edge, so the whole of it is on
+/// the tooltip — one pair per line.
+class _SummaryLine extends StatelessWidget {
+  const _SummaryLine(this.pairs);
+
+  final List<(String?, String)> pairs;
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    for (final (i, (label, value)) in pairs.indexed) {
+      if (i > 0) {
+        spans.add(TextSpan(
+          // A record's own name starts a new one: a wider gap before it.
+          text: label == null ? '   |   ' : '  ·  ',
+          style: const TextStyle(color: SoftErpTheme.textMuted),
+        ));
+      }
+      if (label != null) {
+        spans.add(TextSpan(
+          text: '$label ',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: SoftErpTheme.textSecondary,
+          ),
+        ));
+      }
+      spans.add(TextSpan(
+        text: value,
+        style: TextStyle(
+          fontWeight: label == null ? FontWeight.w800 : FontWeight.w700,
+          color: SoftErpTheme.textPrimary,
+        ),
+      ));
+    }
+    return Tooltip(
+      message: [
+        for (final (label, value) in pairs) label == null ? value : '$label: $value',
+      ].join('\n'),
+      waitDuration: const Duration(milliseconds: 400),
+      child: Text.rich(
+        TextSpan(children: spans),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14),
       ),
     );
   }

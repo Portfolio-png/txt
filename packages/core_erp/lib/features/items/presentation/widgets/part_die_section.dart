@@ -940,21 +940,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     );
   }
 
-  /// A held draft, shaped like a linked die so one row widget draws both.
-  ItemDieLink _linkFromDraft(DieSheetDraft draft) => ItemDieLink(
-    id: '',
-    toolCode: draft.toolCode,
-    dieType: draft.dieType,
-    dieTypeLabel: draft.dieTypeLabel,
-    madeBy: draft.madeBy,
-    poAt: draft.poAt,
-    dateInAt: draft.dateInAt,
-    linerSizeNm: draft.linerSizeNm,
-    linerSizeUnit: draft.linerSizeUnit,
-    noOfSet: draft.noOfSet,
-    storeArea: draft.storeArea,
-    rackNo: draft.rackNo,
-  );
+  ItemDieLink _linkFromDraft(DieSheetDraft draft) => heldDieLink(draft);
 
   /// Asks for a die type in the shop's own words.
   ///
@@ -1561,3 +1547,20 @@ class _CustomDieTypeDialogState extends State<_CustomDieTypeDialog> {
     );
   }
 }
+
+/// A held draft, shaped like a linked die so one row (or one summary line)
+/// describes both.
+ItemDieLink heldDieLink(DieSheetDraft draft) => ItemDieLink(
+  id: '',
+  toolCode: draft.toolCode,
+  dieType: draft.dieType,
+  dieTypeLabel: draft.dieTypeLabel,
+  madeBy: draft.madeBy,
+  poAt: draft.poAt,
+  dateInAt: draft.dateInAt,
+  linerSizeNm: draft.linerSizeNm,
+  linerSizeUnit: draft.linerSizeUnit,
+  noOfSet: draft.noOfSet,
+  storeArea: draft.storeArea,
+  rackNo: draft.rackNo,
+);

@@ -854,22 +854,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     return 'Machines · $label · ${_noController.text}';
   }
 
-  /// A held draft, shaped like a linked machine so one row widget draws both.
-  ItemMachineLink _linkFromDraft(MachineSheetDraft draft) => ItemMachineLink(
-    id: '',
-    name: draft.name,
-    assetId: draft.assetId,
-    groupId: draft.groupId,
-    machineType: _typeNameFor(draft.groupId),
-    machineMake: draft.machineMake,
-    manufacturedYear: draft.manufacturedYear,
-    feederMake: draft.feederMake,
-    runningHours: draft.runningHours,
-    strokesPerMinute: draft.strokesPerMinute,
-    capacityKind: draft.capacityKind,
-    capacityKgf: draft.capacityKgf,
-    dieFeedType: draft.dieFeedType,
-  );
+  ItemMachineLink _linkFromDraft(MachineSheetDraft draft) =>
+      heldMachineLink(draft, typeName: _typeNameFor(draft.groupId));
 
   String _typeNameFor(int? groupId) {
     if (groupId == null) return '';
@@ -1130,3 +1116,23 @@ class _MachineCell extends StatelessWidget {
     );
   }
 }
+
+/// A held draft, shaped like a linked machine so one row (or one summary line)
+/// describes both. [typeName] is its machine group's name, which the draft
+/// holds only as an id.
+ItemMachineLink heldMachineLink(MachineSheetDraft draft, {String typeName = ''}) =>
+    ItemMachineLink(
+      id: '',
+      name: draft.name,
+      assetId: draft.assetId,
+      groupId: draft.groupId,
+      machineType: typeName,
+      machineMake: draft.machineMake,
+      manufacturedYear: draft.manufacturedYear,
+      feederMake: draft.feederMake,
+      runningHours: draft.runningHours,
+      strokesPerMinute: draft.strokesPerMinute,
+      capacityKind: draft.capacityKind,
+      capacityKgf: draft.capacityKgf,
+      dieFeedType: draft.dieFeedType,
+    );

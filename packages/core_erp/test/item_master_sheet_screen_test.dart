@@ -1,3 +1,4 @@
+import 'package:core_erp/core/utils/stamp_format.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
@@ -512,6 +513,67 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('section_summary_client_vendor')));
       await tester.pump();
       expect(find.text('Quotation (₹)'), findsOneWidget);
+    });
+
+    testWidgets('a folded die or machine line says what was filled, with when',
+        (tester) async {
+      // "1 die: JDHH1" said there was a die and nothing about it.
+      final ordered = DateTime(2026, 10, 2, 9, 30);
+      final arrived = DateTime(2026, 10, 9, 16, 15);
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        dies: [
+          ItemDieLink(
+            id: '31',
+            toolCode: 'CDPGESP1',
+            dieType: 'cutting',
+            madeBy: 'Ashok Dies',
+            poAt: ordered,
+            dateInAt: arrived,
+            noOfSet: 2,
+            rackNo: 'R-12',
+          ),
+        ],
+        machines: const [
+          ItemMachineLink(id: '41', name: 'Press 1', assetId: 'PP-7', machineMake: 'Kirloskar'),
+        ],
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      for (final id in ['die_master', 'machine_master']) {
+        await tester.tap(find.byKey(ValueKey('section_toggle_$id')));
+        await tester.pump();
+      }
+
+      String line(String id) => tester
+          .widget<Text>(find.descendant(
+            of: find.byKey(ValueKey('section_summary_$id')),
+            matching: find.byType(Text),
+          ))
+          .textSpan!
+          .toPlainText();
+
+      expect(
+        line('die_master'),
+        allOf(
+          startsWith('CDPGESP1'),
+          contains('Type Cutting'),
+          contains('Made by Ashok Dies'),
+          contains('Ordered ${partStamp(ordered)}'),
+          contains('Arrived ${partStamp(arrived)}'),
+          contains('Sets 2'),
+          contains('Kept Rack R-12'),
+        ),
+      );
+      expect(line('machine_master'),
+          allOf(startsWith('PP-7'), contains('Name Press 1'), contains('Make Kirloskar')));
+      expect(tester.takeException(), isNull);
     });
 
     double left(WidgetTester tester, String id) =>
