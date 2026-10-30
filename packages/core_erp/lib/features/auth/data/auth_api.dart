@@ -433,6 +433,29 @@ class AuthApi {
         .toList(growable: false);
   }
 
+  /// Your own sessions, and which of them is this one.
+  Future<({List<AuthSession> sessions, String? currentId})> getMySessionList() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/auth/sessions'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load sessions.',
+      );
+    }
+    return (
+      sessions: (payload['sessions'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(AuthSession.fromJson)
+          .toList(growable: false),
+      currentId: payload['currentSessionId'] as String?,
+    );
+  }
+
   Future<void> revokeMySession(String sessionId) async {
     final response = await _client.delete(
       Uri.parse('$baseUrl/api/auth/sessions/$sessionId'),

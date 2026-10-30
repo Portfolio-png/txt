@@ -18,6 +18,7 @@ import 'package:core_erp/features/orders/presentation/providers/orders_provider.
 import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/widgets/company_profile_dialog.dart';
+import 'package:core_erp/features/auth/presentation/widgets/my_account_dialog.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import '../../features/machines/presentation/providers/machine_provider.dart';
 import '../../features/dies/presentation/providers/die_provider.dart';
@@ -529,6 +530,19 @@ class TopStripProfileCard extends StatelessWidget {
             position: PopupMenuPosition.under,
             onSelected: (value) => _onAccountAction(context, value),
             itemBuilder: (menuContext) => [
+              // Your own login, access and security — the panel People shows
+              // for a person, about whoever is signed in.
+              const PopupMenuItem<String>(
+                key: ValueKey<String>('profile-account-access'),
+                value: 'account_access',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.manage_accounts_outlined),
+                  title: Text('Account & Access'),
+                  subtitle: Text('Password, sessions, what you can do'),
+                ),
+              ),
+              const PopupMenuDivider(),
               // Reduced effects lives here, not in Settings & Preferences.
               //
               // That dialog is gated on `config.write` because it also holds
@@ -659,6 +673,10 @@ class TopStripProfileCard extends StatelessWidget {
     }
     if (value == 'company_profile') {
       await CompanyProfileDialog.open(context);
+      return;
+    }
+    if (value == 'account_access') {
+      await MyAccountDialog.open(context);
       return;
     }
     final auth = context.read<AuthProvider>();

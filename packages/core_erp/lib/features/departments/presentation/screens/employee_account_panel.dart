@@ -7,6 +7,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/account_access_widgets.dart';
 import '../../../auth/presentation/widgets/permissions_editor.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../domain/employee_definition.dart';
@@ -447,17 +448,17 @@ class _AccountControlsState extends State<_AccountControls> {
                 runSpacing: 8,
                 children: [
                   if (login.loginCode.isNotEmpty)
-                    _MetaChip(
+                    AccountMetaChip(
                       icon: Icons.pin_outlined,
                       label: 'PIN ${login.loginCode}',
                     ),
                   if (_desktopAccess == true)
-                    const _MetaChip(
+                    const AccountMetaChip(
                       icon: Icons.desktop_windows_outlined,
                       label: 'Desktop Access',
                     ),
                   if (_mobileAccess == true)
-                    const _MetaChip(
+                    const AccountMetaChip(
                       icon: Icons.smartphone_outlined,
                       label: 'Mobile Access',
                     ),
@@ -471,7 +472,7 @@ class _AccountControlsState extends State<_AccountControls> {
           title: 'Manage',
           child: Column(
             children: [
-              _ActionRow(
+              AccountActionRow(
                 icon: Icons.key_outlined,
                 label: 'Reset password',
                 subtitle: 'Set a new sign-in password.',
@@ -479,7 +480,7 @@ class _AccountControlsState extends State<_AccountControls> {
                     ? () => _showResetPassword(context, userId, widget.emp.name)
                     : null,
               ),
-              _ActionRow(
+              AccountActionRow(
                 icon: Icons.devices_other_outlined,
                 label: 'Sessions',
                 subtitle: 'See where they’re signed in and revoke access.',
@@ -487,7 +488,7 @@ class _AccountControlsState extends State<_AccountControls> {
                     ? () => _showSessions(context, userId, widget.emp.name)
                     : null,
               ),
-              _ActionRow(
+              AccountActionRow(
                 icon: Icons.tune_outlined,
                 label: 'Permissions & access',
                 subtitle: 'Edit permissions, incl. desktop / mobile access.',
@@ -502,7 +503,7 @@ class _AccountControlsState extends State<_AccountControls> {
                       }
                     : null,
               ),
-              _ActionRow(
+              AccountActionRow(
                 icon: isActive
                     ? Icons.pause_circle_outline
                     : Icons.play_circle_outline,
@@ -520,7 +521,7 @@ class _AccountControlsState extends State<_AccountControls> {
                       )
                     : null,
               ),
-              _ActionRow(
+              AccountActionRow(
                 icon: Icons.link_off_outlined,
                 label: 'Unlink login',
                 subtitle: 'Detach the account from this person (account kept).',
@@ -531,7 +532,7 @@ class _AccountControlsState extends State<_AccountControls> {
                       )
                     : null,
               ),
-              _ActionRow(
+              AccountActionRow(
                 icon: Icons.delete_forever_outlined,
                 label: 'Delete account',
                 subtitle:
@@ -750,111 +751,6 @@ Future<void> _confirmDeleteAccount(
 // ---------------------------------------------------------------------------
 // Small shared widgets
 // ---------------------------------------------------------------------------
-
-class _ActionRow extends StatelessWidget {
-  const _ActionRow({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.onTap,
-    this.danger = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final VoidCallback? onTap;
-  final bool danger;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onTap != null;
-    final color = danger ? const Color(0xFFD64545) : SoftErpTheme.textPrimary;
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: danger ? color : SoftErpTheme.textSecondary,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
-                        color: color,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: SoftErpTheme.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (enabled)
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: SoftErpTheme.textSecondary,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F5FA),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: SoftErpTheme.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _LabeledField extends StatelessWidget {
   const _LabeledField({

@@ -237,6 +237,7 @@ class AuthSession {
     required this.revokedReason,
     required this.ipAddress,
     required this.userAgent,
+    this.clientPlatform = 'desktop',
   });
 
   final String id;
@@ -248,6 +249,9 @@ class AuthSession {
   final String revokedReason;
   final String ipAddress;
   final String userAgent;
+
+  /// 'desktop' or 'mobile' — the kind of device the login came from.
+  final String clientPlatform;
 
   bool get isActive => revokedAt == null && expiresAt.isAfter(DateTime.now());
 
@@ -268,6 +272,7 @@ class AuthSession {
       revokedReason: json['revokedReason'] as String? ?? '',
       ipAddress: json['ipAddress'] as String? ?? '',
       userAgent: json['userAgent'] as String? ?? '',
+      clientPlatform: json['clientPlatform'] as String? ?? 'desktop',
     );
   }
 }

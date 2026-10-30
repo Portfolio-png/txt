@@ -432,6 +432,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Your own sessions and which is this one; null when they could not be read.
+  /// Needs no permission — they are yours.
+  Future<({List<AuthSession> sessions, String? currentId})?> loadMySessions() async {
+    try {
+      return await _api.getMySessionList();
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to load your sessions.');
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Signs one of your own sessions out.
+  Future<bool> revokeOwnSession(String sessionId) async {
+    _errorMessage = null;
+    try {
+      await _api.revokeMySession(sessionId);
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to sign that session out.');
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> changeOwnPassword({
     required String currentPassword,
     required String newPassword,

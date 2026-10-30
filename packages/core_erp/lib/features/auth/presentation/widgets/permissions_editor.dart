@@ -12,7 +12,8 @@ import '../../../items/presentation/providers/items_provider.dart';
 import '../../domain/auth_user.dart';
 import '../providers/auth_provider.dart';
 
-const Map<String, String> _opLabels = {
+/// The CRUD verbs as people read them — shared with your own read-only view.
+const Map<String, String> permissionOpLabels = {
   'create': 'Create',
   'read': 'View',
   'update': 'Update',
@@ -694,7 +695,7 @@ class _PermissionTreeState extends State<PermissionTree> {
             SizedBox(
               width: 44,
               child: Tooltip(
-                message: 'Toggle ${_opLabels[op]} column across suite',
+                message: 'Toggle ${permissionOpLabels[op]} column across suite',
                 child: InkWell(
                   onTap: () => _toggleSuiteColumn(
                     activeModulesInSuite,
@@ -705,7 +706,7 @@ class _PermissionTreeState extends State<PermissionTree> {
                   borderRadius: BorderRadius.circular(4),
                   child: Center(
                     child: Text(
-                      _opLabels[op] ?? op,
+                      permissionOpLabels[op] ?? op,
                       style: const TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.bold,
