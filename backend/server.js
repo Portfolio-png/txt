@@ -1265,6 +1265,8 @@ function rowToAuthSessionDto(row) {
     revokedReason: row.revoked_reason || '',
     ipAddress: row.ip_address || '',
     userAgent: row.user_agent || '',
+    // 'desktop' | 'mobile' (migrations/063); older rows were desktop logins.
+    clientPlatform: row.client_platform || 'desktop',
   };
 }
 
@@ -22713,7 +22715,13 @@ app.get('/api/auth/sessions', async (req, res) => {
       `,
       [req.user.id],
     );
-    res.json({ success: true, sessions: rows.map(rowToAuthSessionDto), error: null });
+    res.json({
+      success: true,
+      sessions: rows.map(rowToAuthSessionDto),
+      // Which of them is this request's own, so a list can say "this device".
+      currentSessionId: req.authSession?.id || null,
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, sessions: [], error: error.message });
   }
@@ -22872,9 +22880,15 @@ app.get('/api/audit/global', requirePermission('audit.read'), async (req, res) =
 // --- Track: per-entity + per-person activity feeds --------------------------
 // Per-person "overall" track — everything this user changed, newest first.
 // Defined before the generic /:entityType route so "actor" isn't swallowed.
-app.get('/api/track/actor/:userId', requirePermission('audit.read'), async (req, res) => {
+app.get('/api/track/actor/:userId', async (req, res) => {
   try {
     const userId = Number(req.params.userId);
+    // Your own trail is yours to read — the profile's Account & Access shows
+    // it to everyone. Anyone else's still needs audit.read.
+    if (userId !== Number(req.user?.id) && !hasPermission(req, 'audit.read')) {
+      res.status(403).json({ success: false, events: [], error: 'You do not have permission to read this person\'s activity.' });
+      return;
+    }
     const limit = Math.min(Number(req.query.limit) || 200, 500);
     const rows = await all(
       `SELECT * FROM entity_activity_log
