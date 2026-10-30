@@ -57,6 +57,7 @@ import 'package:core_erp/features/items/data/repositories/api_item_repository.da
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/core/services/generic_asset_service.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
+import 'package:core_erp/core/services/photo_requests.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
 import 'package:core_erp/features/items/data/services/item_link_options_service.dart';
 import 'package:core_erp/core/devtools/mark_tool.dart';
@@ -695,6 +696,22 @@ class MyApp extends StatelessWidget {
               useMockResponses: _effectiveDemoMode,
             ),
           ),
+        ),
+        // Photos sent to this person's phone from a photo slot. Read again on
+        // sign-in, so a slot whose job is still on the phone says so after a
+        // restart; kept current after that by photo_requests_changed.
+        ChangeNotifierProxyProvider<AuthProvider, PhotoRequestsProvider>(
+          create: (context) => PhotoRequestsProvider(
+            repository: PhotoRequestRepository(
+              baseUrl: _apiBaseUrl,
+              client: _authClient(context.read<AuthProvider>()),
+              useMockResponses: _effectiveDemoMode,
+            ),
+          ),
+          update: (context, auth, previous) {
+            if (auth.isAuthenticated) unawaited(previous!.refresh());
+            return previous!;
+          },
         ),
         ChangeNotifierProvider<ItemFormSectionsProvider>(
           create: (context) => ItemFormSectionsProvider(

@@ -170,6 +170,10 @@ Future<void> _pickOrType(
 Future<void> _uploadPhoto(WidgetTester tester, String prefix) async {
   await pumpUntil(tester, _keyed(prefix), reason: 'a $prefix thumbnail should be drawn');
   await _tapVisible(tester, _keyed(prefix));
+  // An empty slot asks how: the phone, or a file from this PC.
+  await pumpUntil(tester, find.byKey(const ValueKey<String>('photo-choose-file')),
+      reason: 'an empty photo slot should offer a file');
+  await tester.tap(find.byKey(const ValueKey<String>('photo-choose-file')));
   await pumpUntil(
     tester,
     find.text('Photo saved.'),

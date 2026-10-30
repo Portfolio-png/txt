@@ -549,6 +549,13 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     });
   }
 
+  /// "for part HH1" — which part this row belongs to, on the phone.
+  String? get _photoNote {
+    final code = widget.partCode.trim();
+    final label = code.isNotEmpty ? code : widget.partLabel.trim();
+    return label.isEmpty ? null : 'for part $label';
+  }
+
   @override
   Widget build(BuildContext context) {
     final part = widget.part;
@@ -893,6 +900,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
             selected: machine.id == _editingMachineId,
             onTap: enabled ? () => _editMachine(machine) : null,
             onUnlink: enabled ? () => _unlink(machine) : null,
+            photoNote: _photoNote,
           ),
       ],
     );
@@ -909,7 +917,11 @@ class _MachineRow extends StatelessWidget {
     this.partExists = false,
     this.onTap,
     this.onUnlink,
+    this.photoNote,
   });
+
+  /// Where this row sits, for the phone's camera screen ("for part HH1").
+  final String? photoNote;
 
   final ItemMachineLink machine;
   final bool selected;
@@ -958,6 +970,7 @@ class _MachineRow extends StatelessWidget {
                     size: _kPhotoSize,
                     label: 'Photo',
                     what: 'machine photo',
+                    note: photoNote,
                     fallbackUrl: machine.photoUrl,
                     disabledReason: 'The machine is added when the part saves — '
                         'add its photo then',

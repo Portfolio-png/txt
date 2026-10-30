@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
+import 'socket_service.dart';
+
 /// What a photo can belong to. The server's `uploaded_assets.entity_type`.
 abstract final class PhotoOwner {
   static const item = 'item';
@@ -230,14 +232,40 @@ class EntityPhotoException implements Exception {
 /// go to the server as ONE request per kind of record — a table of fifty
 /// parts is one round trip, not fifty. A signed URL lives five minutes, so a
 /// photo older than [maxAge] is asked for again.
+///
+/// A photo stored anywhere else — the phone, another desktop — arrives as the
+/// server's `asset_changed`, which drops that record here so its slot asks
+/// again. Before it, a photo taken on the phone stayed invisible for up to
+/// [maxAge].
 class EntityPhotosProvider extends ChangeNotifier {
   EntityPhotosProvider({
     required EntityPhotoRepository repository,
     this.maxAge = const Duration(minutes: 4),
-  }) : _repository = repository;
+    bool listen = true,
+  }) : _repository = repository,
+       _listening = listen {
+    if (listen) SocketService.instance.on('asset_changed', _onAssetChanged);
+  }
 
   final EntityPhotoRepository _repository;
   final Duration maxAge;
+  final bool _listening;
+
+  void _onAssetChanged(dynamic data) {
+    if (data is! Map) return;
+    final owner = '${data['entityType'] ?? ''}';
+    final id = '${data['entityId'] ?? ''}';
+    if (owner.isEmpty || id.isEmpty) return;
+    forget(owner, id);
+  }
+
+  /// Drops what is known about [owner] [id] and asks again, if anything on
+  /// screen had asked about it.
+  void forget(String owner, String id) {
+    final key = _key(owner, id);
+    if (_checkedAt.remove(key) == null) return;
+    request(owner, id);
+  }
 
   final Map<String, EntityPhoto> _photos = {};
 
@@ -339,6 +367,7 @@ class EntityPhotosProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (_listening) SocketService.instance.off('asset_changed', _onAssetChanged);
     super.dispose();
   }
 }

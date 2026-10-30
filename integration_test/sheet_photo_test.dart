@@ -67,6 +67,10 @@ void main() {
       reason: 'a saved row should offer an upload for its photo',
     );
     await tester.tap(_partPhoto().first);
+    // An empty slot asks how: the phone, or a file from this PC.
+    await pumpUntil(tester, find.byKey(const ValueKey<String>('photo-choose-file')),
+        reason: 'an empty photo slot should offer a file');
+    await tester.tap(find.byKey(const ValueKey<String>('photo-choose-file')));
     await pumpUntil(
       tester,
       find.text('Photo saved.'),

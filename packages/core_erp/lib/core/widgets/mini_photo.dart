@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/entity_photos.dart';
+import '../services/photo_requests.dart';
 import '../theme/soft_erp_theme.dart';
 
 /// A record's photo, small: a part, a die, a machine, a company's logo, a
-/// person. Empty, it is the button that adds one; with one, a tap shows it
-/// large with Replace and Remove. A record that does not exist yet has
-/// nowhere to keep a photo, so the button is drawn disabled and says why.
+/// person. Empty, a tap asks how to add one — take it on the phone, or pick a
+/// file from this PC; with one, a tap shows it large with Retake on phone,
+/// Replace and Remove. While the phone has the job the slot says so, and a tap
+/// takes it back. A record that does not exist yet has nowhere to keep a
+/// photo, so the button is drawn disabled and says why.
 ///
 /// Drawn only where an [EntityPhotosProvider] is provided; elsewhere it takes
 /// no space.
@@ -22,6 +25,7 @@ class MiniPhoto extends StatelessWidget {
     this.fallbackUrl,
     this.disabledReason,
     this.label,
+    this.note,
   });
 
   /// [PhotoOwner] — what kind of record.
@@ -46,6 +50,10 @@ class MiniPhoto extends StatelessWidget {
   /// more.
   final String? label;
 
+  /// Where this slot sits, shown on the phone above the camera ("for part
+  /// HH1") — the record's own details come from the server.
+  final String? note;
+
   /// Overrides the file picker, for tests.
   @visibleForTesting
   static Future<XFile?> Function()? debugPickFile;
@@ -58,6 +66,14 @@ class MiniPhoto extends StatelessWidget {
       return true;
     } on ProviderNotFoundException {
       return false;
+    }
+  }
+
+  static PhotoRequestsProvider? _requestsOf(BuildContext context) {
+    try {
+      return Provider.of<PhotoRequestsProvider>(context);
+    } on ProviderNotFoundException {
+      return null;
     }
   }
 
@@ -112,6 +128,8 @@ class MiniPhoto extends StatelessWidget {
     final photo = photos.photoOf(owner, id);
     final url = photo?.url ?? _fallback;
     final busy = photos.isBusy(owner, id);
+    final requests = _requestsOf(context);
+    final onPhone = requests?.pendingFor(owner, id) != null;
 
     Future<void> upload() async {
       final file = await _pick();
@@ -121,16 +139,36 @@ class MiniPhoto extends StatelessWidget {
       _say(context, error ?? 'Photo saved.', error: error != null);
     }
 
+    Future<void> sendToPhone() async {
+      final error = await requests!.ask(owner, id, context: note ?? '');
+      if (!context.mounted) return;
+      _say(
+        context,
+        error ?? 'Sent to your phone — it opens the camera with this $what.',
+        error: error != null,
+      );
+    }
+
+    Future<void> takeBack() async {
+      final error = await requests!.cancel(owner, id);
+      if (!context.mounted) return;
+      _say(context, error ?? 'Taken back from your phone.', error: error != null);
+    }
+
     return Tooltip(
-      message: url == null ? 'Add $what' : 'Open $what',
+      message: onPhone
+          ? 'Waiting for your phone — click to take it back'
+          : (url == null ? 'Add $what' : 'Open $what'),
       child: InkWell(
         key: ValueKey<String>('photo-$owner-$id'),
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
         onTap: busy
             ? null
+            : onPhone
+            ? takeBack
             : url == null
-            ? upload
-            : () => _open(context, photos, id, url, upload),
+            ? () => _choose(context, requests, upload, sendToPhone)
+            : () => _open(context, photos, requests, id, url, upload, sendToPhone),
         child: _frame(
           child: busy
               ? const SizedBox(
@@ -138,12 +176,71 @@ class MiniPhoto extends StatelessWidget {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
+              : onPhone
+              ? _waiting()
               : url == null
               ? _empty(SoftErpTheme.accent)
               : _image(url, size),
         ),
       ),
     );
+  }
+
+  /// The job is on the phone: a phone, and "On phone" where there is room.
+  Widget _waiting() {
+    const icon = Icons.phone_iphone_rounded;
+    const colour = SoftErpTheme.warningText;
+    if (label == null) return const Icon(icon, size: 18, color: colour);
+    return const Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: colour),
+        SizedBox(height: 2),
+        Text(
+          'On phone',
+          maxLines: 1,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: colour),
+        ),
+      ],
+    );
+  }
+
+  /// How to add the photo: on the phone, or a file from this PC. Asked every
+  /// time — bulk entry is mostly the phone, but a file already on the PC
+  /// should not need a phone at all.
+  Future<void> _choose(
+    BuildContext context,
+    PhotoRequestsProvider? requests,
+    Future<void> Function() upload,
+    Future<void> Function() sendToPhone,
+  ) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text('Add the $what'),
+        children: [
+          _ChoiceTile(
+            key: const ValueKey<String>('photo-take-on-phone'),
+            icon: Icons.phone_iphone_rounded,
+            title: 'Take on phone',
+            detail: requests == null
+                ? 'Phone photos are not set up in this app.'
+                : 'Your phone opens the camera, with this record\'s details on it.',
+            onTap: requests == null ? null : () => Navigator.of(dialogContext).pop('phone'),
+          ),
+          _ChoiceTile(
+            key: const ValueKey<String>('photo-choose-file'),
+            icon: Icons.folder_open_rounded,
+            title: 'Choose a file from this PC',
+            detail: 'PNG, JPG or WebP.',
+            onTap: () => Navigator.of(dialogContext).pop('file'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'phone') await sendToPhone();
+    if (choice == 'file') await upload();
   }
 
   String? get _fallback {
@@ -202,9 +299,11 @@ class MiniPhoto extends StatelessWidget {
   Future<void> _open(
     BuildContext context,
     EntityPhotosProvider photos,
+    PhotoRequestsProvider? requests,
     String id,
     String url,
     Future<void> Function() upload,
+    Future<void> Function() sendToPhone,
   ) async {
     final hasStored = photos.photoOf(owner, id) != null;
     final choice = await showDialog<String>(
@@ -224,6 +323,13 @@ class MiniPhoto extends StatelessWidget {
               icon: const Icon(Icons.delete_outline_rounded),
               label: const Text('Remove', style: TextStyle(fontSize: 14)),
             ),
+          if (requests != null)
+            TextButton.icon(
+              key: const ValueKey<String>('photo-retake-on-phone'),
+              onPressed: () => Navigator.of(dialogContext).pop('phone'),
+              icon: const Icon(Icons.phone_iphone_rounded),
+              label: const Text('Retake on phone', style: TextStyle(fontSize: 14)),
+            ),
           TextButton.icon(
             key: const ValueKey<String>('photo-replace'),
             onPressed: () => Navigator.of(dialogContext).pop('replace'),
@@ -240,10 +346,42 @@ class MiniPhoto extends StatelessWidget {
     if (!context.mounted) return;
     if (choice == 'replace') {
       await upload();
+    } else if (choice == 'phone') {
+      await sendToPhone();
     } else if (choice == 'remove') {
       final error = await photos.remove(owner, id);
       if (!context.mounted) return;
       _say(context, error ?? 'Photo removed.', error: error != null);
     }
+  }
+}
+
+/// One way to add a photo, in [MiniPhoto]'s chooser: drawn disabled with the
+/// reason when it cannot be used, never left out.
+class _ChoiceTile extends StatelessWidget {
+  const _ChoiceTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return ListTile(
+      enabled: enabled,
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      leading: Icon(icon, color: enabled ? SoftErpTheme.accent : SoftErpTheme.textMuted),
+      title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+      subtitle: Text(detail, style: const TextStyle(fontSize: 14)),
+    );
   }
 }

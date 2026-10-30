@@ -631,6 +631,13 @@ class _PartDieSectionState extends State<PartDieSection> {
 
   // --- build -----------------------------------------------------------------
 
+  /// "for part HH1" — which part this row belongs to, on the phone.
+  String? get _photoNote {
+    final code = widget.partCode.trim();
+    final label = code.isNotEmpty ? code : widget.partLabel.trim();
+    return label.isEmpty ? null : 'for part $label';
+  }
+
   @override
   Widget build(BuildContext context) {
     final part = widget.part;
@@ -935,6 +942,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             selected: die.id == _editingDieId,
             onTap: enabled ? () => _editDie(die) : null,
             onUnlink: enabled ? () => _unlink(die) : null,
+            photoNote: _photoNote,
           ),
       ],
     );
@@ -1215,7 +1223,11 @@ class _DieRow extends StatelessWidget {
     this.partExists = false,
     this.onTap,
     this.onUnlink,
+    this.photoNote,
   });
+
+  /// Where this row sits, for the phone's camera screen ("for part HH1").
+  final String? photoNote;
 
   final ItemDieLink die;
   final bool selected;
@@ -1261,6 +1273,7 @@ class _DieRow extends StatelessWidget {
                     size: _kPhotoSize,
                     label: 'Photo',
                     what: 'die photo',
+                    note: photoNote,
                     fallbackUrl: die.photoUrl,
                     disabledReason: 'The die is made when the part saves — add '
                         'its photo then',
