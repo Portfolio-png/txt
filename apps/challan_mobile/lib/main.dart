@@ -83,7 +83,7 @@ class _BootstrapGateState extends State<BootstrapGate> {
   static const _configuredApiUrl = String.fromEnvironment('PAPER_API_BASE_URL');
   // Cloud/production server the app points at with one tap. manualConnect wraps
   // a bare IP as http://<ip>:18080.
-  static const _onlineServerIp = '16.171.150.193';
+  static const _onlineServerIp = '16.170.236.173';
 
   @override
   void dispose() {

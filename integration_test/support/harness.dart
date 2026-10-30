@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -45,7 +47,7 @@ Future<void> pumpUntil(
   final deadline = DateTime.now().add(timeout);
   var pumps = 0;
   while (DateTime.now().isBefore(deadline)) {
-    await tester.pump(const Duration(milliseconds: 100));
+    await _tick(tester, finder);
     pumps += 1;
     if (finder.evaluate().isNotEmpty) return;
   }
@@ -134,11 +136,48 @@ Future<void> pumpUntilGone(
 }) async {
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
-    await tester.pump(const Duration(milliseconds: 100));
+    await _tick(tester, finder);
     if (finder.evaluate().isEmpty) return;
   }
   throw TestFailure('Timed out waiting for $finder to go away.');
 }
+
+/// One 100ms pump, timed, with a watchdog for a window that gets no frames.
+///
+/// A healthy pump returns in about 100–150ms. A pump the OS starves never
+/// returns at all — `LiveTestWidgetsFlutterBinding.pump` waits for a frame
+/// that is not coming — and the run used to sit there until a finder timed
+/// out, reading like an app bug (an 18-minute step, a toast that "never went
+/// away", one 60s pump). So a slow pump says how slow and what state the app
+/// was in, and one that blocks for [_starvedAfter] fails the run as
+/// HOST STARVED, which scripts/e2e-ui.sh reports as its own exit code.
+Future<void> _tick(WidgetTester tester, FinderBase<Element> waitingFor) async {
+  final watch = Stopwatch()..start();
+  final starved = Completer<void>();
+  final alarm = Timer(_starvedAfter, starved.complete);
+  try {
+    await Future.any<void>([
+      tester.pump(const Duration(milliseconds: 100)),
+      starved.future,
+    ]);
+  } finally {
+    alarm.cancel();
+  }
+  final ms = watch.elapsedMilliseconds;
+  final state = 'lifecycle=${SchedulerBinding.instance.lifecycleState} '
+      'framesEnabled=${SchedulerBinding.instance.framesEnabled}';
+  if (starved.isCompleted) {
+    debugPrint('E2E_VERDICT=HOST_STARVED ms=$ms $state');
+    throw TestFailure(
+      'HOST STARVED — the test window got no frame for ${ms ~/ 1000}s '
+      '($state) while waiting for $waitingFor. Not an app failure: the OS '
+      'stopped drawing this window.',
+    );
+  }
+  if (ms > 500) debugPrint('E2E_PUMPSTAT ms=$ms $state wait=$waitingFor');
+}
+
+const Duration _starvedAfter = Duration(seconds: 10);
 
 /// Boots the app and waits until the shell is up.
 ///
@@ -195,8 +234,43 @@ Future<void> openItemSheet(WidgetTester tester) async {
 }
 
 /// Call once per test file.
-IntegrationTestWidgetsFlutterBinding ensureBinding() =>
-    IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+IntegrationTestWidgetsFlutterBinding ensureBinding() {
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  if (!const bool.fromEnvironment('E2E_ALLOW_HIDDEN')) _keepFramesOn(binding);
+  return binding;
+}
+
+/// Keeps the scheduler drawing while the test window is covered.
+///
+/// The macOS engine reports a covered or hidden window as
+/// `AppLifecycleState.hidden`, and the scheduler then turns frames off
+/// (`SchedulerBinding.handleAppLifecycleStateChanged`). The live test binding's
+/// `pump` waits for a frame, so every pump after that blocked until the window
+/// was uncovered — which, on a Mac someone is using, could be never. A test
+/// is never "in the background", so hidden, paused and detached are dropped
+/// and resumed/inactive pass through. `E2E_ALLOW_HIDDEN=true` turns this off,
+/// to show the watchdog catching what it prevents.
+void _keepFramesOn(IntegrationTestWidgetsFlutterBinding binding) {
+  void apply(AppLifecycleState state) =>
+      // ignore: invalid_use_of_protected_member
+      binding.handleAppLifecycleStateChanged(state);
+
+  SystemChannels.lifecycle.setMessageHandler((message) async {
+    switch (message) {
+      case 'AppLifecycleState.resumed':
+        apply(AppLifecycleState.resumed);
+      case 'AppLifecycleState.inactive':
+        apply(AppLifecycleState.inactive);
+    }
+    return null;
+  });
+  // The window may already have been covered when the binding read its
+  // initial state.
+  final now = binding.lifecycleState;
+  if (now == AppLifecycleState.hidden || now == AppLifecycleState.paused) {
+    apply(AppLifecycleState.resumed);
+  }
+}
 
 /// Waits until no cell picker is open.
 ///

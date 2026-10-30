@@ -119,6 +119,12 @@ curl -fsS -m 3 "${BASE_URL}/health" | grep -q '"dbReady":true' \
   || { tail -30 "${WORK}/server.log"; fail "the server never became ready"; }
 echo "ready"
 
+# A sleeping display draws nothing, so the app never got its first frame and the
+# run sat at "loading" until the 12-minute test timeout. Wake it, and keep it
+# (and the machine) awake until this script exits.
+caffeinate -u -t 2 >/dev/null 2>&1 || true
+caffeinate -dims -w $$ >/dev/null 2>&1 &
+
 # --- 3. the app --------------------------------------------------------------
 # One file at a time, on purpose: each integration test file boots the whole
 # app, and running them together lets one teardown's in-flight HTTP land during
@@ -133,14 +139,31 @@ fi
 # bool.fromEnvironment reads only the literal "true", so E2E_SHOTS=1 is mapped.
 SHOTS_DEFINE=false
 [[ -n "${E2E_SHOTS:-}" && "${E2E_SHOTS}" != "0" && "${E2E_SHOTS}" != "false" ]] && SHOTS_DEFINE=true
+# The harness keeps a covered window drawing; E2E_ALLOW_HIDDEN=1 turns that off
+# (hidden_window_test then shows the starvation watchdog firing).
+HIDDEN_DEFINE=false
+[[ -n "${E2E_ALLOW_HIDDEN:-}" && "${E2E_ALLOW_HIDDEN}" != "0" && "${E2E_ALLOW_HIDDEN}" != "false" ]] && HIDDEN_DEFINE=true
+
+# A run the OS starved of frames is not an app failure, so it gets its own exit
+# code (75, EX_TEMPFAIL) and says so, instead of a finder timeout to puzzle over.
+# No automatic retry: it would reuse this seeded database and double the counts.
+failed() {
+  if grep -q 'E2E_VERDICT=HOST_STARVED' "${WORK}/$1.log" 2>/dev/null; then
+    printf '\n\033[33mHOST STARVED: %s\033[0m\n' \
+      "integration_test/$1_test.dart — the test window got no frames. Not an app failure; rerun with the window uncovered." >&2
+    exit 75
+  fi
+  fail "integration_test/$1_test.dart"
+}
 
 for name in "${TESTS[@]}"; do
   say "flutter test integration_test/${name}_test.dart -d macos"
   ( cd "${REPO}" && flutter test "integration_test/${name}_test.dart" -d macos \
       --dart-define=PAPER_API_BASE_URL="${BASE_URL}" \
       --dart-define=PAPER_SKIP_ACTIVATION=true \
-      --dart-define=E2E_SHOTS="${SHOTS_DEFINE}" ) 2>&1 | tee "${WORK}/${name}.log" \
-    || fail "integration_test/${name}_test.dart"
+      --dart-define=E2E_SHOTS="${SHOTS_DEFINE}" \
+      --dart-define=E2E_ALLOW_HIDDEN="${HIDDEN_DEFINE}" ) 2>&1 | tee "${WORK}/${name}.log" \
+    || failed "${name}"
 done
 
 # --- the full journey: how long each step took, and every row it wrote ------
