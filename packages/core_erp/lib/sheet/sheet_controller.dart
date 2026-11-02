@@ -160,7 +160,13 @@ class SheetController extends ChangeNotifier {
     final touched = _touched[key] ?? const <int>{};
     return Map.unmodifiable({
       for (final entry in all.entries)
-        if (entry.value.code != 'required' || touched.contains(entry.key))
+        // "Pick the group first" waits for a save attempt, as "X is
+        // required" waits for the cell to be left.
+        if (switch (entry.value.code) {
+          'required' => touched.contains(entry.key),
+          'parent_first' => false,
+          _ => true,
+        })
           entry.key: entry.value,
     });
   }

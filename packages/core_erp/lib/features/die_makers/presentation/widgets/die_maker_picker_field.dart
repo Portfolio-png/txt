@@ -80,7 +80,11 @@ class DieMakerPickerField extends StatelessWidget {
       tapTargetKey: tapTargetKey,
       value: showsFallback ? -1 : value,
       options: options,
-      decoration: decoration?.copyWith(labelText: label, helperText: helper) ??
+      decoration: decoration?.copyWith(
+            labelText: label,
+            helperText: helper,
+            helperMaxLines: 2,
+          ) ??
           InputDecoration(
             labelText: label,
             helperText: helper,

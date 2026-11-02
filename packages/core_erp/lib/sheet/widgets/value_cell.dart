@@ -144,7 +144,7 @@ class _ValueCellState extends State<ValueCell> {
   Widget build(BuildContext context) {
     final cellVal = _currentVal;
     final error = widget.isSelected
-        ? widget.controller.visibleErrors()[widget.column.id]
+        ? widget.controller.visibleErrors(row: widget.rowIndex)[widget.column.id]
         : null;
     final isFocused =
         widget.isSelected &&

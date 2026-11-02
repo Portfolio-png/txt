@@ -67,4 +67,42 @@ void main() {
     sheet.markTouched(2);
     expect(sheet.visibleErrors().containsKey(2), isFalse);
   });
+
+  test('"pick the group first" waits for a save attempt, even once touched', () {
+    final sheet = SheetController(
+      sheetDef: SheetDef(
+        id: 1,
+        key: 'test',
+        title: 'Test Sheet',
+        columns: const [
+          ColumnDef(
+            id: 1,
+            sheetId: 1,
+            label: 'Group',
+            kind: ColumnKind.list,
+            role: ColumnRole.group,
+            position: 0,
+          ),
+          ColumnDef(
+            id: 2,
+            sheetId: 1,
+            label: 'Part Name',
+            kind: ColumnKind.text,
+            role: ColumnRole.item,
+            parentId: 1,
+            position: 1,
+          ),
+        ],
+      ),
+      initialDrafts: [SheetDraft(sheetKey: 'test')],
+      options: const [ColumnOption(id: 10, columnId: 1, label: 'Dolly')],
+    );
+    sheet.updateTextValue(2, 'Patti');
+    sheet.markTouched(2);
+    expect(sheet.errorsForRow(0)[2]?.code, 'parent_first');
+    expect(sheet.visibleErrors().containsKey(2), isFalse);
+
+    sheet.validateRow(0);
+    expect(sheet.visibleErrors()[2]?.code, 'parent_first');
+  });
 }

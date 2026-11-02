@@ -123,35 +123,40 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
 
   @override
   Widget build(BuildContext context) {
-    final hasCompany = widget.controller.dealPartyId != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _dealRow(),
-        const SizedBox(height: 14),
-        // The company's own papers — kept on the company, so every part for
-        // it shows the same ones, and its view lists them too.
-        CompanyDocumentsBox(
-          owner: PhotoOwner.client,
-          id: widget.controller.dealPartyId?.toString(),
-          compact: true,
-          disabledReason: 'Pick the company first to keep its documents',
-          note: widget.controller.dealPartyName.trim().isEmpty
-              ? null
-              : 'for ${widget.controller.dealPartyName.trim()}',
-        ),
-        const SizedBox(height: 18),
-        Tooltip(
-          message: hasCompany ? '' : 'Pick a company first',
-          child: IgnorePointer(
-            ignoring: !hasCompany,
-            child: Opacity(
-              opacity: hasCompany ? 1 : 0.45,
-              child: _peopleList(hasCompany),
+    return ListenableBuilder(
+      listenable: Listenable.merge([widget.controller, _deal]),
+      builder: (context, _) {
+        final hasCompany = widget.controller.dealPartyId != null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _dealRow(),
+            const SizedBox(height: 14),
+            // The company's own papers — kept on the company, so every part for
+            // it shows the same ones, and its view lists them too.
+            CompanyDocumentsBox(
+              owner: PhotoOwner.client,
+              id: widget.controller.dealPartyId?.toString(),
+              compact: true,
+              disabledReason: 'Pick the company first to keep its documents',
+              note: widget.controller.dealPartyName.trim().isEmpty
+                  ? null
+                  : 'for ${widget.controller.dealPartyName.trim()}',
             ),
-          ),
-        ),
-      ],
+            const SizedBox(height: 18),
+            Tooltip(
+              message: hasCompany ? '' : 'Pick a company first',
+              child: IgnorePointer(
+                ignoring: !hasCompany,
+                child: Opacity(
+                  opacity: hasCompany ? 1 : 0.45,
+                  child: _peopleList(hasCompany),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -251,9 +256,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         ),
         FitToText(
           controller: quotation,
-          texts: const ['Quotation (₹)'],
+          texts: const ['Quotation (₹)', 'One figure for the part'],
           helper: 'One figure for the part',
-          minWidth: 170,
+          minWidth: 195,
           child: TextField(
             key: const ValueKey<String>('deal_quotation'),
             controller: quotation,
@@ -321,52 +326,104 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
 
   /// The deal line's own Save, or its Edit once saved.
   Widget _dealAction(bool locked) {
-    if (!widget.partSaved) {
-      // A note, not a disabled button: there is nothing here to press, ever —
-      // the part row's own Save carries the deal.
-      return const Tooltip(
-        message: 'Save the part to record its deal — it is saved with the part',
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.lock_outline_rounded, size: 18, color: SoftErpTheme.textSecondary),
-              SizedBox(width: 6),
-              Text('Saved with the part', style: SheetStyle.hint),
-            ],
+    if (locked) {
+      return SizedBox(
+        height: 36,
+        child: OutlinedButton.icon(
+          key: const ValueKey<String>('deal_edit'),
+          onPressed: () => setState(() => _dealEditing = true),
+          icon: const Icon(Icons.edit_outlined, size: 16),
+          label: const Text(
+            'Edit',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+            ),
           ),
         ),
       );
     }
-    if (locked) {
-      return OutlinedButton.icon(
-        key: const ValueKey<String>('deal_edit'),
-        onPressed: () => setState(() => _dealEditing = true),
-        icon: const Icon(Icons.edit_outlined, size: 18),
-        label: const Text('Edit', style: TextStyle(fontSize: 14)),
-      );
+
+    // Enabled only when the save would land: a company, a valid quotation,
+    // and a part row with every required cell filled. The row's REAL errors,
+    // not the drawn ones — an untouched empty Group is not drawn red yet, and
+    // read from those this enabled a Save that then failed.
+    final sheet = widget.controller.groupItemController;
+    final partyId = widget.controller.dealPartyId;
+    final quotationCol = _column(_deal, SheetBindsTo.developedForQuotation);
+    final quotationError =
+        quotationCol == null ? null : _deal.errors[quotationCol];
+    final activeRow = widget.controller.dealRow ?? sheet.row;
+    final partBlank = sheet.isRowBlank(activeRow);
+    final partErrors = sheet.errorsForRow(activeRow);
+    final isSaving = _savingDeal || widget.controller.isSavingNow;
+
+    final String? why;
+    if (partyId == null) {
+      why = 'Pick a company first';
+    } else if (partBlank) {
+      why = 'Type the part name first';
+    } else if (partErrors.isNotEmpty) {
+      why = partErrors.values.first.message;
+    } else if (quotationError != null) {
+      why = quotationError.message;
+    } else if (isSaving) {
+      why = 'Saving…';
+    } else if (widget.onSaveDeal == null) {
+      why = 'Save the part from its row';
+    } else {
+      why = null;
     }
-    return Tooltip(
-      message: 'Saves the whole part, deal included (Ctrl+S)',
-      child: AppButton(
-      key: const ValueKey<String>('deal_save'),
-      label: 'Save part',
-      icon: Icons.save_outlined,
-      variant: AppButtonVariant.secondary,
-      dense: true,
-      isLoading: _savingDeal,
-      onPressed: widget.onSaveDeal == null || widget.controller.isSavingNow
-          ? null
-          : () async {
-              setState(() => _savingDeal = true);
-              final ok = await widget.onSaveDeal!();
-              if (!mounted) return;
-              setState(() {
-                _savingDeal = false;
-                if (ok) _dealEditing = false;
-              });
-            },
+    final canSave = why == null;
+    final tooltipMessage =
+        why ?? 'Saves the part with its company details (Ctrl+S)';
+
+    return SizedBox(
+      height: 36,
+      child: Tooltip(
+        message: tooltipMessage,
+        child: ElevatedButton.icon(
+          key: const ValueKey<String>('deal_save'),
+          onPressed: canSave
+              ? () async {
+                  setState(() => _savingDeal = true);
+                  final ok = await widget.onSaveDeal!();
+                  if (!mounted) return;
+                  setState(() {
+                    _savingDeal = false;
+                    if (ok) _dealEditing = false;
+                  });
+                }
+              : null,
+          icon: isSaving
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Icon(Icons.save_outlined, size: 16),
+          label: Text(
+            isSaving ? 'Saving…' : 'Save company',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: SoftErpTheme.accent,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: SoftErpTheme.accent.withValues(alpha: 0.35),
+            disabledForegroundColor: Colors.white.withValues(alpha: 0.85),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+            ),
+            elevation: 0,
+          ),
+        ),
       ),
     );
   }

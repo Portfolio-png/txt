@@ -10,6 +10,7 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/mast
 import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
+import 'package:core_erp/features/items/presentation/widgets/deal_people_form.dart';
 import 'package:core_erp/features/process_routes/data/process_route_service.dart';
 import 'package:core_erp/features/process_routes/domain/part_route.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
@@ -133,6 +134,7 @@ ItemDefinition _item({
   List<ItemVariationNodeDefinition> variationTree = const [],
   List<ItemDieLink> dies = const [],
   List<ItemMachineLink> machines = const [],
+  DevelopedFor developedFor = DevelopedFor.empty,
 }) =>
     ItemDefinition(
       id: id,
@@ -144,7 +146,7 @@ ItemDefinition _item({
       quantity: 0,
       groupId: groupId,
       unitId: 7,
-      developedFor: DevelopedFor.empty,
+      developedFor: developedFor,
       isArchived: false,
       usageCount: 0,
       createdAt: DateTime(2026, 5, 15, 10, 5),
@@ -591,7 +593,7 @@ void main() {
       // with Archive part in the top bar.
       expect(find.byKey(const ValueKey('section_clear_group_item')), findsNothing);
       // A blank new row has nothing to save yet: drawn, disabled, saying why.
-      final save = tester.widget<IconButton>(find.byKey(const ValueKey('row_save_0')));
+      final save = tester.widget<ElevatedButton>(find.byKey(const ValueKey('row_save_0')));
       expect(save.onPressed, isNull);
       expect(find.byTooltip('Type a part name first'), findsOneWidget);
     });
@@ -1212,6 +1214,129 @@ void main() {
 
       expect(find.text('Patti'), findsWidgets);
       expect(find.textContaining('SAVED #500'), findsOneWidget);
+    });
+
+    testWidgets('the row\'s one Save sits at its end and waits for the required cells',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1600, 3200));
+      ElevatedButton save() =>
+          tester.widget<ElevatedButton>(find.byKey(const ValueKey('row_save_0')));
+      final strip = tester.widget<TableRowStrip>(find.byType(TableRowStrip));
+      final sheet = strip.controller;
+      final def = strip.sheetDef;
+
+      // One Save per row: the gutter carries status, not a second button.
+      expect(find.byKey(const ValueKey('row_save_0')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('row_save_0')),
+          matching: find.text('Save part'),
+        ),
+        findsOneWidget,
+      );
+      expect(save().onPressed, isNull);
+
+      // A name but no group: still disabled, and it says what is missing.
+      final name = def.itemColumn!;
+      sheet.updateValue(
+        name.id,
+        CellValue(columnId: name.id, optionLabel: 'Patti', isNew: true),
+      );
+      await tester.pump();
+      expect(save().onPressed, isNull);
+      final missing = sheet.errorsForRow(0).values.first.message;
+      expect(find.byTooltip(missing), findsOneWidget);
+
+      // The company line's Save waits for the same part.
+      final form = tester.widget<DealPeopleForm>(find.byType(DealPeopleForm));
+      final partyColumn = form.controller.clientVendorController.sheetDef
+          .columnBoundTo(SheetBindsTo.developedForParty)!;
+      form.controller.clientVendorController.updateValue(
+        partyColumn.id,
+        CellValue(columnId: partyColumn.id, refId: 5, optionLabel: 'Gold Medal'),
+      );
+      await tester.pump();
+      ElevatedButton dealSave() =>
+          tester.widget<ElevatedButton>(find.byKey(const ValueKey('deal_save')));
+      expect(dealSave().onPressed, isNull,
+          reason: 'the part row still misses a required cell');
+
+      // Fill the group and its type: both Saves come on.
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+      sheet.updateValue(
+        group.id,
+        CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label),
+      );
+      // Type sits between them: Part Name asks for it first.
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final kind = sheet.options.firstWhere(
+        (o) => o.columnId == type.id && o.parentOptionId == trunk.id,
+      );
+      sheet.updateValue(
+        type.id,
+        CellValue(columnId: type.id, optionId: kind.id, optionLabel: kind.label),
+      );
+      await tester.pump();
+      expect(sheet.errorsForRow(0), isEmpty);
+      expect(save().onPressed, isNotNull);
+      expect(dealSave().onPressed, isNotNull);
+    });
+
+    testWidgets('a saved row\'s end button is Edit, and Edit turns it back into Save',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(tester, initialItems: [patti], repository: repo);
+
+      expect(find.byKey(const ValueKey('row_saved_0')), findsOneWidget,
+          reason: 'the gutter says it is saved');
+      final edit = find.byKey(const ValueKey('row_edit_0'));
+      expect(edit, findsOneWidget);
+      expect(find.byKey(const ValueKey('row_save_0')), findsNothing);
+
+      await tester.tap(edit);
+      await tester.pump();
+      final save = tester.widget<ElevatedButton>(
+        find.byKey(const ValueKey('row_save_0')),
+      );
+      expect(save.onPressed, isNotNull);
+      expect(find.byTooltip('Save the changes to this part'), findsOneWidget);
+    });
+
+    testWidgets('a part deleted elsewhere offers no Edit, and says why',
+        (tester) async {
+      // Made for a client, so the company line (and its controller) is drawn.
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        developedFor: const DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+        ),
+      );
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1600, 3200),
+      );
+      final controller = tester
+          .widget<DealPeopleForm>(find.byType(DealPeopleForm, skipOffstage: false))
+          .controller;
+
+      controller.refreshLockedRows([_item(id: 501, name: 'Dabbi', groupId: 11)]);
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('row_gone_0')), findsOneWidget);
+      final edit = tester.widget<OutlinedButton>(
+        find.byKey(const ValueKey('row_edit_0')),
+      );
+      expect(edit.onPressed, isNull);
+      expect(find.byTooltip(controller.rowError(0)!), findsWidgets);
     });
   });
 

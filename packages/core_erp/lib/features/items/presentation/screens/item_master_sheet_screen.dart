@@ -124,6 +124,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Map<String, String> _savedTree = Map<String, String>.of(_defaultTree);
   int? _treeLoadedFor;
   bool _savingTree = false;
+
+  /// The row whose own Save is running, so only its button spins.
+  SheetDraft? _savingDraft;
   bool get _treeDirty => !mapEquals(_parentOf, _savedTree);
 
   /// The raw sheet & strips panel on the right: open (null = decide from the
@@ -2239,6 +2242,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           rowStatusBuilder: _photosOn ? _rowGutter : _rowStatus,
           gutterExtra: _photosOn ? _rowPhotoSize + 6 : 0,
           onAddPropertyColumn: _addProperty,
+          rowEndActionBuilder: _rowEndAction,
         ),
       ],
     );
@@ -2278,80 +2282,154 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
-  /// What a row's gutter chip says.
+  /// What a row's gutter chip says: saved, failed, or gone — status only.
   ///
   /// Rows commit one at a time, so without this a typist cannot tell which of
   /// fifty rows landed — every other signal on screen describes the sheet.
-  /// Each part row's own Save, or its Edit once saved.
-  ///
-  /// A row is still written when the cursor leaves it (catalogue at speed);
-  /// this is the explicit way, and the only way to reopen a saved row: saved
-  /// rows are closed — they show their values and take no input — until their
-  /// Edit.
+  /// The row's Save, and its Edit once saved, are at the END of the row
+  /// ([_rowEndAction]); this gutter used to carry a second Save icon.
   Widget? _rowStatus(int row) {
     final sheet = _controller.groupItemController;
     final error = _controller.rowError(row);
-    final saved = _controller.savedRows.contains(row);
-    final locked = sheet.isRowLocked(row);
-    Widget button({
+    Widget chip({
       required String key,
       required IconData icon,
       required String tip,
       required Color color,
-      VoidCallback? onPressed,
-    }) =>
-        Tooltip(
-          message: tip,
-          child: IconButton(
-            key: ValueKey<String>(key),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-            iconSize: 18,
-            onPressed: onPressed,
-            icon: Icon(icon, color: color),
-          ),
-        );
+    }) => Tooltip(
+      message: tip,
+      child: SizedBox(
+        key: ValueKey<String>(key),
+        width: 28,
+        height: 28,
+        child: Icon(icon, size: 18, color: color),
+      ),
+    );
 
-    // Deleted or archived (here or anywhere): there is nothing to edit, so
-    // the row says why instead of offering an Edit that cannot save.
     if (_controller.isRowGone(row)) {
-      return button(
+      return chip(
         key: 'row_gone_$row',
         icon: Icons.block_rounded,
         tip: error ?? 'This part is no longer in the catalogue.',
         color: SoftErpTheme.textMuted,
       );
     }
-    if (saved && locked) {
-      final id = sheet.draftAt(row).entityId;
-      return button(
-        key: 'row_edit_$row',
-        icon: Icons.edit_outlined,
-        tip: 'Saved as item #$id — Edit',
-        color: SoftErpTheme.accent,
-        onPressed: () {
-          sheet.setRowLocked(row, false);
-          sheet.selectRow(row);
-        },
+    if (error != null) {
+      return chip(
+        key: 'row_error_$row',
+        icon: Icons.error_outline_rounded,
+        tip: error,
+        color: SoftErpTheme.dangerText,
       );
     }
-    // Drawn disabled on a blank row, never hidden: an icon that appears only
-    // once something is typed reads as a missing feature.
-    if (sheet.isRowBlank(row) && !saved) {
-      return button(
-        key: 'row_save_$row',
-        icon: Icons.save_outlined,
-        tip: 'Type a part name first',
-        color: SoftErpTheme.textMuted,
+    if (_controller.savedRows.contains(row)) {
+      return chip(
+        key: 'row_saved_$row',
+        icon: Icons.check_circle_outline_rounded,
+        tip: 'Saved as item #${sheet.draftAt(row).entityId}',
+        color: SoftErpTheme.successText,
       );
     }
-    return button(
-      key: 'row_save_$row',
-      icon: error != null ? Icons.error_outline_rounded : Icons.save_outlined,
-      tip: error ??
-          (saved ? 'Save the changes to this row\'s part' : 'Save this row\'s part'),
-      color: error != null ? SoftErpTheme.dangerText : SoftErpTheme.successText,
-      onPressed: _controller.isSavingNow ? null : () => _saveRow(row),
+    return null;
+  }
+
+  /// The row's one Save, at the end of the row — and its Edit once saved.
+  ///
+  /// Save is drawn disabled, never hidden, until the row's required cells are
+  /// filled; its tooltip names the first one missing. A saved row is closed
+  /// (it shows its values and takes no input) until this same button's Edit.
+  Widget? _rowEndAction(int row) {
+    final sheet = _controller.groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return null;
+    final saved = _controller.savedRows.contains(row);
+    final locked = sheet.isRowLocked(row);
+    final busy = _controller.isSavingNow;
+    final savingThis = busy && identical(_savingDraft, sheet.draftAt(row));
+    const labelStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w700);
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+    );
+
+    // Deleted or archived (here or anywhere): there is nothing to edit, so
+    // the button says why instead of offering an Edit that cannot save.
+    final gone = _controller.isRowGone(row);
+    if ((saved && locked) || gone) {
+      return Tooltip(
+        message: gone
+            ? (_controller.rowError(row) ??
+                  'This part is no longer in the catalogue.')
+            : 'Edit item #${sheet.draftAt(row).entityId}',
+        child: SizedBox(
+          height: 32,
+          child: OutlinedButton.icon(
+            key: ValueKey<String>('row_edit_$row'),
+            onPressed: gone
+                ? null
+                : () {
+                    sheet.setRowLocked(row, false);
+                    sheet.selectRow(row);
+                    setState(() {});
+                  },
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            label: const Text('Edit', style: labelStyle),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: SoftErpTheme.accent,
+              side: BorderSide(
+                color: gone ? SoftErpTheme.border : SoftErpTheme.accent,
+              ),
+              shape: shape,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final blank = sheet.isRowBlank(row);
+    final errors = sheet.errorsForRow(row);
+    final String tip;
+    if (blank) {
+      tip = 'Type a part name first';
+    } else if (errors.isNotEmpty) {
+      tip = errors.values.first.message;
+    } else if (busy) {
+      tip = 'Still saving';
+    } else {
+      tip = saved ? 'Save the changes to this part' : 'Save this row\'s part';
+    }
+    return Tooltip(
+      message: tip,
+      child: SizedBox(
+        height: 32,
+        child: ElevatedButton.icon(
+          key: ValueKey<String>('row_save_$row'),
+          onPressed: !blank && errors.isEmpty && !busy
+              ? () => _saveRow(row)
+              : null,
+          icon: savingThis
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.save_outlined, size: 16),
+          label: const Text('Save part', style: labelStyle),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: SoftErpTheme.accent,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: SoftErpTheme.accent.withValues(
+              alpha: 0.35,
+            ),
+            disabledForegroundColor: Colors.white.withValues(alpha: 0.85),
+            elevation: 0,
+            shape: shape,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2405,7 +2483,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final sheet = _controller.groupItemController;
     if (row < 0 || row >= sheet.rowCount) return;
     final before = sheet.draftAt(row);
-    final ok = await _controller.commitRow(row);
+    setState(() => _savingDraft = before);
+    final bool ok;
+    try {
+      ok = await _controller.commitRow(row);
+    } finally {
+      _savingDraft = null;
+    }
     if (!mounted) return;
     // Where that row is NOW: the index passed in can name a different row by
     // the time the save answers, and locking that one closed the wrong part.
