@@ -101,6 +101,7 @@ class LengthUnitField extends StatelessWidget {
     this.fieldKey,
     this.unitKey,
     this.suggestions,
+    this.decoration,
   });
 
   final TextEditingController controller;
@@ -121,6 +122,10 @@ class LengthUnitField extends StatelessWidget {
   /// plain field.
   final List<String>? suggestions;
 
+  /// The host's field look, for both the number and the unit. Null keeps the
+  /// plain outlined field.
+  final InputDecoration? decoration;
+
   @override
   Widget build(BuildContext context) {
     final number = suggestions != null
@@ -134,6 +139,7 @@ class LengthUnitField extends StatelessWidget {
             searchKeyboardType: const TextInputType.numberWithOptions(
               decimal: true,
             ),
+            decoration: decoration,
             onChanged: onChanged,
           )
         : TextField(
@@ -143,11 +149,12 @@ class LengthUnitField extends StatelessWidget {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onChanged: (_) => onChanged?.call(),
             style: const TextStyle(fontSize: 14),
-            decoration: InputDecoration(
+            decoration: (decoration ??
+                    const InputDecoration(border: OutlineInputBorder()))
+                .copyWith(
               labelText: label,
               helperText: helperText,
               errorText: errorText,
-              border: const OutlineInputBorder(),
             ),
           );
     return Row(
@@ -194,10 +201,11 @@ class LengthUnitField extends StatelessWidget {
                   searchText: '${unit.name} ${unit.symbol}',
                 ),
             ],
-            decoration: const InputDecoration(
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
+            decoration: decoration ??
+                const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
             onChanged: (symbol) {
               if (symbol != null && symbol != unitSymbol) onUnitChanged(symbol);
             },

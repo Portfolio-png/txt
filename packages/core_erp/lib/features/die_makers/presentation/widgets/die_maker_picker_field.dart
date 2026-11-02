@@ -31,6 +31,7 @@ class DieMakerPickerField extends StatelessWidget {
     this.tapTargetKey,
     this.label = 'Die Made By',
     this.helper = 'Whoever cut it — a fitter here, or an outside toolroom',
+    this.decoration,
   });
 
   final int? value;
@@ -43,6 +44,9 @@ class DieMakerPickerField extends StatelessWidget {
   final Key? tapTargetKey;
   final String label;
   final String helper;
+
+  /// The host's field look; [label] and [helper] are laid over it.
+  final InputDecoration? decoration;
 
   @override
   Widget build(BuildContext context) {
@@ -76,14 +80,18 @@ class DieMakerPickerField extends StatelessWidget {
       tapTargetKey: tapTargetKey,
       value: showsFallback ? -1 : value,
       options: options,
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: helper,
-        helperStyle: const TextStyle(fontSize: 13),
-        labelStyle: const TextStyle(fontSize: 14),
-        border: const OutlineInputBorder(),
-        isDense: true,
-      ),
+      decoration: decoration?.copyWith(labelText: label, helperText: helper) ??
+          InputDecoration(
+            labelText: label,
+            helperText: helper,
+            // Two lines: "Whoever cut it — a fitter here, or an outside
+            // toolroom" was cut to "…or a…".
+            helperMaxLines: 2,
+            helperStyle: const TextStyle(fontSize: 13),
+            labelStyle: const TextStyle(fontSize: 14),
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
       dialogTitle: 'Who made this die?',
       searchHintText: 'Search die makers',
       emptyText: 'No die makers yet. Type a name to add the first.',

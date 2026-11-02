@@ -182,7 +182,7 @@ void main() {
     expect(find.text('Master Data'), findsNothing);
     expect(find.byTooltip('Close'), findsNothing);
     expect(find.text('Cancel'), findsNothing);
-    expect(find.text('Save Master Data'), findsOneWidget);
+    expect(find.text('Save raw sheet'), findsOneWidget);
   });
 
   testWidgets('Save and Cancel report instead of popping a route', (
@@ -206,7 +206,7 @@ void main() {
     // Width is the first field, length the second.
     await tester.enterText(find.byType(TextField).at(0), '50');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
 
     expect(saved, isNotNull);
@@ -299,7 +299,7 @@ void main() {
   ) async {
     PenPaperBaseline? saved;
     await mount(tester, baseline: following, onSave: (b) => saved = b);
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
 
     final row = saved!.stageReconciliations.single;
@@ -325,7 +325,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('= 2900 Pc'), findsNothing);
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
     expect(saved!.stageReconciliations.single.outputPieces, 2900);
     expect(saved!.materialFromPlan, isFalse);
@@ -335,7 +335,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey<String>('material-refill')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
     expect(saved!.stageReconciliations.single.outputPieces, planned.pieceCount);
     expect(saved!.materialFromPlan, isTrue);
@@ -349,7 +349,7 @@ void main() {
     await openStep(tester, 'Material data');
     await tester.tap(find.text('Stage by Stage'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
 
     expect(saved!.isGranular, isTrue);
@@ -369,7 +369,7 @@ void main() {
         edits++;
       },
     );
-    expect(find.text('Save Master Data'), findsNothing);
+    expect(find.text('Save raw sheet'), findsNothing);
     await tester.tap(find.byKey(const ValueKey<String>('master-data-edit')));
     expect(edits, 1);
 
@@ -440,7 +440,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
     expect(saved!.materialName, 'Brass', reason: 'over the old Steel / MS');
   });
@@ -485,7 +485,7 @@ void main() {
     expect(scrap(), '2.0');
     expect(use, findsNothing);
 
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
     final row = saved!.stageReconciliations.single;
     expect(row.scrapKg, 2);
@@ -505,7 +505,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Tata Steel').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
     expect(saved!.vendorId, 1);
     expect(saved!.vendorName, 'Tata Steel');
@@ -516,7 +516,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add vendor "Jindal"'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pump();
     expect(saved!.vendorName, 'Jindal');
     expect(repo.rows.map((v) => v.name), contains('Jindal'));
@@ -646,7 +646,7 @@ void main() {
       );
       expect(tester.takeException(), isNull);
 
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pump();
       final coil = saved!.formOf(RawForm.coil);
       expect(coil.widthNm, 250 * 1000000);
@@ -676,7 +676,7 @@ void main() {
       await tester.tap(find.text('Undefined').last);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey<String>('strip-length-undefined')), findsOneWidget);
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pump();
       expect(saved!.formOf(RawForm.strip).lengthNm, isNull);
     });
@@ -748,7 +748,7 @@ void main() {
         // Read-only: no grade picker of the panel's own.
         expect(find.byKey(ValueKey<String>('${form.name}-grade')), findsNothing);
       }
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pump();
       expect(saved!.materialGrade, 'A');
       expect(saved!.formOf(RawForm.roll).grade, 'A');
@@ -828,7 +828,7 @@ void main() {
       await tester.tap(find.text('Third grade').last);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pump();
       expect(saved!.formOf(RawForm.coil).vendorName, 'Tata Steel');
       expect(saved!.formOf(RawForm.coil).grade, 'Third');
@@ -872,7 +872,7 @@ void main() {
         '120',
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pump();
       expect(saved!.formOf(RawForm.coil).reconciliation.inputKg, 120);
       expect(saved!.totalInputKg, isNot(120), reason: 'the sheet row is apart');

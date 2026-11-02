@@ -102,6 +102,7 @@ class MasterDataPanel extends StatefulWidget {
     this.showHeader = true,
     this.embedded = false,
     this.onEdit,
+    this.onDirtyChanged,
     this.saving = false,
     this.alloy,
     this.grade,
@@ -137,6 +138,10 @@ class MasterDataPanel extends StatefulWidget {
   /// Called with the baseline as it will be recorded, without the blank rows
   /// the editor keeps at the end of every region for typing into.
   final ValueChanged<PenPaperBaseline> onSave;
+
+  /// Told when the editing panel starts or stops holding changes its Save has
+  /// not written — so the host can mark them and warn before leaving.
+  final ValueChanged<bool>? onDirtyChanged;
 
   /// Called by Close and Cancel. When null there is nothing to back out of —
   /// an always-open side panel — so neither control is drawn.
@@ -785,8 +790,26 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return out;
   }
 
+  /// What the host was last told about unsaved changes.
+  bool _reportedDirty = false;
+
+  /// Editing, and the working copy differs from the record it opened on.
+  void _reportDirty() {
+    final report = widget.onDirtyChanged;
+    if (report == null) return;
+    final dirty = !widget.readOnly &&
+        !_sameRecord(_withoutSheetPitch(widget.baseline), _baseline);
+    if (dirty == _reportedDirty) return;
+    _reportedDirty = dirty;
+    // After this frame: the host rebuilds on it, and this is mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) report(dirty);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _reportDirty();
     if (widget.embedded) {
       // Sized by the host, not the window: a 520 px side panel on a 1600 px
       // screen is a narrow editor, and reading the window would hand it the
@@ -1651,13 +1674,39 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   /// The derived reading — area once both sides are in, volume once it has a
   /// gauge. Stays quiet rather than printing zeros for what has not been typed.
+  ///
+  /// In the unit the sheet is typed in: a sheet entered in millimetres used to
+  /// read back its area in square inches.
   String _summaryLine() {
-    final area = _baseline.sheetAreaSqInches;
-    if (area <= 0) return 'Enter width and length to draw the sheet.';
-    final volume = _baseline.sheetVolumeCc;
-    final areaText = '${_trim(area)} in²';
-    if (volume <= 0) return '$areaText · add a thickness for volume';
-    return '$areaText · ${_trim(volume)} cm³ per sheet';
+    if (_baseline.sheetAreaSqInches <= 0) {
+      return 'Enter width and length to draw the sheet.';
+    }
+    final face = _faceUnit;
+    final side = face.isGauge || face.millimetres <= 0 ? 1.0 : face.millimetres;
+    final symbol = face.isGauge || face.millimetres <= 0 ? 'mm' : face.symbol;
+    final area =
+        _baseline.sheetWidthMm * _baseline.sheetHeightMm / (side * side);
+    final areaText = '${_trim(area)} $symbol²';
+    final volumeCc = _baseline.sheetVolumeCc;
+    if (volumeCc <= 0) return '$areaText · add a thickness for volume';
+    // Inches stay in inches; every metric face reads its volume in cm³, the
+    // size a shop thinks of a sheet's metal in.
+    const ccPerCubicInch = 16.387064;
+    final volumeText = symbol == 'in'
+        ? '${_trim(volumeCc / ccPerCubicInch)} in³'
+        : '${_trim(volumeCc)} cm³';
+    return '$areaText · $volumeText per sheet';
+  }
+
+  /// The unit the sheet's width and length are typed in.
+  GlobalLengthUnit get _faceUnit =>
+      lengthUnitBySymbol(_baseline.faceUnit, fallback: 'in');
+
+  /// A length on the sheet in the sheet's own unit — "48 in", "1219 mm".
+  String _faceLength(double mm) {
+    final face = _faceUnit;
+    if (face.isGauge || face.millimetres <= 0) return '${_trim(mm)} mm';
+    return '${_trim(face.fromMm(mm))} ${face.symbol}';
   }
 
   static String _trim(double value) {
@@ -2382,7 +2431,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '${_trim(region.widthMm)} × ${_trim(region.heightMm)} mm'
+                    '${_faceLength(region.widthMm).split(' ').first} × '
+                    '${_faceLength(region.heightMm)}'
                     '${region.copies > 1 ? '  ·  ${region.copies}×' : ''}',
                     style: const TextStyle(
                       color: SoftErpTheme.textSecondary,
@@ -2554,21 +2604,22 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     final used = _baseline.plannedSpanMm(axis);
     final pieces = _baseline.plannedPieces(axis);
     if (used <= 0) {
-      return 'Nothing claimed of ${_trim(_baseline.usableSpanMm(axis))} mm '
+      return 'Nothing claimed of ${_faceLength(_baseline.usableSpanMm(axis))} '
           'usable.';
     }
     if (_baseline.overruns(axis)) {
       return '$pieces strips need '
-          '${_trim(_baseline.plannedConsumedMm(axis))} mm — '
-          '${_trim(_baseline.overrunMm(axis))} mm more than the sheet has.';
+          '${_faceLength(_baseline.plannedConsumedMm(axis))} — '
+          '${_faceLength(_baseline.overrunMm(axis))} more than the sheet has.';
     }
     final blade = _baseline.kerfLossMm(axis);
     final left = _baseline.remainderMm(axis);
     return <String>[
       '$pieces strips',
-      '${_trim(used)} of ${_trim(_baseline.usableSpanMm(axis))} mm',
-      if (blade > 0.05) '${_trim(blade)} mm gap',
-      if (left >= 0.05) '${_trim(left)} mm left',
+      '${_faceLength(used).split(' ').first} of '
+          '${_faceLength(_baseline.usableSpanMm(axis))}',
+      if (blade > 0.05) '${_faceLength(blade)} gap',
+      if (left >= 0.05) '${_faceLength(left)} left',
       '${_baseline.yieldPercent(axis).toStringAsFixed(0)}% yield',
     ].join(' · ');
   }
@@ -2706,7 +2757,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       else
         AppButton(
           key: const ValueKey<String>('master-data-save'),
-          label: 'Save Master Data',
+          label: 'Save raw sheet',
           icon: Icons.check_rounded,
           isLoading: widget.saving,
           onPressed: widget.readOnly || widget.saving

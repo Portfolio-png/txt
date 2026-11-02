@@ -266,7 +266,30 @@ void main() {
       await tester.enterText(find.byType(TextField).at(2), '1');
       await tester.pumpAndSettle();
       expect(find.textContaining('4608 in² ·'), findsOneWidget);
-      expect(find.textContaining('cm³ per sheet'), findsOneWidget);
+      // An inch sheet reads its volume in inches too (1 mm thick: 181.42 in³).
+      expect(find.textContaining('in³ per sheet'), findsOneWidget);
+      expect(find.textContaining('cm³'), findsNothing);
+    });
+
+    testWidgets('a sheet typed in millimetres reads back in millimetres',
+        (tester) async {
+      final baseline = PenPaperBaseline.createDefault().copyWith(
+        faceUnit: 'mm',
+        sheetWidthInches: 1000 / 25.4,
+        sheetHeightInches: 2000 / 25.4,
+        sheetThicknessMm: 1,
+      );
+      await tester.binding.setSurfaceSize(const Size(1400, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MasterDataPanel(baseline: baseline, onSave: (_) {}),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2000000 mm² ·'), findsOneWidget);
+      expect(find.textContaining('2000 cm³ per sheet'), findsOneWidget);
+      expect(find.textContaining('in²'), findsNothing);
     });
 
     testWidgets('saving returns the dimensions on the baseline', (
@@ -307,7 +330,7 @@ void main() {
       await tester.enterText(find.byType(TextField).at(2), '1.6');
       await tester.pump();
 
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pumpAndSettle();
 
       expect(saved, isNotNull);
@@ -388,7 +411,7 @@ void main() {
       expect(find.text('Read only.'), findsOneWidget);
       final save = tester.widget<ElevatedButton>(
         find.ancestor(
-          of: find.text('Save Master Data'),
+          of: find.text('Save raw sheet'),
           matching: find.byType(ElevatedButton),
         ),
       );
@@ -1135,7 +1158,7 @@ void cutTests() {
       await tester.enterText(band(-2, 0, size: true), '400');
       await tester.enterText(band(-2, 0, size: false), '2');
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Save Master Data'));
+      await tester.tap(find.text('Save raw sheet'));
       await tester.pumpAndSettle();
 
       expect(saved, isNotNull);

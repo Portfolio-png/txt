@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/soft_erp_theme.dart';
+
 class SearchableSelectOption<T> {
   const SearchableSelectOption({
     required this.value,
@@ -222,20 +224,25 @@ class SearchableSelectField<T> extends FormField<T> {
                  return InkWell(
                    key: tapTargetKey,
                    canRequestFocus: false,
-                   borderRadius: BorderRadius.circular(12),
+                   borderRadius:
+                       BorderRadius.circular(SoftErpTheme.radiusControl),
                    onTap: widget.fieldEnabled ? field.openSelector : null,
                    child: InputDecorator(
                      decoration: effectiveDecoration.copyWith(
+                       // A host that set its own focused border keeps it; the
+                       // fallback matches the theme's field radius rather than
+                       // drawing a third one (12) beside 14 and 4.
                        focusedBorder: focused
-                           ? const OutlineInputBorder(
-                               borderRadius: BorderRadius.all(
-                                 Radius.circular(12),
-                               ),
-                               borderSide: BorderSide(
-                                 color: Color(0xFF7C6BFF),
-                                 width: 1.4,
-                               ),
-                             )
+                           ? effectiveDecoration.focusedBorder ??
+                               OutlineInputBorder(
+                                 borderRadius: BorderRadius.circular(
+                                   SoftErpTheme.radiusControl,
+                                 ),
+                                 borderSide: const BorderSide(
+                                   color: SoftErpTheme.accent,
+                                   width: 1.4,
+                                 ),
+                               )
                            : effectiveDecoration.focusedBorder,
                      ),
                      isFocused: focused,

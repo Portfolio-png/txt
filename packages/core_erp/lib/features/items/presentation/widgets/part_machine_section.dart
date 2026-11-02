@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
 
 import '../../../../sheet/sheet_engine.dart';
+import '../../../../sheet/sheet_style.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -405,7 +406,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       if (replacing != null) widget.onUnstage(replacing);
       widget.onStage(draft);
       _resetSheet();
-      _notice = 'Machine ${draft.assetId} is held until the part is made.';
+      _notice = 'Machine ${draft.assetId} will be saved with the part.';
     });
   }
 
@@ -593,8 +594,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
           else ...[
             if (holding) ...[
               const Text(
-                'Fill this in now — each machine is held until you create the '
-                'part, then written with it.',
+                'Fill this in now — each machine is saved together with the part.',
                 style: TextStyle(
                   fontSize: 14,
                   color: SoftErpTheme.textSecondary,
@@ -630,11 +630,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     fieldEnabled: enabled,
                     dialogTitle: 'Machine Type',
                     searchHintText: 'Search or type a new machine type',
-                    decoration: const InputDecoration(
-                      labelText: 'Machine Type',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: SheetStyle.field(label: 'Machine Type'),
                     onChanged: (id) => setState(() {
                       _groupId = id;
                       _rederiveNo();
@@ -676,11 +672,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Machine No.',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: SheetStyle.field(label: 'Machine No.'),
                   ),
                 ),
                 _pick(
@@ -736,6 +728,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     kind: _capacityKind,
                     enabled: enabled,
                     errorText: _capacityError,
+                    decoration: SheetStyle.field(),
                     // Figures used before, read in the unit picked here.
                     suggestions: [
                       for (final kgf in _suggestions.capacitiesKgf)
@@ -847,6 +840,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
         options: options,
         enabled: enabled,
         searchKeyboardType: numeric ? TextInputType.number : null,
+        decoration: SheetStyle.field(),
         onChanged: () => setState(() {}),
       ),
     );
@@ -856,9 +850,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     final label = widget.partCode.isNotEmpty
         ? widget.partCode
         : (widget.partLabel.isNotEmpty ? widget.partLabel : 'this part');
-    if (widget.part == null) return 'Machines · $label · held';
-    if (editing == null) return 'Machines · $label · new';
-    return 'Machines · $label · ${_noController.text}';
+    if (widget.part == null) return 'Machines for $label — not saved yet';
+    if (editing == null) return 'New machine for $label';
+    final no = _noController.text.trim();
+    return no.isEmpty ? 'Machine for $label' : 'Machine $no';
   }
 
   ItemMachineLink _linkFromDraft(MachineSheetDraft draft) =>
@@ -972,8 +967,7 @@ class _MachineRow extends StatelessWidget {
                     what: 'machine photo',
                     note: photoNote,
                     fallbackUrl: machine.photoUrl,
-                    disabledReason: 'The machine is added when the part saves — '
-                        'add its photo then',
+                    disabledReason: 'Save the part to add the machine’s photo',
                   ),
                   const SizedBox(width: _kPhotoGap),
                 ],
@@ -997,7 +991,7 @@ class _MachineRow extends StatelessWidget {
                 _MachineCell(machine.dieFeedType, flex: _kMachineFlex[5]),
                 if (pending)
                   _MachineCell(
-                    partExists ? 'held' : 'held for the part',
+                    partExists ? 'Not saved yet' : 'Saves with the part',
                     flex: _kMachineFlex[6],
                     muted: true,
                   )

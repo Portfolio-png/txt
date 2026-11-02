@@ -1843,8 +1843,8 @@ void _dieSectionTests() {
 
       // No gate: the whole part is filled in on one screen and written by one
       // press, rather than saved halfway through a thought.
-      await tester.ensureVisible(find.textContaining('Dies · '));
-      expect(find.textContaining('held until you create the part'), findsOneWidget);
+      await tester.ensureVisible(find.textContaining(RegExp(r'^(Dies for |New die for |Die )')).first);
+      expect(find.textContaining('saved together with the part'), findsOneWidget);
       expect(addDie(), findsOneWidget);
       expect(
         find.descendant(of: addDie(), matching: find.text('Hold die')),
@@ -2062,7 +2062,7 @@ void _dieSectionTests() {
       AppFlowHooks.createDieFromSheet = null;
       await _pumpWizard(tester);
 
-      await tester.ensureVisible(find.textContaining('Dies · '));
+      await tester.ensureVisible(find.textContaining(RegExp(r'^(Dies for |New die for |Die )')).first);
       expect(find.textContaining('cannot be made from here'), findsOneWidget);
       expect(addDie(), findsNothing);
     });
@@ -2196,7 +2196,7 @@ void _manyDiesTests() {
       await _tapVisible(tester, dieRow('70'));
 
       // The sheet is that die now, and says so.
-      expect(find.text('Dies · ATP48 · CDATP48'), findsOneWidget);
+      expect(find.text('Die CDATP48'), findsOneWidget);
       expect(_textIn(tester, 'die-code'), 'CDATP48');
       expect(_textIn(tester, 'die-made-by'), 'Atul Mestry');
       // Dropdowns now, so what they show rather than a text field's text.
@@ -2256,7 +2256,7 @@ void _manyDiesTests() {
       );
 
       expect(drafts, hasLength(1), reason: 'nothing was written');
-      expect(find.text('Dies · ATP48 · new'), findsOneWidget);
+      expect(find.text('New die for ATP48'), findsOneWidget);
       expect(
         find.descendant(of: addDie(), matching: find.text('Add die')),
         findsOneWidget,
@@ -2372,9 +2372,9 @@ void _machineSectionTests() {
     testWidgets('the section is open before the part exists', (tester) async {
       await _pumpWizard(tester);
 
-      await tester.ensureVisible(find.textContaining('Machines · '));
+      await tester.ensureVisible(find.textContaining(RegExp(r'^(Machines for |New machine for |Machine )')).first);
       expect(
-        find.textContaining('held until you create the part'),
+        find.textContaining('saved together with the part'),
         findsWidgets,
       );
       expect(addMachine(), findsOneWidget);
@@ -2532,7 +2532,7 @@ void _machineSectionTests() {
       AppFlowHooks.createMachineFromSheet = null;
       await _pumpWizard(tester);
 
-      await tester.ensureVisible(find.textContaining('Machines · '));
+      await tester.ensureVisible(find.textContaining(RegExp(r'^(Machines for |New machine for |Machine )')).first);
       expect(find.textContaining('cannot be added from here'), findsOneWidget);
       expect(addMachine(), findsNothing);
     });
@@ -2590,7 +2590,7 @@ void _machineSectionTests() {
 
       // Tapping one loads it in to be corrected.
       await _tapVisible(tester, machineRow('90'));
-      expect(find.text('Machines · ATP48 · PP-1'), findsOneWidget);
+      expect(find.text('Machine PP-1'), findsOneWidget);
       expect(showsIn('make', 'Mayank'), isTrue);
       expect(
         find.descendant(of: addMachine(), matching: find.text('Save machine')),
@@ -2693,7 +2693,7 @@ void _stagedCreateTests() {
       expect(dieDrafts, isEmpty);
       expect(harness.itemRepo.created, isEmpty);
       // And the row says so rather than looking saved.
-      expect(find.textContaining('held for the part'), findsWidgets);
+      expect(find.textContaining('Saves with the part'), findsWidgets);
       expect(find.text('CDATP48'), findsOneWidget);
     });
 
@@ -2761,7 +2761,7 @@ void _stagedCreateTests() {
       // third die is one more Add.
       expect(find.text('Part · Patti'), findsOneWidget);
       expect(find.text('Developed For · Patti'), findsOneWidget);
-      expect(find.textContaining('Dies · ATP48'), findsOneWidget);
+      expect(find.text('New die for ATP48'), findsOneWidget);
       expect(
         find.descendant(of: addDie(), matching: find.text('Add die')),
         findsOneWidget,
@@ -2787,8 +2787,8 @@ void _stagedCreateTests() {
       expect(dieDrafts, hasLength(1));
       // Still held — and the rows no longer claim to be waiting on a part
       // that now exists.
-      expect(find.text('held'), findsNWidgets(2));
-      expect(find.textContaining('held for the part'), findsNothing);
+      expect(find.text('Not saved yet'), findsNWidgets(2));
+      expect(find.textContaining('Saves with the part'), findsNothing);
     });
 
     testWidgets('a held machine counts the other held ones', (tester) async {
@@ -2836,7 +2836,7 @@ void _stagedCreateTests() {
       // Written once. And it has stopped being held, so it cannot be made a
       // second time for whatever part is created next.
       expect(dieDrafts.where((d) => d.toolCode == 'CDATP48'), hasLength(2));
-      expect(find.text('held'), findsOneWidget);
+      expect(find.text('Not saved yet'), findsOneWidget);
       expect(find.text('CDATP48'), findsOneWidget);
     });
 

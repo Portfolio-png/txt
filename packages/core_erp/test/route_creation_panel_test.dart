@@ -453,7 +453,7 @@ void main() {
       expect(_saveButton(tester).onPressed, isNull);
       expect(
         tester.widget<Tooltip>(find.ancestor(of: find.textContaining('Save'), matching: find.byType(Tooltip))).message,
-        contains('Save the part first'),
+        contains('Save the part to attach'),
       );
 
       // Saved: the sheet hands the new id in. Not in the list yet on purpose —

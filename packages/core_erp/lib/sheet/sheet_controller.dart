@@ -131,6 +131,40 @@ class SheetController extends ChangeNotifier {
   Map<int, ValidationError> errorsForRow(int row) =>
       Map.unmodifiable(_errorsByRow[row] ?? const {});
 
+  /// Cells the user has typed into or left, per row (by the row's key, so
+  /// a row keeps them when others are inserted or removed above it).
+  final Map<Object, Set<int>> _touched = Map.identity();
+
+  /// Rows somebody has tried to save.
+  final Set<Object> _saveAttempted = Set.identity();
+
+  /// The user finished with [columnId] on [row] (the current row by default).
+  /// From now on an empty required cell there is shown as missing.
+  void markTouched(int columnId, {int? row}) {
+    final at = row ?? _row;
+    if (at < 0 || at >= _drafts.length) return;
+    final cells = _touched.putIfAbsent(_drafts[at].rowKey, () => <int>{});
+    if (cells.add(columnId)) notifyListeners();
+  }
+
+  /// The errors to DRAW on [row]. Every error still counts — a save refuses
+  /// on all of them — but "X is required" waits until the cell has been
+  /// touched or the row has been saved once. A brand-new part used to open
+  /// with Group and Part Name already outlined in red.
+  Map<int, ValidationError> visibleErrors({int? row}) {
+    final at = row ?? _row;
+    final all = _errorsByRow[at] ?? const <int, ValidationError>{};
+    if (all.isEmpty || at < 0 || at >= _drafts.length) return const {};
+    final key = _drafts[at].rowKey;
+    if (_saveAttempted.contains(key)) return Map.unmodifiable(all);
+    final touched = _touched[key] ?? const <int>{};
+    return Map.unmodifiable({
+      for (final entry in all.entries)
+        if (entry.value.code != 'required' || touched.contains(entry.key))
+          entry.key: entry.value,
+    });
+  }
+
   /// Every row's errors, for a save that must refuse the whole sheet.
   int get errorCount =>
       _errorsByRow.values.fold<int>(0, (sum, row) => sum + row.length);
@@ -412,6 +446,9 @@ class SheetController extends ChangeNotifier {
 
   /// Validates one row and answers whether it is clean.
   bool validateRow(int row) {
+    if (_drafts.isNotEmpty) {
+      _saveAttempted.add(_drafts[row.clamp(0, _drafts.length - 1)].rowKey);
+    }
     _deriveAndValidate();
     notifyListeners();
     return (_errorsByRow[row.clamp(0, _drafts.length - 1)] ?? {}).isEmpty;
@@ -947,6 +984,9 @@ class SheetController extends ChangeNotifier {
 
   /// True only when EVERY row is clean — a save writes them all.
   bool validateAll() {
+    for (final draft in _drafts) {
+      _saveAttempted.add(draft.rowKey);
+    }
     _deriveAndValidate();
     notifyListeners();
     return errorCount == 0;

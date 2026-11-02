@@ -130,6 +130,7 @@ class ForceCapacityField extends StatelessWidget {
     this.fieldKey,
     this.freeHandKey,
     this.suggestions,
+    this.decoration,
   });
 
   final TextEditingController controller;
@@ -147,6 +148,9 @@ class ForceCapacityField extends StatelessWidget {
   /// Figures used before, in [unitSymbol]. Given, the figure is a searchable
   /// dropdown of them that also takes a new one; null keeps a plain field.
   final List<String>? suggestions;
+
+  /// The host's field look. Null keeps the plain outlined field.
+  final InputDecoration? decoration;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +171,7 @@ class ForceCapacityField extends StatelessWidget {
                       // Greyed with free hand ticked, as the plain field is.
                       enabled: enabled && !freeHand,
                       errorText: errorText,
+                      decoration: decoration,
                       searchKeyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       onChanged: onChanged,
@@ -183,11 +188,9 @@ class ForceCapacityField extends StatelessWidget {
                 style: const TextStyle(fontSize: 14),
                 // No helper line: the free-hand tick below already says
                 // "no rated capacity", and "Optional" was noise.
-                decoration: InputDecoration(
-                  labelText: label,
-                  errorText: errorText,
-                  border: const OutlineInputBorder(),
-                ),
+                decoration: (decoration ??
+                        const InputDecoration(border: OutlineInputBorder()))
+                    .copyWith(labelText: label, errorText: errorText),
               ),
             ),
             const SizedBox(width: 8),

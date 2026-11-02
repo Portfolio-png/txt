@@ -51,9 +51,9 @@ void main() {
     await typeNewInCell(tester, column: 3, value: _newPart);
 
     // The identity strip derives the code from the group path and the running
-    // number, so it stops saying "stamped on save" once the path is filled.
+    // number, so it stops saying "assigned on save" once the path is filled.
     expect(
-      find.text('stamped on save'),
+      find.text('assigned on save'),
       findsNothing,
       reason: 'a filled group path should derive a part code',
     );

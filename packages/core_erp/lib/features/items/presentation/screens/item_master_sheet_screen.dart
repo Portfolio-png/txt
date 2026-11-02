@@ -130,6 +130,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// window width), being edited, and a counter that resets it on Cancel.
   bool? _rawPanelOpen;
   bool _rawEditing = false;
+
+  /// The editing raw sheet holds changes its own Save has not written.
+  bool _rawDirty = false;
   int _rawEpoch = 0;
 
   /// A raw sheet save in flight, and the part the panel was last drawn for —
@@ -171,7 +174,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       id: 'group_item',
       title: 'Group Item',
       subtitle: 'Identity, hierarchy & properties',
-      icon: Icons.table_rows_rounded,
+      icon: Icons.category_rounded,
     ),
     SheetSection(
       id: 'client_vendor',
@@ -543,10 +546,19 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
-  bool get _hasUnsavedWork =>
-      _controller.hasUnsavedWork ||
-      _heldDies.values.any((held) => held.isNotEmpty) ||
-      _heldMachines.values.any((held) => held.isNotEmpty);
+  bool get _hasUnsavedWork => _unsavedWork().isNotEmpty;
+
+  /// What would be lost by leaving now, in the words the dialog uses. The
+  /// section layout and an open raw sheet used to be left out, so the screen
+  /// closed on them without a word.
+  List<String> _unsavedWork() => [
+        if (_controller.hasUnsavedWork) 'rows or edits to parts',
+        if (_heldDies.values.any((held) => held.isNotEmpty) ||
+            _heldMachines.values.any((held) => held.isNotEmpty))
+          'dies or machines waiting for their part',
+        if (_treeDirty && _livePart != null) 'the section layout',
+        if (_rawEditing && _rawDirty) 'the raw sheet',
+      ];
 
   /// Back with something unwritten. Rows commit as the cursor leaves them,
   /// but the row under the cursor, an edit to a saved row and held dies were
@@ -556,8 +568,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Leave with unsaved work?'),
-        content: const Text(
-          'Some rows, edits or held dies and machines have not been saved yet.',
+        content: Text(
+          'Not saved yet: ${_unsavedWork().join(', ')}.',
+          style: const TextStyle(fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -580,7 +593,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (!mounted || choice == null || choice == 'stay') return;
     if (choice == 'save') {
       await _handleSave();
-      if (!mounted || _hasUnsavedWork) return;
+      if (!mounted) return;
+      final left = _unsavedWork();
+      if (left.isNotEmpty) {
+        // The part's Save does not write the raw sheet — it has its own.
+        _toast('Still not saved: ${left.join(', ')}.', isError: true);
+        return;
+      }
     }
     _leaving = true;
     Navigator.of(context).pop();
@@ -757,7 +776,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             const SizedBox(width: 16),
             _archiveButton(),
             const SizedBox(width: 8),
-            AppButton(
+            Tooltip(
+              message: 'Saves every row: the part, its deal and people, dies '
+                  'and machines waiting to be added, and the section layout. '
+                  'The raw sheet and the route have their own Save.',
+              child: AppButton(
               key: const ValueKey('save_item_sheet_btn'),
               label: _controller.isSavingNow
                   ? 'Saving…'
@@ -767,6 +790,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   : Icons.save_rounded,
               isLoading: _controller.isSavingNow,
               onPressed: _controller.isSavingNow ? null : _handleSave,
+              ),
             ),
           ],
         ),
@@ -801,8 +825,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// from the old Master Data dialog. The last step after item → client → die
   /// → machine, so it sits to the right of them. Stored on the part
   /// (`pen_paper_baseline`), so it opens once the part exists.
+  /// Whether the raw sheet panel is drawn open beside the sections.
+  bool get _rawPanelShown =>
+      _rawPanelOpen ?? MediaQuery.sizeOf(context).width >= 1500;
+
   Widget _rawSheetPanel() {
-    final open = _rawPanelOpen ?? MediaQuery.sizeOf(context).width >= 1500;
+    final open = _rawPanelShown;
     if (!open) {
       return Container(
         key: const ValueKey<String>('raw_panel_closed'),
@@ -895,10 +923,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
           : null,
+      onDirtyChanged: (dirty) {
+        if (mounted && dirty != _rawDirty) setState(() => _rawDirty = dirty);
+      },
       onSave: (saved) => unawaited(_saveRawSheet(saved)),
       onCancel: _rawEditing
           ? () => setState(() {
                 _rawEditing = false;
+                _rawDirty = false;
                 _rawEpoch += 1;
               })
           : null,
@@ -923,6 +955,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 const Expanded(
                   child: Text('Raw material', style: SheetStyle.sectionTitle),
                 ),
+                if (_rawEditing && _rawDirty) ...[
+                  Tooltip(
+                    message: 'Not saved yet — Save raw sheet at the bottom '
+                        'writes it. Save part does not.',
+                    child: SheetStyle.unsavedPill(
+                      key: const ValueKey<String>('raw_unsaved'),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 if (part != null && !_rawEditing)
                   OutlinedButton.icon(
                     key: const ValueKey<String>('raw_edit'),
@@ -943,7 +985,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             const Padding(
               padding: EdgeInsets.fromLTRB(SheetStyle.cardPadding, 0, SheetStyle.cardPadding, 8),
               child: Text(
-                'Opens once the part is saved — the raw sheet is stored on the part.',
+                'Save the part to plan its raw sheet.',
                 style: SheetStyle.hint,
               ),
             ),
@@ -994,7 +1036,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     setState(() {
       _rawSaving = false;
       // A failed save stays in edit mode, so what was typed is not lost.
-      if (saved != null) _rawEditing = false;
+      if (saved != null) {
+        _rawEditing = false;
+        _rawDirty = false;
+      }
     });
     _toast(
       saved == null
@@ -1229,18 +1274,27 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     });
     _toast(
       saved == null
-          ? (items.errorMessage ?? 'The nesting did not save.')
-          : 'Nesting saved — the part\'s records are re-linked to match.',
+          ? (items.errorMessage ?? 'The section layout did not save.')
+          : 'Section layout saved — the part\'s client, dies and machines now follow it.',
       isError: saved == null,
     );
   }
 
   Widget _tree() {
     _syncTreeFromPart();
+    // Half the step when room is short: three levels at 28 px took 84 px from
+    // the die and machine forms, which then wrapped and cut their helpers.
+    // Read from the window, not a LayoutBuilder — the sections below hold
+    // reorderable lists, which a LayoutBuilder above them breaks.
+    final width = MediaQuery.sizeOf(context).width;
+    final indent = _rawPanelShown || width < 1300
+        ? _TreeNode.compactIndent
+        : _TreeNode.wideIndent;
     final nodes = <Widget>[];
     void visit(String id, int depth, List<bool> continues, bool isLast) {
       final collapsed = _collapsed.contains(id);
       nodes.add(_TreeNode(
+        indent: indent,
         depth: depth,
         continues: continues,
         isLast: isLast,
@@ -1289,8 +1343,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           Expanded(
             child: Text(
               saved
-                  ? 'Nesting changed — save to re-link this part\'s client, dies and machines to match.'
-                  : 'Nesting changed — it is saved with the part.',
+                  ? 'Section layout changed — save it so this part\'s client, dies and machines follow it.'
+                  : 'Section layout changed — it is saved with the part.',
               style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
             ),
           ),
@@ -1302,7 +1356,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           if (saved)
             AppButton(
               key: const ValueKey<String>('tree_save'),
-              label: 'Save nesting',
+              label: 'Save section layout',
               icon: Icons.save_outlined,
               variant: AppButtonVariant.secondary,
               dense: true,
@@ -1468,7 +1522,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         ];
         if (dies.isEmpty) return const [(null, 'No dies yet')];
         for (final (die, held) in dies) {
-          add(null, '${die.toolCode.isEmpty ? 'Die' : die.toolCode}${held ? ' (held)' : ''}');
+          add(null, '${die.toolCode.isEmpty ? 'Die' : die.toolCode}${held ? ' (not saved yet)' : ''}');
           add('Type', DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label);
           add('Made by', die.madeBy);
           add('Ordered', stamp(die.poAt));
@@ -1499,7 +1553,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (machines.isEmpty && route == null) return const [(null, 'No machines yet')];
         for (final (machine, held) in machines) {
           final number = machine.assetId.isNotEmpty ? machine.assetId : machine.name;
-          add(null, '${number.isEmpty ? 'Machine' : number}${held ? ' (held)' : ''}');
+          add(null, '${number.isEmpty ? 'Machine' : number}${held ? ' (not saved yet)' : ''}');
           if (machine.assetId.isNotEmpty) add('Name', machine.name);
           add('Type', machine.machineType);
           add('Make', machine.machineMake);
@@ -1566,26 +1620,29 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       if (!root) ...[
         action(
           key: 'section_outdent_$id',
-          icon: Icons.format_indent_decrease_rounded,
+          icon: Icons.subdirectory_arrow_left_rounded,
           tip: canOutdent ? 'Move $heading one level out' : 'Already directly under the part',
           onPressed: canOutdent ? () => _outdent(id) : null,
         ),
         action(
           key: 'section_indent_$id',
-          icon: Icons.format_indent_increase_rounded,
+          icon: Icons.subdirectory_arrow_right_rounded,
           tip: above == null
               ? 'Nothing above it at this level to nest under'
               : 'Nest $heading under the section above',
           onPressed: above == null ? null : () => _nest(id, above),
         ),
       ],
-      action(
-        key: 'section_clear_$id',
-        icon: Icons.delete_outline_rounded,
-        tip: root ? 'The part itself is deleted from the Items list' : 'Clear $heading for this part',
-        onPressed: root ? null : () => _clearSection(id),
-        color: SoftErpTheme.dangerText,
-      ),
+      // Not on the part itself: it was never pressable there, and the part
+      // goes through Archive part in the top bar, not a bin on its section.
+      if (!root)
+        action(
+          key: 'section_clear_$id',
+          icon: Icons.delete_outline_rounded,
+          tip: 'Clear $heading for this part',
+          onPressed: () => _clearSection(id),
+          color: SoftErpTheme.dangerText,
+        ),
     ];
   }
 
@@ -1622,7 +1679,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       default:
         return _section(
           id: 'group_item',
-          icon: Icons.inventory_2_rounded,
+          icon: Icons.category_rounded,
           heading: 'Item Master',
           collapsed: collapsed,
           trailing: _identityChip(),
@@ -2086,7 +2143,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// single write would clear the other.
   Future<String?> _setDies(List<String> dieIds) async {
     final part = _livePart;
-    if (part == null) return 'Save the part first.';
+    if (part == null) return 'Save the part to link its dies.';
     return _setDiesOn(part.id, dieIds);
   }
 
@@ -2098,7 +2155,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   Future<String?> _setMachines(List<String> machineIds) async {
     final part = _livePart;
-    if (part == null) return 'Save the part first.';
+    if (part == null) return 'Save the part to link its machines.';
     return _setMachinesOn(part.id, machineIds);
   }
 
@@ -2127,10 +2184,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Identity: ',
+          const Text('Part code: ',
               style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
           Text(
-            (code == null || code.isEmpty) ? 'stamped on save' : code,
+            (code == null || code.isEmpty) ? 'assigned on save' : code,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
@@ -2213,7 +2270,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           size: _rowPhotoSize,
           what: 'part photo',
           fallbackUrl: part?.photoUrl,
-          disabledReason: 'Save the part first to add its photo',
+          disabledReason: 'Save the part to add its photo',
         ),
         const SizedBox(width: 2),
         SizedBox(width: 28, child: _rowStatus(row)),
@@ -2278,11 +2335,21 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         },
       );
     }
-    if (sheet.isRowBlank(row) && !saved) return null;
+    // Drawn disabled on a blank row, never hidden: an icon that appears only
+    // once something is typed reads as a missing feature.
+    if (sheet.isRowBlank(row) && !saved) {
+      return button(
+        key: 'row_save_$row',
+        icon: Icons.save_outlined,
+        tip: 'Type a part name first',
+        color: SoftErpTheme.textMuted,
+      );
+    }
     return button(
       key: 'row_save_$row',
       icon: error != null ? Icons.error_outline_rounded : Icons.save_outlined,
-      tip: error ?? (saved ? 'Save the changes to this part' : 'Save this part'),
+      tip: error ??
+          (saved ? 'Save the changes to this row\'s part' : 'Save this row\'s part'),
       color: error != null ? SoftErpTheme.dangerText : SoftErpTheme.successText,
       onPressed: _controller.isSavingNow ? null : () => _saveRow(row),
     );
@@ -2420,8 +2487,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           child: Text(
             hasPart
                 ? 'This part can be routed through the process stages.'
-                : 'Not saved yet — lay out the stages now; Save route unlocks '
-                    'once the part is saved.',
+                : 'Save the part to attach a route — you can lay out the '
+                    'stages now.',
             style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
           ),
         ),
@@ -2675,14 +2742,18 @@ class _SummaryLine extends StatelessWidget {
 /// that still has a sibling to come.
 class _TreeNode extends StatelessWidget {
   const _TreeNode({
+    required this.indent,
     required this.depth,
     required this.continues,
     required this.isLast,
     required this.child,
   });
 
-  static const double indent = 28;
+  /// The step per level, with room to spare and without.
+  static const double wideIndent = 28;
+  static const double compactIndent = 14;
 
+  final double indent;
   final int depth;
   final List<bool> continues;
   final bool isLast;
@@ -2697,7 +2768,12 @@ class _TreeNode extends StatelessWidget {
       children: [
         Positioned.fill(
           child: CustomPaint(
-            painter: _TreeGuidePainter(depth: depth, continues: continues, isLast: isLast),
+            painter: _TreeGuidePainter(
+              indent: indent,
+              depth: depth,
+              continues: continues,
+              isLast: isLast,
+            ),
           ),
         ),
         Padding(
@@ -2710,13 +2786,20 @@ class _TreeNode extends StatelessWidget {
 }
 
 class _TreeGuidePainter extends CustomPainter {
-  _TreeGuidePainter({required this.depth, required this.continues, required this.isLast});
+  _TreeGuidePainter({
+    required this.indent,
+    required this.depth,
+    required this.continues,
+    required this.isLast,
+  });
 
+  final double indent;
   final int depth;
   final List<bool> continues;
   final bool isLast;
 
-  static const double _offset = 22;
+  /// Where a level's line runs: most of the way across its step (22 of 28).
+  double get _offset => indent * 22 / 28;
   // Level with the middle of a section's header row, which sits one card
   // padding below the card's top edge.
   static const double _elbowY = SheetStyle.cardPadding + 18;
@@ -2730,19 +2813,22 @@ class _TreeGuidePainter extends CustomPainter {
     // Ancestors with siblings still to come keep their line running past.
     for (var level = 0; level < continues.length; level += 1) {
       if (!continues[level]) continue;
-      final x = level * _TreeNode.indent + _offset;
+      final x = level * indent + _offset;
       canvas.drawLine(Offset(x, -18), Offset(x, size.height), paint);
     }
     // This node: down from the parent, across into the card; on past it when
     // a sibling follows (├), stopping at the elbow when it is the last (└).
-    final x = (depth - 1) * _TreeNode.indent + _offset;
+    final x = (depth - 1) * indent + _offset;
     canvas.drawLine(Offset(x, -18), Offset(x, isLast ? _elbowY : size.height), paint);
-    canvas.drawLine(Offset(x, _elbowY), Offset(depth * _TreeNode.indent, _elbowY), paint);
+    canvas.drawLine(Offset(x, _elbowY), Offset(depth * indent, _elbowY), paint);
   }
 
   @override
   bool shouldRepaint(_TreeGuidePainter old) =>
-      old.depth != depth || old.isLast != isLast || !listEquals(old.continues, continues);
+      old.indent != indent ||
+      old.depth != depth ||
+      old.isLast != isLast ||
+      !listEquals(old.continues, continues);
 }
 
 /// What [_AddPropertyDialog] answers with.

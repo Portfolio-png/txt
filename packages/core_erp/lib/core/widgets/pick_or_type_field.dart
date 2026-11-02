@@ -20,6 +20,7 @@ class PickOrTypeField extends StatelessWidget {
     this.onChanged,
     this.errorText,
     this.searchKeyboardType,
+    this.decoration,
   });
 
   /// On the field itself, for finding it in a test.
@@ -33,6 +34,9 @@ class PickOrTypeField extends StatelessWidget {
 
   /// The keyboard for the search box — a number pad for a figure.
   final TextInputType? searchKeyboardType;
+
+  /// The host's field look; [label] and [errorText] are laid over it.
+  final InputDecoration? decoration;
 
   @override
   Widget build(BuildContext context) {
@@ -68,12 +72,13 @@ class PickOrTypeField extends StatelessWidget {
         value: query.trim(),
         label: query.trim(),
       ),
-      decoration: InputDecoration(
-        labelText: label,
-        errorText: errorText,
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: decoration?.copyWith(labelText: label, errorText: errorText) ??
+          InputDecoration(
+            labelText: label,
+            errorText: errorText,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
       onChanged: (value) {
         final next = value ?? '';
         controller.value = TextEditingValue(

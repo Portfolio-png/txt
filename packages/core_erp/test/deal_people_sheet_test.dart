@@ -349,6 +349,10 @@ void main() {
     testWidgets('the form keeps every character typed (it used to keep one)',
         (tester) async {
       await tester.runAsync(open);
+      // Room for a whole person line: the fields are the sheet's own size now.
+      tester.view.physicalSize = const Size(1400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
       pickGoldMedal();
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
@@ -434,6 +438,10 @@ void main() {
 
     testWidgets('a person line has its own Save, then Edit', (tester) async {
       await tester.runAsync(open);
+      // Room for a whole person line: the fields are the sheet's own size now.
+      tester.view.physicalSize = const Size(1400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
       pickGoldMedal();
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(

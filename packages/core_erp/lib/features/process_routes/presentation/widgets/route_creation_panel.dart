@@ -302,7 +302,7 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
     if (_serviceMissing) return 'Routing is not available in this build.';
     if (_partId == null) {
       return _waitingForPart
-          ? 'Save the part first — the route attaches to it.'
+          ? 'Save the part to attach this route.'
           : 'Choose the part this route belongs to first.';
     }
     if (_steps.isEmpty) return 'Add at least one stage.';

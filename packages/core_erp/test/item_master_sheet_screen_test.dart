@@ -587,10 +587,13 @@ void main() {
         expect(find.byKey(ValueKey('section_edit_$id')), findsNothing, reason: id);
         expect(find.byKey(ValueKey('section_save_$id')), findsNothing, reason: id);
       }
-      final bin = tester.widget<IconButton>(find.byKey(const ValueKey('section_clear_group_item')));
-      expect(bin.onPressed, isNull);
-      // A blank new row has nothing to save yet.
-      expect(find.byKey(const ValueKey('row_save_0')), findsNothing);
+      // Never pressable on the part itself, so not drawn: the part is retired
+      // with Archive part in the top bar.
+      expect(find.byKey(const ValueKey('section_clear_group_item')), findsNothing);
+      // A blank new row has nothing to save yet: drawn, disabled, saying why.
+      final save = tester.widget<IconButton>(find.byKey(const ValueKey('row_save_0')));
+      expect(save.onPressed, isNull);
+      expect(find.byTooltip('Type a part name first'), findsOneWidget);
     });
 
     testWidgets('the side column folds to icons and opens again', (tester) async {
@@ -688,7 +691,7 @@ void main() {
       // A new part: the panel is drawn, but there is nowhere to store it yet.
       await _pumpScreen(tester, size: const Size(1700, 3200));
       expect(find.byKey(const ValueKey('raw_panel')), findsOneWidget);
-      expect(find.textContaining('Opens once the part is saved'), findsOneWidget);
+      expect(find.textContaining('Save the part to plan its raw sheet'), findsOneWidget);
       expect(find.byKey(const ValueKey('raw_edit')), findsNothing);
     });
 
@@ -718,6 +721,36 @@ void main() {
       expect(repo.updated.single.penPaperBaseline, isNotNull,
           reason: 'the baseline is written on the part, everything else kept');
       expect(repo.updated.single.id, 500);
+    });
+
+    testWidgets('an edited raw sheet says it is unsaved, until its own Save',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('raw_edit')));
+      await tester.pump();
+      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(find.text('Save raw sheet'), findsOneWidget);
+
+      // The panel reports a working copy that differs from the record.
+      panel.onDirtyChanged!(true);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('raw_unsaved')), findsOneWidget);
+
+      await tester.runAsync(() async {
+        panel.onSave(panel.baseline);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing,
+          reason: 'saved, and out of edit mode');
     });
 
     testWidgets('the raw sheet panel runs on the part\'s route — the route is its pipeline',
@@ -988,7 +1021,7 @@ void main() {
 
       await tester.tap(find.text('Add row').first);
       await tester.pump();
-      expect(find.byTooltip('Save the part first to add its photo'),
+      expect(find.byTooltip('Save the part to add its photo'),
           findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -1120,11 +1153,11 @@ void main() {
       expect(find.text('Unnamed'), findsWidgets);
     });
 
-    testWidgets('a part code is "stamped on save", not a made-up one',
+    testWidgets('a part code is "assigned on save", not a made-up one',
         (tester) async {
       await _pumpScreen(tester);
       // The prototype printed `activeItem?.variantCode ?? 'SADPB2248'`.
-      expect(find.text('stamped on save'), findsOneWidget);
+      expect(find.text('assigned on save'), findsOneWidget);
       expect(find.textContaining('SADPB2248'), findsNothing);
     });
 
@@ -1134,7 +1167,7 @@ void main() {
       await tester.tap(find.text('Machines & Routing').first);
       await tester.pump();
 
-      expect(find.textContaining('Not saved yet'), findsOneWidget);
+      expect(find.textContaining('Save the part to attach a route'), findsOneWidget);
       final button = tester.widget<AppButton>(
         find.ancestor(of: find.text('Author route'), matching: find.byType(AppButton)).first,
       );

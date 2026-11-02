@@ -126,7 +126,7 @@ void main() {
     await tester.tap(find.text('Second grade').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pumpAndSettle();
 
     expect(saved, isNotNull);
@@ -237,7 +237,7 @@ void main() {
       find.byKey(const ValueKey<String>('material-option-none')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Master Data'));
+    await tester.tap(find.text('Save raw sheet'));
     await tester.pumpAndSettle();
     expect(saved!.materialName, '');
   });

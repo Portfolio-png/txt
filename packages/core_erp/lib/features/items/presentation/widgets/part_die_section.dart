@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../sheet/sheet_engine.dart';
+import '../../../../sheet/sheet_style.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -483,7 +484,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       if (replacing != null) widget.onUnstage(replacing);
       widget.onStage(draft);
       _resetSheet();
-      _notice = 'Die ${draft.toolCode} is held until the part is made.';
+      _notice = 'Die ${draft.toolCode} will be saved with the part.';
     });
   }
 
@@ -675,8 +676,7 @@ class _PartDieSectionState extends State<PartDieSection> {
           else ...[
             if (holding) ...[
               const Text(
-                'Fill this in now — each die is held until you create the '
-                'part, then written with it.',
+                'Fill this in now — each die is saved together with the part.',
                 style: TextStyle(
                   fontSize: 14,
                   color: SoftErpTheme.textSecondary,
@@ -710,12 +710,9 @@ class _PartDieSectionState extends State<PartDieSection> {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
-                    decoration: InputDecoration(
-                      labelText: 'Die Code',
-                      helperText: _codeHelper(),
-                      helperMaxLines: 2,
-                      isDense: true,
-                      border: const OutlineInputBorder(),
+                    decoration: SheetStyle.field(
+                      label: 'Die Code',
+                      helper: _codeHelper(),
                     ),
                   ),
                 ),
@@ -742,6 +739,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                     enabled: enabled,
                     label: 'Liner Size',
                     helperText: 'Optional',
+                    decoration: SheetStyle.field(),
                     errorText: _linerError,
                     suggestions: _linerSuggestions,
                     onUnitChanged: (symbol) => setState(() {
@@ -885,6 +883,7 @@ class _PartDieSectionState extends State<PartDieSection> {
         options: options,
         enabled: enabled,
         searchKeyboardType: numeric ? TextInputType.number : null,
+        decoration: SheetStyle.field(),
         onChanged: () => setState(() {}),
       ),
     );
@@ -894,9 +893,10 @@ class _PartDieSectionState extends State<PartDieSection> {
     final label = widget.partCode.isNotEmpty
         ? widget.partCode
         : (widget.partLabel.isNotEmpty ? widget.partLabel : 'this part');
-    if (widget.part == null) return 'Dies · $label · held';
-    if (editing == null) return 'Dies · $label · new';
-    return 'Dies · $label · ${_codeController.text}';
+    if (widget.part == null) return 'Dies for $label — not saved yet';
+    if (editing == null) return 'New die for $label';
+    final code = _codeController.text.trim();
+    return code.isEmpty ? 'Die for $label' : 'Die $code';
   }
 
   String _codeHelper() {
@@ -1049,7 +1049,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                 key: const ValueKey<String>('quick-entry-die-add-type'),
                 avatar: const Icon(Icons.add_rounded, size: 16),
                 label: Text(
-                  _type != null && !_type!.builtIn ? 'Change' : 'Type one',
+                  _type != null && !_type!.builtIn ? 'Change type' : 'Add type',
                   style: const TextStyle(fontSize: 14),
                 ),
                 onPressed: enabled ? _askForCustomType : null,
@@ -1093,6 +1093,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             ),
             value: _dieMakerId,
             fallbackName: _madeByController.text,
+            decoration: SheetStyle.field(),
             onChanged: (maker) => setState(() {
               _dieMakerId = maker?.id;
               // The text follows the pick so the two never disagree about who
@@ -1125,13 +1126,9 @@ class _PartDieSectionState extends State<PartDieSection> {
           textCapitalization: TextCapitalization.words,
           onChanged: (_) => setState(() {}),
           style: const TextStyle(fontSize: 14),
-          decoration: const InputDecoration(
-            labelText: 'Die Made By',
-            helperText:
-                'Whoever cut it — a fitter here, or an outside toolroom',
-            helperMaxLines: 2,
-            isDense: true,
-            border: OutlineInputBorder(),
+          decoration: SheetStyle.field(
+            label: 'Die Made By',
+            helper: 'Whoever cut it — a fitter here, or an outside toolroom',
           ),
         ),
         if (suggestions.isNotEmpty) ...[
@@ -1275,8 +1272,7 @@ class _DieRow extends StatelessWidget {
                     what: 'die photo',
                     note: photoNote,
                     fallbackUrl: die.photoUrl,
-                    disabledReason: 'The die is made when the part saves — add '
-                        'its photo then',
+                    disabledReason: 'Save the part to add the die’s photo',
                   ),
                   const SizedBox(width: _kPhotoGap),
                 ],
@@ -1318,7 +1314,7 @@ class _DieRow extends StatelessWidget {
                 _DieCell(die.whereKept, flex: _kDieFlex[7]),
                 if (pending)
                   _DieCell(
-                    partExists ? 'held' : 'held for the part',
+                    partExists ? 'Not saved yet' : 'Saves with the part',
                     flex: _kDieFlex[8],
                     muted: true,
                   )
@@ -1526,10 +1522,9 @@ class _CustomDieTypeDialogState extends State<_CustomDieTypeDialog> {
               controller: _words,
               autofocus: true,
               style: const TextStyle(fontSize: 15),
-              decoration: const InputDecoration(
-                labelText: 'Die type',
-                hintText: 'Deep Drawing, Coining, Forming…',
-                border: OutlineInputBorder(),
+              decoration: SheetStyle.field(
+                label: 'Die type',
+                hint: 'Deep Drawing, Coining, Forming…',
               ),
               onChanged: (_) => setState(() {}),
               onSubmitted: (_) => _submit(),

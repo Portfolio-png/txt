@@ -67,6 +67,68 @@ abstract final class SheetStyle {
     color: SoftErpTheme.textMuted,
   );
 
+  /// Every typed field on the sheet below the grid — the deal, people, dies,
+  /// machines. They used to take whatever the field widget defaulted to:
+  /// dense beside not, radius 14 enabled and 4 disabled, helpers cut to one
+  /// line ("One figure for the p…"). Helpers and errors wrap to two lines.
+  static InputDecoration field({
+    String? label,
+    String? hint,
+    String? helper,
+    String? error,
+    Widget? suffixIcon,
+    String? suffixText,
+  }) {
+    OutlineInputBorder border(Color colour, [double width = 1]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+          borderSide: BorderSide(color: colour, width: width),
+        );
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      errorText: error,
+      suffixIcon: suffixIcon,
+      suffixText: suffixText,
+      isDense: true,
+      filled: true,
+      fillColor: SoftErpTheme.cardSurfaceAlt,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      labelStyle: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+      hintStyle: hint == null ? null : SheetStyle.muted,
+      helperStyle: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+      errorStyle: const TextStyle(fontSize: 13, color: SoftErpTheme.dangerText),
+      helperMaxLines: 2,
+      errorMaxLines: 2,
+      border: border(SoftErpTheme.border),
+      enabledBorder: border(SoftErpTheme.border),
+      disabledBorder: border(SoftErpTheme.border.withValues(alpha: 0.6)),
+      focusedBorder: border(SoftErpTheme.accent, 1.6),
+      errorBorder: border(SoftErpTheme.dangerText),
+      focusedErrorBorder: border(SoftErpTheme.dangerText, 1.6),
+    );
+  }
+
+  /// "Unsaved" — a section holding changes its own Save has not written.
+  static Widget unsavedPill({String label = 'Unsaved', Key? key}) => Container(
+        key: key,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.warningBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: SoftErpTheme.warningBorder),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: SoftErpTheme.warningText,
+          ),
+        ),
+      );
+
   /// The 32px square that carries a section's icon.
   static Widget iconTile(IconData icon) => Container(
         width: 32,

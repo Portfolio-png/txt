@@ -217,11 +217,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
               for (final party in _deal.parties)
                 SearchableSelectOption<int>(value: party.id, label: party.name),
             ],
-            decoration: const InputDecoration(
-              labelText: 'Company',
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
+            decoration: SheetStyle.field(label: 'Company'),
             // A part for a new customer should not need a trip to the
             // Clients screen. A name the master already has is that company.
             canCreateOption: (query, _) {
@@ -256,6 +252,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         FitToText(
           controller: quotation,
           texts: const ['Quotation (₹)'],
+          helper: 'One figure for the part',
           minWidth: 170,
           child: TextField(
             key: const ValueKey<String>('deal_quotation'),
@@ -269,14 +266,12 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.,₹ ]')),
             ],
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            decoration: InputDecoration(
-              labelText: 'Quotation (₹)',
-              helperText: 'One figure for the part',
-              errorText: quotationColumn == null
+            decoration: SheetStyle.field(
+              label: 'Quotation (₹)',
+              helper: 'One figure for the part',
+              error: quotationColumn == null
                   ? null
                   : _deal.errors[quotationColumn]?.message,
-              isDense: true,
-              border: const OutlineInputBorder(),
             ),
             onChanged: (text) {
               if (quotationColumn != null) {
@@ -330,7 +325,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       // A note, not a disabled button: there is nothing here to press, ever —
       // the part row's own Save carries the deal.
       return const Tooltip(
-        message: 'The deal is saved with the part — save the part row first',
+        message: 'Save the part to record its deal — it is saved with the part',
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
           child: Row(
@@ -352,9 +347,11 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         label: const Text('Edit', style: TextStyle(fontSize: 14)),
       );
     }
-    return AppButton(
+    return Tooltip(
+      message: 'Saves the whole part, deal included (Ctrl+S)',
+      child: AppButton(
       key: const ValueKey<String>('deal_save'),
-      label: 'Save',
+      label: 'Save part',
       icon: Icons.save_outlined,
       variant: AppButtonVariant.secondary,
       dense: true,
@@ -370,6 +367,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                 if (ok) _dealEditing = false;
               });
             },
+      ),
     );
   }
 
@@ -444,6 +442,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             options: options,
             enabled: !locked,
             errorText: column == null ? null : errors[column]?.message,
+            decoration: SheetStyle.field(),
             onChanged: () {
               if (column != null) {
                 _people.updateTextValue(column, text.text, row: row);
@@ -463,11 +462,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           readOnly: locked,
           keyboardType: keyboard,
           style: const TextStyle(fontSize: 14),
-          decoration: InputDecoration(
-            labelText: label,
-            errorText: column == null ? null : errors[column]?.message,
-            isDense: true,
-            border: const OutlineInputBorder(),
+          decoration: SheetStyle.field(
+            label: label,
+            error: column == null ? null : errors[column]?.message,
           ),
           onChanged: (value) {
             if (column != null) _people.updateTextValue(column, value, row: row);
@@ -522,15 +519,24 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             label: const Text('Edit', style: TextStyle(fontSize: 14)),
           )
         else
-          AppButton(
-            key: ValueKey<String>('deal_person_${row}_save'),
-            label: 'Save',
-            icon: Icons.save_outlined,
-            variant: AppButtonVariant.secondary,
-            dense: true,
-            // Off while that person is saving: a second click added them twice.
-            isLoading: widget.controller.isSavingPerson(row),
-            onPressed: blank ? null : () => widget.controller.savePersonRow(row),
+          // Writes the person to the company's file now. The tick is the
+          // deal's, so it waits for the part's save.
+          Tooltip(
+            message: blank
+                ? 'Type a name first'
+                : 'Saves this person to '
+                    '${widget.controller.dealPartyName.trim().isEmpty ? 'the company' : widget.controller.dealPartyName.trim()} '
+                    'now. Whether they’re ticked for this part is saved with the part.',
+            child: AppButton(
+              key: ValueKey<String>('deal_person_${row}_save'),
+              label: 'Save contact',
+              icon: Icons.save_outlined,
+              variant: AppButtonVariant.secondary,
+              dense: true,
+              // Off while that person is saving: a second click added them twice.
+              isLoading: widget.controller.isSavingPerson(row),
+              onPressed: blank ? null : () => widget.controller.savePersonRow(row),
+            ),
           ),
         Tooltip(
           message: saved

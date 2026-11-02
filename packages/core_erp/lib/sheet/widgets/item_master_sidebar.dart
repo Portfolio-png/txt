@@ -160,7 +160,7 @@ class ItemMasterSidebar extends StatelessWidget {
             id: 'group_item',
             title: 'Group Item',
             subtitle: 'Identity, hierarchy & properties',
-            icon: Icons.table_rows_rounded,
+            icon: Icons.category_rounded,
             isSelected: controller.activeSection == 'group_item',
           ),
           if (controller.isExternal)

@@ -47,6 +47,9 @@ class _ValueCellState extends State<ValueCell> {
   late final TextEditingController _textController;
   final FocusNode _focusNode = FocusNode();
 
+  /// Whether [_focusNode] has been focused since it was last left.
+  bool _hadFocus = false;
+
   /// The key listener's own node — held, not made in build, where a new one
   /// per rebuild (one per keystroke while typing) was never disposed.
   final FocusNode _keyListenerNode = FocusNode(skipTraversal: true);
@@ -68,11 +71,16 @@ class _ValueCellState extends State<ValueCell> {
 
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
+        _hadFocus = true;
         widget.controller.focusCell(
           widget.column.id,
           isHeader: false,
           row: widget.rowIndex,
         );
+      } else if (_hadFocus) {
+        // Left: an empty required cell is now shown as missing.
+        _hadFocus = false;
+        widget.controller.markTouched(widget.column.id, row: widget.rowIndex);
       }
     });
   }
@@ -136,7 +144,7 @@ class _ValueCellState extends State<ValueCell> {
   Widget build(BuildContext context) {
     final cellVal = _currentVal;
     final error = widget.isSelected
-        ? widget.controller.errors[widget.column.id]
+        ? widget.controller.visibleErrors()[widget.column.id]
         : null;
     final isFocused =
         widget.isSelected &&
@@ -345,10 +353,13 @@ class _ValueCellState extends State<ValueCell> {
   }
 
   Widget _buildStampCell(CellValue? cellVal) {
-    final text = cellVal?.textValue ?? 'Set on save';
-    final isSet = text != 'Set on save';
+    final stored = cellVal?.textValue?.trim() ?? '';
+    // "Set on save" is what the prototype seeded into these cells; read it as
+    // empty. Short when empty — "Set on sa…" was all a narrow column showed.
+    final isSet = stored.isNotEmpty && stored != 'Set on save';
+    final text = isSet ? stored : 'On save';
 
-    return Row(
+    final row = Row(
       children: [
         Icon(
           isSet ? Icons.lock_clock_rounded : Icons.lock_outline_rounded,
@@ -369,6 +380,9 @@ class _ValueCellState extends State<ValueCell> {
         ),
       ],
     );
+    return isSet
+        ? row
+        : Tooltip(message: 'Filled in when the part is saved', child: row);
   }
 
   Widget _buildDerivedCell(CellValue? cellVal) {
