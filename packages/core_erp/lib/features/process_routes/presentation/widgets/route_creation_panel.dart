@@ -32,6 +32,7 @@ class RouteCreationPanel extends StatefulWidget {
     required this.onSaved,
     required this.onCancel,
     this.initialPartId,
+    this.pendingPartName,
     this.madeHereItemIds = const <int>{},
   });
 
@@ -40,7 +41,15 @@ class RouteCreationPanel extends StatefulWidget {
 
   /// Opens pointed at a part — what a loose-end row ("this part has no route")
   /// passes so the answer is one click rather than a search.
+  ///
+  /// Followed while the panel is open: a host whose part gets saved (or moves
+  /// to another part) hands the new id in, and the panel takes it — unless
+  /// somebody picked a different part here themselves.
   final int? initialPartId;
+
+  /// The host's part while it is not saved yet ("Patti Brass 22"), so the
+  /// panel can say what it is waiting for instead of showing an empty field.
+  final String? pendingPartName;
 
   /// Parts made in this sitting. Sorted to the top of the picker, because the
   /// part somebody is routing is almost always the one they just made.
@@ -88,6 +97,27 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
     // new version", and the save tried to lay a second v1 over the first.
     final initial = widget.initialPartId;
     if (initial != null) _loadRoute(initial);
+  }
+
+  /// The host's part changed under an open panel — most often the part was
+  /// saved after Author route was opened. `_partId` was read once in
+  /// initState, so the field stayed empty and Save route stayed off until the
+  /// panel was closed and opened again. The stages laid out so far are kept.
+  @override
+  void didUpdateWidget(RouteCreationPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialPartId;
+    if (next == oldWidget.initialPartId) return;
+    // A part somebody picked here by hand is theirs; the host does not move it.
+    if (_partId != oldWidget.initialPartId) return;
+    setState(() {
+      _partId = next;
+      if (next == null) {
+        _active = null;
+        _pendingVersionOf = null;
+      }
+    });
+    if (next != null) _loadRoute(next);
   }
 
   /// Adds a stage to the master and to this panel's list, so every step box
@@ -212,13 +242,25 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
   /// own link writes use.
   List<SearchableSelectOption<int>> _partOptions(List<ItemDefinition> items) {
     final sorted = [...items];
+    final chosen = _partId;
+    // The chosen part always has an option, even before the list has it —
+    // a value with no option draws the field empty.
+    final missing = chosen != null && !items.any((item) => item.id == chosen);
     sorted.sort((a, b) {
       final aHere = widget.madeHereItemIds.contains(a.id) ? 0 : 1;
       final bHere = widget.madeHereItemIds.contains(b.id) ? 0 : 1;
       if (aHere != bHere) return aHere.compareTo(bHere);
       return _titleOf(a).toLowerCase().compareTo(_titleOf(b).toLowerCase());
     });
+    final pendingName = widget.pendingPartName?.trim() ?? '';
     return [
+      if (missing)
+        SearchableSelectOption<int>(
+          value: chosen,
+          label: pendingName.isNotEmpty ? pendingName : 'Part #$chosen',
+          subtitle: 'made just now',
+          searchText: pendingName,
+        ),
       for (final item in sorted)
         SearchableSelectOption<int>(
           value: item.id,
@@ -245,6 +287,10 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
     return code.isNotEmpty ? code : 'Part ${item.id}';
   }
 
+  /// The host has a part on screen that is not saved yet.
+  bool get _waitingForPart =>
+      _partId == null && (widget.pendingPartName?.trim() ?? '').isNotEmpty;
+
   bool get _canSave =>
       !_serviceMissing &&
       _partId != null &&
@@ -254,7 +300,11 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
 
   String get _saveTooltip {
     if (_serviceMissing) return 'Routing is not available in this build.';
-    if (_partId == null) return 'Choose the part this route belongs to first.';
+    if (_partId == null) {
+      return _waitingForPart
+          ? 'Save the part first — the route attaches to it.'
+          : 'Choose the part this route belongs to first.';
+    }
     if (_steps.isEmpty) return 'Add at least one stage.';
     return '';
   }
@@ -378,6 +428,15 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
             _loadRoute(value);
           },
         ),
+        if (_waitingForPart) ...[
+          const SizedBox(height: 8),
+          Text(
+            '“${widget.pendingPartName!.trim()}” isn’t saved yet. Save the '
+            'part and it is picked here — your stages are kept.',
+            key: const ValueKey<String>('route_part_pending'),
+            style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
+          ),
+        ],
         const SizedBox(height: 18),
         if (_error != null) ...[
           Text(

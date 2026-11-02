@@ -434,5 +434,103 @@ void main() {
       expect(panel.initialPartId, 5);
       expect(panel.madeHereItemIds, const {5});
     });
+
+    testWidgets('a part saved while the panel is open lands in its Part field', (tester) async {
+      // The bug: Author route opened on an unsaved part, the part was saved,
+      // and the field stayed empty — the panel read its part once, at open.
+      final service = _SpyRouteService();
+      final items = <ItemDefinition>[_item(1, 'Patti')];
+      final setPart = await _pumpHost(
+        tester,
+        items: items,
+        service: service,
+        pending: 'Cover Brass 22',
+      );
+      expect(find.byKey(const ValueKey('route_part_pending')), findsOneWidget);
+      expect(find.textContaining('Cover Brass 22'), findsWidgets);
+
+      await _addStep(tester);
+      expect(_saveButton(tester).onPressed, isNull);
+      expect(
+        tester.widget<Tooltip>(find.ancestor(of: find.textContaining('Save'), matching: find.byType(Tooltip))).message,
+        contains('Save the part first'),
+      );
+
+      // Saved: the sheet hands the new id in. Not in the list yet on purpose —
+      // the field must still name it rather than draw empty.
+      await setPart(7, pending: null);
+      expect(find.byKey(const ValueKey('route_part_pending')), findsNothing);
+      expect(find.text('Part #7'), findsOneWidget);
+      expect(find.text('Die'), findsOneWidget, reason: 'the stages laid out first are kept');
+      expect(_saveButton(tester).onPressed, isNotNull);
+
+      await tester.tap(find.textContaining('Save'));
+      await tester.pumpAndSettle();
+      expect(service.calls.single.$2, 7);
+    });
+
+    testWidgets('a part picked by hand is not moved by the host', (tester) async {
+      final service = _SpyRouteService();
+      final setPart = await _pumpHost(
+        tester,
+        items: [_item(1, 'Patti'), _item(2, 'Cover')],
+        service: service,
+        partId: 1,
+      );
+      await tester.tap(find.byKey(const ValueKey('route_part_field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cover').last);
+      await tester.pumpAndSettle();
+
+      await setPart(5);
+      await _addStep(tester);
+      await tester.tap(find.textContaining('Save'));
+      await tester.pumpAndSettle();
+      expect(service.calls.single.$2, 2, reason: 'the part chosen in the panel');
+    });
   });
+}
+
+/// A host whose part can change under the open panel — the sheet saving the
+/// part after Author route was opened, or its cursor moving to another row.
+Future<Future<void> Function(int?, {String? pending})> _pumpHost(
+  WidgetTester tester, {
+  required List<ItemDefinition> items,
+  required ProcessRouteService service,
+  int? partId,
+  String? pending,
+}) async {
+  tester.view.physicalSize = const Size(1200, 1600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  final host = ValueNotifier<(int?, String?)>((partId, pending));
+  addTearDown(host.dispose);
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ItemsProvider>.value(value: _FakeItems(items)),
+        Provider<ProcessRouteService>.value(value: service),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ValueListenableBuilder<(int?, String?)>(
+              valueListenable: host,
+              builder: (context, value, _) => RouteCreationPanel(
+                initialPartId: value.$1,
+                pendingPartName: value.$2,
+                onSaved: (_) {},
+                onCancel: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return (int? id, {String? pending}) async {
+    host.value = (id, pending);
+    await tester.pumpAndSettle();
+  };
 }

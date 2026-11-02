@@ -1,3 +1,4 @@
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/utils/stamp_format.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
@@ -1127,24 +1128,21 @@ void main() {
       expect(find.textContaining('SADPB2248'), findsNothing);
     });
 
-    testWidgets('routing is drawn disabled, with the reason, before a save',
+    testWidgets('Author route opens before a save, and says the part comes next',
         (tester) async {
       await _pumpScreen(tester);
       await tester.tap(find.text('Machines & Routing').first);
       await tester.pump();
 
+      expect(find.textContaining('Not saved yet'), findsOneWidget);
+      final button = tester.widget<AppButton>(
+        find.ancestor(of: find.text('Author route'), matching: find.byType(AppButton)).first,
+      );
       expect(
-        find.textContaining('Save the part first'),
-        findsOneWidget,
-        reason: 'never hide a control until its precondition holds',
+        button.onPressed,
+        isNotNull,
+        reason: 'stages can be laid out first; the part attaches when it is saved',
       );
-      final button = tester.widget<Tooltip>(
-        find.ancestor(
-          of: find.text('Author route'),
-          matching: find.byType(Tooltip),
-        ).first,
-      );
-      expect(button.message, 'Available once the part is saved');
     });
 
     testWidgets('unticking the external box hides the party section but keeps '

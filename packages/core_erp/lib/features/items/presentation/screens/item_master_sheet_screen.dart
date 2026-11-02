@@ -2392,45 +2392,49 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       );
 
   Widget _routing() {
+    // The cursor row's own part — not `savedItemId`, which falls back to
+    // whatever was saved last, so a new unsaved row read as saved and opened
+    // the panel on somebody else's part.
+    final rowPartId = _controller.groupItemController.draft.entityId;
     if (_showRoutePanel) {
+      // Rebuilt with the row's id on every frame, so a save while the panel
+      // is open lands in its Part field without closing it.
       return RouteCreationPanel(
-        initialPartId: _controller.savedItemId,
+        initialPartId: rowPartId,
+        pendingPartName: rowPartId == null ? _pinnedPartName() : null,
         madeHereItemIds: _madeHere,
         onSaved: (record) {
           setState(() => _showRoutePanel = false);
           _toast('Route saved for ${record.title}.');
-          final id = _livePart?.id;
+          final id = _controller.groupItemController.draft.entityId;
           if (id != null) unawaited(_loadRoute(id));
         },
         onCancel: () => setState(() => _showRoutePanel = false),
       );
     }
 
-    final hasPart = _controller.savedItemId != null;
+    final hasPart = rowPartId != null;
     return Row(
       children: [
         Expanded(
           child: Text(
             hasPart
                 ? 'This part can be routed through the process stages.'
-                : 'Save the part first — a route attaches to a part, so there '
-                    'is nothing to attach one to yet.',
+                : 'Not saved yet — lay out the stages now; Save route unlocks '
+                    'once the part is saved.',
             style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
           ),
         ),
         const SizedBox(width: 12),
-        // Drawn disabled with the reason rather than hidden: a control that
-        // appears only once its precondition holds reads as a missing feature.
         Tooltip(
           message: hasPart
               ? 'Author the stage order for this part'
-              : 'Available once the part is saved',
+              : 'Lay out the stages now; it attaches once the part is saved',
           child: AppButton(
             label: 'Author route',
             icon: Icons.route_rounded,
             variant: AppButtonVariant.secondary,
-            onPressed:
-                hasPart ? () => setState(() => _showRoutePanel = true) : null,
+            onPressed: () => setState(() => _showRoutePanel = true),
           ),
         ),
       ],
