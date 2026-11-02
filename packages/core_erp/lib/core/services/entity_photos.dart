@@ -17,6 +17,9 @@ abstract final class PhotoOwner {
   static const client = 'client';
   static const person = 'party_contact';
 
+  /// A client's contractor. It keeps documents, not a photo slot of its own.
+  static const subContractor = 'sub_contractor';
+
   static String uploadTypeOf(String owner) => switch (owner) {
     item => 'ITEM_IMAGE',
     die => 'DIE_IMAGE',
@@ -99,8 +102,37 @@ class EntityPhotoRepository {
     };
   }
 
+  /// The documents stored in demo mode, oldest first.
+  @visibleForTesting
+  final List<({String owner, String id, String title, int assetId})> mockDocuments = [];
+
   /// Stores [file] as [owner] [id]'s photo, replacing the one it had.
-  Future<EntityPhoto> upload(String owner, String id, XFile file) async {
+  Future<EntityPhoto> upload(String owner, String id, XFile file) async =>
+      _photoFrom(await store(owner, id, file));
+
+  /// Stores [file] on [owner] [id] and answers the server's asset. Without
+  /// [documentTitle] it is the record's photo, replacing the shown one; with
+  /// one it is a document of the company under that name — any kind of file,
+  /// and never its picture.
+  Future<Map<String, dynamic>> store(
+    String owner,
+    String id,
+    XFile file, {
+    String? documentTitle,
+  }) async {
+    final isDocument = documentTitle != null;
+    if (useMockResponses) {
+      final assetId = _mockIds++;
+      if (isDocument) {
+        mockDocuments.add((owner: owner, id: id, title: documentTitle, assetId: assetId));
+        return {'id': assetId, 'documentTitle': documentTitle, 'fileName': file.name};
+      }
+      // The picture every demo upload in the app shows.
+      const url =
+          'https://images.unsplash.com/photo-1550439062-609e1531270e?auto=format&fit=crop&q=80';
+      _mock['$owner:$id'] = (assetId: assetId, url: url);
+      return {'id': assetId, 'readUrl': url};
+    }
     final bytes = await file.readAsBytes();
     final contentType =
         lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
@@ -108,36 +140,34 @@ class EntityPhotoRepository {
     // Named for what it is, with an extension: a file handed over without a
     // name became a stored object nothing could tell was a picture.
     final named = file.name.trim();
-    final extension = extensionFromMime(contentType) ?? 'png';
+    final extension =
+        extensionFromMime(contentType) ?? (isDocument ? 'bin' : 'png');
     final fileName = named.isEmpty
-        ? 'photo.$extension'
+        ? '${isDocument ? 'document' : 'photo'}.$extension'
         : (named.contains('.') ? named : '$named.$extension');
-    if (useMockResponses) {
-      final assetId = _mockIds++;
-      // The picture every demo upload in the app shows.
-      const url =
-          'https://images.unsplash.com/photo-1550439062-609e1531270e?auto=format&fit=crop&q=80';
-      _mock['$owner:$id'] = (assetId: assetId, url: url);
-      return EntityPhoto(assetId: assetId, url: url, fetchedAt: DateTime.now());
-    }
     final intent = await _post('/api/assets/upload-intent', {
-      'uploadType': PhotoOwner.uploadTypeOf(owner),
+      'uploadType': isDocument ? 'PARTY_DOCUMENT' : PhotoOwner.uploadTypeOf(owner),
       'entityType': owner,
       'entityId': int.tryParse(id) ?? id,
       'fileName': fileName,
       'contentType': contentType,
       'sizeBytes': bytes.length,
       'sha256': sha256.convert(bytes).toString(),
-      // A new photo replaces the shown one.
-      'isPrimary': true,
+      if (isDocument)
+        'documentTitle': documentTitle
+      else
+        // A new photo replaces the shown one.
+        'isPrimary': true,
     });
     final body = intent['intent'] as Map<String, dynamic>? ?? const {};
     final existing = body['asset'] as Map<String, dynamic>?;
     if (body['alreadyUploaded'] == true && existing != null) {
+      // The same document under the same name is the one already there.
+      if (isDocument) return existing;
       // The same picture again: make it the shown one.
       final id = (existing['id'] as num).toInt();
       final primary = await _send('PATCH', '/api/assets/$id/primary', null);
-      return _photoFrom(primary['asset'] as Map<String, dynamic>? ?? existing);
+      return primary['asset'] as Map<String, dynamic>? ?? existing;
     }
     final upload = body['upload'] as Map<String, dynamic>? ?? const {};
     final headers = {
@@ -157,7 +187,7 @@ class EntityPhotoRepository {
       'uploadSessionId': upload['uploadSessionId'],
       'objectKey': upload['objectKey'],
     });
-    return _photoFrom(done['asset'] as Map<String, dynamic>? ?? const {});
+    return done['asset'] as Map<String, dynamic>? ?? const {};
   }
 
   Future<void> remove(String owner, String id, int assetId) async {

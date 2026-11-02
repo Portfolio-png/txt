@@ -85,6 +85,16 @@ const _logo = PhotoRequest(
   lines: [PhotoRequestLine('GST', '27ABCDE1234F1Z5')],
 );
 
+const _visitingCard = PhotoRequest(
+  id: 3,
+  owner: 'client',
+  entityId: '5',
+  documentTitle: 'Visiting card',
+  kind: 'Document',
+  title: 'Visiting card',
+  lines: [PhotoRequestLine('Company', 'Gold Medal')],
+);
+
 void main() {
   late _Queue queue;
   late PhotoRequestsProvider requests;
@@ -146,6 +156,28 @@ void main() {
 
     expect(camera.shots, 3);
     expect(find.text('All done — 2 photos sent'), findsOneWidget);
+  });
+
+  testWidgets('a document is filed under its name, and the logo is left alone', (tester) async {
+    queue.jobs
+      ..clear()
+      ..add(_visitingCard);
+    await requests.refresh();
+    await tester.pumpWidget(host(PhotoCaptureScreen(source: _Camera())));
+    await tester.pumpAndSettle();
+    expect(find.text('Document'), findsOneWidget);
+    expect(find.text('Visiting card'), findsOneWidget);
+    expect(find.textContaining('Gold Medal'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('photo-shutter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('photo-use')));
+    await tester.pumpAndSettle();
+
+    final stored = store.mockDocuments.single;
+    expect((stored.owner, stored.id, stored.title), ('client', '5', 'Visiting card'));
+    expect(queue.completed.single, (3, stored.assetId));
+    expect(await store.primaryPhotos('client', ['5']), isEmpty, reason: 'not the company logo');
   });
 
   testWidgets('Skip closes the job without a photo', (tester) async {

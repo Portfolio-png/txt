@@ -94,10 +94,22 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
     });
     final requests = context.read<PhotoRequestsProvider>();
     try {
-      final photo = await context
-          .read<EntityPhotoRepository>()
-          .upload(request.owner, request.entityId, shot);
-      final error = await requests.complete(request, assetId: photo.assetId);
+      final store = context.read<EntityPhotoRepository>();
+      // A document of the company is filed under its name beside the logo;
+      // anything else becomes the record's photo.
+      final int assetId;
+      if (request.documentTitle case final title?) {
+        final asset = await store.store(
+          request.owner,
+          request.entityId,
+          shot,
+          documentTitle: title,
+        );
+        assetId = (asset['id'] as num).toInt();
+      } else {
+        assetId = (await store.upload(request.owner, request.entityId, shot)).assetId;
+      }
+      final error = await requests.complete(request, assetId: assetId);
       // The photo is on the record either way; a job the desktop closed in the
       // meantime only needs the queue read again.
       if (error != null) await requests.refresh();

@@ -27,6 +27,7 @@ import 'package:core_erp/features/orders/domain/order_entry.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
+import '../widgets/company_view_dialog.dart';
 import '../widgets/designation_field.dart';
 import '../widgets/sub_contractors_sheet.dart';
 import '../providers/sub_contractors_provider.dart';
@@ -335,7 +336,9 @@ class _ClientsCardGrid extends StatelessWidget {
               ? client.photoUrl
               : client.logoUrl,
           fallbackIcon: Icons.groups_outlined,
-          onTap: () => ClientsScreen.openEditor(context, client: client),
+          // What the company is — its people, contractors and documents —
+          // with Edit in the view's footer.
+          onTap: () => CompanyView.openClient(context, client.id),
           details: [
             SoftEntityDetail(
               icon: Icons.badge_outlined,
@@ -402,6 +405,8 @@ class _AllSubContractorsTable extends StatelessWidget {
       rowBuilder: (context, index) {
         final sub = subContractors[index];
         return SoftMasterRow(
+          key: ValueKey<String>('sub_contractor_row_${sub.id}'),
+          onTap: () => CompanyView.openContractor(context, sub.id),
           children: [
             Expanded(
               flex: 2,
@@ -499,6 +504,11 @@ class _ClientRow extends StatelessWidget {
                     builder: (context) => _PortalSettingsSheet(client: client),
                   );
                 },
+              ),
+              SoftActionLink(
+                key: ValueKey<String>('client_view_${client.id}'),
+                label: 'View',
+                onTap: () => CompanyView.openClient(context, client.id),
               ),
               SoftActionLink(
                 label: 'Edit',

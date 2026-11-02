@@ -89,6 +89,7 @@ const S3_UPLOAD_PREFIXES = Object.freeze({
   DIE_IMAGE: 'masters/dies/',
   DEPARTMENT_IMAGE: 'masters/departments/',
   PARTY_IMAGE: 'masters/parties/',
+  PARTY_DOCUMENT: 'masters/parties/documents/',
 });
 const COMMON_WEAK_PASSWORDS = new Set([
   'password',
@@ -2342,6 +2343,8 @@ const ASSET_ENTITY_PERMISSIONS = {
   die: { write: 'dies.update', read: 'dies.read' },
   client: { write: 'clients.update', read: 'clients.read' },
   party_contact: { write: 'clients.update', read: 'clients.read' },
+  // A contractor is filed under its client, so its documents are the client's.
+  sub_contractor: { write: 'clients.update', read: 'clients.read' },
 };
 
 function requireAssetEntityPermission(op, resolveEntityType) {
@@ -2949,6 +2952,7 @@ function rowToAssetDto(row, readUrlPayload = null) {
     objectKey: row.object_key || '',
     status: row.status || 'uploaded',
     isPrimary: Number(row.is_primary || 0) === 1,
+    documentTitle: row.document_title ?? null,
     createdAt: row.created_at,
     uploadedAt: row.uploaded_at,
     readUrl: readUrlPayload?.readUrl || null,
@@ -5318,7 +5322,8 @@ async function initDb() {
       status TEXT NOT NULL DEFAULT 'uploaded',
       is_primary INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
-      uploaded_at TEXT
+      uploaded_at TEXT,
+      document_title TEXT
     )
   `);
 
@@ -5336,7 +5341,8 @@ async function initDb() {
       is_primary INTEGER NOT NULL DEFAULT 0,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      completed_at TEXT
+      completed_at TEXT,
+      document_title TEXT
     )
   `);
 
@@ -15132,7 +15138,13 @@ function assertValidAssetUploadInput({
   sizeBytes,
   sha256,
   isPrimary,
+  documentTitle,
 }) {
+  if (documentTitle !== undefined && documentTitle !== null) {
+    return assertValidDocumentUploadInput({
+      entityType, entityId, fileName, contentType, sizeBytes, sha256, documentTitle,
+    });
+  }
   const normalizedEntityType = String(entityType || '').trim().toLowerCase();
   const normalizedEntityId = Number(entityId || 0);
   const normalizedUploadType = normalizeUploadType(uploadType);
@@ -15203,6 +15215,89 @@ function assertValidAssetUploadInput({
     sizeBytes: Math.round(normalizedSize),
     sha256: normalizedSha,
     isPrimary: Boolean(isPrimary),
+    documentTitle: null,
+  };
+}
+
+const DOCUMENT_ENTITY_TYPES = new Set(['client', 'sub_contractor']);
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const MAX_DOCUMENT_TITLE = 120;
+
+function normalizeDocumentTitle(value) {
+  const title = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (!title) {
+    const error = new Error('Give the document a name.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (title.length > MAX_DOCUMENT_TITLE) {
+    const error = new Error(`A document name is at most ${MAX_DOCUMENT_TITLE} characters.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return title;
+}
+
+/// A company's document: any kind of file, under a name the user gave it
+/// (uploaded_assets.document_title). Never primary — it is not the company's picture.
+function assertValidDocumentUploadInput({
+  entityType,
+  entityId,
+  fileName,
+  contentType,
+  sizeBytes,
+  sha256,
+  documentTitle,
+}) {
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase();
+  const normalizedEntityId = Number(entityId || 0);
+  const normalizedSize = Number(sizeBytes || 0);
+  const normalizedSha = String(sha256 || '').toLowerCase().trim();
+  // Whatever the file says it is; a missing type is stored as bytes.
+  const normalizedContentType =
+    String(contentType || '').toLowerCase().split(';')[0].trim() || 'application/octet-stream';
+
+  if (!DOCUMENT_ENTITY_TYPES.has(normalizedEntityType)) {
+    const error = new Error('Documents are kept for a client or a contractor.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isInteger(normalizedEntityId) || normalizedEntityId <= 0) {
+    const error = new Error('A valid entity id is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[\w.+-]+\/[\w.+-]+$/.test(normalizedContentType)) {
+    const error = new Error('The file type is not readable.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0) {
+    const error = new Error('File size must be greater than zero.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizedSize > MAX_DOCUMENT_BYTES) {
+    const error = new Error('A document must be 25 MB or smaller.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[a-f0-9]{64}$/.test(normalizedSha)) {
+    const error = new Error('A valid SHA-256 file hash is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    uploadType: 'PARTY_DOCUMENT',
+    entityType: normalizedEntityType,
+    entityId: normalizedEntityId,
+    fileName: normalizeAssetFileName(fileName || 'document'),
+    contentType: normalizedContentType,
+    sizeBytes: Math.round(normalizedSize),
+    sha256: normalizedSha,
+    isPrimary: false,
+    documentTitle: normalizeDocumentTitle(documentTitle),
   };
 }
 
@@ -15526,6 +15621,10 @@ function localObjectKeyFrom(req) {
   const raw = req.params?.key;
   const segments = Array.isArray(raw) ? raw : String(raw || '').split('/');
   return segments.map((segment) => decodeURIComponent(String(segment))).join('/');
+}
+
+function isDocumentObjectKey(objectKey) {
+  return String(objectKey || '').startsWith(S3_UPLOAD_PREFIXES.PARTY_DOCUMENT);
 }
 
 const LOCAL_UPLOAD_CONTENT_TYPES = {
@@ -16068,6 +16167,12 @@ async function assertAssetEntityExists(entityType, entityId) {
       return;
     }
   }
+  if (entityType === 'sub_contractor') {
+    const contractor = await get('SELECT id FROM sub_contractors WHERE id = ?', [entityId]);
+    if (contractor) {
+      return;
+    }
+  }
   const error = new Error('Asset owner not found.');
   error.statusCode = 404;
   throw error;
@@ -16093,6 +16198,7 @@ async function listAssetsForEntity(entityType, entityId, { includeReadUrls = tru
     SELECT *
     FROM uploaded_assets
     WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+      AND document_title IS NULL
     ORDER BY is_primary DESC, datetime(uploaded_at) DESC, id DESC
     `,
     [normalizedEntityType, normalizedEntityId],
@@ -16116,8 +16222,11 @@ async function createAssetUploadIntent(input) {
     SELECT *
     FROM uploaded_assets
     WHERE entity_type = ? AND entity_id = ? AND sha256 = ? AND status = 'uploaded'
+      AND COALESCE(document_title, '') = ?
     `,
-    [normalized.entityType, normalized.entityId, normalized.sha256],
+    // The same file under a second name is a second document; as a photo
+    // and as a document it is one of each.
+    [normalized.entityType, normalized.entityId, normalized.sha256, normalized.documentTitle || ''],
   );
   if (existing) {
     return {
@@ -16146,9 +16255,9 @@ async function createAssetUploadIntent(input) {
     `
     INSERT INTO asset_upload_sessions (
       id, entity_type, entity_id, file_name, content_type, size_bytes, sha256,
-      object_key, status, is_primary, expires_at, created_at
+      object_key, status, is_primary, expires_at, created_at, document_title
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
     `,
     [
       uploadSessionId,
@@ -16162,6 +16271,7 @@ async function createAssetUploadIntent(input) {
       normalized.isPrimary ? 1 : 0,
       expiresAt,
       now.toISOString(),
+      normalized.documentTitle,
     ],
   );
 
@@ -16202,6 +16312,7 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
   await assertAssetEntityExists(session.entity_type, Number(session.entity_id));
   await assertS3ObjectExists(session.object_key);
 
+  const documentTitle = session.document_title ?? null;
   const primaryCount = await get(
     `
     SELECT COUNT(*) AS count
@@ -16210,8 +16321,10 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
     `,
     [session.entity_type, Number(session.entity_id)],
   );
+  // A document is never the record's picture, however few photos it has.
   const shouldBePrimary =
-    Number(session.is_primary || 0) === 1 || Number(primaryCount?.count || 0) === 0;
+    documentTitle == null &&
+    (Number(session.is_primary || 0) === 1 || Number(primaryCount?.count || 0) === 0);
   const now = new Date().toISOString();
 
   await run('BEGIN TRANSACTION');
@@ -16230,9 +16343,9 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
       `
       INSERT OR IGNORE INTO uploaded_assets (
         entity_type, entity_id, file_name, content_type, size_bytes, sha256,
-        object_key, status, is_primary, created_at, uploaded_at
+        object_key, status, is_primary, created_at, uploaded_at, document_title
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, ?, ?, ?)
       `,
       [
         session.entity_type,
@@ -16245,6 +16358,7 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
         shouldBePrimary ? 1 : 0,
         session.created_at || now,
         now,
+        documentTitle,
       ],
     );
     await run(
@@ -16261,7 +16375,9 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
     'SELECT * FROM uploaded_assets WHERE object_key = ?',
     [session.object_key],
   );
-  await syncRecordPhotoField(session.entity_type, Number(session.entity_id));
+  if (documentTitle == null) {
+    await syncRecordPhotoField(session.entity_type, Number(session.entity_id));
+  }
   announceAssetChanged(session.entity_type, session.entity_id);
   return rowToAssetDto(asset, await assetReadUrlPayload(asset.object_key));
 }
@@ -16304,6 +16420,11 @@ async function setPrimaryAsset(assetId) {
   if (!asset) {
     const error = new Error('Asset not found.');
     error.statusCode = 404;
+    throw error;
+  }
+  if (asset.document_title != null) {
+    const error = new Error('A document cannot be the record\'s photo.');
+    error.statusCode = 400;
     throw error;
   }
   await run('BEGIN TRANSACTION');
@@ -16352,6 +16473,7 @@ async function deleteAsset(assetId) {
       SELECT *
       FROM uploaded_assets
       WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+        AND document_title IS NULL
       ORDER BY datetime(uploaded_at) DESC, id DESC
       LIMIT 1
       `,
@@ -16363,8 +16485,49 @@ async function deleteAsset(assetId) {
       ]);
     }
   }
-  await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id), asset.object_key);
+  if (asset.document_title == null) {
+    await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id), asset.object_key);
+  }
   announceAssetChanged(asset.entity_type, asset.entity_id);
+}
+
+/// A company's documents, newest first, each with a short-lived read URL.
+async function listDocumentsForEntity(entityType, entityId) {
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase();
+  const normalizedEntityId = Number(entityId || 0);
+  if (!DOCUMENT_ENTITY_TYPES.has(normalizedEntityType)) {
+    const error = new Error('Documents are kept for a client or a contractor.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await assertAssetEntityExists(normalizedEntityType, normalizedEntityId);
+  const rows = await all(
+    `
+    SELECT *
+    FROM uploaded_assets
+    WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+      AND document_title IS NOT NULL
+    ORDER BY datetime(uploaded_at) DESC, id DESC
+    `,
+    [normalizedEntityType, normalizedEntityId],
+  );
+  return Promise.all(rows.map((row) => rowToUploadedAssetDto(row, true)));
+}
+
+async function renameDocument(assetId, title) {
+  const asset = await get(
+    "SELECT * FROM uploaded_assets WHERE id = ? AND status = 'uploaded'",
+    [Number(assetId || 0)],
+  );
+  if (!asset || asset.document_title == null) {
+    const error = new Error('Document not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const next = normalizeDocumentTitle(title);
+  await run('UPDATE uploaded_assets SET document_title = ? WHERE id = ?', [next, asset.id]);
+  announceAssetChanged(asset.entity_type, asset.entity_id);
+  return rowToAssetDto({ ...asset, document_title: next });
 }
 
 // --- photos the desktop asks the phone to take ------------------------------
@@ -16373,7 +16536,7 @@ async function deleteAsset(assetId) {
 // takes it. The photo itself goes up through the ordinary asset routes; these
 // only queue, describe and close the jobs.
 
-const PHOTO_REQUEST_TYPES = ['item', 'client', 'party_contact', 'die', 'machine'];
+const PHOTO_REQUEST_TYPES = ['item', 'client', 'party_contact', 'die', 'machine', 'sub_contractor'];
 
 function photoRequestError(message, statusCode) {
   const error = new Error(message);
@@ -16392,7 +16555,7 @@ function announcePhotoRequests(userId) {
 
 /// What the phone shows over the camera: what the record is and the few
 /// facts that tell it apart on the floor. Built when asked, so never stale.
-async function photoRequestDetails(entityType, entityId) {
+async function photoRequestDetails(entityType, entityId, documentTitle = null) {
   const lines = [];
   const add = (label, value) => {
     const text = value == null ? '' : String(value).trim();
@@ -16417,9 +16580,26 @@ async function photoRequestDetails(entityType, entityId) {
   if (entityType === 'client') {
     const row = await get('SELECT * FROM clients WHERE id = ?', [entityId]);
     if (!row) return null;
+    if (documentTitle != null) {
+      add('Company', row.name);
+      add('GST', row.gst_number);
+      return { kind: 'Document', title: documentTitle, lines };
+    }
     add('GST', row.gst_number);
     add('Address', row.address);
     return { kind: 'Company logo', title: row.name, lines };
+  }
+  if (entityType === 'sub_contractor') {
+    const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [entityId]);
+    if (!row) return null;
+    const client = await get('SELECT name FROM clients WHERE id = ?', [row.client_id]);
+    add('Contractor', row.name);
+    add('For', client?.name);
+    add('GST', row.gst_number);
+    if (documentTitle != null) {
+      return { kind: 'Document', title: documentTitle, lines };
+    }
+    return { kind: 'Contractor photo', title: row.name, lines };
   }
   if (entityType === 'party_contact') {
     const row = await get('SELECT * FROM party_contacts WHERE id = ?', [entityId]);
@@ -16464,6 +16644,7 @@ function photoRequestDto(row, details) {
     entityType: row.entity_type,
     entityId: row.entity_id,
     context: row.context || '',
+    documentTitle: row.document_title ?? null,
     status: row.status,
     assetId: row.asset_id,
     createdAt: row.created_at,
@@ -22547,18 +22728,25 @@ app.get('/api/delivery-challans/health', (_req, res) => {
 // no bearer token.
 app.put(
   '/api/assets/local/*key',
-  express.raw({ type: () => true, limit: '11mb' }),
+  express.raw({ type: () => true, limit: '26mb' }),
   async (req, res) => {
     try {
       const objectKey = localObjectKeyFrom(req);
       assertLocalUploadSigned(req, 'PUT', objectKey);
       const contentType = String(req.headers['content-type'] || '').toLowerCase();
-      if (!ALLOWED_ASSET_CONTENT_TYPES.has(contentType.split(';')[0].trim())) {
+      // A company's document may be any file (and up to 25 MB); everything
+      // else in the store is a photo.
+      const isDocument = isDocumentObjectKey(objectKey);
+      if (!isDocument && !ALLOWED_ASSET_CONTENT_TYPES.has(contentType.split(';')[0].trim())) {
         res.status(415).json({ success: false, error: 'Only PNG, JPG and WEBP images can be stored.' });
         return;
       }
       if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
         res.status(400).json({ success: false, error: 'The file was empty.' });
+        return;
+      }
+      if (req.body.length > (isDocument ? MAX_DOCUMENT_BYTES : 11 * 1024 * 1024)) {
+        res.status(413).json({ success: false, error: 'The file is too large.' });
         return;
       }
       const target = localUploadPath(objectKey);
@@ -22584,9 +22772,22 @@ app.get('/api/assets/local/*key', async (req, res) => {
     // extension only when there is no row (a name without one served every
     // photo as a download rather than an image).
     const recorded = await get(
-      'SELECT content_type FROM uploaded_assets WHERE object_key = ? LIMIT 1',
+      'SELECT content_type, file_name, document_title FROM uploaded_assets WHERE object_key = ? LIMIT 1',
       [objectKey],
     );
+    if (recorded && recorded.document_title != null) {
+      // A document is served as what it is, but only a PDF or a picture is
+      // shown in the browser; anything else is a download, never rendered.
+      const type = recorded.content_type || 'application/octet-stream';
+      const shown = type === 'application/pdf' || ALLOWED_ASSET_CONTENT_TYPES.has(type);
+      const name = String(recorded.file_name || 'document').replace(/["\\\r\n]/g, '_');
+      res.setHeader('Content-Type', shown ? type : 'application/octet-stream');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', `${shown ? 'inline' : 'attachment'}; filename="${name}"`);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      fs.createReadStream(file).pipe(res);
+      return;
+    }
     const type =
       (recorded?.content_type &&
         ALLOWED_ASSET_CONTENT_TYPES.has(recorded.content_type) &&
@@ -28383,6 +28584,30 @@ app.post('/api/assets/primary', requireAssetEntityPermission('read', assetEntity
   }
 });
 
+// A client's or contractor's documents (uploaded_assets.document_title): named files of any
+// kind, kept beside its photos but never one of them.
+app.get(
+  '/api/assets/documents',
+  requireAssetEntityPermission('read', (req) => req.query?.entityType),
+  async (req, res) => {
+    try {
+      const documents = await listDocumentsForEntity(req.query?.entityType, req.query?.entityId);
+      res.json({ success: true, documents, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, documents: [], error: error.message });
+    }
+  },
+);
+
+app.patch('/api/assets/:id/title', requireAssetEntityPermission('write', assetEntityTypeFromAssetId), async (req, res) => {
+  try {
+    const document = await renameDocument(Number(req.params.id), req.body?.title);
+    res.json({ success: true, document, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, document: null, error: error.message });
+  }
+});
+
 app.delete('/api/assets/:id', requireAssetEntityPermission('write', assetEntityTypeFromAssetId), async (req, res) => {
   try {
     await deleteAsset(Number(req.params.id));
@@ -28405,21 +28630,32 @@ app.post('/api/photo-requests', async (req, res) => {
     if (!hasPermission(req, ASSET_ENTITY_PERMISSIONS[entityType].write)) {
       throw photoRequestError('You do not have permission to add photos to this record.', 403);
     }
+    const rawTitle = req.body?.documentTitle;
+    let documentTitle = null;
+    if (rawTitle !== undefined && rawTitle !== null) {
+      if (!DOCUMENT_ENTITY_TYPES.has(entityType)) {
+        throw photoRequestError('Documents are kept for a client or a contractor.', 400);
+      }
+      documentTitle = normalizeDocumentTitle(rawTitle);
+    }
     await assertAssetEntityExists(entityType, entityId);
     const userId = Number(req.user.id);
     const context = String(req.body?.context || '').trim().slice(0, 200);
-    // A second click on the same slot is the same job, not a second photo.
+    // A second click on the same slot is the same job, not a second photo —
+    // and a document is the same job only under the same name.
     let row = await get(
-      "SELECT * FROM photo_requests WHERE user_id = ? AND entity_type = ? AND entity_id = ? AND status = 'pending'",
-      [userId, entityType, entityId],
+      `SELECT * FROM photo_requests
+        WHERE user_id = ? AND entity_type = ? AND entity_id = ? AND status = 'pending'
+          AND COALESCE(document_title, '') = ?`,
+      [userId, entityType, entityId, documentTitle || ''],
     );
     let created = false;
     if (!row) {
       const now = nowIso();
       const result = await run(
-        `INSERT INTO photo_requests (user_id, entity_type, entity_id, context, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-        [userId, entityType, entityId, context, now, now],
+        `INSERT INTO photo_requests (user_id, entity_type, entity_id, context, status, created_at, updated_at, document_title)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
+        [userId, entityType, entityId, context, now, now, documentTitle],
       );
       row = await get('SELECT * FROM photo_requests WHERE id = ?', [result.lastID]);
       created = true;
@@ -28427,7 +28663,7 @@ app.post('/api/photo-requests', async (req, res) => {
     }
     res.status(created ? 201 : 200).json({
       success: true,
-      request: photoRequestDto(row, await photoRequestDetails(entityType, entityId)),
+      request: photoRequestDto(row, await photoRequestDetails(entityType, entityId, documentTitle)),
       error: null,
     });
   } catch (error) {
@@ -28444,7 +28680,7 @@ app.get('/api/photo-requests', async (req, res) => {
     );
     const requests = [];
     for (const row of rows) {
-      const details = await photoRequestDetails(row.entity_type, row.entity_id);
+      const details = await photoRequestDetails(row.entity_type, row.entity_id, row.document_title ?? null);
       // A record deleted since it was asked for has nothing left to photograph.
       if (details) requests.push(photoRequestDto(row, details));
     }

@@ -219,7 +219,7 @@ class MiniPhoto extends StatelessWidget {
       builder: (dialogContext) => SimpleDialog(
         title: Text('Add the $what'),
         children: [
-          _ChoiceTile(
+          PhotoChoiceTile(
             key: const ValueKey<String>('photo-take-on-phone'),
             icon: Icons.phone_iphone_rounded,
             title: 'Take on phone',
@@ -228,7 +228,7 @@ class MiniPhoto extends StatelessWidget {
                 : 'Your phone opens the camera, with this record\'s details on it.',
             onTap: requests == null ? null : () => Navigator.of(dialogContext).pop('phone'),
           ),
-          _ChoiceTile(
+          PhotoChoiceTile(
             key: const ValueKey<String>('photo-choose-file'),
             icon: Icons.folder_open_rounded,
             title: 'Choose a file from this PC',
@@ -356,10 +356,10 @@ class MiniPhoto extends StatelessWidget {
   }
 }
 
-/// One way to add a photo, in [MiniPhoto]'s chooser: drawn disabled with the
+/// One way to add a photo or a document, in a chooser: drawn disabled with the
 /// reason when it cannot be used, never left out.
-class _ChoiceTile extends StatelessWidget {
-  const _ChoiceTile({
+class PhotoChoiceTile extends StatelessWidget {
+  const PhotoChoiceTile({
     super.key,
     required this.icon,
     required this.title,

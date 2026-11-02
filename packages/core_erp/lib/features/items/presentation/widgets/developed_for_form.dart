@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/services/entity_photos.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/utils/stamp_format.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/company_documents_box.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/domain/sub_contractor_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../clients/presentation/providers/sub_contractors_provider.dart';
 import '../../../clients/presentation/screens/clients_screen.dart';
+import '../../../clients/presentation/widgets/company_view_dialog.dart';
 import '../../domain/developed_for.dart';
 
 /// The Developed For block, as one form shared by every surface that shows it.
@@ -340,6 +343,10 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
           if (value.isNotEmpty && !value.needsParty) ...[
             const SizedBox(height: 12),
             _personCard(value, enabled),
+            const SizedBox(height: 12),
+            // Kept on the company (or the contractor), not on the part: a
+            // document added for one part is there for every other part too.
+            _documents(value),
           ],
         ],
         if (value.kind != DevelopedForKind.none) ...[
@@ -449,6 +456,18 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
             ),
           ),
         ),
+        if (!value.needsParty) ...[
+          const SizedBox(width: 8),
+          TextButton.icon(
+            key: const ValueKey<String>('developed_for_view_party'),
+            onPressed: () => _view(value),
+            icon: const Icon(Icons.business_outlined, size: 18),
+            label: const Text(
+              'View',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
         const SizedBox(width: 8),
         AppButton(
           label: picked.isEmpty ? 'Pick' : 'Change',
@@ -460,6 +479,29 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
         ),
       ],
     );
+  }
+
+  Widget _documents(DevelopedFor value) {
+    final isContractor = value.kind == DevelopedForKind.contractor;
+    final id = isContractor ? value.subContractorId : value.clientId;
+    final name = value.partyName.trim();
+    return CompanyDocumentsBox(
+      owner: isContractor ? PhotoOwner.subContractor : PhotoOwner.client,
+      id: id?.toString(),
+      compact: true,
+      disabledReason: 'Pick the ${isContractor ? 'contractor' : 'company'} first',
+      note: name.isEmpty ? null : 'for $name',
+    );
+  }
+
+  void _view(DevelopedFor value) {
+    if (value.kind == DevelopedForKind.contractor) {
+      final id = value.subContractorId;
+      if (id != null) CompanyView.openContractor(context, id);
+      return;
+    }
+    final id = value.clientId;
+    if (id != null) CompanyView.openClient(context, id);
   }
 
   Widget _personCard(DevelopedFor value, bool enabled) {

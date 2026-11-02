@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/company_documents_box.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../clients/presentation/widgets/company_view_dialog.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
@@ -126,6 +128,18 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _dealRow(),
+        const SizedBox(height: 14),
+        // The company's own papers — kept on the company, so every part for
+        // it shows the same ones, and its view lists them too.
+        CompanyDocumentsBox(
+          owner: PhotoOwner.client,
+          id: widget.controller.dealPartyId?.toString(),
+          compact: true,
+          disabledReason: 'Pick the company first to keep its documents',
+          note: widget.controller.dealPartyName.trim().isEmpty
+              ? null
+              : 'for ${widget.controller.dealPartyName.trim()}',
+        ),
         const SizedBox(height: 18),
         Tooltip(
           message: hasCompany ? '' : 'Pick a company first',
@@ -293,6 +307,19 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           padding: const EdgeInsets.only(top: 2),
           child: _dealAction(dealLocked),
         ),
+        if (partyId != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: TextButton.icon(
+              key: const ValueKey<String>('deal_view_company'),
+              onPressed: () => CompanyView.openClient(context, partyId),
+              icon: const Icon(Icons.business_outlined, size: 18),
+              label: const Text(
+                'View company',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
       ],
     );
   }

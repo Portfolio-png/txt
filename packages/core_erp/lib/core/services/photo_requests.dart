@@ -23,6 +23,7 @@ class PhotoRequest {
     required this.owner,
     required this.entityId,
     this.context = '',
+    this.documentTitle,
     this.kind = '',
     this.title = '',
     this.lines = const [],
@@ -35,6 +36,7 @@ class PhotoRequest {
       owner: json['entityType'] as String? ?? '',
       entityId: '${json['entityId']}',
       context: json['context'] as String? ?? '',
+      documentTitle: json['documentTitle'] as String?,
       kind: details['kind'] as String? ?? '',
       title: details['title'] as String? ?? '',
       lines: [
@@ -57,7 +59,13 @@ class PhotoRequest {
   /// Where the slot sits on the desktop ("for part HH1").
   final String context;
 
-  /// "Part", "Company logo", "Person", "Die", "Machine".
+  /// Set when the shot is to be filed as a company's document under this
+  /// name, rather than become the record's photo.
+  final String? documentTitle;
+
+  bool get isDocument => documentTitle != null;
+
+  /// "Part", "Company logo", "Document", "Person", "Die", "Machine".
   final String kind;
   final String title;
   final List<PhotoRequestLine> lines;
@@ -88,13 +96,29 @@ class PhotoRequestRepository {
     ];
   }
 
-  /// Asks the signed-in person's phone for [owner] [id]'s photo. Asking again
-  /// for the same record returns the same job.
-  Future<PhotoRequest> create(String owner, String id, {String context = ''}) async {
+  /// Asks the signed-in person's phone for [owner] [id]'s photo — or, with a
+  /// [documentTitle], for a document of it by that name. Asking again for the
+  /// same record (and name) returns the same job.
+  Future<PhotoRequest> create(
+    String owner,
+    String id, {
+    String context = '',
+    String? documentTitle,
+  }) async {
     if (useMockResponses) {
-      final existing = _mock.where((r) => r.owner == owner && r.entityId == id);
+      final existing = _mock.where(
+        (r) => r.owner == owner && r.entityId == id && r.documentTitle == documentTitle,
+      );
       if (existing.isNotEmpty) return existing.first;
-      final request = PhotoRequest(id: _mockIds++, owner: owner, entityId: id, context: context);
+      final request = PhotoRequest(
+        id: _mockIds++,
+        owner: owner,
+        entityId: id,
+        context: context,
+        documentTitle: documentTitle,
+        kind: documentTitle == null ? '' : 'Document',
+        title: documentTitle ?? '',
+      );
       _mock.add(request);
       return request;
     }
@@ -102,6 +126,7 @@ class PhotoRequestRepository {
       'entityType': owner,
       'entityId': int.tryParse(id) ?? id,
       if (context.trim().isNotEmpty) 'context': context.trim(),
+      'documentTitle': ?documentTitle,
     });
     return PhotoRequest.fromJson(payload['request'] as Map<String, dynamic>);
   }
@@ -191,12 +216,24 @@ class PhotoRequestsProvider extends ChangeNotifier {
   /// Oldest first — the order the phone takes them in.
   List<PhotoRequest> get pending => _pending;
 
-  PhotoRequest? pendingFor(String owner, String id) {
+  /// The pending job for [owner] [id]'s photo — or, with a [documentTitle],
+  /// for that document of it.
+  PhotoRequest? pendingFor(String owner, String id, {String? documentTitle}) {
     for (final request in _pending) {
-      if (request.owner == owner && request.entityId == id) return request;
+      if (request.owner == owner &&
+          request.entityId == id &&
+          request.documentTitle == documentTitle) {
+        return request;
+      }
     }
     return null;
   }
+
+  /// The documents of [owner] [id] still waiting on the phone, oldest first.
+  List<PhotoRequest> pendingDocumentsFor(String owner, String id) => [
+    for (final request in _pending)
+      if (request.isDocument && request.owner == owner && request.entityId == id) request,
+  ];
 
   void _onChanged(dynamic _) => refresh();
 
@@ -212,11 +249,21 @@ class PhotoRequestsProvider extends ChangeNotifier {
   }
 
   /// Sends [owner] [id] to the phone. Answers why not, or null when it went.
-  Future<String?> ask(String owner, String id, {String context = ''}) async {
+  Future<String?> ask(
+    String owner,
+    String id, {
+    String context = '',
+    String? documentTitle,
+  }) async {
     try {
-      final request = await _repository.create(owner, id, context: context);
+      final request = await _repository.create(
+        owner,
+        id,
+        context: context,
+        documentTitle: documentTitle,
+      );
       if (_disposed) return null;
-      if (pendingFor(owner, id) == null) {
+      if (pendingFor(owner, id, documentTitle: documentTitle) == null) {
         _pending = [..._pending, request];
         notifyListeners();
       }
@@ -231,6 +278,10 @@ class PhotoRequestsProvider extends ChangeNotifier {
     if (request == null) return null;
     return _close(request, () => _repository.cancel(request.id));
   }
+
+  /// Takes back one job, whatever it was for.
+  Future<String?> withdraw(PhotoRequest request) =>
+      _close(request, () => _repository.cancel(request.id));
 
   Future<String?> complete(PhotoRequest request, {int? assetId}) =>
       _close(request, () => _repository.complete(request.id, assetId: assetId));

@@ -10,6 +10,10 @@
 -- `context` is one line from the desktop about where the slot sits ("for part
 -- HH1"); the record's own details are built when the phone asks, so they are
 -- never stale.
+--
+-- `document_title` set: the shot is filed as a company's document under that
+-- name (uploaded_assets.document_title) rather than becoming its photo, and a
+-- second document of the same company is a second job.
 
 CREATE TABLE IF NOT EXISTS photo_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,6 +23,7 @@ CREATE TABLE IF NOT EXISTS photo_requests (
   context TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   asset_id INTEGER,
+  document_title TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

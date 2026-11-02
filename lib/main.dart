@@ -56,6 +56,7 @@ import 'package:core_erp/features/delivery_challans/presentation/providers/deliv
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/core/services/generic_asset_service.dart';
+import 'package:core_erp/core/services/company_documents.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/photo_requests.dart';
 import 'package:core_erp/core/services/user_preferences_service.dart';
@@ -691,6 +692,17 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<EntityPhotosProvider>(
           create: (context) => EntityPhotosProvider(
             repository: EntityPhotoRepository(
+              baseUrl: _apiBaseUrl,
+              client: _authClient(context.read<AuthProvider>()),
+              useMockResponses: _effectiveDemoMode,
+            ),
+          ),
+        ),
+        // A client's or contractor's documents — named files of any kind,
+        // kept beside its photos in the same store.
+        ChangeNotifierProvider<CompanyDocumentsProvider>(
+          create: (context) => CompanyDocumentsProvider(
+            repository: CompanyDocumentRepository(
               baseUrl: _apiBaseUrl,
               client: _authClient(context.read<AuthProvider>()),
               useMockResponses: _effectiveDemoMode,

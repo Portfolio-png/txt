@@ -578,7 +578,8 @@ CREATE TABLE IF NOT EXISTS uploaded_assets (
       status TEXT NOT NULL DEFAULT 'uploaded',
       is_primary INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
-      uploaded_at TEXT
+      uploaded_at TEXT,
+      document_title TEXT
     );
 CREATE TABLE IF NOT EXISTS asset_upload_sessions (
       id TEXT PRIMARY KEY,
@@ -593,7 +594,8 @@ CREATE TABLE IF NOT EXISTS asset_upload_sessions (
       is_primary INTEGER NOT NULL DEFAULT 0,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      completed_at TEXT
+      completed_at TEXT,
+      document_title TEXT
     );
 CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary);
 CREATE INDEX IF NOT EXISTS idx_asset_upload_sessions_entity ON asset_upload_sessions(entity_type, entity_id);
