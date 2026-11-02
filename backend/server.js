@@ -5346,6 +5346,15 @@ async function initDb() {
     )
   `);
 
+  // A database made before company documents has these tables without the
+  // column, and CREATE TABLE IF NOT EXISTS never adds one. photo_requests comes
+  // from migration 062, so it may not exist yet in a bare initDb.
+  await ensureColumnExists('uploaded_assets', 'document_title', 'TEXT');
+  await ensureColumnExists('asset_upload_sessions', 'document_title', 'TEXT');
+  if ((await all('PRAGMA table_info(photo_requests)')).length) {
+    await ensureColumnExists('photo_requests', 'document_title', 'TEXT');
+  }
+
   await run(
     'CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary)',
   );
