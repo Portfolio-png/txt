@@ -2116,6 +2116,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       onStage: (draft) => setState(() => _stagedDies.add(draft)),
       onUnstage: (index) => setState(() => _stagedDies.removeAt(index)),
       onDiesChanged: _setDies,
+      // A held die is written with its part, so its row offers the part's
+      // own Save — the cursor row's, which is the row these dies are held on.
+      heldSaveBuilder: (index) => _savePartButton(
+        _controller.groupItemController.row,
+        key: 'die_held_save_$index',
+        readyTip: 'Save the part, and this die with it',
+      ),
     );
   }
 
@@ -2343,8 +2350,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (row < 0 || row >= sheet.rowCount) return null;
     final saved = _controller.savedRows.contains(row);
     final locked = sheet.isRowLocked(row);
-    final busy = _controller.isSavingNow;
-    final savingThis = busy && identical(_savingDraft, sheet.draftAt(row));
     const labelStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w700);
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
@@ -2385,6 +2390,25 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       );
     }
 
+    return _savePartButton(
+      row,
+      key: 'row_save_$row',
+      readyTip:
+          saved ? 'Save the changes to this part' : 'Save this row\'s part',
+    );
+  }
+
+  /// The Save part button: the row's own, and the one a held die's row shows,
+  /// since a held die is written only with its part. Enabled once the row's
+  /// required cells are filled; disabled, it names the first one missing.
+  Widget _savePartButton(
+    int row, {
+    required String key,
+    required String readyTip,
+  }) {
+    final sheet = _controller.groupItemController;
+    final busy = _controller.isSavingNow;
+    final savingThis = busy && identical(_savingDraft, sheet.draftAt(row));
     final blank = sheet.isRowBlank(row);
     final errors = sheet.errorsForRow(row);
     final String tip;
@@ -2395,14 +2419,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     } else if (busy) {
       tip = 'Still saving';
     } else {
-      tip = saved ? 'Save the changes to this part' : 'Save this row\'s part';
+      tip = readyTip;
     }
     return Tooltip(
       message: tip,
       child: SizedBox(
         height: 32,
         child: ElevatedButton.icon(
-          key: ValueKey<String>('row_save_$row'),
+          key: ValueKey<String>(key),
           onPressed: !blank && errors.isEmpty && !busy
               ? () => _saveRow(row)
               : null,
@@ -2416,7 +2440,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   ),
                 )
               : const Icon(Icons.save_outlined, size: 16),
-          label: const Text('Save part', style: labelStyle),
+          label: const Text(
+            'Save part',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
           style: ElevatedButton.styleFrom(
             backgroundColor: SoftErpTheme.accent,
             foregroundColor: Colors.white,
@@ -2425,7 +2452,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             ),
             disabledForegroundColor: Colors.white.withValues(alpha: 0.85),
             elevation: 0,
-            shape: shape,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 10),
           ),
         ),

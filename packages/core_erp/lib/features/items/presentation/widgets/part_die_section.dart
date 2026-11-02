@@ -54,7 +54,13 @@ class PartDieSection extends StatefulWidget {
     required this.onUnstage,
     required this.onDiesChanged,
     this.framed = true,
+    this.heldSaveBuilder,
   });
+
+  /// The host's Save for a held die's row — the part row's own Save part,
+  /// since a held die is written only with its part. Null (the quick-entry
+  /// dialog) keeps the row's "Saves with the part" note.
+  final Widget Function(int index)? heldSaveBuilder;
 
   /// Whether the section draws its own card. Off where a host already frames
   /// it — the item sheet's section card — so it is not a card inside a card.
@@ -932,6 +938,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             selected: i == _editingStagedIndex,
             pending: true,
             partExists: widget.part != null,
+            saveAction: widget.heldSaveBuilder?.call(i),
             onTap: enabled ? () => _editStaged(i) : null,
             onUnlink: enabled ? () => widget.onUnstage(i) : null,
           ),
@@ -1218,10 +1225,14 @@ class _DieRow extends StatelessWidget {
     required this.selected,
     this.pending = false,
     this.partExists = false,
+    this.saveAction,
     this.onTap,
     this.onUnlink,
     this.photoNote,
   });
+
+  /// Drawn in the status column of a held row, in place of its note.
+  final Widget? saveAction;
 
   /// Where this row sits, for the phone's camera screen ("for part HH1").
   final String? photoNote;
@@ -1312,14 +1323,23 @@ class _DieRow extends StatelessWidget {
                   flex: _kDieFlex[6],
                 ),
                 _DieCell(die.whereKept, flex: _kDieFlex[7]),
-                if (pending)
-                  _DieCell(
-                    partExists ? 'Not saved yet' : 'Saves with the part',
-                    flex: _kDieFlex[8],
-                    muted: true,
-                  )
-                else
-                  Spacer(flex: _kDieFlex[8]),
+                SizedBox(
+                  width: _kStatusWidth,
+                  child: !pending
+                      ? null
+                      : (saveAction ??
+                            Row(
+                              children: [
+                                _DieCell(
+                                  partExists
+                                      ? 'Not saved yet'
+                                      : 'Saves with the part',
+                                  flex: 1,
+                                  muted: true,
+                                ),
+                              ],
+                            )),
+                ),
                 const SizedBox(width: 6),
                 // Its Edit, said out loud: a saved row opens in the form above,
                 // whose button is then this row's Save.
@@ -1361,7 +1381,10 @@ class _DieRow extends StatelessWidget {
 }
 
 /// Column weights shared by the header strip and every row, so they line up.
-const List<int> _kDieFlex = [22, 12, 18, 15, 15, 11, 6, 18, 12];
+/// The last column is the status, at a fixed width: a held row draws the part's
+/// Save part there, which a flex share could not be trusted to fit.
+const List<int> _kDieFlex = [22, 12, 18, 15, 15, 11, 6, 18];
+const double _kStatusWidth = 128;
 const List<String> _kDieHeads = [
   'Die Code',
   'Type',
@@ -1373,7 +1396,6 @@ const List<String> _kDieHeads = [
   'Liner',
   'Sets',
   'Where kept',
-  '',
 ];
 
 // Big enough to carry its "Photo" label: a bare 36px camera at the start of
@@ -1406,6 +1428,7 @@ class _DieHeaderStrip extends StatelessWidget {
                 ),
               ),
             ),
+          const SizedBox(width: _kStatusWidth),
         ],
       ),
     );

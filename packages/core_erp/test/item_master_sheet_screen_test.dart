@@ -1005,6 +1005,65 @@ void main() {
       expect(dies().staged.single.toolCode, 'D1');
     });
 
+    testWidgets('a held die\'s row carries the part\'s own Save part',
+        (tester) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError('not saved in this test');
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+      final strip = tester.widget<TableRowStrip>(find.byType(TableRowStrip));
+      final sheet = strip.controller;
+      final def = strip.sheetDef;
+
+      tester
+          .widget<PartDieSection>(find.byType(PartDieSection))
+          .onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
+      await tester.pump();
+      ElevatedButton heldSave() => tester.widget<ElevatedButton>(
+            find.byKey(const ValueKey('die_held_save_0')),
+          );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('die_held_save_0')),
+          matching: find.text('Save part'),
+        ),
+        findsOneWidget,
+      );
+      expect(heldSave().onPressed, isNull, reason: 'the part has no name yet');
+      expect(find.text('Saves with the part'), findsNothing,
+          reason: 'the button takes the note\'s place');
+
+      // The same rule as the part row's Save: on once its cells are filled.
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+      sheet.updateValue(
+        group.id,
+        CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label),
+      );
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final kind = sheet.options.firstWhere(
+        (o) => o.columnId == type.id && o.parentOptionId == trunk.id,
+      );
+      sheet.updateValue(
+        type.id,
+        CellValue(columnId: type.id, optionId: kind.id, optionLabel: kind.label),
+      );
+      final name = def.itemColumn!;
+      sheet.updateValue(
+        name.id,
+        CellValue(columnId: name.id, optionLabel: 'Patti', isNew: true),
+      );
+      await tester.pump();
+      expect(heldSave().onPressed, isNotNull);
+      expect(
+        tester.widget<ElevatedButton>(find.byKey(const ValueKey('row_save_0')))
+            .onPressed,
+        isNotNull,
+      );
+      expect(find.byTooltip('Save the part, and this die with it'),
+          findsOneWidget);
+    });
+
     testWidgets('each saved part row has a photo; a new row waits for its save',
         (tester) async {
       final photos = EntityPhotosProvider(
