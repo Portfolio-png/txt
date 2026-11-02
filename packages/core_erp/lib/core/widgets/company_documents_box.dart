@@ -16,7 +16,9 @@ import 'mini_photo.dart';
 /// company and the name shown over the camera. Each opens, renames and goes.
 ///
 /// [owner] is `client` or `sub_contractor`. With no company yet ([id] null)
-/// the box is drawn, disabled, saying why — never hidden. Drawn only where a
+/// the box is drawn, disabled, saying why — never hidden — unless the host
+/// can save them later ([onHeldChanged]): then files from this PC are held
+/// in [held] until the company exists. Drawn only where a
 /// [CompanyDocumentsProvider] is provided; elsewhere it takes no space.
 class CompanyDocumentsBox extends StatelessWidget {
   const CompanyDocumentsBox({
@@ -26,6 +28,8 @@ class CompanyDocumentsBox extends StatelessWidget {
     this.compact = false,
     this.disabledReason,
     this.note,
+    this.held = const [],
+    this.onHeldChanged,
   });
 
   /// `client` or `sub_contractor` ([PhotoOwner]).
@@ -41,6 +45,13 @@ class CompanyDocumentsBox extends StatelessWidget {
 
   /// Where the box sits, shown on the phone above the camera ("for part HH1").
   final String? note;
+
+  /// Files waiting for the company to be created (a Create editor).
+  final List<HeldCompanyDocument> held;
+
+  /// Set by a host that uploads [held] once the company is saved; turns the
+  /// box on before there is an [id].
+  final ValueChanged<List<HeldCompanyDocument>>? onHeldChanged;
 
   /// Overrides the file picker, for tests.
   @visibleForTesting
@@ -77,6 +88,30 @@ class CompanyDocumentsBox extends StatelessWidget {
     if (documents == null) return const SizedBox.shrink();
     final requests = _maybe<PhotoRequestsProvider>(context);
     final id = this.id;
+    final onHeldChanged = this.onHeldChanged;
+
+    if (id == null && onHeldChanged != null) {
+      return _frame(
+        header: _header(
+          count: held.length,
+          onAdd: () => _addHeld(context, requests != null, onHeldChanged),
+        ),
+        children: [
+          if (held.isEmpty)
+            _emptyLine('Add them now — they are saved together with the company.'),
+          for (var i = 0; i < held.length; i++)
+            _HeldRow(
+              key: ValueKey<String>('document-held-$i'),
+              document: held[i],
+              compact: compact,
+              onRemove: () => onHeldChanged([
+                for (var j = 0; j < held.length; j++)
+                  if (j != i) held[j],
+              ]),
+            ),
+        ],
+      );
+    }
 
     if (id == null) {
       return Tooltip(
@@ -222,22 +257,55 @@ class CompanyDocumentsBox extends StatelessWidget {
       return;
     }
 
-    final file = await (debugPickFile?.call() ?? openFile());
-    if (file == null || !context.mounted) return;
-    final size = await file.length();
+    final picked = await _pickFile(context);
+    if (picked == null || !context.mounted) return;
+    final name = choice.name.isNotEmpty ? choice.name : _stem(picked.file.name);
+    final failed = await documents.upload(owner, id, picked.file, name);
     if (!context.mounted) return;
+    _say(context, failed ?? '"$name" saved.', error: failed != null);
+  }
+
+  /// Before the company exists: a file from this PC, kept until Create.
+  Future<void> _addHeld(
+    BuildContext context,
+    bool phoneAvailable,
+    ValueChanged<List<HeldCompanyDocument>> onHeldChanged,
+  ) async {
+    final choice = await showDialog<({String how, String name})>(
+      context: context,
+      builder: (_) => _AddDocumentDialog(
+        phoneAvailable: phoneAvailable,
+        phoneBlockedReason: 'Create the company first — the phone files the photo on it.',
+      ),
+    );
+    if (choice == null || choice.how != 'file' || !context.mounted) return;
+    final picked = await _pickFile(context);
+    if (picked == null || !context.mounted) return;
+    onHeldChanged([
+      ...held,
+      HeldCompanyDocument(
+        file: picked.file,
+        title: choice.name.isNotEmpty ? choice.name : _stem(picked.file.name),
+        sizeBytes: picked.size,
+      ),
+    ]);
+  }
+
+  /// Any file from this PC, refused above the server's limit.
+  static Future<({XFile file, int size})?> _pickFile(BuildContext context) async {
+    final file = await (debugPickFile?.call() ?? openFile());
+    if (file == null || !context.mounted) return null;
+    final size = await file.length();
+    if (!context.mounted) return null;
     if (size > maxCompanyDocumentBytes) {
       _say(
         context,
         '${file.name} is ${formatDocumentSize(size)} — a document can be 25 MB at most.',
         error: true,
       );
-      return;
+      return null;
     }
-    final name = choice.name.isNotEmpty ? choice.name : _stem(file.name);
-    final failed = await documents.upload(owner, id, file, name);
-    if (!context.mounted) return;
-    _say(context, failed ?? '"$name" saved.', error: failed != null);
+    return (file: file, size: size);
   }
 
   static String _stem(String fileName) {
@@ -469,6 +537,74 @@ class _DocumentRow extends StatelessWidget {
   }
 }
 
+/// A file picked before the company exists, uploaded when it is created.
+class _HeldRow extends StatelessWidget {
+  const _HeldRow({
+    super.key,
+    required this.document,
+    required this.compact,
+    required this.onRemove,
+  });
+
+  final HeldCompanyDocument document;
+  final bool compact;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = document.file.name;
+    final dot = fileName.lastIndexOf('.');
+    final kind = dot > 0 && dot < fileName.length - 1
+        ? fileName.substring(dot + 1).toUpperCase()
+        : 'File';
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: compact ? 3 : 6),
+      child: Row(
+        children: [
+          Container(
+            width: compact ? 30 : 44,
+            height: compact ? 30 : 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.shellSurface,
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: const Icon(Icons.upload_file_rounded, size: 18, color: SoftErpTheme.accent),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  document.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: SoftErpTheme.textPrimary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$kind · ${formatDocumentSize(document.sizeBytes)} · saved with the company',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove',
+            onPressed: onRemove,
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A document the phone has yet to photograph; a tap takes it back.
 class _WaitingRow extends StatelessWidget {
   const _WaitingRow({
@@ -538,9 +674,12 @@ class _WaitingRow extends StatelessWidget {
 /// The name first, then where the document comes from. The phone files it
 /// under the name, so it needs one; a file from the PC can take its own.
 class _AddDocumentDialog extends StatefulWidget {
-  const _AddDocumentDialog({required this.phoneAvailable});
+  const _AddDocumentDialog({required this.phoneAvailable, this.phoneBlockedReason});
 
   final bool phoneAvailable;
+
+  /// Why the phone cannot take it yet, drawn on its tile (disabled).
+  final String? phoneBlockedReason;
 
   @override
   State<_AddDocumentDialog> createState() => _AddDocumentDialogState();
@@ -593,10 +732,12 @@ class _AddDocumentDialogState extends State<_AddDocumentDialog> {
           title: 'Take on phone',
           detail: !widget.phoneAvailable
               ? 'Phone photos are not set up in this app.'
+              : widget.phoneBlockedReason != null
+              ? widget.phoneBlockedReason!
               : named
               ? 'Your phone opens the camera, with the company and "$_trimmed" on it.'
               : 'Name it first — the phone files the photo under that name.',
-          onTap: widget.phoneAvailable && named
+          onTap: widget.phoneAvailable && widget.phoneBlockedReason == null && named
               ? () => Navigator.of(context).pop((how: 'phone', name: _trimmed))
               : null,
         ),

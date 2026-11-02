@@ -73,6 +73,21 @@ class CompanyDocument {
   );
 }
 
+/// A file picked for a company that is not saved yet. The editor uploads it
+/// right after the company is created ([CompanyDocumentsProvider.uploadHeld]).
+@immutable
+class HeldCompanyDocument {
+  const HeldCompanyDocument({
+    required this.file,
+    required this.title,
+    required this.sizeBytes,
+  });
+
+  final XFile file;
+  final String title;
+  final int sizeBytes;
+}
+
 /// "820 KB", "3.4 MB".
 String formatDocumentSize(int bytes) {
   if (bytes < 1024) return '$bytes B';
@@ -306,6 +321,21 @@ class CompanyDocumentsProvider extends ChangeNotifier {
             if (d.id != document.id) d,
         ];
       });
+
+  /// Uploads what was held while [owner] [id] did not exist yet. Answers one
+  /// line per file that did not make it; empty when all landed.
+  Future<List<String>> uploadHeld(
+    String owner,
+    String id,
+    List<HeldCompanyDocument> held,
+  ) async {
+    final failures = <String>[];
+    for (final document in held) {
+      final failed = await upload(owner, id, document.file, document.title);
+      if (failed != null) failures.add('"${document.title}": $failed');
+    }
+    return failures;
+  }
 
   Future<String?> rename(String owner, String id, CompanyDocument document, String title) =>
       _change(owner, id, () async {

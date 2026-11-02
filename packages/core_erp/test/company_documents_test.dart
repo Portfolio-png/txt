@@ -3,14 +3,19 @@ import 'dart:typed_data';
 import 'package:core_erp/core/services/company_documents.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/photo_requests.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/company_documents_box.dart';
+import 'package:core_erp/core/widgets/mini_photo.dart';
 import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/sub_contractor_repository.dart';
 import 'package:core_erp/features/clients/domain/client_definition.dart';
+import 'package:core_erp/features/clients/domain/client_inputs.dart';
 import 'package:core_erp/features/clients/domain/party_contact.dart';
 import 'package:core_erp/features/clients/domain/sub_contractor_definition.dart';
+import 'package:core_erp/features/clients/domain/sub_contractor_inputs.dart';
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/clients/presentation/providers/sub_contractors_provider.dart';
+import 'package:core_erp/features/clients/presentation/screens/clients_screen.dart';
 import 'package:core_erp/features/clients/presentation/widgets/company_view_dialog.dart';
 import 'package:core_erp/features/items/domain/developed_for.dart';
 import 'package:core_erp/features/items/presentation/widgets/developed_for_form.dart';
@@ -43,6 +48,23 @@ class _Clients implements ClientRepository {
   Future<List<ClientDefinition>> getClients() async => List.of(_clients);
 
   @override
+  Future<ClientDefinition> createClient(CreateClientInput input) async {
+    final created = ClientDefinition(
+      id: 6,
+      name: input.name,
+      alias: input.alias,
+      gstNumber: input.gstNumber,
+      address: input.address,
+      isArchived: false,
+      usageCount: 0,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    _clients.add(created);
+    return created;
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -59,6 +81,20 @@ class _Contractors implements SubContractorRepository {
   @override
   Future<List<SubContractorDefinition>> getSubContractors(int clientId) async =>
       _rows.where((row) => row.clientId == clientId).toList();
+
+  @override
+  Future<SubContractorDefinition> createSubContractor(int clientId, CreateSubContractorInput input) async {
+    final created = SubContractorDefinition(
+      id: 22,
+      clientId: clientId,
+      name: input.name,
+      clientName: 'Kapoor Papers',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    _rows.add(created);
+    return created;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -101,17 +137,17 @@ class _World {
         repository: PhotoRequestRepository(baseUrl: 'http://x', useMockResponses: true),
         listen: false,
       ),
-      clients = ClientsProvider(repository: _Clients([_kapoor])),
-      contractors = SubContractorsProvider(repository: _Contractors([_shinde]));
+      clients = ClientsProvider(repository: _Clients([_kapoor].toList())),
+      contractors = SubContractorsProvider(repository: _Contractors([_shinde].toList()));
 
   final CompanyDocumentsProvider documents;
   final PhotoRequestsProvider requests;
   final ClientsProvider clients;
   final SubContractorsProvider contractors;
 
-  Future<void> pump(WidgetTester tester, Widget child) async {
+  Future<void> pump(WidgetTester tester, Widget child, {double height = 1000}) async {
     await clients.refresh();
-    await tester.binding.setSurfaceSize(const Size(1300, 1000));
+    await tester.binding.setSurfaceSize(Size(1300, height));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MultiProvider(
@@ -333,5 +369,109 @@ void main() {
     expect(find.text('Contractor for Kapoor Papers'), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('documents-sub_contractor-21')), findsOneWidget);
     expect(find.text('GST certificate'), findsNothing);
+  });
+
+  testWidgets('creating a company: files from the PC are held, the phone waits for the save', (tester) async {
+    var held = <HeldCompanyDocument>[];
+    await _World().pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => CompanyDocumentsBox(
+          owner: PhotoOwner.client,
+          id: null,
+          held: held,
+          onHeldChanged: (next) => setState(() => held = next),
+        ),
+      ),
+    );
+    expect(find.textContaining('saved together with the company'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('document-add-client-none')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey<String>('document-name')), 'GST certificate');
+    await tester.pump();
+    final phone = tester.widget<PhotoChoiceTile>(find.byKey(const ValueKey<String>('document-take-on-phone')));
+    expect(phone.onTap, isNull);
+    expect(find.textContaining('Create the company first'), findsOneWidget);
+
+    picked = _file('gst.pdf', 'application/pdf', 2048);
+    await tester.tap(find.byKey(const ValueKey<String>('document-choose-file')));
+    await tester.pumpAndSettle();
+    expect(held.single.title, 'GST certificate');
+    expect(find.text('GST certificate'), findsOneWidget);
+    expect(find.textContaining('PDF · 2 KB · saved with the company'), findsOneWidget);
+    expect(find.text('Documents · 1'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Remove'));
+    await tester.pumpAndSettle();
+    expect(held, isEmpty);
+  });
+
+  Future<void> addHeldFromPc(WidgetTester tester, String owner, String name) async {
+    final add = find.byKey(ValueKey<String>('document-add-$owner-none'));
+    await tester.ensureVisible(add);
+    await tester.pumpAndSettle();
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey<String>('document-name')), name);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('document-choose-file')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Create Client uploads the documents picked in the editor', (tester) async {
+    final world = _World();
+    ClientDefinition? saved;
+    await world.pump(
+      tester,
+      SizedBox(
+        height: 2300,
+        child: ClientsScreen.editorPanel(onSaved: (c) => saved = c, onCancel: () {}),
+      ),
+      height: 2400,
+    );
+    expect(find.text('Documents'), findsWidgets);
+    await tester.enterText(find.widgetWithText(TextFormField, 'Name'), 'Mehta Cartons');
+
+    picked = _file('agreement.pdf', 'application/pdf', 4096);
+    await addHeldFromPc(tester, 'client', 'Supply agreement');
+    expect(world.documents.documentsOf('client', '6'), isNull);
+
+    final create = find.widgetWithText(AppButton, 'Create Client');
+    await tester.ensureVisible(create.last);
+    await tester.tap(create.last);
+    await tester.pumpAndSettle();
+
+    expect(saved?.id, 6);
+    expect(world.documents.documentsOf('client', '6')!.single.title, 'Supply agreement');
+  });
+
+  testWidgets('Create Sub-contractor uploads the documents picked in the editor', (tester) async {
+    final world = _World();
+    SubContractorDefinition? saved;
+    await world.pump(
+      tester,
+      SizedBox(
+        height: 2300,
+        child: ClientsScreen.subContractorEditorPanel(onSaved: (c) => saved = c, onCancel: () {}),
+      ),
+      height: 2400,
+    );
+    await tester.tap(find.byType(DropdownButtonFormField<int>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kapoor Papers').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextFormField, 'Name'), 'Patil Fabricators');
+
+    picked = _file('card.jpg', 'image/jpeg', 1000);
+    await addHeldFromPc(tester, 'sub_contractor', 'Visiting card');
+
+    final create = find.widgetWithText(AppButton, 'Create Sub-contractor');
+    await tester.ensureVisible(create.last);
+    await tester.tap(create.last);
+    await tester.pumpAndSettle();
+
+    expect(saved?.id, 22);
+    expect(world.documents.documentsOf('sub_contractor', '22')!.single.title, 'Visiting card');
   });
 }

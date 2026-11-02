@@ -27,6 +27,9 @@ import 'package:core_erp/features/orders/domain/order_entry.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
+import '../../../../core/services/company_documents.dart';
+import '../../../../core/services/entity_photos.dart';
+import '../../../../core/widgets/company_documents_box.dart';
 import '../widgets/company_view_dialog.dart';
 import '../widgets/designation_field.dart';
 import '../widgets/sub_contractors_sheet.dart';
@@ -617,6 +620,9 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
 
   String? _localError;
 
+  /// Picked while creating; uploaded once the client exists.
+  List<HeldCompanyDocument> _heldDocuments = const [];
+
   @override
   void initState() {
     super.initState();
@@ -787,6 +793,25 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
             ),
             const SizedBox(height: 16),
             ErpDialogSectionCard(
+              title: 'Documents',
+              subtitle:
+                  'GST certificate, agreements, drawings, visiting cards — any '
+                  'file from this PC, or a photo taken on your phone. Each '
+                  'under a name you give it.',
+              child: CompanyDocumentsBox(
+                owner: PhotoOwner.client,
+                id: widget.client?.id.toString(),
+                held: _heldDocuments,
+                onHeldChanged: widget.client == null
+                    ? (next) => setState(() => _heldDocuments = next)
+                    : null,
+                note: _nameController.text.trim().isEmpty
+                    ? null
+                    : 'for ${_nameController.text.trim()}',
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
               title: 'Address & Preview',
               subtitle:
                   'Keep the billing address close to the final record preview so mistakes are visible before save.',
@@ -926,10 +951,20 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
             );
 
       if (context.mounted && result != null && provider.errorMessage == null) {
+        final documentsFailed = await _uploadHeldDocuments(
+          context,
+          PhotoOwner.client,
+          result.id,
+          _heldDocuments,
+        );
+        if (!context.mounted) return;
         showAppToast(
           context,
-          widget.client == null ? 'Client created' : 'Client saved',
-          kind: AppToastKind.success,
+          documentsFailed ??
+              (widget.client == null ? 'Client created' : 'Client saved'),
+          kind: documentsFailed == null
+              ? AppToastKind.success
+              : AppToastKind.warning,
         );
         final onSaved = widget.onSaved;
         if (onSaved != null) {
@@ -987,6 +1022,9 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
   int? _selectedClientId;
   bool _isSaving = false;
   String? _localError;
+
+  /// Picked while creating; uploaded once the sub-contractor exists.
+  List<HeldCompanyDocument> _heldDocuments = const [];
 
   @override
   void initState() {
@@ -1162,6 +1200,24 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
             ),
             const SizedBox(height: 16),
             ErpDialogSectionCard(
+              title: 'Documents',
+              subtitle:
+                  'Any file from this PC, or a photo taken on your phone — '
+                  'each under a name you give it.',
+              child: CompanyDocumentsBox(
+                owner: PhotoOwner.subContractor,
+                id: widget.subContractor?.id.toString(),
+                held: _heldDocuments,
+                onHeldChanged: widget.subContractor == null
+                    ? (next) => setState(() => _heldDocuments = next)
+                    : null,
+                note: _nameController.text.trim().isEmpty
+                    ? null
+                    : 'for ${_nameController.text.trim()}',
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
               title: 'Address & Preview',
               subtitle: 'Keep the address close to the final record preview.',
               child: Column(
@@ -1265,10 +1321,19 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
       }
 
       if (context.mounted && result != null && subProvider.error == null) {
+        final documentsFailed = await _uploadHeldDocuments(
+          context,
+          PhotoOwner.subContractor,
+          result.id,
+          _heldDocuments,
+        );
+        if (!context.mounted) return;
         showAppToast(
           context,
-          'Sub-contractor saved',
-          kind: AppToastKind.success,
+          documentsFailed ?? 'Sub-contractor saved',
+          kind: documentsFailed == null
+              ? AppToastKind.success
+              : AppToastKind.warning,
         );
         final onSaved = widget.onSaved;
         if (onSaved != null) {
@@ -1283,6 +1348,29 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
       if (mounted) setState(() => _isSaving = false);
     }
   }
+}
+
+/// Uploads the documents picked before the company existed. Answers what to
+/// tell the user when some did not make it — the company itself is saved, so
+/// the editor still closes — or null when all landed.
+Future<String?> _uploadHeldDocuments(
+  BuildContext context,
+  String owner,
+  int id,
+  List<HeldCompanyDocument> held,
+) async {
+  if (held.isEmpty) return null;
+  CompanyDocumentsProvider? documents;
+  try {
+    documents = Provider.of<CompanyDocumentsProvider>(context, listen: false);
+  } on ProviderNotFoundException {
+    documents = null;
+  }
+  if (documents == null) return 'Saved — documents are not set up in this app.';
+  final failures = await documents.uploadHeld(owner, '$id', held);
+  if (failures.isEmpty) return null;
+  return 'Saved, but ${failures.length} of ${held.length} documents did not '
+      'upload — ${failures.first}. Add them again from the company.';
 }
 
 class _ClientTextField extends StatelessWidget {
