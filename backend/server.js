@@ -2125,6 +2125,10 @@ function moduleOpForRequest(req) {
   if (seg === 'employees' && /\/(create-login|link-login|unlink-login)/.test(path)) {
     return null;
   }
+  // A part's photos are gated as its attachments, like /assets — the gallery's
+  // Save is deletes and uploads (/assets) and then this, so all of it has to
+  // ask the same right.
+  if (/^\/items\/[^/]+\/photos\/?$/.test(path)) return null;
   // In-use reconciliation is gated by a dedicated capability, not challans.create.
   if (/^\/(challans|delivery-challans)\/[^/]+\/reconcile/.test(path)) {
     return { module: 'challans', op: 'reconcile', key: 'challans.reconcile' };
@@ -2277,6 +2281,11 @@ function requireApiWritePermission(req, res, next) {
   // guards (requireAssetEntityPermission / requireGenericUploadPermission);
   // admin-gating them here would block first-time uploads by regular users.
   if (req.path.startsWith('/assets/') || req.path.startsWith('/upload/')) {
+    return next();
+  }
+  // A part's photos, the gallery's Save: gated as its attachments by the
+  // route itself (modules/items/routes.js), like /assets.
+  if (/^\/items\/[^/]+\/photos\/?$/.test(req.path)) {
     return next();
   }
   // A photo request checks the record's own photo right (the same key the
@@ -2664,19 +2673,43 @@ function requireLinkResolver() {
   return resolveSoleEntityLinks;
 }
 
-/// A record going away takes its photos with it: marked deleted (the sweep
-/// removes the objects), never erased — erasing them orphaned the objects.
 let assetSweepScheduled = false;
 
+/// A record going away takes its photos with it — marked, never erased
+/// (erasing them orphaned the stored objects). Marked 'record_deleted', not
+/// 'deleted': the record can come back from the trash, and its photos with
+/// it, so the sweep leaves them while the trash still holds it. Which one was
+/// shown is kept for that.
 async function markEntityAssetsDeleted(entityType, entityId) {
   await run(
     `
     UPDATE uploaded_assets
-    SET status = 'deleted', deleted_at = ?, is_primary = 0
+    SET status = 'record_deleted', deleted_at = ?
     WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
     `,
     [new Date().toISOString(), entityType, Number(entityId)],
   );
+}
+
+/// The table a photo's record lives in, for the records whose photos go
+/// with them ([markEntityAssetsDeleted]).
+const ASSET_OWNER_TABLES = { item: 'items', group: 'groups' };
+
+/// A record restored from the trash gets back the photos it went with.
+async function restoreEntityAssets(tableName, recordId) {
+  const entityType = Object.keys(ASSET_OWNER_TABLES).find(
+    (type) => ASSET_OWNER_TABLES[type] === tableName,
+  );
+  if (!entityType) return;
+  await run(
+    `
+    UPDATE uploaded_assets SET status = 'uploaded', deleted_at = NULL
+    WHERE entity_type = ? AND entity_id = ? AND status = 'record_deleted'
+    `,
+    [entityType, Number(recordId)],
+  );
+  await syncRecordPhotoField(entityType, Number(recordId));
+  announceAssetChanged(entityType, recordId);
 }
 
 async function deleteItemWithCascade(id, req) {
@@ -16522,18 +16555,16 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
       );
     }
     // A photo goes after the record's others; a document has no place.
-    const last =
-      documentTitle == null
-        ? await get(
-            `
-            SELECT MAX(position) AS position
-            FROM uploaded_assets
-            WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
-              AND document_title IS NULL
-            `,
-            [session.entity_type, Number(session.entity_id)],
-          )
-        : null;
+    // Photos from before positions are numbered first, in the order they are
+    // shown, or a new one (MAX of nothing) would land in front of them.
+    let last = null;
+    if (documentTitle == null) {
+      const photos = await orderedPhotoRows(session.entity_type, Number(session.entity_id));
+      if (photos.some((row) => row.position == null)) {
+        await renumberPhotos(photos.map((row) => row.id));
+      }
+      last = { position: photos.length };
+    }
     await run(
       `
       INSERT OR IGNORE INTO uploaded_assets (
@@ -16797,7 +16828,31 @@ async function sweepDeletedAssets({ now = new Date(), graceHours = 24 } = {}) {
     `,
     [cutoff],
   );
-  for (const row of rows) {
+  // A record's photos, deleted with it, go only once the record is gone for
+  // good: not live, and not in the trash it can be restored from.
+  const orphaned = [];
+  const withRecord = await all(
+    `
+    SELECT id, entity_type, entity_id, object_key, thumb_key
+    FROM uploaded_assets
+    WHERE status = 'record_deleted' AND COALESCE(deleted_at, '') <> '' AND deleted_at <= ?
+    LIMIT 500
+    `,
+    [cutoff],
+  );
+  for (const row of withRecord) {
+    const table = ASSET_OWNER_TABLES[row.entity_type];
+    if (table) {
+      const live = await get(`SELECT 1 FROM ${table} WHERE id = ? LIMIT 1`, [Number(row.entity_id)]);
+      const trashed = await get(
+        'SELECT 1 FROM deleted_records WHERE table_name = ? AND record_id = ? LIMIT 1',
+        [table, Number(row.entity_id)],
+      ).catch(() => null);
+      if (live || trashed) continue;
+    }
+    orphaned.push(row);
+  }
+  for (const row of [...rows, ...orphaned]) {
     const ok = await deleteStoredObjects([row.object_key, row.thumb_key], swept);
     if (ok) {
       await run("UPDATE uploaded_assets SET status = 'purged' WHERE id = ?", [row.id]);
@@ -29068,7 +29123,7 @@ app.post('/api/photo-requests', async (req, res) => {
       error: null,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, error: error.message, code: error.code || null });
   }
 });
 
@@ -34769,6 +34824,7 @@ const registerItemsModuleRoutes = require('./modules/items/routes');
 registerItemsModuleRoutes({
   app,
   requirePermission,
+  requireAssetEntityPermission,
   cacheMasterData,
   guardContract,
   get,
@@ -35441,6 +35497,8 @@ app.post('/api/trash/restore', requirePermission('config.write'), async (req, re
 
     // Remove every trash entry for this record (there may be more than one).
     await run(`DELETE FROM deleted_records WHERE table_name = ? AND record_id = ?`, [tableName, recordId]);
+    // Its photos come back with it (they were kept for this).
+    await restoreEntityAssets(tableName, recordId);
 
     await logChange(tableName, recordId, 'INSERT');
 

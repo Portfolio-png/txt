@@ -221,25 +221,117 @@ test('a part keeps up to five photos, each with a thumbnail, in an order', async
     assert.ok(swept.sessions >= 1);
     assert.ok(!stored(halfSlot.objectKey), 'an abandoned upload is deleted too');
 
-    // A part deleted takes its photos' objects with it, through the sweep.
+    // The gallery's Save is uploads, deletes and this PUT: all of it asks
+    // the part's photo right, so someone with that (and not items.update)
+    // saves the whole of it, and someone without it saves none.
+    async function userWith(email, overrides) {
+      const made = await call('POST', '/api/users', {
+        name: email, email, password: 'PhotoPass1234', role: 'user',
+        permissions: ['items.read', 'login.desktop'],
+      });
+      assert.equal(made.status, 201, JSON.stringify(made.body));
+      const grid = await call('PATCH', `/api/users/${made.body.user.id}/permissions`, { overrides });
+      assert.equal(grid.status, 200, JSON.stringify(grid.body));
+      const { token: userToken } = await fetch(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'PhotoPass1234' }),
+      }).then((r) => r.json());
+      return (method, url, body) =>
+        fetch(`${base}${url}`, {
+          method,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+    }
+    const photographer = await userWith('photographer@paper.local', [
+      { key: 'items.asset.upload', allowed: true },
+      { key: 'items.asset.list', allowed: true },
+      { key: 'items.update', allowed: false },
+    ]);
+    const order = after.map((p) => p.id);
+    assert.equal((await photographer('GET', `/api/items/${part.id}/photos`)).status, 200);
+    assert.equal(
+      (await photographer('PUT', `/api/items/${part.id}/photos`, { order, primaryId: order[0] })).status,
+      200,
+      'the photo right is enough for the order and the main photo',
+    );
+    const editor = await userWith('editor@paper.local', [
+      { key: 'items.update', allowed: true },
+      { key: 'items.asset.upload', allowed: false },
+    ]);
+    assert.equal(
+      (await editor('PUT', `/api/items/${part.id}/photos`, { order })).status,
+      403,
+      'items.update alone does not arrange photos it could not upload',
+    );
+
+    // A part deleted keeps its photos while the trash can bring it back: the
+    // sweep a day on leaves them, and a restore returns them, main one and all.
     const remaining = await backend.all(
       "SELECT object_key, thumb_key FROM uploaded_assets WHERE entity_type = 'item' AND entity_id = ? AND status = 'uploaded'",
       [part.id],
     );
     assert.equal(remaining.length, 4);
+    const mainBefore = (await call('GET', `/api/items/${part.id}/photos`)).body.photos.find((p) => p.isPrimary);
     const removed = await call('DELETE', `/api/items/${part.id}`);
-    assert.ok([200, 202].includes(removed.status), JSON.stringify(removed.body));
-    if (removed.status === 200) {
-      const marked = await backend.all(
-        "SELECT status FROM uploaded_assets WHERE entity_type = 'item' AND entity_id = ? AND status = 'deleted'",
-        [part.id],
-      );
-      assert.equal(marked.length, 4, 'the rows are kept, marked, not erased');
-      await backend.sweepDeletedAssets({ now: new Date(Date.now() + 25 * 3600 * 1000) });
-      for (const r of remaining) {
-        assert.ok(!stored(r.object_key) && !stored(r.thumb_key));
-      }
+    assert.equal(removed.status, 200, JSON.stringify(removed.body));
+    const marked = await backend.all(
+      "SELECT status FROM uploaded_assets WHERE entity_type = 'item' AND entity_id = ? AND status = 'record_deleted'",
+      [part.id],
+    );
+    assert.equal(marked.length, 4, 'the rows are kept, marked, not erased');
+    await backend.sweepDeletedAssets({ now: new Date(Date.now() + 25 * 3600 * 1000) });
+    for (const r of remaining) {
+      assert.ok(stored(r.object_key) && stored(r.thumb_key), 'kept while the part is in the trash');
     }
+    const restored = await call('POST', '/api/trash/restore', { tableName: 'items', recordId: part.id });
+    assert.equal(restored.status, 200, JSON.stringify(restored.body));
+    const back = (await call('GET', `/api/items/${part.id}/photos`)).body.photos;
+    assert.equal(back.length, 4, 'the photos come back with the part');
+    assert.equal(back.find((p) => p.isPrimary)?.id, mainBefore.id, 'the same one is main');
+    const field = await backend.get('SELECT photo_url FROM items WHERE id = ?', [part.id]);
+    assert.equal(field.photo_url, mainBefore.viewUrl);
+
+    // Gone for good — not live and not in the trash — the sweep takes them.
+    assert.equal((await call('DELETE', `/api/items/${part.id}`)).status, 200);
+    await backend.run("DELETE FROM deleted_records WHERE table_name = 'items' AND record_id = ?", [part.id]);
+    await backend.sweepDeletedAssets({ now: new Date(Date.now() + 25 * 3600 * 1000) });
+    for (const r of remaining) {
+      assert.ok(!stored(r.object_key) && !stored(r.thumb_key), 'swept once the trash let it go');
+    }
+
+    // Photos from before positions: a new one goes after them, not in front.
+    const older = (await call('POST', '/api/items', {
+      name: 'Gallery Older',
+      groupId: parent.id,
+      unitId: parent.unitId,
+    })).body.item;
+    for (const n of [21, 22]) {
+      const intent = await call('POST', '/api/assets/upload-intent', {
+        uploadType: 'ITEM_IMAGE', entityType: 'item', entityId: older.id,
+        fileName: `old-${n}.jpg`, contentType: 'image/jpeg',
+        sizeBytes: photoBytes(n).length, sha256: sha(photoBytes(n)),
+      });
+      const slot = intent.body.intent.upload;
+      await fetch(local(slot.uploadUrl), { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: photoBytes(n) });
+      await call('POST', '/api/assets/upload-complete', { uploadSessionId: slot.uploadSessionId, objectKey: slot.objectKey });
+    }
+    await backend.run("UPDATE uploaded_assets SET position = NULL WHERE entity_type = 'item' AND entity_id = ?", [older.id]);
+    const shownBefore = (await call('GET', `/api/items/${older.id}/photos`)).body.photos.map((p) => p.id);
+    const intent = await call('POST', '/api/assets/upload-intent', {
+      uploadType: 'ITEM_IMAGE', entityType: 'item', entityId: older.id,
+      fileName: 'new.jpg', contentType: 'image/jpeg',
+      sizeBytes: photoBytes(23).length, sha256: sha(photoBytes(23)), isPrimary: false,
+    });
+    const slot = intent.body.intent.upload;
+    await fetch(local(slot.uploadUrl), { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: photoBytes(23) });
+    const added = (await call('POST', '/api/assets/upload-complete', {
+      uploadSessionId: slot.uploadSessionId, objectKey: slot.objectKey,
+    })).body.asset;
+    const shownAfter = (await call('GET', `/api/items/${older.id}/photos`)).body.photos;
+    assert.deepEqual(shownAfter.map((p) => p.id), [...shownBefore, added.id]);
+    assert.deepEqual(shownAfter.map((p) => p.position), [1, 2, 3]);
   } finally {
     await closeServer(server);
     delete process.env.PAPER_UPLOAD_DIR;

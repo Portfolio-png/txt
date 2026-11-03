@@ -32,6 +32,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   const {
     app,
     requirePermission,
+    requireAssetEntityPermission,
     cacheMasterData,
     guardContract,
     get,
@@ -195,6 +196,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
         success: false,
         asset: null,
         error: error.message,
+        code: error.code || null,
       });
     }
   });
@@ -214,7 +216,10 @@ module.exports = function registerItemsModuleRoutes(ctx) {
 
   // A part's photos — its views — as one ordered array: the gallery's one
   // request. Each carries permanent links to its thumbnail and its photo.
-  app.get('/api/items/:id/photos', requirePermission('config.read'), async (req, res) => {
+  // Gated as the part's attachments (items.asset.*), the same right the
+  // gallery's uploads and deletes need, so a Save never stops half-way.
+  const partPhotos = () => 'item';
+  app.get('/api/items/:id/photos', requireAssetEntityPermission('read', partPhotos), async (req, res) => {
     try {
       const photos = await listEntityPhotos('item', Number(req.params.id));
       res.json({ success: true, photos, limit: MAX_PART_PHOTOS, error: null });
@@ -228,7 +233,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
   });
 
   // The gallery's Save: { order: [photo ids, first to last], primaryId }.
-  app.put('/api/items/:id/photos', requirePermission('config.write'), async (req, res) => {
+  app.put('/api/items/:id/photos', requireAssetEntityPermission('write', partPhotos), async (req, res) => {
     try {
       const photos = await arrangeEntityPhotos('item', Number(req.params.id), {
         order: req.body?.order,
