@@ -320,6 +320,10 @@ fi
   say "OK — keyboard only"; exit 0;
 }
 
+# Quitting twice while "Leave with unsaved work?" is up: the test itself is
+# the check (a second quit that went through would have ended the app).
+[[ "${TESTS[0]}" == "quit_guard" ]] && { say "OK — quit guard only"; exit 0; }
+
 ROUTES="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM process_routes WHERE status='active';")"
 if [[ "${ROUTES}" == "0" ]]; then
   echo "No active route was written."

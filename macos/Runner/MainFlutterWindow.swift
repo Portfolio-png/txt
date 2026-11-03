@@ -36,6 +36,25 @@ class MainFlutterWindow: NSWindow {
       }
     }
 
+    // Whether the app may quit: asked by AppDelegate.applicationShouldTerminate,
+    // answered by the Dart side (QuitGuard).
+    let quitChannel = FlutterMethodChannel(
+      name: "paper/quit",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    (NSApp.delegate as? AppDelegate)?.quitChannel = quitChannel
+    quitChannel.setMethodCallHandler { call, result in
+      #if DEBUG
+      // A quit request as the menu sends it, for the integration tests.
+      if call.method == "debugRequestQuit" {
+        NSApp.terminate(nil)
+        result(true)
+        return
+      }
+      #endif
+      result(FlutterMethodNotImplemented)
+    }
+
     let nativePrintingChannel = FlutterMethodChannel(
       name: "paper/native_printing",
       binaryMessenger: flutterViewController.engine.binaryMessenger

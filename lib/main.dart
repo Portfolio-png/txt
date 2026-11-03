@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:core_erp/core/services/config_service.dart';
+import 'package:core_erp/core/services/quit_guard.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -200,6 +201,8 @@ String _resolveApiBaseUrl() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Every quit asks first (and only once at a time) — see QuitGuard.
+  QuitGuard.install();
 
   // Read before the first frame: every list row checks it, and a row built
   // before the setting loaded would allocate an animation controller it will
