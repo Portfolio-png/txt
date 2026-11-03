@@ -14,8 +14,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'pick_or_type_field.dart';
-
-import '../theme/soft_erp_theme.dart';
+import 'searchable_select.dart';
 
 /// Kilograms-force in one metric ton-force.
 const int kgfPerTon = 1000;
@@ -131,7 +130,11 @@ class ForceCapacityField extends StatelessWidget {
     this.freeHandKey,
     this.suggestions,
     this.decoration,
+    this.floatLabel = true,
   });
+
+  /// False when the host draws [label] above the field itself.
+  final bool floatLabel;
 
   final TextEditingController controller;
   final String unitSymbol;
@@ -190,49 +193,37 @@ class ForceCapacityField extends StatelessWidget {
                 // "no rated capacity", and "Optional" was noise.
                 decoration: (decoration ??
                         const InputDecoration(border: OutlineInputBorder()))
-                    .copyWith(labelText: label, errorText: errorText),
+                    .copyWith(
+                      labelText: floatLabel ? label : null,
+                      errorText: errorText,
+                    ),
               ),
             ),
             const SizedBox(width: 8),
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: PopupMenuButton<String>(
-                enabled: enabled && !freeHand,
-                tooltip: 'Read this in another unit',
-                initialValue: unitSymbol,
-                onSelected: onUnitChanged,
-                itemBuilder: (context) => [
+            // The same searchable unit box the liner size has, in the host's
+            // field look — it was a smaller button of its own, off the
+            // field's baseline.
+            SizedBox(
+              width: 104,
+              child: SearchableSelectField<String>(
+                value: unitSymbol,
+                fieldEnabled: enabled && !freeHand,
+                dialogTitle: 'Unit',
+                searchHintText: 'Search units',
+                options: [
                   for (final symbol in capacityUnitsKgf.keys)
-                    PopupMenuItem<String>(
-                      value: symbol,
-                      child: Text(symbol, style: const TextStyle(fontSize: 14)),
-                    ),
+                    SearchableSelectOption<String>(value: symbol, label: symbol),
                 ],
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-                    border: Border.all(color: SoftErpTheme.border),
-                    color: SoftErpTheme.sectionSurface,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        unitSymbol,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: SoftErpTheme.textPrimary,
-                        ),
-                      ),
-                      const Icon(Icons.arrow_drop_down_rounded, size: 18),
-                    ],
-                  ),
-                ),
+                decoration: decoration ??
+                    const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                onChanged: (symbol) {
+                  if (symbol != null && symbol != unitSymbol) {
+                    onUnitChanged(symbol);
+                  }
+                },
               ),
             ),
           ],

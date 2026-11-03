@@ -21,6 +21,7 @@ class PickOrTypeField extends StatelessWidget {
     this.errorText,
     this.searchKeyboardType,
     this.decoration,
+    this.floatLabel = true,
   });
 
   /// On the field itself, for finding it in a test.
@@ -37,6 +38,11 @@ class PickOrTypeField extends StatelessWidget {
 
   /// The host's field look; [label] and [errorText] are laid over it.
   final InputDecoration? decoration;
+
+  /// False when the host draws [label] above the box itself (the item sheet
+  /// does): the box then carries no label of its own. [label] still titles
+  /// the search dialog.
+  final bool floatLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -72,9 +78,12 @@ class PickOrTypeField extends StatelessWidget {
         value: query.trim(),
         label: query.trim(),
       ),
-      decoration: decoration?.copyWith(labelText: label, errorText: errorText) ??
+      decoration: decoration?.copyWith(
+            labelText: floatLabel ? label : null,
+            errorText: errorText,
+          ) ??
           InputDecoration(
-            labelText: label,
+            labelText: floatLabel ? label : null,
             errorText: errorText,
             isDense: true,
             border: const OutlineInputBorder(),

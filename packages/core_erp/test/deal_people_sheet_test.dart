@@ -491,11 +491,16 @@ void main() {
           ),
         ),
       ));
+      // Headed fields make each person taller; scrolled to, not assumed.
+      await tester.ensureVisible(find.byKey(const ValueKey('deal_add_person')));
+      await tester.pump();
       await tester.tap(find.byKey(const ValueKey('deal_add_person')));
       await tester.pump();
 
       final designation =
           find.byKey(const ValueKey('deal_person_2_person.designation'));
+      await tester.ensureVisible(designation);
+      await tester.pump();
       await tester.tap(designation);
       await tester.pumpAndSettle();
       // Ravi Shah's, from the client list — not only the stock ones.

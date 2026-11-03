@@ -331,7 +331,9 @@ class _PartFieldState extends State<_PartField> {
     final numeric = _column.kind == ColumnKind.seq ||
         _column.kind == ColumnKind.number ||
         _column.kind == ColumnKind.money;
-    return FitToText(
+    return SheetStyle.labelled(
+      label: _column.label,
+      child: FitToText(
       controller: _text,
       texts: [_column.label],
       minWidth: numeric ? 120 : 150,
@@ -343,7 +345,6 @@ class _PartFieldState extends State<_PartField> {
         keyboardType: numeric ? TextInputType.number : null,
         style: const TextStyle(fontSize: 14),
         decoration: SheetStyle.field(
-          label: _column.label,
           suffixIcon: derived && !_locked
               ? Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -363,28 +364,23 @@ class _PartFieldState extends State<_PartField> {
             _sheet.updateTextValue(_column.id, value, row: widget.row),
         onSubmitted: (_) => _focus.nextFocus(),
       ),
+      ),
     );
   }
 
   /// A property — Alloy, Thickness, one added with Add property.
   bool get _isProperty => SheetBindsTo.isVariation(_column.bindsTo);
 
-  Widget _optionField() {
-    final field = _optionBox(labelInside: !_isProperty);
-    if (!_isProperty) return field;
-    // A property's name is a heading over its box, with its Edit and Delete.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _PropertyHeading(sheet: _sheet, column: _column, row: widget.row),
-        const SizedBox(height: 2),
-        field,
-      ],
-    );
-  }
+  Widget _optionField() => SheetStyle.labelled(
+        label: _column.label,
+        // A property's heading carries its Edit and Delete.
+        actions: _isProperty
+            ? [_PropertyActions(sheet: _sheet, column: _column, row: widget.row)]
+            : const [],
+        child: _optionBox(),
+      );
 
-  Widget _optionBox({required bool labelInside}) {
+  Widget _optionBox() {
     final value = _value;
     final label = _shown;
     final isNew = value?.isNew ?? false;
@@ -423,7 +419,6 @@ class _PartFieldState extends State<_PartField> {
                 isFocused: _focus.hasFocus,
                 isEmpty: false,
                 decoration: SheetStyle.field(
-                  label: labelInside ? _column.label : null,
                   suffixIcon: _locked
                       ? null
                       : const Icon(
@@ -501,13 +496,13 @@ class _PartFieldState extends State<_PartField> {
   }
 }
 
-/// A property's name over its box, and its two actions: Edit and Delete.
+/// A property's two actions, after its name: Edit and Delete.
 ///
 /// Each asks first — a property is the whole sheet's, not this part's. One
 /// that is built into every part sheet (Alloy, Thickness) has neither, and
 /// says so rather than hiding them.
-class _PropertyHeading extends StatelessWidget {
-  const _PropertyHeading({
+class _PropertyActions extends StatelessWidget {
+  const _PropertyActions({
     required this.sheet,
     required this.column,
     required this.row,
@@ -549,8 +544,6 @@ class _PropertyHeading extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(column.label, style: SheetStyle.label),
-        const SizedBox(width: 4),
         action(
           key: 'property_edit_${column.id}_$row',
           icon: Icons.edit_outlined,

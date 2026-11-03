@@ -67,6 +67,45 @@ abstract final class SheetStyle {
     color: SoftErpTheme.textMuted,
   );
 
+  /// A field's name above its box — the one way a field on the sheet is
+  /// labelled. Floating labels shrank to about 10 px on the border, and the
+  /// die and machine forms named a field only while it was empty; a heading
+  /// stays readable and stays put. [actions] sit after the name (a
+  /// property's Edit and Delete); the heading row is one height with or
+  /// without them, so boxes on a line stay level.
+  static Widget labelled({
+    required String label,
+    required Widget child,
+    List<Widget> actions = const [],
+    Key? key,
+  }) =>
+      Column(
+        key: key,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 28,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    style: SheetStyle.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (actions.isNotEmpty) ...[const SizedBox(width: 4), ...actions],
+              ],
+            ),
+          ),
+          const SizedBox(height: 2),
+          child,
+        ],
+      );
+
   /// Every typed field on the sheet below the grid — the deal, people, dies,
   /// machines. They used to take whatever the field widget defaulted to:
   /// dense beside not, radius 14 enabled and 4 disabled, helpers cut to one

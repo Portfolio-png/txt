@@ -102,7 +102,11 @@ class LengthUnitField extends StatelessWidget {
     this.unitKey,
     this.suggestions,
     this.decoration,
+    this.floatLabel = true,
   });
+
+  /// False when the host draws [label] above the field itself.
+  final bool floatLabel;
 
   final TextEditingController controller;
   final String unitSymbol;
@@ -140,6 +144,7 @@ class LengthUnitField extends StatelessWidget {
               decimal: true,
             ),
             decoration: decoration,
+            floatLabel: floatLabel,
             onChanged: onChanged,
           )
         : TextField(
@@ -152,7 +157,7 @@ class LengthUnitField extends StatelessWidget {
             decoration: (decoration ??
                     const InputDecoration(border: OutlineInputBorder()))
                 .copyWith(
-              labelText: label,
+              labelText: floatLabel ? label : null,
               helperText: helperText,
               errorText: errorText,
             ),

@@ -739,7 +739,9 @@ class _PartDieSectionState extends State<PartDieSection> {
               runSpacing: 12,
               crossAxisAlignment: WrapCrossAlignment.start,
               children: [
-                FitToText(
+                SheetStyle.labelled(
+                  label: 'Die Code',
+                  child: FitToText(
                   controller: _codeController,
                   texts: const ['Die Code'],
                   helper: _codeHelper(),
@@ -755,12 +757,14 @@ class _PartDieSectionState extends State<PartDieSection> {
                       fontWeight: FontWeight.w700,
                     ),
                     decoration: SheetStyle.field(
-                      label: 'Die Code',
                       helper: _codeHelper(),
                     ),
                   ),
                 ),
-                FitToText(
+                ),
+                SheetStyle.labelled(
+                  label: 'Die Made By',
+                  child: FitToText(
                   controller: _madeByController,
                   texts: const ['Die Made By'],
                   helper:
@@ -769,7 +773,10 @@ class _PartDieSectionState extends State<PartDieSection> {
                   chrome: 72,
                   child: _madeByField(enabled),
                 ),
-                SizedBox(
+                ),
+                SheetStyle.labelled(
+                  label: 'Liner Size',
+                  child: SizedBox(
                   width: 300,
                   child: LengthUnitField(
                     fieldKey: const ValueKey<String>(
@@ -782,6 +789,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                     unitSymbol: _linerUnit,
                     enabled: enabled,
                     label: 'Liner Size',
+                    floatLabel: false,
                     helperText: 'Optional',
                     decoration: SheetStyle.field(),
                     errorText: _linerError,
@@ -792,6 +800,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                     }),
                     onChanged: () => setState(() => _linerError = null),
                   ),
+                ),
                 ),
                 _pick(
                   slug: 'sets',
@@ -815,28 +824,27 @@ class _PartDieSectionState extends State<PartDieSection> {
                   options: _suggestions.rackNos,
                   enabled: enabled,
                 ),
+                // The paper sheet calls these "PO-Date" and "Date in", which
+                // name the columns without saying what they are: the first is
+                // when the die was ORDERED from the maker, the second when the
+                // made die ARRIVED.
+                _momentField(
+                  slug: 'po',
+                  label: 'Ordered (PO)',
+                  value: _poAt,
+                  enabled: enabled,
+                  onPicked: (value) => setState(() => _poAt = value),
+                  onCleared: () => setState(() => _poAt = null),
+                ),
+                _momentField(
+                  slug: 'date-in',
+                  label: 'Arrived',
+                  value: _dateInAt,
+                  enabled: enabled,
+                  onPicked: (value) => setState(() => _dateInAt = value),
+                  onCleared: () => setState(() => _dateInAt = null),
+                ),
               ],
-            ),
-            const SizedBox(height: 10),
-            // The paper sheet calls these "PO-Date" and "Date in", which name
-            // the columns without saying what they are: the first is when the
-            // die was ORDERED from the maker, the second when the made die
-            // ARRIVED. The sheet's own words are kept beside them so the floor
-            // still recognises the row.
-            _momentRow(
-              label: 'Ordered (PO)',
-              value: _poAt,
-              enabled: enabled,
-              onPicked: (value) => setState(() => _poAt = value),
-              onCleared: () => setState(() => _poAt = null),
-            ),
-            const SizedBox(height: 8),
-            _momentRow(
-              label: 'Arrived (Date in)',
-              value: _dateInAt,
-              enabled: enabled,
-              onPicked: (value) => setState(() => _dateInAt = value),
-              onCleared: () => setState(() => _dateInAt = null),
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
@@ -915,20 +923,24 @@ class _PartDieSectionState extends State<PartDieSection> {
     required bool enabled,
     bool numeric = false,
   }) {
-    return FitToText(
-      controller: controller,
-      texts: [label, ...options.take(8)],
-      minWidth: numeric ? 140 : 160,
-      chrome: 72,
-      child: PickOrTypeField(
-        fieldKey: ValueKey<String>('quick-entry-die-$slug-field'),
+    return SheetStyle.labelled(
+      label: label,
+      child: FitToText(
         controller: controller,
-        label: label,
-        options: options,
-        enabled: enabled,
-        searchKeyboardType: numeric ? TextInputType.number : null,
-        decoration: SheetStyle.field(),
-        onChanged: () => setState(() {}),
+        texts: [label, ...options.take(8)],
+        minWidth: numeric ? 140 : 160,
+        chrome: 72,
+        child: PickOrTypeField(
+          fieldKey: ValueKey<String>('quick-entry-die-$slug-field'),
+          controller: controller,
+          label: label,
+          floatLabel: false,
+          options: options,
+          enabled: enabled,
+          searchKeyboardType: numeric ? TextInputType.number : null,
+          decoration: SheetStyle.field(),
+          onChanged: () => setState(() {}),
+        ),
       ),
     );
   }
@@ -1138,6 +1150,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             ),
             value: _dieMakerId,
             fallbackName: _madeByController.text,
+            floatLabel: false,
             decoration: SheetStyle.field(),
             onChanged: (maker) => setState(() {
               _dieMakerId = maker?.id;
@@ -1172,7 +1185,6 @@ class _PartDieSectionState extends State<PartDieSection> {
           onChanged: (_) => setState(() {}),
           style: const TextStyle(fontSize: 14),
           decoration: SheetStyle.field(
-            label: 'Die Made By',
             helper: 'Whoever cut it — a fitter here, or an outside toolroom',
           ),
         ),
@@ -1204,53 +1216,51 @@ class _PartDieSectionState extends State<PartDieSection> {
     );
   }
 
-  Widget _momentRow({
+  /// A date and time, as a box like every other field: the date when
+  /// picked, "Pick a date" when not, with a × to clear it. It was a row label
+  /// and a "Pick" button, unlike anything else on the sheet.
+  Widget _momentField({
+    required String slug,
     required String label,
     required DateTime? value,
     required bool enabled,
     required ValueChanged<DateTime> onPicked,
     required VoidCallback onCleared,
   }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: SoftErpTheme.textPrimary,
+    return SheetStyle.labelled(
+      label: label,
+      child: SizedBox(
+        width: 230,
+        child: InkWell(
+          key: ValueKey<String>('quick-entry-die-$slug-field'),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+          onTap: enabled
+              ? () => _pickMoment(current: value, onPicked: onPicked)
+              : null,
+          child: InputDecorator(
+            isEmpty: false,
+            decoration: SheetStyle.field(
+              suffixIcon: enabled && value != null
+                  ? IconButton(
+                      tooltip: 'Clear $label',
+                      onPressed: onCleared,
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                    )
+                  : const Icon(
+                      Icons.event_outlined,
+                      size: 18,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+            ),
+            child: Text(
+              // Always through partStamp: the instant is stored in UTC and a
+              // shop at +05:30 must not read 11.30 AM as 6.00 AM.
+              value == null ? 'Pick a date' : partStamp(value),
+              style: value == null ? SheetStyle.muted : const TextStyle(fontSize: 14),
             ),
           ),
         ),
-        Expanded(
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: enabled
-                    ? () => _pickMoment(current: value, onPicked: onPicked)
-                    : null,
-                icon: const Icon(Icons.event_outlined, size: 18),
-                label: Text(
-                  // Always through partStamp: the instant is stored in UTC and
-                  // a shop at +05:30 must not read 11.30 AM as 6.00 AM.
-                  value == null ? 'Pick' : partStamp(value),
-                  style: const TextStyle(fontSize: 14),
-                ),
-              ),
-              if (enabled && value != null)
-                TextButton(
-                  onPressed: onCleared,
-                  child: const Text('Clear', style: TextStyle(fontSize: 14)),
-                ),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

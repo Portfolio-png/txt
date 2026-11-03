@@ -32,7 +32,11 @@ class DieMakerPickerField extends StatelessWidget {
     this.label = 'Die Made By',
     this.helper = 'Whoever cut it — a fitter here, or an outside toolroom',
     this.decoration,
+    this.floatLabel = true,
   });
+
+  /// False when the host draws [label] above the box itself.
+  final bool floatLabel;
 
   final int? value;
   final String fallbackName;
@@ -81,7 +85,7 @@ class DieMakerPickerField extends StatelessWidget {
       value: showsFallback ? -1 : value,
       options: options,
       decoration: decoration?.copyWith(
-            labelText: label,
+            labelText: floatLabel ? label : null,
             helperText: helper,
             helperMaxLines: 2,
           ) ??

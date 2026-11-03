@@ -203,16 +203,22 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       children: [
         // The company's logo, kept on the company: every part for it shows
         // the same one.
-        MiniPhoto(
+        // Level with the boxes, which sit under their headings.
+        Padding(
+          padding: const EdgeInsets.only(top: _boxTop),
+          child: MiniPhoto(
           owner: PhotoOwner.client,
           id: partyId?.toString(),
-          size: 44,
+          size: 40,
           what: 'company logo',
           // The logo set on the Clients screen, until one is uploaded here.
           fallbackUrl: _companyLogo(partyId),
           disabledReason: 'Pick the company first to add its logo',
         ),
-        FitToText(
+        ),
+        SheetStyle.labelled(
+          label: 'Company',
+          child: FitToText(
           texts: ['Company', widget.controller.dealPartyName],
           minWidth: 260,
           chrome: 72,
@@ -227,7 +233,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
               for (final party in _deal.parties)
                 SearchableSelectOption<int>(value: party.id, label: party.name),
             ],
-            decoration: SheetStyle.field(label: 'Company'),
+            decoration: SheetStyle.field(),
             // A part for a new customer should not need a trip to the
             // Clients screen. A name the master already has is that company.
             canCreateOption: (query, _) {
@@ -259,7 +265,10 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             },
           ),
         ),
-        FitToText(
+        ),
+        SheetStyle.labelled(
+          label: 'Quotation (₹)',
+          child: FitToText(
           controller: quotation,
           texts: const ['Quotation (₹)', 'One figure for the part'],
           helper: 'One figure for the part',
@@ -277,7 +286,6 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             ],
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             decoration: SheetStyle.field(
-              label: 'Quotation (₹)',
               helper: 'One figure for the part',
               error: quotationColumn == null
                   ? null
@@ -290,8 +298,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             },
           ),
         ),
+        ),
         Padding(
-          padding: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.only(top: _boxTop + 10),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -309,12 +318,12 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.only(top: 2),
+          padding: const EdgeInsets.only(top: _boxTop + 2),
           child: _dealAction(dealLocked),
         ),
         if (partyId != null)
           Padding(
-            padding: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.only(top: _boxTop + 2),
             child: TextButton.icon(
               key: const ValueKey<String>('deal_view_company'),
               onPressed: () => CompanyView.openClient(context, partyId),
@@ -459,7 +468,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       if (options != null) {
         // A dropdown of what was said before. It writes through the same
         // draft the text field does, so saving is unchanged.
-        return FitToText(
+        return SheetStyle.labelled(
+          label: label,
+          child: FitToText(
           controller: text,
           texts: [label, ...options.take(8)],
           minWidth: min,
@@ -468,6 +479,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             fieldKey: ValueKey<String>('deal_person_${row}_$binds'),
             controller: text,
             label: label,
+            floatLabel: false,
             options: options,
             enabled: !locked,
             errorText: column == null ? null : errors[column]?.message,
@@ -478,9 +490,12 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
               }
             },
           ),
+        ),
         );
       }
-      return FitToText(
+      return SheetStyle.labelled(
+        label: label,
+        child: FitToText(
         controller: text,
         texts: [label],
         minWidth: min,
@@ -492,20 +507,22 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           keyboardType: keyboard,
           style: const TextStyle(fontSize: 14),
           decoration: SheetStyle.field(
-            label: label,
             error: column == null ? null : errors[column]?.message,
           ),
           onChanged: (value) {
             if (column != null) _people.updateTextValue(column, value, row: row);
           },
         ),
+      ),
       );
     }
 
+    // Bottoms level: every field has its name above it now, so the photo,
+    // the buttons and the × line up with the boxes, not with the headings.
     return Wrap(
       spacing: 10,
       runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.end,
       children: [
         MiniPhoto(
           owner: PhotoOwner.person,
@@ -514,8 +531,14 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           what: 'photo',
           disabledReason: 'Save this person first to add a photo',
         ),
-        Tooltip(
-          message: 'Dealt with on this part',
+        SheetStyle.labelled(
+          label: 'Dealt with',
+          child: SizedBox(
+          height: 44,
+          child: Tooltip(
+          message: dealLocked
+              ? 'Edit the company line to change who it was dealt with'
+              : 'Dealt with on this part',
           child: Checkbox(
             key: ValueKey<String>('deal_person_${row}_tick'),
             value: ticked,
@@ -529,6 +552,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                       row: row,
                     ),
           ),
+        ),
+        ),
         ),
         field(SheetBindsTo.personName, 'Name', min: 180),
         field(
@@ -583,3 +608,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     );
   }
 }
+
+/// How far a field's box sits below the top of its heading
+/// ([SheetStyle.labelled]): what sits beside a headed field is moved down by
+/// it to stay level with the box.
+const double _boxTop = 30;

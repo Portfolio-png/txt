@@ -660,7 +660,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 // which also takes a new answer — the same makes, years and
                 // figures recur across its machines. No helper lines: the
                 // labels say enough.
-                FitToText(
+                SheetStyle.labelled(
+                  label: 'Machine Type',
+                  child: FitToText(
                   texts: ['Machine Type', _typeNameFor(_groupId)],
                   minWidth: 220,
                   chrome: 72,
@@ -674,7 +676,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     fieldEnabled: enabled,
                     dialogTitle: 'Machine Type',
                     searchHintText: 'Search or type a new machine type',
-                    decoration: SheetStyle.field(label: 'Machine Type'),
+                    decoration: SheetStyle.field(),
                     onChanged: (id) => setState(() {
                       _groupId = id;
                       _rederiveNo();
@@ -700,10 +702,13 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     },
                   ),
                 ),
+                ),
                 // A text field, not a dropdown: the number is unique and is
                 // derived from the type, so a list of numbers already taken
                 // would only offer duplicates.
-                FitToText(
+                SheetStyle.labelled(
+                  label: 'Machine No.',
+                  child: FitToText(
                   controller: _noController,
                   texts: const ['Machine No.'],
                   child: TextField(
@@ -716,8 +721,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
-                    decoration: SheetStyle.field(label: 'Machine No.'),
+                    decoration: SheetStyle.field(),
                   ),
+                ),
                 ),
                 _pick(
                   slug: 'name',
@@ -758,7 +764,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   numeric: true,
                 ),
                 // A figure, a unit and a "free hand" tick: one compact block.
-                SizedBox(
+                SheetStyle.labelled(
+                  label: 'Capacity',
+                  child: SizedBox(
                   width: 340,
                   child: ForceCapacityField(
                     fieldKey: const ValueKey<String>(
@@ -768,6 +776,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       'quick-entry-machine-free-hand',
                     ),
                     controller: _capacityController,
+                    floatLabel: false,
                     unitSymbol: _capacityUnit,
                     kind: _capacityKind,
                     enabled: enabled,
@@ -788,6 +797,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     }),
                     onChanged: () => setState(() => _capacityError = null),
                   ),
+                ),
                 ),
                 // Named "make" because everywhere else in this system a
                 // feeder is an upstream node in a pipeline.
@@ -872,20 +882,24 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     required bool enabled,
     bool numeric = false,
   }) {
-    return FitToText(
-      controller: controller,
-      texts: [label, ...options.take(8)],
-      minWidth: numeric ? 140 : 180,
-      chrome: 72,
-      child: PickOrTypeField(
-        fieldKey: ValueKey<String>('quick-entry-machine-$slug-field'),
+    return SheetStyle.labelled(
+      label: label,
+      child: FitToText(
         controller: controller,
-        label: label,
-        options: options,
-        enabled: enabled,
-        searchKeyboardType: numeric ? TextInputType.number : null,
-        decoration: SheetStyle.field(),
-        onChanged: () => setState(() {}),
+        texts: [label, ...options.take(8)],
+        minWidth: numeric ? 140 : 180,
+        chrome: 72,
+        child: PickOrTypeField(
+          fieldKey: ValueKey<String>('quick-entry-machine-$slug-field'),
+          controller: controller,
+          label: label,
+          floatLabel: false,
+          options: options,
+          enabled: enabled,
+          searchKeyboardType: numeric ? TextInputType.number : null,
+          decoration: SheetStyle.field(),
+          onChanged: () => setState(() {}),
+        ),
       ),
     );
   }
