@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/utils/stamp_format.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
@@ -1201,6 +1203,107 @@ void main() {
       expect(made, 1, reason: 'not made a second time');
       expect(repo.updated.last.dieIds, ['die-1']);
       expect(dies().staged, isEmpty);
+    });
+
+    testWidgets('a blank line goes at once; one holding a die asks, and takes it',
+        (tester) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError('not saved in this test');
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+
+      // A blank second line: removed without a question.
+      await tester.tap(find.text('Add part').first);
+      await tester.pump();
+      expect(sheet.rowCount, 2);
+      await tester.tap(find.byKey(const ValueKey('row_remove_1')));
+      await tester.pump();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(sheet.rowCount, 1);
+
+      // A second line holding a die: asked first.
+      await tester.tap(find.text('Add part').first);
+      await tester.pump();
+      PartDieSection dies() =>
+          tester.widget<PartDieSection>(find.byType(PartDieSection));
+      dies().onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('row_remove_1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove part 2?'), findsOneWidget);
+      expect(find.textContaining('1 die waiting for it'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(sheet.rowCount, 2, reason: 'Cancel keeps the line');
+      expect(dies().staged, hasLength(1), reason: 'and its die');
+
+      await tester.tap(find.byKey(const ValueKey('row_remove_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+      await tester.pumpAndSettle();
+      expect(sheet.rowCount, 1);
+
+      // Nothing is left held for a line that is gone.
+      await tester.tap(find.byTooltip('Back').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Leave with unsaved work?'), findsNothing);
+    });
+
+    testWidgets('picking a part already on the sheet keeps a line that holds a die',
+        (tester) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError('not saved in this test');
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      await tester.tap(find.text('Add part').first);
+      await tester.pump();
+      tester
+          .widget<PartDieSection>(find.byType(PartDieSection))
+          .onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
+      await tester.pump();
+
+      final name = sheet.sheetDef.itemColumn!;
+      final existing = sheet.options.firstWhere(
+        (o) => o.columnId == name.id && o.label == 'Patti',
+      );
+      sheet.setOption(name.id, existing, row: 1);
+      await tester.pump();
+
+      expect(sheet.row, 0, reason: 'the cursor goes to the part already here');
+      expect(sheet.rowCount, 2, reason: 'the line holding a die is not dropped');
+    });
+
+    testWidgets('quitting the app asks, as Back does, when work is unsaved',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+
+      // Nothing typed: the app may quit, and nobody is asked.
+      expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+      expect(find.text('Leave with unsaved work?'), findsNothing);
+
+      tester.widget<PartDieSection>(find.byType(PartDieSection)).onDirtyChanged!(true);
+      await tester.pump();
+
+      Future<AppExitResponse> ask(String choice) async {
+        final answer = tester.binding.handleRequestAppExit();
+        await tester.pumpAndSettle();
+        expect(find.text('Leave with unsaved work?'), findsOneWidget);
+        await tester.tap(find.text(choice));
+        await tester.pumpAndSettle();
+        return answer;
+      }
+
+      expect(await ask('Keep editing'), AppExitResponse.cancel);
+      expect(await ask('Discard'), AppExitResponse.exit);
     });
 
     testWidgets('a held die\'s row carries the part\'s own Save part',

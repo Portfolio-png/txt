@@ -443,22 +443,30 @@ void main() {
       await _tapVisible(tester, items);
       // Parts are listed under their group, folded until it is opened, and
       // the list is lazy — scrolled to, a row exists.
-      final group = find.text('Primary Group');
-      await pumpUntil(tester, group, reason: 'the part\'s group should be listed');
-      await tester.tap(group.first);
-      await tester.pump(const Duration(milliseconds: 500));
-      final list = find.ancestor(
-        of: group.first,
-        matching: find.byWidgetPredicate(
-          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      // The group header says "Click to open" — "Primary Group" alone is also
+      // every row's Group column, and tapping one of those opens nothing.
+      final closed = find.text('Click to open');
+      final header = find.text('Click to collapse');
+      await pumpUntil(
+        tester,
+        find.byWidgetPredicate(
+          (w) => w is Text && (w.data == 'Click to open' || w.data == 'Click to collapse'),
         ),
+        reason: 'the part\'s group should be listed',
       );
-      await tester.scrollUntilVisible(
-        find.text(_part),
-        300,
-        scrollable: list.first,
-        maxScrolls: 40,
-      );
+      if (header.evaluate().isEmpty) {
+        await tester.tap(closed.first);
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      // Dragged from where its opened group's header sits — inside the list —
+      // until the part's row is built. The point, not the header: the header
+      // scrolls away after the first drag.
+      await pumpUntil(tester, header, reason: 'the group should open');
+      final inList = tester.getCenter(header.first);
+      for (var i = 0; i < 40 && find.text(_part).evaluate().isEmpty; i += 1) {
+        await tester.dragFrom(inList, const Offset(0, -250));
+        await tester.pump(const Duration(milliseconds: 150));
+      }
       await pumpUntil(tester, find.text(_part), reason: 'the saved part should be listed');
       await tester.tap(find.text(_part).first);
       await pumpUntil(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -234,6 +235,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     _controller = ItemMasterController.live(binding: _buildBinding());
     _controller.addListener(_onControllerChanged);
+    // A row holding dies or machines for its part is never dropped on the
+    // controller's own say-so (picking an existing part's name on it).
+    _controller.rowHoldsWork = (rowKey) =>
+        (_heldDies[rowKey]?.isNotEmpty ?? false) ||
+        (_heldMachines[rowKey]?.isNotEmpty ?? false);
+    // Quitting the app — Cmd+Q, or the window's close button, which the
+    // window turns into a quit — asks the same question as Back.
+    _exitListener = AppLifecycleListener(onExitRequested: _onExitRequested);
 
     // Reference data is loaded again whenever the masters change, not once at
     // open. The screen can be opened before the providers have finished their
@@ -387,6 +396,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   @override
   void dispose() {
+    _exitListener.dispose();
+    _controller.rowHoldsWork = null;
     _controller.groupItemController
       ..onRowLeft = null
       ..onOptionAdded = null
@@ -647,7 +658,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// Back with something unwritten. Rows commit as the cursor leaves them,
   /// but the row under the cursor, an edit to a saved row and held dies were
   /// all dropped without a word when the screen closed.
-  Future<void> _confirmLeave() async {
+  /// Asks whether to leave with unsaved work — Keep editing, Discard, or
+  /// Save and close — and answers whether leaving is now all right. Back and
+  /// quitting the app both ask through here.
+  Future<bool> _askToLeave() async {
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -674,31 +688,47 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         ],
       ),
     );
-    if (!mounted || choice == null || choice == 'stay') return;
+    if (!mounted || choice == null || choice == 'stay') return false;
     if (choice == 'save') {
       await _handleSave();
-      if (!mounted) return;
+      if (!mounted) return false;
       // The part's Save does not write the raw sheet or the route — each has
       // its own — so Save and close writes them too, once the part exists.
       final read = _rawDraft;
       if (_rawEditing && _rawDirty && read != null && _livePart != null) {
         await _saveRawSheet(read());
-        if (!mounted) return;
+        if (!mounted) return false;
       }
       final route = _routePanelKey.currentState;
       if (_showRoutePanel && _routeDirty && route != null) {
         await route.save();
-        if (!mounted) return;
+        if (!mounted) return false;
       }
       final left = _unsavedWork();
       if (left.isNotEmpty) {
         _toast('Still not saved: ${left.join(', ')}.', isError: true);
-        return;
+        return false;
       }
     }
     _leaving = true;
-    Navigator.of(context).pop();
+    return true;
   }
+
+  /// Back with something unwritten.
+  Future<void> _confirmLeave() async {
+    if (await _askToLeave() && mounted) Navigator.of(context).pop();
+  }
+
+  late final AppLifecycleListener _exitListener;
+
+  /// The app is being quit. Nothing unsaved: let it. Otherwise the same
+  /// question as Back — and Keep editing, or a save that did not finish,
+  /// keeps the app open.
+  Future<AppExitResponse> _onExitRequested() async {
+    if (!mounted || _leaving || !_hasUnsavedWork) return AppExitResponse.exit;
+    return await _askToLeave() ? AppExitResponse.exit : AppExitResponse.cancel;
+  }
+
 
   /// Set once the user has chosen to go, so the pop is not intercepted again.
   bool _leaving = false;
@@ -2364,7 +2394,56 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
       },
       onAddProperty: _addProperty,
+      onRemoveRow: _removeLine,
     );
+  }
+
+  /// The line's ×. A blank line goes at once; one holding anything — typed
+  /// cells, or dies and machines waiting for its part — asks first, naming
+  /// what goes with it. Those used to go without a word, the held dies on the
+  /// next save.
+  Future<void> _removeLine(int row) async {
+    final sheet = _controller.groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return;
+    final draft = sheet.draftAt(row);
+    final key = draft.rowKey;
+    final dies = _heldDies[key]?.length ?? 0;
+    final machines = _heldMachines[key]?.length ?? 0;
+    final typed = !sheet.isRowBlank(row);
+    if (typed || dies > 0 || machines > 0) {
+      String count(int n, String one) => '$n $one${n == 1 ? '' : 's'}';
+      final held = [
+        if (dies > 0) count(dies, 'die'),
+        if (machines > 0) count(machines, 'machine'),
+      ].join(' and ');
+      final what = [
+        if (typed) 'what was typed on this line',
+        if (held.isNotEmpty) '$held waiting for it',
+      ].join(', and ');
+      final sure = await showConfirmDialog(
+        context,
+        title: 'Remove part ${row + 1}?',
+        message: '${what[0].toUpperCase()}${what.substring(1)} '
+            '${typed || dies + machines > 1 ? 'are' : 'is'} removed. '
+            'None of it has been saved.',
+        confirmLabel: 'Remove',
+        destructive: true,
+      );
+      if (!mounted || sure != true) return;
+    }
+    // Looked up again: the line may have moved while the dialog was open.
+    final at = sheet.indexOfDraft(draft);
+    if (at < 0) return;
+    setState(() {
+      for (final die in _heldDies.remove(key) ?? const <DieSheetDraft>[]) {
+        _madeDies.remove(die);
+      }
+      for (final machine
+          in _heldMachines.remove(key) ?? const <MachineSheetDraft>[]) {
+        _madeMachines.remove(machine);
+      }
+    });
+    sheet.removeRow(at);
   }
 
   /// Whether this app keeps photos (an [EntityPhotosProvider] is provided).

@@ -29,6 +29,7 @@ class PartRowsForm extends StatelessWidget {
     this.photoBuilder,
     this.statusBuilder,
     this.onAddProperty,
+    this.onRemoveRow,
   });
 
   final SheetController sheet;
@@ -45,6 +46,10 @@ class PartRowsForm extends StatelessWidget {
 
   /// Opens "Add property". Null hides nothing: the button is drawn disabled.
   final VoidCallback? onAddProperty;
+
+  /// The line's ×. The host asks first when the line holds anything — typed
+  /// cells, or dies and machines waiting for the part. Null removes at once.
+  final Future<void> Function(int row)? onRemoveRow;
 
   /// The fields of a line, in the order the grid drew its columns. The stamp
   /// columns (Date, Time) are left out: the save fills them, nobody types them.
@@ -75,6 +80,7 @@ class PartRowsForm extends StatelessWidget {
                 photo: photoBuilder?.call(row),
                 status: statusBuilder?.call(row),
                 action: actionBuilder(row),
+                onRemove: onRemoveRow,
               ),
               const SizedBox(height: 10),
             ],
@@ -130,8 +136,10 @@ class _PartLine extends StatelessWidget {
     required this.photo,
     required this.status,
     required this.action,
+    this.onRemove,
   });
 
+  final Future<void> Function(int row)? onRemove;
   final SheetController sheet;
   final int row;
   final List<ColumnDef> columns;
@@ -200,7 +208,9 @@ class _PartLine extends StatelessWidget {
               message: removeWhy ?? 'Remove this line',
               child: IconButton(
                 key: ValueKey<String>('row_remove_$row'),
-                onPressed: removeWhy == null ? () => sheet.removeRow(row) : null,
+                onPressed: removeWhy == null
+                    ? () => onRemove == null ? sheet.removeRow(row) : onRemove!(row)
+                    : null,
                 icon: const Icon(Icons.close, size: 18),
               ),
             ),

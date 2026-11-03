@@ -466,6 +466,11 @@ class ItemMasterController extends ChangeNotifier {
   /// — it is an edit of it, not a new part named after it (which the sheet
   /// refuses as a duplicate). Already on another row, the cursor goes there
   /// instead of the part being on the sheet twice.
+  /// Asked before a row is dropped on the controller's own say-so: true when
+  /// the host holds work for it (dies or machines waiting for its part), and
+  /// the row then stays.
+  bool Function(Object rowKey)? rowHoldsWork;
+
   bool _pickExisting(int row, ColumnDef column, ColumnOption option) {
     final writer = binding;
     if (writer == null || column.bindsTo != SheetBindsTo.name) return false;
@@ -481,7 +486,10 @@ class ItemMasterController extends ChangeNotifier {
       final picked = sheet.draftAt(row);
       sheet.selectRow(other);
       final at = sheet.indexOfDraft(picked);
-      if (at >= 0 && picked.entityId == null && sheet.isRowBlank(at)) {
+      if (at >= 0 &&
+          picked.entityId == null &&
+          sheet.isRowBlank(at) &&
+          rowHoldsWork?.call(picked.rowKey) != true) {
         sheet.removeRow(at);
       }
       _statusBarMessage = 'That part is already on row ${sheet.row + 1}.';

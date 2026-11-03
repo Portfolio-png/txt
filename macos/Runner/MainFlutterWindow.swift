@@ -81,6 +81,19 @@ class MainFlutterWindow: NSWindow {
       }
     }
 
+    // The close button quits the app (the last window closing quits it
+    // anyway), but as a quit REQUEST: Flutter is asked first, and a screen
+    // holding unsaved work can say "not yet". Closing the window outright
+    // went past that question with the work still on it.
+    self.delegate = self
+
     super.awakeFromNib()
+  }
+}
+
+extension MainFlutterWindow: NSWindowDelegate {
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    NSApp.terminate(sender)
+    return false
   }
 }
