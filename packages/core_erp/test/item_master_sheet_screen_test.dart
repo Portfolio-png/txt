@@ -776,7 +776,9 @@ void main() {
 
       final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
       expect(panel.pipelineId, startsWith('route:'));
-      expect(panel.pipelineName, 'Route v1 · Die → Shearing');
+      // The offline mock names no pipeline, so the title falls back to
+      // "Route"; the server's derived name is read in part_route_test.
+      expect(panel.pipelineName, 'Route v1');
       expect(panel.stageNodes.map((node) => node.name), ['Die', 'Shearing']);
     });
 

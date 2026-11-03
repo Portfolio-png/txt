@@ -147,7 +147,7 @@ module.exports = function registerProcessRoutesModule(ctx) {
       // lifecycle, which entity_activity_log already carries (and with them a
       // sitting, free, via logEntityActivity). The floor transitions
       // stage_entered / stage_exited belong to Stage tracking and are not this.
-      const label = { name: `${part.display_name || part.name} route v${result.version}` };
+      const label = { name: `${await service.pipelineNameFor(part.id)} v${result.version}` };
       if (result.created) trackCreate('items', part.id, label, req);
       else trackUpdate('items', part.id, { name: 'route' }, label, req);
       res.json({ success: true, ...result, routes: await service.routesFor(part.id) });
@@ -169,11 +169,12 @@ module.exports = function registerProcessRoutesModule(ctx) {
         refuse(res, result);
         return;
       }
+      const pipeline = await service.pipelineNameFor(part.id);
       trackUpdate(
         'items',
         part.id,
-        { name: `route v${result.previousVersion}` },
-        { name: `route v${result.version}` },
+        { name: `${pipeline} v${result.previousVersion}` },
+        { name: `${pipeline} v${result.version}` },
         req,
       );
       res.json({ success: true, ...result, routes: await service.routesFor(part.id) });

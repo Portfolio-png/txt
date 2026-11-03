@@ -108,7 +108,7 @@ void main() {
 
     await pumpUntil(
       tester,
-      find.textContaining('Route saved for'),
+      find.textContaining(' pipeline v'),
       reason: 'the saved route should be reported back on the sheet',
     );
   });

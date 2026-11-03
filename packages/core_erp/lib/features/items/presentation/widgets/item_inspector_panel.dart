@@ -200,5 +200,11 @@ class _RouteSectionState extends State<_RouteSection> {
 
   @override
   Widget build(BuildContext context) =>
-      RouteRibbon(route: _route, stages: _stages);
+      RouteRibbon(
+        route: _route,
+        stages: _stages,
+        heading: _route == null || _route!.name.trim().isEmpty
+            ? 'Goes through'
+            : _route!.name.trim(),
+      );
 }

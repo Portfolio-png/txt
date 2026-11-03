@@ -110,11 +110,17 @@ class PartRoute {
     required this.partId,
     required this.version,
     required this.status,
+    this.name = '',
     this.note = '',
     this.steps = const [],
   });
 
   final int id;
+
+  /// The pipeline this route is: "<Group> <Type> <Part name> <Part code>
+  /// pipeline", worked out by the server from the part as it is filed now.
+  /// Empty when the server did not send one (the offline mock).
+  final String name;
   final int partId;
   final int version;
   final RouteStatus status;
@@ -122,6 +128,9 @@ class PartRoute {
   final List<RouteStep> steps;
 
   bool get isActive => status == RouteStatus.active;
+
+  /// [name], or "Route" when there is none — never a blank heading.
+  String get title => name.trim().isEmpty ? 'Route' : name.trim();
 
   /// Whether a change to this route needs a new version declared rather than
   /// a plain save. Mirrors the backend rule; the server still decides.
@@ -136,6 +145,7 @@ class PartRoute {
       partId: ((json['part_id'] ?? json['partId']) as num?)?.toInt() ?? 0,
       version: (json['version'] as num?)?.toInt() ?? 1,
       status: RouteStatus.parse(json['status'] as String?),
+      name: (json['name'] as String?) ?? '',
       note: (json['note'] as String?) ?? '',
       steps: [
         for (final entry in rawSteps)

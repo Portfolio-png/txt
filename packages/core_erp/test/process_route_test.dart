@@ -71,6 +71,22 @@ void main() {
   });
 
   group('PartRoute', () {
+    test('carries the pipeline name the server derives, and never a blank title', () {
+      final named = PartRoute.fromJson({
+        'id': 4,
+        'part_id': 9,
+        'version': 2,
+        'status': 'active',
+        'name': 'Primary Group Brackets Patti PGBP1 pipeline',
+      })!;
+      expect(named.name, 'Primary Group Brackets Patti PGBP1 pipeline');
+      expect(named.title, 'Primary Group Brackets Patti PGBP1 pipeline');
+      final unnamed = PartRoute.fromJson({'id': 5, 'status': 'draft'})!;
+      expect(unnamed.name, '');
+      expect(unnamed.title, 'Route');
+    });
+
+
     test('reads the server shape, snake_case included', () {
       final route = PartRoute.fromJson({
         'id': 7,

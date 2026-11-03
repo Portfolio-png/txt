@@ -336,7 +336,11 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
       final title = _partTitle(partId);
       widget.onSaved(CreatedRecord(
         id: '${saved?.id ?? partId}',
-        title: saved == null ? '$title route' : '$title route v${saved.version}',
+        // The pipeline's own name when the server sent one ("Primary Group
+        // Brackets Patti PGBP1 pipeline v2"), else the part's.
+        title: saved == null
+            ? '$title route'
+            : '${saved.name.trim().isEmpty ? '$title route' : saved.name.trim()} v${saved.version}',
         subtitle: '${_steps.length} ${_steps.length == 1 ? 'stage' : 'stages'}',
       ));
       setState(() {

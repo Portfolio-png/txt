@@ -329,7 +329,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 250));
       }
       await _tapVisible(tester, find.text('Save route'));
-      await pumpUntil(tester, find.textContaining('Route saved for'), reason: 'the route should save');
+      await pumpUntil(tester, find.textContaining(' pipeline v'), reason: 'the route should save');
     });
 
     // --- raw sheet ---------------------------------------------------------------

@@ -139,6 +139,17 @@ function validateRouteSteps(steps, stages) {
   return { ok: true, steps: out };
 }
 
+/// A route's name, said the way the shop says it: "<Group> <Type> <Part name>
+/// <Part code> pipeline". A route is the pipeline at a glance, so it is named
+/// after what it makes. Worked out on every read and never stored, so renaming
+/// a group or a part renames its pipeline with it. Blank parts are left out.
+function pipelineName({ group, type, partName, partCode } = {}) {
+  const words = [group, type, partName, partCode]
+    .map((word) => String(word || '').trim())
+    .filter(Boolean);
+  return words.length ? `${words.join(' ')} pipeline` : 'pipeline';
+}
+
 module.exports = function createProcessRouteService({ get, all, run }) {
   /// Routes still standing on a stage: drafts and active ones. A retired
   /// route is history and keeps its steps whatever happens to the stage.
@@ -154,6 +165,29 @@ module.exports = function createProcessRouteService({ get, all, run }) {
          FROM process_stages g ${where}
         ORDER BY g.position, g.id`,
     );
+  }
+
+  /// The part's pipeline name. A part filed under a Type has the Type as its
+  /// group and the Group as that group's parent; a part filed straight under
+  /// a Group has no Type.
+  async function pipelineNameFor(partId) {
+    const row = await get(
+      `SELECT i.name, i.display_name, i.part_code,
+              g.name AS group_name, p.name AS parent_name
+         FROM items i
+         LEFT JOIN groups g ON g.id = i.group_id
+         LEFT JOIN groups p ON p.id = g.parent_group_id
+        WHERE i.id = ?`,
+      [partId],
+    );
+    if (!row) return pipelineName();
+    const typed = row.parent_name != null;
+    return pipelineName({
+      group: typed ? row.parent_name : row.group_name,
+      type: typed ? row.group_name : '',
+      partName: row.display_name || row.name,
+      partCode: row.part_code,
+    });
   }
 
   async function stepsFor(routeId) {
@@ -181,17 +215,19 @@ module.exports = function createProcessRouteService({ get, all, run }) {
                  version DESC`,
       [partId],
     );
+    const name = rows.length ? await pipelineNameFor(partId) : '';
     const out = [];
-    for (const row of rows) out.push({ ...row, steps: await stepsFor(row.id) });
+    for (const row of rows) out.push({ ...row, name, steps: await stepsFor(row.id) });
     return out;
   }
 
   async function activeRoute(partId) {
-    return get(
+    const row = await get(
       `SELECT id, part_id, version, status, note FROM process_routes
         WHERE part_id = ? AND status = 'active'`,
       [partId],
     );
+    return row ? { ...row, name: await pipelineNameFor(partId) } : row;
   }
 
   async function writeSteps(routeId, steps) {
@@ -427,6 +463,7 @@ module.exports = function createProcessRouteService({ get, all, run }) {
     retireStage,
     routesFor,
     activeRoute,
+    pipelineNameFor,
     stepsFor,
     saveRoute,
     declareVersion,
@@ -435,3 +472,4 @@ module.exports = function createProcessRouteService({ get, all, run }) {
 
 module.exports.validateRouteSteps = validateRouteSteps;
 module.exports.readSteps = readSteps;
+module.exports.pipelineName = pipelineName;

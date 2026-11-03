@@ -5,7 +5,7 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { validateRouteSteps, readSteps } = require('../modules/process_routes/service');
+const { validateRouteSteps, readSteps, pipelineName } = require('../modules/process_routes/service');
 
 // Process routing: an ordered list of stages for a part.
 //
@@ -62,6 +62,18 @@ async function boot(prefix, email) {
   const partId = (await backend.get('SELECT id FROM items ORDER BY id LIMIT 1')).id;
   return { backend, server, call, partId };
 }
+
+// --- the pipeline name, on its own -------------------------------------------
+
+test('a route is named after its part: group, type, part, code, "pipeline"', () => {
+  assert.equal(
+    pipelineName({ group: 'Primary Group', type: 'Brackets', partName: 'Patti', partCode: 'PGBP1' }),
+    'Primary Group Brackets Patti PGBP1 pipeline',
+  );
+  // No Type, no code: what is missing is left out, not printed as a gap.
+  assert.equal(pipelineName({ group: 'Hinges', partName: 'Leaf' }), 'Hinges Leaf pipeline');
+  assert.equal(pipelineName({ group: ' ', type: '', partName: 'Leaf ', partCode: null }), 'Leaf pipeline');
+});
 
 // --- the validator, on its own ----------------------------------------------
 
@@ -168,6 +180,27 @@ test('a route saves, reads back in order, and refuses an in-place edit', async (
     assert.equal(read.status, 200);
     assert.equal(read.body.routes.length, 1);
     const route = read.body.routes[0];
+    // Named after the part as it is filed now — group, then type when the
+    // part's group has a parent — and worked out on read.
+    const part = await ctx.backend.get(
+      `SELECT i.name, i.display_name, i.part_code, g.name AS g, p.name AS p
+         FROM items i JOIN groups g ON g.id = i.group_id
+         LEFT JOIN groups p ON p.id = g.parent_group_id WHERE i.id = ?`,
+      [partId],
+    );
+    assert.equal(
+      route.name,
+      pipelineName({
+        group: part.p ?? part.g,
+        type: part.p == null ? '' : part.g,
+        partName: part.display_name || part.name,
+        partCode: part.part_code,
+      }),
+    );
+    assert.match(route.name, / pipeline$/);
+    await ctx.backend.run('UPDATE items SET part_code = ? WHERE id = ?', ['RENAMED9', partId]);
+    const renamed = await call('GET', `/api/items/${partId}/routes`);
+    assert.match(renamed.body.routes[0].name, / RENAMED9 pipeline$/);
     assert.deepEqual(route.steps.map((s) => s.seq), [1, 2, 3, 4]);
     assert.deepEqual(route.steps.map((s) => s.stage_code), ['die', 'shearing', 'cutting', 'delivery']);
 

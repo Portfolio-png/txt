@@ -907,8 +907,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // one is flagged to be re-recorded.
       pipelineId: route != null ? 'route:${route.id}' : part?.defaultPipelineId,
       pipelineName: route != null
-          ? 'Route v${route.version} · '
-              '${route.steps.map((step) => step.stageName).join(' → ')}'
+          ? '${route.title} v${route.version}'
           : part?.defaultPipelineName ?? '',
       stageNodes: [
         for (final step in route?.steps ?? const <RouteStep>[])
@@ -1581,7 +1580,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (route != null) {
           add(
             'Route',
-            'v${route.version} · ${route.steps.map((step) => step.stageName).join(' → ')}',
+            '${route.title} v${route.version} · '
+                '${route.steps.map((step) => step.stageName).join(' → ')}',
           );
         }
       default:
@@ -2545,7 +2545,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         madeHereItemIds: _madeHere,
         onSaved: (record) {
           setState(() => _showRoutePanel = false);
-          _toast('Route saved for ${record.title}.');
+          _toast('Saved ${record.title}.');
           final id = _controller.groupItemController.draft.entityId;
           if (id != null) unawaited(_loadRoute(id));
         },
