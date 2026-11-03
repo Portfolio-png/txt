@@ -1290,16 +1290,44 @@ class PenPaperBaseline {
   }
 
   factory PenPaperBaseline.fromJson(Map<String, dynamic> json) {
-    final stages = (json['stageReconciliations'] as List<dynamic>? ?? const [])
+    var stages = (json['stageReconciliations'] as List<dynamic>? ?? const [])
         .map(
           (e) =>
               PenPaperStageReconciliation.fromJson(e as Map<String, dynamic>),
         )
         .toList();
+    var forms = _readForms(
+      json['forms'],
+      legacyPitchMm: (json['kerfMm'] as num?)?.toDouble() ?? 0,
+    );
+    final lastForm = RawForm.fromName(json['lastForm']?.toString()) ?? RawForm.sheet;
+    var materialFromPlan = json['materialFromPlan'] as bool? ?? false;
+
+    // Material in and out is one record for every form. A plan saved while
+    // each strip, coil and roll kept its own: the figures typed on one (the
+    // form last open first) become the record when the sheet's has none.
+    final banded = [
+      if (forms[lastForm] case final last? when _hasFigures(last.reconciliation)) last,
+      for (final form in forms.values)
+        if (_hasFigures(form.reconciliation)) form,
+    ];
+    final isGranular = json['isGranular'] as bool? ?? false;
+    if (banded.isNotEmpty &&
+        !isGranular &&
+        (stages.isEmpty || !_hasFigures(stages.first))) {
+      stages = [banded.first.reconciliation, ...stages.skip(1)];
+      materialFromPlan = false;
+    }
+    if (forms.values.any((form) => _hasFigures(form.reconciliation))) {
+      forms = {
+        for (final entry in forms.entries)
+          entry.key: entry.value.copyWith(reconciliation: PenPaperStageReconciliation.empty),
+      };
+    }
 
     return PenPaperBaseline(
-      isGranular: json['isGranular'] as bool? ?? false,
-      materialFromPlan: json['materialFromPlan'] as bool? ?? false,
+      isGranular: isGranular,
+      materialFromPlan: materialFromPlan,
       keyEfficiencyBenchmark:
           (json['keyEfficiencyBenchmark'] as num?)?.toDouble() ?? 88.0,
       baselineOutputRate:
@@ -1336,13 +1364,20 @@ class PenPaperBaseline {
       vendorId: (json['vendorId'] as num?)?.toInt(),
       vendorName: json['vendorName']?.toString() ?? '',
       // Absent on every plan from before strip, coil and roll: none of them.
-      forms: _readForms(
-        json['forms'],
-        legacyPitchMm: (json['kerfMm'] as num?)?.toDouble() ?? 0,
-      ),
-      lastForm: RawForm.fromName(json['lastForm']?.toString()) ?? RawForm.sheet,
+      forms: forms,
+      lastForm: lastForm,
     );
   }
+
+  /// Anything typed into a material in-and-out record.
+  static bool _hasFigures(PenPaperStageReconciliation row) =>
+      row.inputKg > 0 ||
+      row.outputKg > 0 ||
+      row.piecesOut > 0 ||
+      row.scrapKg > 0 ||
+      row.rejectionKg > 0 ||
+      row.weightLossKg > 0 ||
+      row.notes.trim().isNotEmpty;
 
   /// [legacyPitchMm] is the sheet-wide pitch plans used to keep: a band
   /// saved before bands had a pitch of their own takes it.

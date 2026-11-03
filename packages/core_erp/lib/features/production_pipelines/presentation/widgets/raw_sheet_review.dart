@@ -111,7 +111,6 @@ List<RawSheetReviewSection> rawSheetReviewSections({
     if (plan == null || !plan.hasData) continue;
     String length(int? nm, String unit) =>
         nm == null ? 'Not set' : '${formatLengthFromNanometres(nm, unit)} $unit';
-    final row = plan.reconciliation;
     final parts = plan.partsFromLength();
     sections.add(
       RawSheetReviewSection(form.label, [
@@ -125,14 +124,8 @@ List<RawSheetReviewSection> rawSheetReviewSections({
         ('Alloy', said(baseline.materialName)),
         ('Grade', plan.grade.isEmpty ? 'Not set' : '${plan.grade} grade'),
         ('Vendor', said(plan.vendorName)),
-        if (row.sheetsIn > 0) ('In', '${row.sheetsIn}'),
-        if (row.inputKg > 0) ('Weight in', kg(row.inputKg)),
-        if (row.piecesOut > 0) ('Out', _pieces(row.piecesOut, countFamily)),
-        if (row.outputKg > 0) ('Weight out', kg(row.outputKg)),
-        if (row.scrapKg > 0) ('Scrap', kg(row.scrapKg)),
-        if (row.rejectionKg > 0) ('Rejection', kg(row.rejectionKg)),
-        if (row.weightLossKg > 0) ('Weight loss', kg(row.weightLossKg)),
-        if (row.notes.trim().isNotEmpty) ('Notes', row.notes.trim()),
+        // Its weights are not here: material in and out is one record for
+        // every form, shown once above.
       ]),
     );
   }

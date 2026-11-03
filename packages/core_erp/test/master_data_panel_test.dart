@@ -879,7 +879,7 @@ void main() {
       expect(find.text('Second grade'), findsOneWidget);
     });
 
-    testWidgets('a coil\'s Material data is its own, counted in coils',
+    testWidgets('material in and out is one record for every form',
         (tester) async {
       PenPaperBaseline? saved;
       await mount(tester, onSave: (b) => saved = b);
@@ -895,10 +895,61 @@ void main() {
         '120',
       );
       await tester.pumpAndSettle();
+
+      // The same figures on the sheet's Material data, and on the roll's.
+      for (final form in ['sheet', 'roll']) {
+        await tester.tap(find.byKey(ValueKey<String>('raw-form-$form')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Material data'));
+        await tester.pumpAndSettle();
+        final field = tester.widget<TextField>(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('material-input-kg')),
+            matching: find.byType(TextField),
+          ),
+        );
+        expect(double.parse(field.controller!.text), 120, reason: '$form shows it too');
+      }
+
+      // Reviewed once, under Material in and out, not per form.
+      await tester.tap(find.byKey(const ValueKey<String>('master-data-next')));
+      await tester.pumpAndSettle();
+      expect(find.text('MATERIAL IN AND OUT'), findsOneWidget);
+      expect(find.text('120.0 kg'), findsWidgets, reason: 'weight in (and the scrap that balances it)');
+
       await tester.tap(find.text('Save raw sheet'));
       await tester.pump();
-      expect(saved!.formOf(RawForm.coil).reconciliation.inputKg, 120);
-      expect(saved!.totalInputKg, isNot(120), reason: 'the sheet row is apart');
+      expect(saved!.stageReconciliations.first.inputKg, 120);
+      expect(saved!.formOf(RawForm.coil).reconciliation.inputKg, 0,
+          reason: 'no second copy on the coil');
+    });
+
+    test('a plan saved with its figures on a roll reads them as the one record', () {
+      final legacy = PenPaperBaseline.fromJson({
+        'stageReconciliations': [
+          PenPaperStageReconciliation.empty.toJson(),
+        ],
+        'materialFromPlan': true,
+        'lastForm': 'roll',
+        'forms': {
+          'roll': const RawStockForm(
+            widthNm: 23 * 1000000,
+            reconciliation: PenPaperStageReconciliation(
+              stageId: 'raw',
+              stageName: 'Raw',
+              inputKg: 23,
+              outputKg: 22,
+              scrapKg: 1,
+              recordScrap: true,
+            ),
+          ).toJson(),
+        },
+      });
+      expect(legacy.stageReconciliations.first.inputKg, 23);
+      expect(legacy.stageReconciliations.first.outputKg, 22);
+      expect(legacy.materialFromPlan, isFalse, reason: 'typed figures are not refilled');
+      expect(legacy.formOf(RawForm.roll).reconciliation.inputKg, 0);
+      expect(legacy.formOf(RawForm.roll).widthNm, 23 * 1000000);
     });
   });
 }

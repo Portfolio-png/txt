@@ -1409,10 +1409,11 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return bits.isEmpty ? noun : '$noun · ${bits.join(' · ')}';
   }
 
-  /// Step two for a strip, coil or roll: one row, weight in and pieces out,
-  /// both typed — there is no plan to fill them from and no density.
+  /// Step two for a strip, coil or roll: the same material in and out the
+  /// sheet keeps — one record whichever form is chosen, typed here as weight
+  /// in and pieces out. There is no plan to fill it from and no density.
   Widget _bandMaterialStep() {
-    final plan = _baseline.formOf(_form);
+    final shared = _baseline.stageReconciliations.firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1430,9 +1431,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               child: PenPaperBaselineWidget(
                 key: ValueKey<String>('material-${_form.name}'),
                 baseline: PenPaperBaseline(
-                  stageReconciliations: plan.hasData
-                      ? [plan.reconciliation]
-                      : const <PenPaperStageReconciliation>[],
+                  stageReconciliations: shared == null
+                      ? const <PenPaperStageReconciliation>[]
+                      : [shared],
                   notes: '',
                 ),
                 readOnly: widget.readOnly,
@@ -1448,7 +1449,16 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 onChanged: (updated) {
                   final row = updated.stageReconciliations.firstOrNull;
                   if (row == null) return;
-                  _updateBand((p) => p.copyWith(reconciliation: row));
+                  setState(() {
+                    _baseline = _baseline.copyWith(
+                      stageReconciliations: [
+                        row,
+                        ..._baseline.stageReconciliations.skip(1),
+                      ],
+                      // Typed here, it no longer follows the sheet's cut plan.
+                      materialFromPlan: false,
+                    );
+                  });
                 },
               ),
             ),
@@ -1494,10 +1504,17 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               : null,
           // A gauge is a lookup, not a length; the band keeps millimetres.
           thicknessUnit: gauge.isGauge ? 'mm' : gauge.symbol,
+          // Material in and out is one record for every form (the sheet's);
+          // a band keeps none of its own.
+          reconciliation: PenPaperStageReconciliation.empty,
         ),
       );
     }
-    if (!baseline.materialFromPlan || baseline.isGranular) return baseline;
+    // The sheet's cut plan fills the counts only while the sheet is the form
+    // being recorded.
+    if (!baseline.materialFromPlan || baseline.isGranular || _form.isBand) {
+      return baseline;
+    }
     return baseline.copyWith(
       stageReconciliations: [
         baseline.reconciliationFromPlan(
