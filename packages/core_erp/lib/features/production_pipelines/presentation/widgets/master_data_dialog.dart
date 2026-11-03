@@ -1413,6 +1413,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// sheet keeps — one record whichever form is chosen, typed here as weight
   /// in and pieces out. There is no plan to fill it from and no density.
   Widget _bandMaterialStep() {
+    // Recorded stage by stage, the record is the stages: edited as a whole,
+    // the way the sheet's step does, not as its first stage.
+    if (_baseline.isGranular) return _materialStep();
     final shared = _baseline.stageReconciliations.firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1504,9 +1507,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               : null,
           // A gauge is a lookup, not a length; the band keeps millimetres.
           thicknessUnit: gauge.isGauge ? 'mm' : gauge.symbol,
-          // Material in and out is one record for every form (the sheet's);
-          // a band keeps none of its own.
-          reconciliation: PenPaperStageReconciliation.empty,
         ),
       );
     }

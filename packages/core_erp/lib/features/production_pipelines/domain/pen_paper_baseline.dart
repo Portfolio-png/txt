@@ -1305,23 +1305,25 @@ class PenPaperBaseline {
 
     // Material in and out is one record for every form. A plan saved while
     // each strip, coil and roll kept its own: the figures typed on one (the
-    // form last open first) become the record when the sheet's has none.
-    final banded = [
-      if (forms[lastForm] case final last? when _hasFigures(last.reconciliation)) last,
-      for (final form in forms.values)
-        if (_hasFigures(form.reconciliation)) form,
-    ];
+    // form last open first) become the record — when the sheet's has none
+    // that were typed (figures the cut plan filled in are not typed). Only
+    // that form's copy is cleared; any other figures stay where they were,
+    // never thrown away.
     final isGranular = json['isGranular'] as bool? ?? false;
-    if (banded.isNotEmpty &&
-        !isGranular &&
-        (stages.isEmpty || !_hasFigures(stages.first))) {
-      stages = [banded.first.reconciliation, ...stages.skip(1)];
+    final RawForm? from = (lastForm.isBand && _hasFigures(forms[lastForm]?.reconciliation))
+        ? lastForm
+        : forms.entries
+            .where((entry) => _hasFigures(entry.value.reconciliation))
+            .map((entry) => entry.key)
+            .firstOrNull;
+    final sheetTyped = stages.isNotEmpty && _hasFigures(stages.first) && !materialFromPlan;
+    if (from != null && !isGranular && !sheetTyped) {
+      final plan = forms[from]!;
+      stages = [plan.reconciliation, ...stages.skip(1)];
       materialFromPlan = false;
-    }
-    if (forms.values.any((form) => _hasFigures(form.reconciliation))) {
       forms = {
-        for (final entry in forms.entries)
-          entry.key: entry.value.copyWith(reconciliation: PenPaperStageReconciliation.empty),
+        ...forms,
+        from: plan.copyWith(reconciliation: PenPaperStageReconciliation.empty),
       };
     }
 
@@ -1370,14 +1372,17 @@ class PenPaperBaseline {
   }
 
   /// Anything typed into a material in-and-out record.
-  static bool _hasFigures(PenPaperStageReconciliation row) =>
-      row.inputKg > 0 ||
+  static bool _hasFigures(PenPaperStageReconciliation? row) =>
+      row != null &&
+      (row.inputKg > 0 ||
       row.outputKg > 0 ||
       row.piecesOut > 0 ||
       row.scrapKg > 0 ||
       row.rejectionKg > 0 ||
       row.weightLossKg > 0 ||
-      row.notes.trim().isNotEmpty;
+      row.rejectionPercent > 0 ||
+      row.sheetsIn > 0 ||
+      row.notes.trim().isNotEmpty);
 
   /// [legacyPitchMm] is the sheet-wide pitch plans used to keep: a band
   /// saved before bands had a pitch of their own takes it.

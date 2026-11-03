@@ -951,5 +951,61 @@ void main() {
       expect(legacy.formOf(RawForm.roll).reconciliation.inputKg, 0);
       expect(legacy.formOf(RawForm.roll).widthNm, 23 * 1000000);
     });
+
+    group('an older plan\'s band figures are never thrown away', () {
+      const typed = PenPaperStageReconciliation(
+        stageId: 'raw', stageName: 'Raw', inputKg: 50, outputKg: 48,
+      );
+      Map<String, dynamic> band(double kg) => const RawStockForm(widthNm: 10 * 1000000)
+          .copyWith(
+            reconciliation: PenPaperStageReconciliation(
+              stageId: 'raw', stageName: 'Raw', inputKg: kg, outputKg: kg - 1,
+            ),
+          )
+          .toJson();
+
+      test('the sheet\'s own typed figures stay; the roll keeps its', () {
+        final plan = PenPaperBaseline.fromJson({
+          'stageReconciliations': [typed.toJson()],
+          'lastForm': 'roll',
+          'forms': {'roll': band(23)},
+        });
+        expect(plan.stageReconciliations.first.inputKg, 50);
+        expect(plan.formOf(RawForm.roll).reconciliation.inputKg, 23);
+      });
+
+      test('figures the cut plan filled in give way to the typed band', () {
+        final plan = PenPaperBaseline.fromJson({
+          'stageReconciliations': [typed.toJson()],
+          'materialFromPlan': true,
+          'lastForm': 'roll',
+          'forms': {'roll': band(23)},
+        });
+        expect(plan.stageReconciliations.first.inputKg, 23);
+        expect(plan.materialFromPlan, isFalse);
+      });
+
+      test('two bands: the last one open is the record, the other is kept', () {
+        final plan = PenPaperBaseline.fromJson({
+          'stageReconciliations': [PenPaperStageReconciliation.empty.toJson()],
+          'lastForm': 'coil',
+          'forms': {'roll': band(23), 'coil': band(40)},
+        });
+        expect(plan.stageReconciliations.first.inputKg, 40);
+        expect(plan.formOf(RawForm.coil).reconciliation.inputKg, 0);
+        expect(plan.formOf(RawForm.roll).reconciliation.inputKg, 23);
+      });
+
+      test('stage by stage: nothing is folded, nothing is cleared', () {
+        final plan = PenPaperBaseline.fromJson({
+          'isGranular': true,
+          'stageReconciliations': [PenPaperStageReconciliation.empty.toJson()],
+          'lastForm': 'roll',
+          'forms': {'roll': band(23)},
+        });
+        expect(plan.stageReconciliations.first.inputKg, 0);
+        expect(plan.formOf(RawForm.roll).reconciliation.inputKg, 23);
+      });
+    });
   });
 }
