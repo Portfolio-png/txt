@@ -59,6 +59,9 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     createAssetUploadIntent,
     completeAssetUpload,
     listAssetsForEntity,
+    listEntityPhotos,
+    arrangeEntityPhotos,
+    MAX_PART_PHOTOS,
     itemsPorts,
     getIo,
   } = ctx;
@@ -161,6 +164,7 @@ module.exports = function registerItemsModuleRoutes(ctx) {
         success: false,
         intent: null,
         error: error.message,
+        code: error.code || null,
       });
     }
   });
@@ -203,6 +207,38 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       res.status(error.statusCode || 500).json({
         success: false,
         assets: [],
+        error: error.message,
+      });
+    }
+  });
+
+  // A part's photos — its views — as one ordered array: the gallery's one
+  // request. Each carries permanent links to its thumbnail and its photo.
+  app.get('/api/items/:id/photos', requirePermission('config.read'), async (req, res) => {
+    try {
+      const photos = await listEntityPhotos('item', Number(req.params.id));
+      res.json({ success: true, photos, limit: MAX_PART_PHOTOS, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        photos: [],
+        error: error.message,
+      });
+    }
+  });
+
+  // The gallery's Save: { order: [photo ids, first to last], primaryId }.
+  app.put('/api/items/:id/photos', requirePermission('config.write'), async (req, res) => {
+    try {
+      const photos = await arrangeEntityPhotos('item', Number(req.params.id), {
+        order: req.body?.order,
+        primaryId: req.body?.primaryId,
+      });
+      res.json({ success: true, photos, limit: MAX_PART_PHOTOS, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        photos: [],
         error: error.message,
       });
     }

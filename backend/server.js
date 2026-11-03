@@ -2664,11 +2664,27 @@ function requireLinkResolver() {
   return resolveSoleEntityLinks;
 }
 
+/// A record going away takes its photos with it: marked deleted (the sweep
+/// removes the objects), never erased — erasing them orphaned the objects.
+let assetSweepScheduled = false;
+
+async function markEntityAssetsDeleted(entityType, entityId) {
+  await run(
+    `
+    UPDATE uploaded_assets
+    SET status = 'deleted', deleted_at = ?, is_primary = 0
+    WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+    `,
+    [new Date().toISOString(), entityType, Number(entityId)],
+  );
+}
+
 async function deleteItemWithCascade(id, req) {
   await run('DELETE FROM item_variation_nodes WHERE item_id = ?', [id]);
   await run('DELETE FROM item_unit_conversions WHERE item_id = ?', [id]);
   await run('DELETE FROM variation_stock WHERE item_id = ?', [id]);
-  await run('DELETE FROM uploaded_assets WHERE entity_type = ? AND entity_id = ?', ['item', id]);
+  // The rows stay, marked, so the sweep can delete their stored objects.
+  await markEntityAssetsDeleted('item', id);
   // Membership rows have to go by hand. trashAndDelete removes the item over
   // the dedicated delete connection, which runs with foreign_keys = OFF for its
   // whole lifetime, so the ON DELETE CASCADE declared on
@@ -2707,7 +2723,8 @@ async function deleteGroupWithCascade(id, req) {
     await deleteGroupWithCascade(row.id, req);
   }
 
-  await run('DELETE FROM uploaded_assets WHERE entity_type = ? AND entity_id = ?', ['group', id]);
+  // The rows stay, marked, so the sweep can delete their stored objects.
+  await markEntityAssetsDeleted('group', id);
   // Links the group is on either side of. Sets are the first pair a user would
   // notice this for — a set's card names its group, so a stale row would show.
   if (purgeEntityLinks) await purgeEntityLinks('group', id);
@@ -2959,6 +2976,11 @@ function rowToAssetDto(row, readUrlPayload = null) {
     readUrlExpiresAt: readUrlPayload?.expiresAt || null,
     // What to SAVE on a record: the read URL above expires in minutes.
     viewUrl: row.object_key ? assetViewUrl(row.object_key) : null,
+    position: row.position == null ? null : Number(row.position),
+    // The small copy for lists; a photo from before thumbnails is its own.
+    thumbUrl: assetViewUrl(row.thumb_key || row.object_key),
+    width: row.width == null ? null : Number(row.width),
+    height: row.height == null ? null : Number(row.height),
   };
 }
 
@@ -5323,7 +5345,12 @@ async function initDb() {
       is_primary INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       uploaded_at TEXT,
-      document_title TEXT
+      document_title TEXT,
+      position INTEGER,
+      thumb_key TEXT,
+      width INTEGER,
+      height INTEGER,
+      deleted_at TEXT
     )
   `);
 
@@ -5342,7 +5369,10 @@ async function initDb() {
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
       completed_at TEXT,
-      document_title TEXT
+      document_title TEXT,
+      thumb_key TEXT,
+      width INTEGER,
+      height INTEGER
     )
   `);
 
@@ -5351,6 +5381,20 @@ async function initDb() {
   // from migration 062, so it may not exist yet in a bare initDb.
   await ensureColumnExists('uploaded_assets', 'document_title', 'TEXT');
   await ensureColumnExists('asset_upload_sessions', 'document_title', 'TEXT');
+  // A part's photos in their order, each with a small copy for lists, and
+  // when it was removed (the sweep deletes the objects a day later).
+  for (const [column, type] of [
+    ['position', 'INTEGER'],
+    ['thumb_key', 'TEXT'],
+    ['width', 'INTEGER'],
+    ['height', 'INTEGER'],
+    ['deleted_at', 'TEXT'],
+  ]) {
+    await ensureColumnExists('uploaded_assets', column, type);
+    if (column !== 'position' && column !== 'deleted_at') {
+      await ensureColumnExists('asset_upload_sessions', column, type);
+    }
+  }
   if ((await all('PRAGMA table_info(photo_requests)')).length) {
     await ensureColumnExists('photo_requests', 'document_title', 'TEXT');
   }
@@ -6571,6 +6615,19 @@ async function initDb() {
   // save happened to drain them, so an edit on the Dies screen never reached
   // a part open in another window. One indexed read a second covers them all.
   setInterval(drainChangelog, IS_PRODUCTION ? 1000 : 2000).unref();
+
+  // Deleted photos' objects, a day on, and uploads never finished: what the
+  // store would otherwise keep charging for.
+  // Once per process, however often initDb runs (tests run it per case).
+  if (!assetSweepScheduled) {
+    assetSweepScheduled = true;
+    const sweep = () =>
+      sweepDeletedAssets().catch((error) =>
+        console.warn(`[assets] sweep failed: ${error.message}`),
+      );
+    setTimeout(sweep, 30 * 1000).unref();
+    setInterval(sweep, 3600 * 1000).unref();
+  }
 
   dbReady = true;
 }
@@ -15148,6 +15205,9 @@ function assertValidAssetUploadInput({
   sha256,
   isPrimary,
   documentTitle,
+  thumbnail,
+  width,
+  height,
 }) {
   if (documentTitle !== undefined && documentTitle !== null) {
     return assertValidDocumentUploadInput({
@@ -15225,7 +15285,83 @@ function assertValidAssetUploadInput({
     sha256: normalizedSha,
     isPrimary: Boolean(isPrimary),
     documentTitle: null,
+    thumbnail: normalizeThumbnailInput(thumbnail),
+    width: normalizePixels(width),
+    height: normalizePixels(height),
   };
+}
+
+/// The small copy a client made of the photo, for lists and grids: a JPEG of
+/// a few KB beside the photo. Absent from older clients, which upload the
+/// photo alone.
+function normalizeThumbnailInput(thumbnail) {
+  if (thumbnail === undefined || thumbnail === null) return null;
+  const sizeBytes = Number(thumbnail.sizeBytes || 0);
+  const sha = String(thumbnail.sha256 || '').toLowerCase().trim();
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_THUMBNAIL_BYTES) {
+    const error = new Error('A thumbnail must be between 1 byte and 1 MB.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[a-f0-9]{64}$/.test(sha)) {
+    const error = new Error('A valid SHA-256 thumbnail hash is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return { sizeBytes: Math.round(sizeBytes), sha256: sha };
+}
+
+function normalizePixels(value) {
+  const pixels = Number(value);
+  return Number.isInteger(pixels) && pixels > 0 && pixels <= 100000 ? pixels : null;
+}
+
+const MAX_THUMBNAIL_BYTES = 1024 * 1024;
+
+/// How many photos a part keeps: its views — front, side, a section, a
+/// detail. The server holds the line, so no client can go past it.
+const MAX_PART_PHOTOS = 5;
+
+/// Photo objects never change (their keys carry the upload's time and hash),
+/// so whatever fetched one may keep it.
+const IMMUTABLE_CACHE_CONTROL = 'private, max-age=31536000, immutable';
+
+/// The thumbnail's key, beside its photo: `items/item-7/1730-ab12…-patti.jpg`
+/// → `items/item-7/thumbs/1730-ab12…-patti.jpg`.
+function thumbnailKeyFor(objectKey) {
+  const key = String(objectKey || '');
+  const slash = key.lastIndexOf('/');
+  const stem = key.slice(slash + 1).replace(/\.[^.]*$/, '');
+  return `${key.slice(0, slash + 1)}thumbs/${stem}.jpg`;
+}
+
+function photoLimitError() {
+  const error = new Error(`A part keeps up to ${MAX_PART_PHOTOS} photos — remove one first.`);
+  error.statusCode = 409;
+  error.code = 'photo_limit';
+  return error;
+}
+
+async function countEntityPhotos(entityType, entityId) {
+  const row = await get(
+    `
+    SELECT COUNT(*) AS count
+    FROM uploaded_assets
+    WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+      AND document_title IS NULL
+    `,
+    [entityType, Number(entityId)],
+  );
+  return Number(row?.count || 0);
+}
+
+/// Refuses a photo past the part's limit. Other records keep one shown photo
+/// and are not counted.
+async function assertRoomForPhoto(entityType, entityId) {
+  if (entityType !== 'item') return;
+  if ((await countEntityPhotos(entityType, entityId)) >= MAX_PART_PHOTOS) {
+    throw photoLimitError();
+  }
 }
 
 const DOCUMENT_ENTITY_TYPES = new Set(['client', 'sub_contractor']);
@@ -15686,6 +15822,7 @@ async function presignS3Url({
   method,
   objectKey,
   contentType = null,
+  cacheControl = null,
   expiresSeconds = 900,
 }) {
   if (usesLocalUploads() && (method === 'PUT' || method === 'GET')) {
@@ -15699,6 +15836,8 @@ async function presignS3Url({
       Bucket: config.bucket,
       Key: objectKey,
       ...(contentType ? { ContentType: contentType } : {}),
+      // Stored on the object, so a GET of it says the same.
+      ...(cacheControl ? { CacheControl: cacheControl } : {}),
     });
   } else if (method === 'GET') {
     command = new GetObjectCommand({
@@ -16247,6 +16386,9 @@ async function createAssetUploadIntent(input) {
       upload: null,
     };
   }
+  if (normalized.documentTitle == null) {
+    await assertRoomForPhoto(normalized.entityType, normalized.entityId);
+  }
 
   const objectKey = buildS3ObjectKey({
     uploadType: normalized.uploadType,
@@ -16260,13 +16402,15 @@ async function createAssetUploadIntent(input) {
   const uploadSessionId = `asset-upload-${now.getTime()}-${crypto
     .randomBytes(8)
     .toString('hex')}`;
+  const thumbKey = normalized.thumbnail ? thumbnailKeyFor(objectKey) : null;
   await run(
     `
     INSERT INTO asset_upload_sessions (
       id, entity_type, entity_id, file_name, content_type, size_bytes, sha256,
-      object_key, status, is_primary, expires_at, created_at, document_title
+      object_key, status, is_primary, expires_at, created_at, document_title,
+      thumb_key, width, height
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       uploadSessionId,
@@ -16281,9 +16425,20 @@ async function createAssetUploadIntent(input) {
       expiresAt,
       now.toISOString(),
       normalized.documentTitle,
+      thumbKey,
+      normalized.width ?? null,
+      normalized.height ?? null,
     ],
   );
 
+  // A client that sends a thumbnail also sends the Cache-Control header the
+  // URL is signed for; an older one (a phone not yet updated) sends only the
+  // type, and a signature it cannot match would refuse its upload.
+  const cacheControl = thumbKey ? IMMUTABLE_CACHE_CONTROL : null;
+  const headersFor = (contentType) => ({
+    'Content-Type': contentType,
+    ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
+  });
   return {
     alreadyUploaded: false,
     asset: null,
@@ -16294,12 +16449,24 @@ async function createAssetUploadIntent(input) {
         method: 'PUT',
         objectKey,
         contentType: normalized.contentType,
+        cacheControl,
         expiresSeconds: 900,
       }),
       expiresAt,
-      headers: {
-        'Content-Type': normalized.contentType,
-      },
+      headers: headersFor(normalized.contentType),
+      thumbnail: thumbKey
+        ? {
+            objectKey: thumbKey,
+            uploadUrl: await presignS3Url({
+              method: 'PUT',
+              objectKey: thumbKey,
+              contentType: 'image/jpeg',
+              cacheControl,
+              expiresSeconds: 900,
+            }),
+            headers: headersFor('image/jpeg'),
+          }
+        : null,
     },
   };
 }
@@ -16320,8 +16487,14 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
   }
   await assertAssetEntityExists(session.entity_type, Number(session.entity_id));
   await assertS3ObjectExists(session.object_key);
+  if (session.thumb_key) await assertS3ObjectExists(session.thumb_key);
 
   const documentTitle = session.document_title ?? null;
+  // Two uploads begun side by side both passed the intent's count; the one
+  // that finishes second is refused here, and the sweep takes its objects.
+  if (documentTitle == null) {
+    await assertRoomForPhoto(session.entity_type, Number(session.entity_id));
+  }
   const primaryCount = await get(
     `
     SELECT COUNT(*) AS count
@@ -16348,13 +16521,27 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
         [session.entity_type, Number(session.entity_id)],
       );
     }
+    // A photo goes after the record's others; a document has no place.
+    const last =
+      documentTitle == null
+        ? await get(
+            `
+            SELECT MAX(position) AS position
+            FROM uploaded_assets
+            WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+              AND document_title IS NULL
+            `,
+            [session.entity_type, Number(session.entity_id)],
+          )
+        : null;
     await run(
       `
       INSERT OR IGNORE INTO uploaded_assets (
         entity_type, entity_id, file_name, content_type, size_bytes, sha256,
-        object_key, status, is_primary, created_at, uploaded_at, document_title
+        object_key, status, is_primary, created_at, uploaded_at, document_title,
+        position, thumb_key, width, height
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         session.entity_type,
@@ -16368,6 +16555,10 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
         session.created_at || now,
         now,
         documentTitle,
+        last ? Number(last.position || 0) + 1 : null,
+        session.thumb_key || null,
+        session.width ?? null,
+        session.height ?? null,
       ],
     );
     await run(
@@ -16472,25 +16663,19 @@ async function deleteAsset(assetId) {
     error.statusCode = 404;
     throw error;
   }
-  await run('UPDATE uploaded_assets SET status = ? WHERE id = ?', [
-    'deleted',
-    asset.id,
-  ]);
-  if (Number(asset.is_primary || 0) === 1) {
-    const replacement = await get(
-      `
-      SELECT *
-      FROM uploaded_assets
-      WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
-        AND document_title IS NULL
-      ORDER BY datetime(uploaded_at) DESC, id DESC
-      LIMIT 1
-      `,
-      [asset.entity_type, Number(asset.entity_id)],
-    );
-    if (replacement) {
+  // Marked, not erased: sweepDeletedAssets removes the stored objects a day
+  // later, which leaves the day to put a photo back.
+  await run(
+    "UPDATE uploaded_assets SET status = 'deleted', deleted_at = ?, is_primary = 0 WHERE id = ?",
+    [new Date().toISOString(), asset.id],
+  );
+  if (asset.document_title == null) {
+    const photos = await orderedPhotoRows(asset.entity_type, Number(asset.entity_id));
+    await renumberPhotos(photos.map((row) => row.id));
+    // The first one left becomes the shown photo.
+    if (Number(asset.is_primary || 0) === 1 && photos.length > 0) {
       await run('UPDATE uploaded_assets SET is_primary = 1 WHERE id = ?', [
-        replacement.id,
+        photos[0].id,
       ]);
     }
   }
@@ -16498,6 +16683,176 @@ async function deleteAsset(assetId) {
     await syncRecordPhotoField(asset.entity_type, Number(asset.entity_id), asset.object_key);
   }
   announceAssetChanged(asset.entity_type, asset.entity_id);
+}
+
+/// A record's photos (not its documents) in their order: by position, then
+/// those from before positions, newest first.
+async function orderedPhotoRows(entityType, entityId) {
+  return all(
+    `
+    SELECT *
+    FROM uploaded_assets
+    WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+      AND document_title IS NULL
+    ORDER BY position IS NULL, position, is_primary DESC,
+      datetime(uploaded_at) DESC, id DESC
+    `,
+    [entityType, Number(entityId)],
+  );
+}
+
+async function renumberPhotos(ids) {
+  for (const [index, id] of ids.entries()) {
+    await run('UPDATE uploaded_assets SET position = ? WHERE id = ?', [index + 1, id]);
+  }
+}
+
+function photoDto(row) {
+  return {
+    id: row.id,
+    position: row.position == null ? null : Number(row.position),
+    isPrimary: Number(row.is_primary || 0) === 1,
+    sha256: row.sha256 || '',
+    fileName: row.file_name || '',
+    // Permanent links (each redirects to a fresh signed URL): the small copy
+    // for grids and lists, the photo for the big view.
+    thumbUrl: assetViewUrl(row.thumb_key || row.object_key),
+    viewUrl: assetViewUrl(row.object_key),
+    hasThumbnail: Boolean(row.thumb_key),
+    width: row.width == null ? null : Number(row.width),
+    height: row.height == null ? null : Number(row.height),
+    uploadedAt: row.uploaded_at,
+  };
+}
+
+/// A part's photos as one ordered array — what the gallery opens on.
+async function listEntityPhotos(entityType, entityId) {
+  await assertAssetEntityExists(entityType, Number(entityId));
+  const rows = await orderedPhotoRows(entityType, Number(entityId));
+  return rows.map(photoDto);
+}
+
+/// The gallery's Save: the photos' order and which one is shown, in one
+/// transaction. [order] lists photo ids first to last; one it leaves out
+/// keeps its place after them. [primaryId] absent leaves the shown one.
+async function arrangeEntityPhotos(entityType, entityId, { order, primaryId } = {}) {
+  await assertAssetEntityExists(entityType, Number(entityId));
+  const rows = await orderedPhotoRows(entityType, Number(entityId));
+  const known = new Set(rows.map((row) => row.id));
+  const wanted = (Array.isArray(order) ? order : []).map((id) => Number(id));
+  for (const id of wanted) {
+    if (!known.has(id)) {
+      const error = new Error(`Photo ${id} is not one of this record's photos.`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  if (new Set(wanted).size !== wanted.length) {
+    const error = new Error('A photo is listed twice.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const primary = primaryId === undefined || primaryId === null ? null : Number(primaryId);
+  if (primary != null && !known.has(primary)) {
+    const error = new Error('The main photo has to be one of this record\'s photos.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const ids = [...wanted, ...rows.map((row) => row.id).filter((id) => !wanted.includes(id))];
+  await run('BEGIN TRANSACTION');
+  try {
+    await renumberPhotos(ids);
+    if (primary != null) {
+      await run(
+        `
+        UPDATE uploaded_assets SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END
+        WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+        `,
+        [primary, entityType, Number(entityId)],
+      );
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+  await syncRecordPhotoField(entityType, Number(entityId));
+  announceAssetChanged(entityType, entityId);
+  return listEntityPhotos(entityType, entityId);
+}
+
+/// What a deleted photo still costs is its objects. Removes them — the photo
+/// and its thumbnail — once the row has been deleted for [graceHours]; and
+/// the objects of uploads begun and never finished, an hour after their link
+/// expired. [now] is for tests.
+async function sweepDeletedAssets({ now = new Date(), graceHours = 24 } = {}) {
+  const cutoff = new Date(now.getTime() - graceHours * 3600 * 1000).toISOString();
+  const swept = { assets: 0, sessions: 0, objects: 0, failed: 0 };
+  const rows = await all(
+    `
+    SELECT id, object_key, thumb_key
+    FROM uploaded_assets
+    WHERE status = 'deleted' AND COALESCE(deleted_at, '') <> '' AND deleted_at <= ?
+    LIMIT 500
+    `,
+    [cutoff],
+  );
+  for (const row of rows) {
+    const ok = await deleteStoredObjects([row.object_key, row.thumb_key], swept);
+    if (ok) {
+      await run("UPDATE uploaded_assets SET status = 'purged' WHERE id = ?", [row.id]);
+      swept.assets += 1;
+    }
+  }
+  const stale = new Date(now.getTime() - 3600 * 1000).toISOString();
+  const sessions = await all(
+    `
+    SELECT id, object_key, thumb_key
+    FROM asset_upload_sessions
+    WHERE status = 'pending' AND expires_at <= ?
+    LIMIT 500
+    `,
+    [stale],
+  );
+  for (const session of sessions) {
+    // A key a stored asset holds is that asset's, whatever the session says.
+    const held = await get(
+      "SELECT 1 FROM uploaded_assets WHERE object_key = ? AND status <> 'purged' LIMIT 1",
+      [session.object_key],
+    );
+    const ok = held ? true : await deleteStoredObjects([session.object_key, session.thumb_key], swept);
+    if (ok) {
+      await run("UPDATE asset_upload_sessions SET status = 'expired' WHERE id = ?", [session.id]);
+      swept.sessions += 1;
+    }
+  }
+  return swept;
+}
+
+/// Deletes [keys] from wherever objects are stored. False when one could not
+/// be removed (it is tried again on the next sweep); a key already gone is
+/// not a failure.
+async function deleteStoredObjects(keys, tally) {
+  let ok = true;
+  for (const key of keys.filter(Boolean)) {
+    try {
+      if (usesLocalUploads()) {
+        await fs.promises.unlink(localUploadPath(key)).catch((error) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+      } else {
+        await getS3Client().send(
+          new DeleteObjectCommand({ Bucket: assertS3Configured().bucket, Key: key }),
+        );
+      }
+      tally.objects += 1;
+    } catch (error) {
+      tally.failed += 1;
+      ok = false;
+      console.warn(`[assets] could not delete ${key}: ${error.message}`);
+    }
+  }
+  return ok;
 }
 
 /// A company's documents, newest first, each with a short-lived read URL.
@@ -22812,7 +23167,7 @@ app.get('/api/assets/local/*key', async (req, res) => {
       LOCAL_UPLOAD_CONTENT_TYPES[path.extname(file).toLowerCase()] ||
       'application/octet-stream';
     res.setHeader('Content-Type', type);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL);
     fs.createReadStream(file).pipe(res);
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, error: error.message });
@@ -22833,8 +23188,11 @@ app.get('/api/assets/view/*key', async (req, res) => {
       res.status(403).json({ success: false, error: 'This photo link is not valid.' });
       return;
     }
-    const readUrl = await presignS3Url({ method: 'GET', objectKey, expiresSeconds: 300 });
-    res.setHeader('Cache-Control', 'private, max-age=60');
+    // The object behind a key never changes, so its signed URL can live an
+    // hour and the redirect be reused for most of it — every photo on screen
+    // is not a fresh round trip a minute later.
+    const readUrl = await presignS3Url({ method: 'GET', objectKey, expiresSeconds: 3600 });
+    res.setHeader('Cache-Control', 'private, max-age=3000');
     res.redirect(302, readUrl);
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, error: error.message });
@@ -28046,6 +28404,7 @@ app.post('/api/assets/upload-intent', requireAssetEntityPermission('write', asse
       success: false,
       intent: null,
       error: error.message,
+      code: error.code || null,
     });
   }
 });
@@ -28521,6 +28880,7 @@ app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', as
       success: false,
       asset: null,
       error: error.message,
+      code: error.code || null,
     });
   }
 });
@@ -28584,10 +28944,15 @@ app.post('/api/assets/primary', requireAssetEntityPermission('read', assetEntity
       );
       for (const row of rows) {
         try {
-          const payload = await assetReadUrlPayload(row.object_key);
+          const payload = await assetReadUrlPayload(row.object_key, 3600);
           photos[String(row.entity_id)] = {
             assetId: row.id,
+            sha256: row.sha256 || '',
             readUrl: payload.readUrl,
+            // The small copy, for a slot in a list: a few KB, not the photo.
+            thumbReadUrl: row.thumb_key
+              ? (await assetReadUrlPayload(row.thumb_key, 3600)).readUrl
+              : null,
             expiresAt: payload.expiresAt,
           };
         } catch (_) {
@@ -28656,6 +29021,9 @@ app.post('/api/photo-requests', async (req, res) => {
       documentTitle = normalizeDocumentTitle(rawTitle);
     }
     await assertAssetEntityExists(entityType, entityId);
+    // A part with all its photos has no room for the phone's: said here, not
+    // after the shot is taken and the upload refused.
+    if (documentTitle == null) await assertRoomForPhoto(entityType, entityId);
     const userId = Number(req.user.id);
     const context = String(req.body?.context || '').trim().slice(0, 200);
     // A second click on the same slot is the same job, not a second photo —
@@ -34270,11 +34638,16 @@ app.post('/api/delete-s3-object', requirePermission('config.write'), async (req,
       const objectKey = parsedUrl.pathname.substring(1);
       const s3Client = getS3Client();
       await s3Client.send(new DeleteObjectCommand({
-        Bucket: process.env.S3_BUCKET,
+        // The configured bucket (PAPER_S3_BUCKET_NAME); S3_BUCKET alone was
+        // unset on the servers, so this deleted nothing.
+        Bucket: assertS3Configured().bucket,
         Key: objectKey,
       }));
       // Update db status to deleted just in case
-      await run("UPDATE uploaded_assets SET status = 'deleted' WHERE object_key = ?", [objectKey]);
+      await run(
+        "UPDATE uploaded_assets SET status = 'deleted', deleted_at = ? WHERE object_key = ?",
+        [new Date().toISOString(), objectKey],
+      );
       res.json({ success: true, error: null });
     } catch (e) {
       res.status(500).json({ success: false, error: 'Failed to delete S3 object: ' + e.message });
@@ -34407,6 +34780,9 @@ registerItemsModuleRoutes({
   createAssetUploadIntent,
   completeAssetUpload,
   listAssetsForEntity,
+  listEntityPhotos,
+  arrangeEntityPhotos,
+  MAX_PART_PHOTOS,
   itemsPorts,
   getIo: () => io,
 });
@@ -35264,6 +35640,10 @@ module.exports = {
   createAssetUploadIntent,
   completeAssetUpload,
   listAssetsForEntity,
+  listEntityPhotos,
+  arrangeEntityPhotos,
+  sweepDeletedAssets,
+  thumbnailKeyFor,
   createAssetReadUrl,
   setPrimaryAsset,
   deleteAsset,
