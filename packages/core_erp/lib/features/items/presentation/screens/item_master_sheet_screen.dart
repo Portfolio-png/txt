@@ -191,7 +191,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   static const _sections = [
     SheetSection(
       id: 'group_item',
-      title: 'Group Item',
+      // The card's own heading: the rail, the card and the status bar used
+      // to say "Group Item", "Item Master" and "Group Item".
+      title: 'Item Master',
       subtitle: 'Identity, hierarchy & properties',
       icon: Icons.category_rounded,
     ),
@@ -350,7 +352,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       itemSheet: SheetDef(
         id: 1,
         key: 'item',
-        title: 'Group Item',
+        title: 'Item Master',
         columns: itemSheetColumns,
       ),
       // The controller's copy is the one a + adds properties to.

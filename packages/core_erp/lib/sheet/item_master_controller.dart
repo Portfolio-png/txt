@@ -232,7 +232,7 @@ class ItemMasterController extends ChangeNotifier {
       sheetDef: SheetDef(
         id: 1,
         key: 'item',
-        title: 'Group Item',
+        title: 'Item Master',
         columns: groupCols,
       ),
       initialDraft: demoData ? groupInitialDraft : null,

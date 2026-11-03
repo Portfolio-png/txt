@@ -489,7 +489,7 @@ void main() {
       await _pumpScreen(tester);
 
       for (final section in [
-        'Group Item',
+        'Item Master',
         'Client / Vendor',
         'Die Process Master',
         'Machines & Routing',
@@ -1851,7 +1851,7 @@ void main() {
         await _pumpScreen(tester, size: Size(width, 1000));
 
         for (final section in [
-          'Group Item',
+          'Item Master',
           'Client / Vendor',
           'Die Process Master',
           'Machines & Routing',
