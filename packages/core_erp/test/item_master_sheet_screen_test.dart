@@ -1461,6 +1461,17 @@ void main() {
           reason: '$key should be labelled',
         );
       }
+      // Edited as a part line and a person are: an Edit said in words.
+      for (final row in ['quick-entry-die-row-31', 'quick-entry-machine-row-41']) {
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey<String>(row)),
+            matching: find.widgetWithText(OutlinedButton, 'Edit'),
+          ),
+          findsOneWidget,
+          reason: '$row should carry the same Edit as a part line',
+        );
+      }
       expect(tester.takeException(), isNull);
     });
 

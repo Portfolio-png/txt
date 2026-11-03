@@ -1786,7 +1786,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.delete_outline_rounded,
           tip: 'Clear $heading for this part',
           onPressed: () => _clearSection(id),
-          color: SoftErpTheme.dangerText,
+          // Grey like the icons beside it and the × on a line; it asks
+          // before it clears, so it need not shout.
         ),
     ];
   }
@@ -2811,6 +2812,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             label: 'Author route',
             icon: Icons.route_rounded,
             variant: AppButtonVariant.secondary,
+            dense: true,
             onPressed: () => setState(() => _showRoutePanel = true),
           ),
         ),

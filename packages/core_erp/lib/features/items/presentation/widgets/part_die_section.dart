@@ -891,6 +891,8 @@ class _PartDieSectionState extends State<PartDieSection> {
                   // fires the last enabled PRIMARY button in the tree, and that
                   // must stay Done.
                   variant: AppButtonVariant.secondary,
+                  // The size of Save part and Save contact: one Save size.
+                  dense: true,
                   isLoading: _saving,
                   onPressed: enabled ? _saveDie : null,
                 ),
@@ -977,7 +979,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _DieHeaderStrip(),
+        _DieHeaderStrip(showStatus: widget.staged.isNotEmpty),
         const SizedBox(height: 4),
         // Held first: they are what this screen is about to write, and a row
         // nobody can see is a row nobody knows they staged.
@@ -989,6 +991,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             pending: true,
             partExists: widget.part != null,
             saveAction: widget.heldSaveBuilder?.call(i),
+            showStatus: true,
             onTap: enabled ? () => _editStaged(i) : null,
             onUnlink: enabled ? () => widget.onUnstage(i) : null,
           ),
@@ -1000,6 +1003,7 @@ class _PartDieSectionState extends State<PartDieSection> {
             onTap: enabled ? () => _editDie(die) : null,
             onUnlink: enabled ? () => _unlink(die) : null,
             photoNote: _photoNote,
+            showStatus: widget.staged.isNotEmpty,
           ),
       ],
     );
@@ -1277,7 +1281,12 @@ class _DieRow extends StatelessWidget {
     this.onTap,
     this.onUnlink,
     this.photoNote,
+    this.showStatus = false,
   });
+
+  /// Whether the list has a status column — only while something is held.
+  /// Saved rows alone gave its 150 px to nothing.
+  final bool showStatus;
 
   /// Drawn in the status column of a held row, in place of its note.
   final Widget? saveAction;
@@ -1371,6 +1380,7 @@ class _DieRow extends StatelessWidget {
                   flex: _kDieFlex[6],
                 ),
                 _DieCell(die.whereKept, flex: _kDieFlex[7]),
+                if (showStatus)
                 SizedBox(
                   width: _kStatusWidth,
                   child: !pending
@@ -1394,16 +1404,25 @@ class _DieRow extends StatelessWidget {
                 const SizedBox(width: 6),
                 // Its Edit, said out loud: a saved row opens in the form above,
                 // whose button is then this row's Save.
+                // The same Edit a part line and a person have, and the way
+                // off beside it — in one fixed slot the header leaves room for.
+                SizedBox(
+                  width: _kActionsWidth,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                 Tooltip(
                   message: selected
                       ? 'Being edited above — Save there'
                       : 'Edit this die',
-                  child: IconButton(
+                  child: OutlinedButton.icon(
                     key: ValueKey<String>('die_row_edit_${die.toolCode}'),
-                    icon: const Icon(Icons.edit_outlined, size: 20),
-                    visualDensity: VisualDensity.compact,
-                    color: SoftErpTheme.accent,
                     onPressed: selected ? null : onTap,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit', style: TextStyle(fontSize: 14)),
                   ),
                 ),
                 Tooltip(
@@ -1422,6 +1441,10 @@ class _DieRow extends StatelessWidget {
                     onPressed: onUnlink,
                   ),
                 ),
+                    ],
+                  ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1434,33 +1457,40 @@ class _DieRow extends StatelessWidget {
 /// Column weights shared by the header strip and every row, so they line up.
 /// The last column is the status, at a fixed width: a held row draws the part's
 /// Save part there, which a flex share could not be trusted to fit.
-const List<int> _kDieFlex = [22, 12, 18, 15, 15, 11, 6, 18];
+const List<int> _kDieFlex = [24, 12, 16, 13, 13, 11, 6, 14];
 const double _kStatusWidth = 150;
 const List<String> _kDieHeads = [
-  'Die Code',
+  'Code',
   'Type',
-  'Made By',
+  'Made by',
   // The two ends of the tooling lead time — ordered from the maker, and
   // arrived. The paper sheet calls them PO-Date and Date in.
   'Ordered',
   'Arrived',
   'Liner',
   'Sets',
-  'Where kept',
+  'Kept',
 ];
 
-// Big enough to carry its "Photo" label: a bare 36px camera at the start of
-// the row was not seen as the place to add one.
+// Big enough to carry its "Photo" label: a bare camera at the start of the
+// row was not seen as the place to add one. The part, company and person
+// slots are 40 and need no label — they sit on their own line.
 const double _kPhotoSize = 52;
+
+/// The row's end: its Edit and the way off. The header leaves the same room.
+const double _kActionsWidth = 150;
 const double _kPhotoGap = 8;
 
 class _DieHeaderStrip extends StatelessWidget {
-  const _DieHeaderStrip();
+  const _DieHeaderStrip({this.showStatus = false});
+
+  final bool showStatus;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 44, 4),
+      // The row's own padding and border, so the heads sit over the cells.
+      padding: const EdgeInsets.fromLTRB(11, 0, 11, 4),
       child: Row(
         children: [
           if (MiniPhoto.isAvailable(context))
@@ -1479,7 +1509,8 @@ class _DieHeaderStrip extends StatelessWidget {
                 ),
               ),
             ),
-          const SizedBox(width: _kStatusWidth),
+          if (showStatus) const SizedBox(width: _kStatusWidth),
+          const SizedBox(width: 6 + _kActionsWidth),
         ],
       ),
     );
