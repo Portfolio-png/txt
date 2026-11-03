@@ -291,7 +291,11 @@ class _PartFieldState extends State<_PartField> {
     super.didUpdateWidget(oldWidget);
     // Follows the draft — derive, a picked option, a loaded part — unless the
     // person is typing in it.
-    if (!_focus.hasFocus && _text.text != _shown) _text.text = _shown;
+    // A dropdown box is never typed into, so it follows even with focus — a
+    // focused Part Name kept its old width and cut the name it now shows.
+    if ((_isList || !_focus.hasFocus) && _text.text != _shown) {
+      _text.text = _shown;
+    }
     // Focus arrives with the cursor (Add part puts it on the new Group), but
     // only on arrival: taking it on every rebuild stole it from other fields.
     final wanted = _sheet.row == widget.row &&

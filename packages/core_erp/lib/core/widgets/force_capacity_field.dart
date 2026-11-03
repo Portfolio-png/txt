@@ -170,6 +170,7 @@ class ForceCapacityField extends StatelessWidget {
                       fieldKey: fieldKey,
                       controller: controller,
                       label: label,
+                      floatLabel: floatLabel,
                       options: suggestions!,
                       // Greyed with free hand ticked, as the plain field is.
                       enabled: enabled && !freeHand,

@@ -1117,7 +1117,7 @@ class _MachineRow extends StatelessWidget {
 }
 
 /// Column weights shared by the header strip and every row, so they line up.
-const List<int> _kMachineFlex = [24, 20, 22, 18, 10, 18, 16];
+const List<int> _kMachineFlex = [22, 20, 18, 16, 14, 14, 16];
 const List<String> _kMachineHeads = [
   'Machine No',
   'Type',
@@ -1134,7 +1134,7 @@ const List<String> _kMachineHeads = [
 const double _kPhotoSize = 52;
 
 /// The row's end: its Edit and the way off. The header leaves the same room.
-const double _kActionsWidth = 150;
+const double _kActionsWidth = 132;
 const double _kPhotoGap = 8;
 
 class _MachineHeaderStrip extends StatelessWidget {

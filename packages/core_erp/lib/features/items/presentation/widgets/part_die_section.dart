@@ -1034,21 +1034,10 @@ class _PartDieSectionState extends State<PartDieSection> {
   }
 
   Widget _typeRow(bool enabled) {
-    return Row(
-      children: [
-        const SizedBox(
-          width: 110,
-          child: Text(
-            'Type',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: SoftErpTheme.textPrimary,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Wrap(
+    // A heading over its choices, as every field on the sheet has.
+    return SheetStyle.labelled(
+      label: 'Type',
+      child: Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
@@ -1117,8 +1106,6 @@ class _PartDieSectionState extends State<PartDieSection> {
               ),
             ],
           ),
-        ),
-      ],
     );
   }
 
@@ -1457,16 +1444,17 @@ class _DieRow extends StatelessWidget {
 /// Column weights shared by the header strip and every row, so they line up.
 /// The last column is the status, at a fixed width: a held row draws the part's
 /// Save part there, which a flex share could not be trusted to fit.
-const List<int> _kDieFlex = [24, 12, 16, 13, 13, 11, 6, 14];
+const List<int> _kDieFlex = [26, 12, 14, 11, 11, 11, 8, 12];
 const double _kStatusWidth = 150;
 const List<String> _kDieHeads = [
   'Code',
   'Type',
   'Made by',
   // The two ends of the tooling lead time — ordered from the maker, and
-  // arrived. The paper sheet calls them PO-Date and Date in.
-  'Ordered',
-  'Arrived',
+  // arrived. The paper sheet calls them PO-Date and Date in, and the row's
+  // tooltips say the whole date and time.
+  'PO',
+  'In',
   'Liner',
   'Sets',
   'Kept',
@@ -1478,7 +1466,7 @@ const List<String> _kDieHeads = [
 const double _kPhotoSize = 52;
 
 /// The row's end: its Edit and the way off. The header leaves the same room.
-const double _kActionsWidth = 150;
+const double _kActionsWidth = 132;
 const double _kPhotoGap = 8;
 
 class _DieHeaderStrip extends StatelessWidget {

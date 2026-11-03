@@ -196,7 +196,13 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     final at = widget.recordedAt;
     final recorded = at == null ? 'Set on save' : partStamp(at);
 
-    return Wrap(
+    // The fields on one line; when it was recorded, its Edit and the way to
+    // the company on the next — they wrapped there anyway, and carried the
+    // fields' heading gap with them.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+    Wrap(
       spacing: 12,
       runSpacing: 12,
       crossAxisAlignment: WrapCrossAlignment.start,
@@ -299,41 +305,42 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           ),
         ),
         ),
-        Padding(
-          padding: const EdgeInsets.only(top: _boxTop + 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.lock_clock_outlined,
-                  size: 18, color: SoftErpTheme.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                'Recorded: $recorded',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: _boxTop + 2),
-          child: _dealAction(dealLocked),
-        ),
-        if (partyId != null)
-          Padding(
-            padding: const EdgeInsets.only(top: _boxTop + 2),
-            child: TextButton.icon(
-              key: const ValueKey<String>('deal_view_company'),
-              onPressed: () => CompanyView.openClient(context, partyId),
-              icon: const Icon(Icons.business_outlined, size: 18),
-              label: const Text(
-                'View company',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      ],
+    ),
+    const SizedBox(height: 10),
+    Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lock_clock_outlined,
+                size: 18, color: SoftErpTheme.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              'Recorded: $recorded',
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
               ),
             ),
+          ],
+        ),
+        _dealAction(dealLocked),
+        if (partyId != null)
+          TextButton.icon(
+            key: const ValueKey<String>('deal_view_company'),
+            onPressed: () => CompanyView.openClient(context, partyId),
+            icon: const Icon(Icons.business_outlined, size: 18),
+            label: const Text(
+              'View company',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
           ),
+      ],
+    ),
       ],
     );
   }
@@ -517,24 +524,27 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       );
     }
 
-    // Bottoms level: every field has its name above it now, so the photo,
-    // the buttons and the × line up with the boxes, not with the headings.
+    // Headings level along the top; what has no heading — the photo, the
+    // buttons, the × — is moved down to sit beside the boxes.
     return Wrap(
       spacing: 10,
       runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.start,
       children: [
-        MiniPhoto(
+        Padding(
+          padding: const EdgeInsets.only(top: _boxTop),
+          child: MiniPhoto(
           owner: PhotoOwner.person,
           id: _people.draftAt(row).entityId?.toString(),
           size: 40,
           what: 'photo',
           disabledReason: 'Save this person first to add a photo',
         ),
+        ),
         SheetStyle.labelled(
           label: 'Dealt with',
           child: SizedBox(
-          height: 44,
+          height: 40,
           child: Tooltip(
           message: dealLocked
               ? 'Edit the company line to change who it was dealt with'
@@ -566,16 +576,16 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         field(SheetBindsTo.personEmail, 'Email ID',
             keyboard: TextInputType.emailAddress, min: 200),
         if (locked)
-          OutlinedButton.icon(
+          _beside(OutlinedButton.icon(
             key: ValueKey<String>('deal_person_${row}_edit'),
             onPressed: () => _people.setRowLocked(row, false),
             icon: const Icon(Icons.edit_outlined, size: 18),
             label: const Text('Edit', style: TextStyle(fontSize: 14)),
-          )
+          ))
         else
           // Writes the person to the company's file now. The tick is the
           // deal's, so it waits for the part's save.
-          Tooltip(
+          _beside(Tooltip(
             message: blank
                 ? 'Type a name first'
                 : 'Saves this person to '
@@ -591,8 +601,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
               isLoading: widget.controller.isSavingPerson(row),
               onPressed: blank ? null : () => widget.controller.savePersonRow(row),
             ),
-          ),
-        Tooltip(
+          )),
+        _beside(Tooltip(
           message: saved
               ? 'Saved people stay on the company’s file — untick instead'
               : 'Remove this row',
@@ -603,10 +613,16 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                 : () => _people.removeRow(row),
             icon: const Icon(Icons.close, size: 18),
           ),
-        ),
+        )),
       ],
     );
   }
+
+  /// What has no heading, moved down to sit beside the headed boxes.
+  static Widget _beside(Widget child) => Padding(
+        padding: const EdgeInsets.only(top: _boxTop),
+        child: child,
+      );
 }
 
 /// How far a field's box sits below the top of its heading
