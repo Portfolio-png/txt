@@ -10,6 +10,7 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/mast
 import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
+import 'package:core_erp/features/items/presentation/widgets/part_machine_section.dart';
 import 'package:core_erp/features/items/presentation/widgets/deal_people_form.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_rows_form.dart';
 import 'package:core_erp/features/process_routes/data/process_route_service.dart';
@@ -72,10 +73,26 @@ class _FakeItemRepository implements ItemRepository {
   final List<int> freshReads = [];
   final List<UpdateItemInput> updated = [];
 
+  /// Refuses every save that links dies — a link that does not go through.
+  bool refuseDieLinks = false;
+
   @override
   Future<ItemDefinition> updateItem(UpdateItemInput input) async {
+    if (refuseDieLinks && input.dieIds.isNotEmpty) {
+      throw Exception('link refused');
+    }
     updated.add(input);
     return stored.firstWhere((i) => i.id == input.id);
+  }
+
+  final List<CreateItemInput> created = [];
+
+  @override
+  Future<ItemDefinition> createItem(CreateItemInput input) async {
+    created.add(input);
+    final made = _item(id: 900 + created.length, name: input.name, groupId: input.groupId);
+    stored.add(made);
+    return made;
   }
 
   @override
@@ -519,6 +536,70 @@ void main() {
       expect(find.text('Quotation (₹)'), findsOneWidget);
     });
 
+    testWidgets('a die typed and not held survives a fold, and the leave warning names it',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+      final before = tester.state(find.byType(PartDieSection));
+
+      // Folding used to dispose the section, and the typed die with it.
+      await tester.tap(find.byKey(const ValueKey('section_toggle_die_master')));
+      await tester.pump();
+      expect(find.byType(PartDieSection, skipOffstage: false), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('section_summary_die_master')));
+      await tester.pump();
+      expect(tester.state(find.byType(PartDieSection)), same(before));
+
+      // The section says a die is half typed; leaving names it.
+      tester.widget<PartDieSection>(find.byType(PartDieSection)).onDirtyChanged!(true);
+      tester.widget<PartMachineSection>(find.byType(PartMachineSection)).onDirtyChanged!(true);
+      await tester.pump();
+      await tester.tap(find.byTooltip('Back').first);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Leave with unsaved work?'), findsOneWidget);
+      expect(find.textContaining('a die being typed'), findsOneWidget);
+      expect(find.textContaining('a machine being typed'), findsOneWidget);
+    });
+
+    testWidgets('an edited raw sheet folded away is kept, not thrown out',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.tap(find.byKey(const ValueKey('raw_edit')));
+      await tester.pump();
+      final before = tester.state(find.byType(MasterDataPanel));
+
+      await tester.tap(find.byKey(const ValueKey('raw_panel_close')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('raw_panel')), findsNothing,
+          reason: 'folded, as far as anyone can see');
+      expect(find.byType(MasterDataPanel, skipOffstage: false), findsOneWidget,
+          reason: 'but still holding what was typed');
+
+      await tester.tap(find.byKey(const ValueKey('raw_panel_open')));
+      await tester.pump();
+      expect(tester.state(find.byType(MasterDataPanel)), same(before));
+    });
+
+    testWidgets('a part with no thickness does not wipe the raw sheet\'s own',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel.thickness, isNull,
+          reason: "'' told the panel the part's thickness is 0");
+    });
+
     testWidgets('a folded die or machine line says what was filled, with when',
         (tester) async {
       // "1 die: JDHH1" said there was a die and nothing about it.
@@ -879,6 +960,61 @@ void main() {
           reason: 'no picker of its own: alloy is changed in its column');
     });
 
+    testWidgets('a property can be cleared on its line, and the save takes it off',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11, variationTree: [
+        ItemVariationNodeDefinition(
+          id: 10,
+          itemId: 500,
+          parentNodeId: null,
+          kind: ItemVariationNodeKind.property,
+          name: 'Alloy',
+          displayName: 'Alloy',
+          inputType: 'Material',
+          position: 0,
+          isArchived: false,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          children: [
+            ItemVariationNodeDefinition(
+              id: 11,
+              itemId: 500,
+              parentNodeId: 10,
+              kind: ItemVariationNodeKind.value,
+              name: 'Brass',
+              displayName: 'Brass',
+              position: 0,
+              isArchived: false,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+              children: const [],
+            ),
+          ],
+        ),
+      ]);
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: repo,
+        size: const Size(1700, 3200),
+      );
+      expect(find.byKey(const ValueKey('property_clear_6_0')), findsNothing,
+          reason: 'a saved line is read only until its Edit');
+      await tester.tap(find.byKey(const ValueKey('row_edit_0')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('property_clear_6_0')));
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      expect(repo.updated.last.variationTree, isEmpty,
+          reason: 'the cleared Alloy comes off the part');
+    });
+
     testWidgets('the raw panel\'s thickness is the part\'s Thickness cell, both '
         'ways, and saves with the plan', (tester) async {
       ItemVariationNodeDefinition node(int id, String name,
@@ -1004,6 +1140,67 @@ void main() {
       );
       await tester.pump();
       expect(dies().staged.single.toolCode, 'D1');
+    });
+
+    testWidgets('a held die made but not attached stays held, and says so',
+        (tester) async {
+      var made = 0;
+      AppFlowHooks.createDieFromSheet = (context, draft) async {
+        made += 1;
+        return DieCreateOutcome.created(
+          CreatedRecord(id: 'die-$made', title: draft.toolCode),
+        );
+      };
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      final repo = _FakeItemRepository([])..refuseDieLinks = true;
+      await _pumpScreen(tester, repository: repo, size: const Size(1700, 3200));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      final def = sheet.sheetDef;
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+      sheet.updateValue(group.id,
+          CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label));
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final kind = sheet.options.firstWhere(
+        (o) => o.columnId == type.id && o.parentOptionId == trunk.id,
+      );
+      sheet.updateValue(type.id,
+          CellValue(columnId: type.id, optionId: kind.id, optionLabel: kind.label));
+      final name = def.itemColumn!;
+      sheet.updateValue(name.id,
+          CellValue(columnId: name.id, optionLabel: 'Lid', isNew: true));
+      tester
+          .widget<PartDieSection>(find.byType(PartDieSection))
+          .onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump();
+
+      expect(repo.created, hasLength(1), reason: 'the part saved');
+      expect(made, 1, reason: 'the die was made');
+      expect(find.textContaining('made but not attached'), findsOneWidget);
+      PartDieSection dies() =>
+          tester.widget<PartDieSection>(find.byType(PartDieSection));
+      expect(dies().staged.single.toolCode, 'D1',
+          reason: 'still held, so the leave warning still names it');
+
+      // Save part again — the held die's own row carries it — links the die
+      // already made, without making a second one.
+      repo.refuseDieLinks = false;
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('die_held_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump();
+      expect(made, 1, reason: 'not made a second time');
+      expect(repo.updated.last.dieIds, ['die-1']);
+      expect(dies().staged, isEmpty);
     });
 
     testWidgets('a held die\'s row carries the part\'s own Save part',

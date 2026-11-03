@@ -34,6 +34,7 @@ class RouteCreationPanel extends StatefulWidget {
     this.initialPartId,
     this.pendingPartName,
     this.madeHereItemIds = const <int>{},
+    this.onDirtyChanged,
   });
 
   final ValueChanged<CreatedRecord> onSaved;
@@ -55,11 +56,15 @@ class RouteCreationPanel extends StatefulWidget {
   /// part somebody is routing is almost always the one they just made.
   final Set<int> madeHereItemIds;
 
+  /// Told when the stages on screen start or stop differing from the part's
+  /// saved route — so the host can warn before they are lost.
+  final ValueChanged<bool>? onDirtyChanged;
+
   @override
-  State<RouteCreationPanel> createState() => _RouteCreationPanelState();
+  State<RouteCreationPanel> createState() => RouteCreationPanelState();
 }
 
-class _RouteCreationPanelState extends State<RouteCreationPanel> {
+class RouteCreationPanelState extends State<RouteCreationPanel> {
   ProcessRouteService? _service;
   bool _serviceMissing = false;
 
@@ -69,6 +74,41 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
   /// Held here rather than in [RouteEditor] so it survives the part changing
   /// and the editor being rebuilt under a different key.
   List<RouteStep> _steps = const [];
+
+  /// The stages of the route the part has saved — what [_steps] is compared
+  /// with to say whether there is anything unsaved.
+  List<int> _savedStageIds = const [];
+
+  /// What the host was last told.
+  bool _reportedDirty = false;
+
+  /// Whether the stages on screen differ from the part's saved route.
+  bool get isDirty {
+    final now = [for (final step in _steps) step.stageId];
+    if (now.length != _savedStageIds.length) return true;
+    for (var i = 0; i < now.length; i += 1) {
+      if (now[i] != _savedStageIds[i]) return true;
+    }
+    return false;
+  }
+
+  /// Saves the stages on screen, as the panel's own Save does. True when
+  /// nothing is left unsaved afterwards. For the host's "Save and close".
+  Future<bool> save() async {
+    if (!isDirty) return true;
+    if (_partId == null || _steps.isEmpty || _saving) return false;
+    await _save();
+    return mounted && !isDirty;
+  }
+
+  void _reportDirty() {
+    final report = widget.onDirtyChanged;
+    final dirty = isDirty;
+    if (report == null || dirty == _reportedDirty) return;
+    _reportedDirty = dirty;
+    // After this frame: the host rebuilds on it, and this is mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) => report(dirty));
+  }
 
   /// The chosen part's active route, if it already has one. Non-null means a
   /// change has to be declared as a version rather than saved in place.
@@ -110,6 +150,10 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
     if (next == oldWidget.initialPartId) return;
     // A part somebody picked here by hand is theirs; the host does not move it.
     if (_partId != oldWidget.initialPartId) return;
+    // Stages laid out for one saved part stay on it when the host moves to
+    // another: loading the other part's route over them threw them away.
+    // (A part that was waiting for its save does take its new id.)
+    if (oldWidget.initialPartId != null && isDirty) return;
     setState(() {
       _partId = next;
       if (next == null) {
@@ -223,6 +267,9 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
       setState(() {
         _active = active;
         if (active != null) _steps = active.steps;
+        _savedStageIds = [
+          for (final step in active?.steps ?? const <RouteStep>[]) step.stageId,
+        ];
         _loadingRoute = false;
       });
     } catch (error) {
@@ -347,6 +394,7 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
         _saving = false;
         _active = saved;
         _pendingVersionOf = null;
+        _savedStageIds = [for (final step in _steps) step.stageId];
       });
     } on RouteActiveException catch (error) {
       // Somebody else activated a route for this part while this panel was
@@ -385,7 +433,19 @@ class _RouteCreationPanelState extends State<RouteCreationPanel> {
   }
 
   @override
+  void dispose() {
+    // Closed — saved, cancelled or the part left: nothing here is unsaved any
+    // more as far as the host is concerned.
+    final report = widget.onDirtyChanged;
+    if (report != null && _reportedDirty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => report(false));
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    _reportDirty();
     if (_serviceMissing) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),

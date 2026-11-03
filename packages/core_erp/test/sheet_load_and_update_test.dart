@@ -1014,6 +1014,32 @@ void main() {
       expect(repo.updated.single.partCode, 'SADP48');
     });
 
+    test('a code typed alone on a saved part is sent alone', () async {
+      final binding = await bindingFor([
+        _item(id: 500, name: 'Patti', groupId: 11),
+      ]);
+      final typed = row(entityId: 500)
+        ..set(5, const CellValue(columnId: 5, textValue: 'PT-9', mode: ValueMode.edit));
+      await binding.save([typed]);
+      final update = repo.updated.single;
+      expect(update.partCode, 'PT-9', reason: 'a code without a number was dropped');
+      expect(update.partNo, isNull, reason: 'the number is not sent, so it is kept');
+      expect(update.partIdentitySpecified, isFalse);
+    });
+
+    test('clearing the number on a saved part clears it and keeps the code', () async {
+      final binding = await bindingFor([
+        _item(id: 500, name: 'Patti', groupId: 11, partCode: 'SADP48'),
+      ]);
+      final cleared = row(entityId: 500)
+        ..set(4, const CellValue(columnId: 4, mode: ValueMode.edit));
+      await binding.save([cleared]);
+      final update = repo.updated.single;
+      expect(update.partIdentitySpecified, isTrue);
+      expect(update.partNo, isNull);
+      expect(update.partCode, 'SADP48');
+    });
+
     test('an update with no typed identity leaves the stamp alone', () async {
       final binding = await bindingFor([
         _item(id: 500, name: 'Patti', groupId: 11),
@@ -1065,6 +1091,95 @@ void main() {
         reason: 'ItemsProvider’s own converter drops inputType, so a Gauge '
             'property would come back as Text',
       );
+    });
+
+    ItemVariationNodeDefinition property(int id, String name, List<String> values) =>
+        ItemVariationNodeDefinition(
+          id: id,
+          itemId: 500,
+          parentNodeId: null,
+          kind: ItemVariationNodeKind.property,
+          name: name,
+          displayName: name,
+          inputType: name == 'Thickness' ? 'Gauge' : 'Material',
+          position: 0,
+          children: [
+            for (final (i, value) in values.indexed)
+              ItemVariationNodeDefinition(
+                id: id * 10 + i,
+                itemId: 500,
+                parentNodeId: id,
+                kind: ItemVariationNodeKind.value,
+                name: value,
+                displayName: value,
+                position: i,
+                children: const [],
+                isArchived: false,
+                createdAt: DateTime(2026),
+                updatedAt: DateTime(2026),
+              ),
+          ],
+          isArchived: false,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+    test('every property cleared on a saved part comes off it', () async {
+      final existing = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        variationTree: [
+          property(1, 'Alloy', ['MS']),
+          property(2, 'Thickness', ['23 Gauge']),
+        ],
+      );
+      final binding = await bindingFor([existing]);
+      // Both cells are in the row and empty: the user cleared them.
+      final cleared = row(entityId: 500)
+        ..set(6, const CellValue(columnId: 6))
+        ..set(7, const CellValue(columnId: 7));
+      await binding.save([cleared]);
+
+      expect(repo.updated.single.variationTree, isEmpty,
+          reason: 'clearing every property used to keep them all');
+    });
+
+    test('a property the row never loaded is kept; one cleared is not', () async {
+      final existing = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        variationTree: [
+          property(1, 'Alloy', ['MS']),
+          property(2, 'Thickness', ['23 Gauge']),
+        ],
+      );
+      final binding = await bindingFor([existing]);
+      final onlyAlloyCleared = row(entityId: 500)..set(6, const CellValue(columnId: 6));
+      await binding.save([onlyAlloyCleared]);
+
+      final tree = repo.updated.single.variationTree;
+      expect(tree.map((node) => node.name), ['Thickness']);
+      expect(tree.single.children.single.name, '23 Gauge');
+    });
+
+    test('picking one of a part\'s other values makes it the first', () async {
+      final existing = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        variationTree: [property(1, 'Alloy', ['MS', 'SS', 'Brass'])],
+      );
+      final binding = await bindingFor([existing]);
+      final picked = row(entityId: 500)
+        ..set(6, const CellValue(columnId: 6, optionLabel: 'SS'));
+      await binding.save([picked]);
+
+      final alloy = repo.updated.single.variationTree.single;
+      expect(alloy.children.map((child) => child.name), ['SS', 'MS', 'Brass'],
+          reason: 'the pick was dropped and MS still read back');
+      expect(alloy.children.first.id, 11, reason: 'ids are kept');
     });
 
     test('a record that vanished is refused, not silently created', () async {

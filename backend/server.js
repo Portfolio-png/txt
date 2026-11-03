@@ -17973,6 +17973,14 @@ async function saveItemOnce({
         break;
       }
     }
+  } else if (id == null && partNo === undefined && normalizedPartCode) {
+    // A code was typed and the number was not: the code is the caller's, the
+    // number is still this module's to stamp — a part filed with a code and
+    // no number used to be the only way the sheet could save a typed code.
+    autoPartNo = await nextPartNo(
+      { groupId: normalizedGroupId, itemName: trimmedName },
+      { get, all },
+    );
   }
 
   const now = new Date().toISOString();

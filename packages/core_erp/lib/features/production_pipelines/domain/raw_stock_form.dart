@@ -89,7 +89,15 @@ class RawStockForm {
       vendorName.trim().isNotEmpty ||
       reconciliation.inputKg > 0 ||
       reconciliation.outputKg > 0 ||
-      reconciliation.piecesOut > 0;
+      reconciliation.piecesOut > 0 ||
+      // Anything else typed in Material data counts too: a form holding only
+      // its scrap, rejection, loss, sheets in or a note was dropped on save.
+      reconciliation.scrapKg > 0 ||
+      reconciliation.rejectionKg > 0 ||
+      reconciliation.rejectionPercent > 0 ||
+      reconciliation.weightLossKg > 0 ||
+      reconciliation.sheetsIn > 0 ||
+      reconciliation.notes.trim().isNotEmpty;
 
   /// Parts from the whole length, one every pitch. Null while the length or
   /// the pitch is not known.

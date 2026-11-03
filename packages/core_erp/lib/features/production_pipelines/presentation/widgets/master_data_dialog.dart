@@ -103,6 +103,7 @@ class MasterDataPanel extends StatefulWidget {
     this.embedded = false,
     this.onEdit,
     this.onDirtyChanged,
+    this.onDraftSource,
     this.saving = false,
     this.alloy,
     this.grade,
@@ -142,6 +143,13 @@ class MasterDataPanel extends StatefulWidget {
   /// Told when the editing panel starts or stops holding changes its Save has
   /// not written — so the host can mark them and warn before leaving.
   final ValueChanged<bool>? onDirtyChanged;
+
+  /// Hands the host a way to read what Save would write right now — `alive`
+  /// true when the panel mounts, false (with the same reader) when it goes.
+  /// So the host can still write an unsaved plan the panel is about to lose:
+  /// the cursor moving to another part, or Save and close.
+  final void Function(PenPaperBaseline Function() read, bool alive)?
+      onDraftSource;
 
   /// Called by Close and Cancel. When null there is nothing to back out of —
   /// an always-open side panel — so neither control is drawn.
@@ -269,10 +277,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// side panel gets three readable steps instead of an overflow stripe.
   static const double _compactStepBarWidth = 640;
 
+  /// What Save would write now, as one reader the host can hold and compare.
+  late final PenPaperBaseline Function() _readDraft = () => _recorded;
+
   @override
   void initState() {
     super.initState();
     _baseline = _withoutSheetPitch(widget.baseline);
+    widget.onDraftSource?.call(_readDraft, true);
     _widthController = TextEditingController();
     _heightController = TextEditingController();
     _thicknessController = TextEditingController();
@@ -453,6 +465,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   @override
   void dispose() {
+    widget.onDraftSource?.call(_readDraft, false);
     _vendors?.removeListener(_onVendorsChanged);
     _widthController.dispose();
     _heightController.dispose();

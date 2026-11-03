@@ -138,6 +138,21 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// The editing raw sheet holds changes its own Save has not written.
   bool _rawDirty = false;
+
+  /// The route panel, to save its stages from Save and close.
+  final GlobalKey<RouteCreationPanelState> _routePanelKey =
+      GlobalKey<RouteCreationPanelState>();
+
+  /// Stages laid out on the route panel that its Save has not written.
+  bool _routeDirty = false;
+
+  /// A die, or a machine, typed into its sheet and not held or saved.
+  bool _dieTyping = false;
+  bool _machineTyping = false;
+
+  /// Reads what the raw panel's Save would write now — held so an unsaved
+  /// plan can still be written when the panel is about to lose it.
+  PenPaperBaseline Function()? _rawDraft;
   int _rawEpoch = 0;
 
   /// A raw sheet save in flight, and the part the panel was last drawn for —
@@ -346,6 +361,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // was drawn, typed into, and never once saved.
       dealDraft: () => _controller.dealDraftForSave(),
       dealContactIds: () => _controller.dealContactIdsForSave(),
+      dealCleared: () => _controller.dealClearedForSave(),
       peopleSheet: SheetDef(
         id: 3,
         key: 'item_people',
@@ -494,57 +510,113 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// are created first and only then linked, so a create that succeeded but a
   /// link that failed leaves the record in its master rather than losing it.
   Future<void> _flushHeldOnto(ItemDefinition part, Object rowKey) async {
+    final partName =
+        part.displayName.trim().isEmpty ? part.name : part.displayName;
     final held = _heldDies[rowKey] ?? <DieSheetDraft>[];
     final dieIds = <String>[for (final d in part.dies) d.id];
-    var diesAdded = false;
+    final diesMade = <DieSheetDraft>[];
     for (final draft in List<DieSheetDraft>.from(held)) {
       if (!mounted) return;
-      final outcome = await AppFlowHooks.createDieFromSheet?.call(context, draft);
-      final id = outcome?.record?.id;
+      // Made on an earlier save whose link failed: link it, do not make it
+      // a second time.
+      var id = _madeDies[draft];
       if (id == null) {
-        // Still held, so it is tried again on the next save — but say why it
-        // did not go, or it just sits in the list looking pending forever.
-        if (mounted) {
-          _toast(
-            'Die ${draft.toolCode} was not made: '
-            '${outcome?.message ?? 'no reason given'}.',
-            isError: true,
-          );
+        final outcome =
+            await AppFlowHooks.createDieFromSheet?.call(context, draft);
+        id = outcome?.record?.id;
+        if (id == null) {
+          // Still held, so it is tried again on the next save — but say why it
+          // did not go, or it just sits in the list looking pending forever.
+          if (mounted) {
+            _toast(
+              'Die ${draft.toolCode} was not made: '
+              '${outcome?.message ?? 'no reason given'}.',
+              isError: true,
+            );
+          }
+          continue;
         }
-        continue;
+        _madeDies[draft] = id;
       }
-      dieIds.add(id);
-      diesAdded = true;
-      if (mounted) setState(() => held.remove(draft));
+      if (!dieIds.contains(id)) dieIds.add(id);
+      diesMade.add(draft);
     }
 
     final heldMachines = _heldMachines[rowKey] ?? <MachineSheetDraft>[];
     final machineIds = <String>[for (final m in part.machines) m.id];
-    var machinesAdded = false;
+    final machinesMade = <MachineSheetDraft>[];
     for (final draft in List<MachineSheetDraft>.from(heldMachines)) {
       if (!mounted) return;
-      final outcome =
-          await AppFlowHooks.createMachineFromSheet?.call(context, draft);
-      final id = outcome?.record?.id;
+      var id = _madeMachines[draft];
       if (id == null) {
-        if (mounted) {
-          _toast(
-            'Machine ${draft.assetId} was not made: '
-            '${outcome?.message ?? 'no reason given'}.',
-            isError: true,
-          );
+        final outcome =
+            await AppFlowHooks.createMachineFromSheet?.call(context, draft);
+        id = outcome?.record?.id;
+        if (id == null) {
+          if (mounted) {
+            _toast(
+              'Machine ${draft.assetId} was not made: '
+              '${outcome?.message ?? 'no reason given'}.',
+              isError: true,
+            );
+          }
+          continue;
         }
-        continue;
+        _madeMachines[draft] = id;
       }
-      machineIds.add(id);
-      machinesAdded = true;
-      if (mounted) setState(() => heldMachines.remove(draft));
+      if (!machineIds.contains(id)) machineIds.add(id);
+      machinesMade.add(draft);
     }
 
     if (!mounted) return;
-    if (diesAdded) await _setDiesOn(part.id, dieIds);
-    if (machinesAdded) await _setMachinesOn(part.id, machineIds);
+    // A held die leaves the list only once it is ON the part. It used to
+    // leave as soon as it was made, so a failed link left a die in the master
+    // that no part had, with nothing held to warn about and nothing said.
+    if (diesMade.isNotEmpty) {
+      final error = await _setDiesOn(part.id, dieIds);
+      if (!mounted) return;
+      if (error == null) {
+        setState(() {
+          for (final draft in diesMade) {
+            held.remove(draft);
+            _madeDies.remove(draft);
+          }
+        });
+      } else {
+        _toast(
+          '${diesMade.length == 1 ? 'Die ${diesMade.single.toolCode} was' : '${diesMade.length} dies were'} '
+          'made but not attached to $partName — Save part again to attach '
+          '${diesMade.length == 1 ? 'it' : 'them'}. ($error)',
+          isError: true,
+        );
+      }
+    }
+    if (machinesMade.isNotEmpty) {
+      final error = await _setMachinesOn(part.id, machineIds);
+      if (!mounted) return;
+      if (error == null) {
+        setState(() {
+          for (final draft in machinesMade) {
+            heldMachines.remove(draft);
+            _madeMachines.remove(draft);
+          }
+        });
+      } else {
+        _toast(
+          '${machinesMade.length == 1 ? 'Machine ${machinesMade.single.assetId} was' : '${machinesMade.length} machines were'} '
+          'made but not attached to $partName — Save part again to attach '
+          '${machinesMade.length == 1 ? 'it' : 'them'}. ($error)',
+          isError: true,
+        );
+      }
+    }
   }
+
+  /// Held dies and machines already made in the master, by draft, whose link
+  /// to the part has not gone through yet — so a retry links them rather than
+  /// making them again.
+  final Map<DieSheetDraft, String> _madeDies = Map.identity();
+  final Map<MachineSheetDraft, String> _madeMachines = Map.identity();
 
   /// Every save and every refusal on this screen is said here, in the app's
   /// own toast — nothing on the lines is drawn red.
@@ -569,6 +641,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           'dies or machines waiting for their part',
         if (_treeDirty && _livePart != null) 'the section layout',
         if (_rawEditing && _rawDirty) 'the raw sheet',
+        if (_showRoutePanel && _routeDirty) 'the route',
+        if (_dieTyping) 'a die being typed',
+        if (_machineTyping) 'a machine being typed',
       ];
 
   /// Back with something unwritten. Rows commit as the cursor leaves them,
@@ -605,9 +680,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (choice == 'save') {
       await _handleSave();
       if (!mounted) return;
+      // The part's Save does not write the raw sheet or the route — each has
+      // its own — so Save and close writes them too, once the part exists.
+      final read = _rawDraft;
+      if (_rawEditing && _rawDirty && read != null && _livePart != null) {
+        await _saveRawSheet(read());
+        if (!mounted) return;
+      }
+      final route = _routePanelKey.currentState;
+      if (_showRoutePanel && _routeDirty && route != null) {
+        await route.save();
+        if (!mounted) return;
+      }
       final left = _unsavedWork();
       if (left.isNotEmpty) {
-        // The part's Save does not write the raw sheet — it has its own.
         _toast('Still not saved: ${left.join(', ')}.', isError: true);
         return;
       }
@@ -841,45 +927,23 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       _rawPanelOpen ?? MediaQuery.sizeOf(context).width >= 1500;
 
   Widget _rawSheetPanel() {
-    final open = _rawPanelShown;
-    if (!open) {
-      return Container(
-        key: const ValueKey<String>('raw_panel_closed'),
-        width: 44,
-        decoration: const BoxDecoration(
-          color: SoftErpTheme.cardSurface,
-          border: Border(left: BorderSide(color: SoftErpTheme.border)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            IconButton(
-              key: const ValueKey<String>('raw_panel_open'),
-              tooltip: 'Open the raw sheet & strips',
-              onPressed: () => setState(() => _rawPanelOpen = true),
-              icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
-            ),
-            const SizedBox(height: 8),
-            const RotatedBox(
-              quarterTurns: 1,
-              child: Text(
-                'Raw material',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     final part = _livePart;
     if (part?.id != _rawPartId) {
+      // The cursor moved to another part with this one's raw sheet edited and
+      // not saved. The panel is about to be rebuilt for the new part, which
+      // threw the edits away; they are written to the part they were made on,
+      // the way a part line saves when it is left.
+      final leftId = _rawPartId;
+      final read = _rawDraft;
+      if (_rawEditing && _rawDirty && leftId != null && read != null) {
+        final draft = read();
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => unawaited(_saveRawSheetOn(leftId, draft)),
+        );
+      }
       _rawPartId = part?.id;
       _rawEditing = false;
+      _rawDirty = false;
     }
     if (part?.id != _routeForPartId) {
       _routeForPartId = part?.id;
@@ -927,7 +991,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       grade: _propertyNow('grade'),
       // One thickness in two places: the part's Thickness cell, edited from
       // either side.
-      thickness: _cellNow(SheetBindsTo.variation('Thickness')),
+      // A blank Thickness cell says nothing — handing the panel '' made it
+      // read the part's thickness as 0 and wipe the one typed there.
+      thickness: _cellNow(SheetBindsTo.variation('Thickness')).trim().isEmpty
+          ? null
+          : _cellNow(SheetBindsTo.variation('Thickness')),
       onThicknessChanged: _setThickness,
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
@@ -935,6 +1003,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           : null,
       onDirtyChanged: (dirty) {
         if (mounted && dirty != _rawDirty) setState(() => _rawDirty = dirty);
+      },
+      onDraftSource: (read, alive) {
+        if (alive) {
+          _rawDraft = read;
+        } else if (identical(_rawDraft, read)) {
+          _rawDraft = null;
+        }
       },
       onSave: (saved) => unawaited(_saveRawSheet(saved)),
       onCancel: _rawEditing
@@ -946,6 +1021,52 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           : null,
     );
 
+    final strip = Container(
+      key: const ValueKey<String>('raw_panel_closed'),
+      width: 44,
+      decoration: const BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        border: Border(left: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          IconButton(
+            key: const ValueKey<String>('raw_panel_open'),
+            tooltip: 'Open the raw sheet & strips',
+            onPressed: () => setState(() => _rawPanelOpen = true),
+            icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
+          ),
+          const SizedBox(height: 8),
+          const RotatedBox(
+            quarterTurns: 1,
+            child: Text(
+              'Raw material',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final shown = _rawPanelShown;
+    // Folded — by its button, or a window under 1500 wide — while editing:
+    // the panel is kept, hidden, so folding is not a way to lose the edits.
+    // The open panel sits at the same place in the tree either way, so
+    // hiding it does not rebuild it from nothing.
+    if (!shown && !_rawEditing) return strip;
+    return Stack(
+      children: [
+        Offstage(offstage: !shown, child: _rawPanelFrame(part, panel)),
+        if (!shown) strip,
+      ],
+    );
+  }
+
+  Widget _rawPanelFrame(ItemDefinition? part, Widget panel) {
     return Container(
       key: const ValueKey<String>('raw_panel'),
       width: _rawPanelWidth,
@@ -1025,6 +1146,26 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
     if (!mounted || _livePart?.id != partId) return;
     setState(() => _route = route);
+  }
+
+  /// Writes a raw sheet left unsaved on [partId] when the cursor moved off
+  /// that part, and says so — the panel on screen is the new part's now.
+  Future<void> _saveRawSheetOn(int partId, PenPaperBaseline baseline) async {
+    if (!mounted) return;
+    final items = context.read<ItemsProvider>();
+    final part = items.findById(partId);
+    final name = part == null
+        ? 'part #$partId'
+        : (part.displayName.trim().isEmpty ? part.name : part.displayName);
+    final saved = await items.setItemPenPaperBaseline(partId, baseline);
+    if (!mounted) return;
+    _toast(
+      saved == null
+          ? 'The raw sheet for $name did not save: '
+              '${items.errorMessage ?? 'try again from that part'}.'
+          : 'Raw material saved on $name.',
+      isError: saved == null,
+    );
   }
 
   Future<void> _saveRawSheet(PenPaperBaseline baseline) async {
@@ -2116,6 +2257,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // The section card is the frame here; the die list draws its own only
       // where it stands alone, in the quick-entry dialog.
       framed: false,
+      onDirtyChanged: (dirty) {
+        if (mounted && dirty != _dieTyping) setState(() => _dieTyping = dirty);
+      },
       part: _livePart,
       partCode: _partCodeNow,
       partLabel: _partLabelNow,
@@ -2140,6 +2284,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       children: [
         PartMachineSection(
           framed: false,
+          onDirtyChanged: (dirty) {
+            if (mounted && dirty != _machineTyping) {
+              setState(() => _machineTyping = dirty);
+            }
+          },
           part: _livePart,
           partCode: _partCodeNow,
           partLabel: _partLabelNow,
@@ -2490,6 +2639,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       if (id != null) _madeHere.add(id);
       await _flushStaged();
       if (mounted && _treeDirty) await _saveTree();
+    } else if (before.entityId != null && !before.isDirtySinceSave) {
+      // A saved part with nothing of its own to write: its Save still
+      // attaches what is held for it — a die made on the last save whose link
+      // did not go through is attached here, as the toast told them to do.
+      await _flushStaged();
     }
     if (!mounted) return;
     final error = at < 0 ? null : _controller.rowError(at);
@@ -2531,6 +2685,26 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         onSaveDeal: _saveDeal,
       );
 
+  /// Cancel on the route panel. Stages laid out and not saved are asked
+  /// about first — Cancel used to drop them without a word.
+  Future<void> _cancelRoute() async {
+    if (_routeDirty) {
+      final discard = await showConfirmDialog(
+        context,
+        title: 'Discard route changes?',
+        message: 'The stages laid out here are not saved. Discarding puts the '
+            'part\'s route back as it was.',
+        confirmLabel: 'Discard',
+        destructive: true,
+      );
+      if (!mounted || discard != true) return;
+    }
+    setState(() {
+      _showRoutePanel = false;
+      _routeDirty = false;
+    });
+  }
+
   Widget _routing() {
     // The cursor row's own part — not `savedItemId`, which falls back to
     // whatever was saved last, so a new unsaved row read as saved and opened
@@ -2540,16 +2714,23 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // Rebuilt with the row's id on every frame, so a save while the panel
       // is open lands in its Part field without closing it.
       return RouteCreationPanel(
+        key: _routePanelKey,
         initialPartId: rowPartId,
         pendingPartName: rowPartId == null ? _pinnedPartName() : null,
         madeHereItemIds: _madeHere,
+        onDirtyChanged: (dirty) {
+          if (mounted && dirty != _routeDirty) setState(() => _routeDirty = dirty);
+        },
         onSaved: (record) {
-          setState(() => _showRoutePanel = false);
+          setState(() {
+            _showRoutePanel = false;
+            _routeDirty = false;
+          });
           _toast('Saved ${record.title}.');
           final id = _controller.groupItemController.draft.entityId;
           if (id != null) unawaited(_loadRoute(id));
         },
-        onCancel: () => setState(() => _showRoutePanel = false),
+        onCancel: () => unawaited(_cancelRoute()),
       );
     }
 
@@ -2698,10 +2879,17 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 child: _SummaryLine(_sectionSummary(id)),
               ),
             ),
-          if (!collapsed) ...[
-            const SizedBox(height: 12),
-            body,
-          ],
+          // Folded is hidden, not thrown away: a route being laid out, a die
+          // half typed, a raw sheet being edited all live in the body, and
+          // building it only when open disposed them on every fold.
+          Visibility(
+            visible: !collapsed,
+            maintainState: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [const SizedBox(height: 12), body],
+            ),
+          ),
         ],
       ),
     );

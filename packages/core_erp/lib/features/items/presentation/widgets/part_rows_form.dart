@@ -378,11 +378,14 @@ class _PartFieldState extends State<_PartField> {
     final value = _value;
     final label = _shown;
     final isNew = value?.isNew ?? false;
+    // A property can be taken off the part: × empties the box, and the save
+    // takes the value off. Group, Type and the name are not optional.
+    final clearable = _isProperty && !_locked && label.isNotEmpty;
     return FitToText(
       controller: _text,
       texts: [_column.label, 'Select…'],
       minWidth: 150,
-      chrome: isNew ? 96 : 56,
+      chrome: (isNew ? 96 : 56) + (clearable ? 32 : 0),
       child: Builder(
         builder: (anchor) => Focus(
           focusNode: _focus,
@@ -434,6 +437,27 @@ class _PartFieldState extends State<_PartField> {
                               ),
                       ),
                     ),
+                    if (clearable)
+                      Tooltip(
+                        message: 'Clear ${_column.label}',
+                        child: InkWell(
+                          key: ValueKey<String>(
+                            'property_clear_${_column.id}_${widget.row}',
+                          ),
+                          borderRadius:
+                              BorderRadius.circular(SoftErpTheme.radiusXs),
+                          onTap: () =>
+                              _sheet.clearCell(_column.id, row: widget.row),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: SoftErpTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
                     if (isNew) ...[
                       const SizedBox(width: 6),
                       Container(

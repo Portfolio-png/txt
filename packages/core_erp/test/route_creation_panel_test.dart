@@ -105,6 +105,8 @@ Future<void> _pump(
   Set<int> madeHere = const <int>{},
   ValueChanged<CreatedRecord>? onSaved,
   VoidCallback? onCancel,
+  ValueChanged<bool>? onDirtyChanged,
+  GlobalKey<RouteCreationPanelState>? panelKey,
 }) async {
   tester.view.physicalSize = const Size(1200, 1600);
   tester.view.devicePixelRatio = 1.0;
@@ -122,6 +124,8 @@ Future<void> _pump(
         home: Scaffold(
           body: SingleChildScrollView(
             child: RouteCreationPanel(
+              key: panelKey,
+              onDirtyChanged: onDirtyChanged,
               initialPartId: initialPartId,
               madeHereItemIds: madeHere,
               onSaved: onSaved ?? (_) {},
@@ -395,6 +399,33 @@ void main() {
       await _pump(tester, items: [_item(1, 'Patti')]);
       expect(find.text('Routing is not available in this build.'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('stages laid out and not saved are reported, and save() writes them',
+        (tester) async {
+      final service = _SpyRouteService();
+      final reports = <bool>[];
+      final key = GlobalKey<RouteCreationPanelState>();
+      await _pump(
+        tester,
+        items: [_item(1, 'Patti')],
+        service: service,
+        initialPartId: 1,
+        onDirtyChanged: reports.add,
+        panelKey: key,
+      );
+      expect(key.currentState!.isDirty, isFalse);
+
+      await _addStep(tester);
+      expect(key.currentState!.isDirty, isTrue);
+      expect(reports.last, isTrue, reason: 'the host is told, so it can warn');
+
+      await tester.runAsync(() async {
+        expect(await key.currentState!.save(), isTrue);
+      });
+      await tester.pumpAndSettle();
+      expect(key.currentState!.isDirty, isFalse);
+      expect(reports.last, isFalse);
     });
 
     testWidgets('Cancel hands back to the host rather than popping', (tester) async {

@@ -761,6 +761,49 @@ test('an item created without an identity is stamped with the next one', async (
   }
 });
 
+test('a code typed without a number keeps the code and is given the next number', async () => {
+  const ctx = await boot('paper-part-code-only-', 'part-code-only@paper.local');
+  try {
+    const items = await fetch(`${ctx.baseUrl}/api/items`, {
+      headers: ctx.headers,
+    }).then((r) => r.json());
+    const sample = items.items[0];
+
+    const created = await fetch(`${ctx.baseUrl}/api/items`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({
+        name: 'Coded Lid',
+        displayName: 'Coded Lid',
+        groupId: sample.groupId,
+        unitId: sample.unitId,
+        partCode: 'lid-x',
+      }),
+    }).then((r) => r.json());
+
+    assert.equal(created.item.partCode, 'LID-X', 'the typed code is kept, upper-cased');
+    assert.ok(created.item.partNo >= 1, 'a number was still issued');
+
+    // On an update, a code alone leaves the number where it is.
+    const updated = await fetch(`${ctx.baseUrl}/api/items/${created.item.id}`, {
+      method: 'PATCH',
+      headers: ctx.headers,
+      body: JSON.stringify({
+        name: 'Coded Lid',
+        displayName: 'Coded Lid',
+        groupId: sample.groupId,
+        unitId: sample.unitId,
+        partCode: 'LID-Y',
+      }),
+    }).then((r) => r.json());
+    assert.equal(updated.item.partCode, 'LID-Y');
+    assert.equal(updated.item.partNo, created.item.partNo);
+  } finally {
+    await closeServer(ctx.server);
+    await ctx.backend.closeDb();
+  }
+});
+
 test('a variant code is the trunk, the value codes, then the number', () => {
   const { buildVariantPartCode, valueCodeFor } = require('../modules/items/part-identity');
 

@@ -705,6 +705,19 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Empties [columnId] on purpose. The cell is left in the row as an empty
+  /// value rather than taken out of it, so a save can tell "the user cleared
+  /// this" from "this was never filled" — a property cleared on a saved part
+  /// comes off the part; one the row never loaded is left alone.
+  void clearCell(int columnId, {int? row}) {
+    if (_sheetDef.getColumn(columnId) == null) return;
+    final target = _draftFor(row);
+    target.set(columnId, CellValue(columnId: columnId));
+    SheetEngine.cascade(_sheetDef, target, columnId, _options);
+    _deriveAndValidate();
+    notifyListeners();
+  }
+
   /// Asked before an existing option is set, with the row, the column and the
   /// option. Answering true means the host took the pick over — the Part Name
   /// of a part that already exists loads that part rather than naming a new

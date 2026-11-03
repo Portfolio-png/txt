@@ -366,9 +366,10 @@ void main() {
       expect(groupRepo.created, isEmpty);
     });
 
-    test('part no and part code go together, or neither does', () async {
-      // The server auto-stamps only when NEITHER arrives. Sending one turns
-      // the stamp off and leaves the part half-named.
+    test('a typed code is sent alone; a number alone is not', () async {
+      // A code typed without a number is the user's code — the server keeps
+      // it and stamps the number. A number alone would leave the part with
+      // no code at all, so nothing is said and the server stamps both.
       final h = _harness();
       final groups = GroupsProvider(repository: h.groupRepo);
       await groups.refresh();
@@ -391,7 +392,10 @@ void main() {
       expect(created[0].partNo, 48);
       expect(created[0].partCode, 'SADP48');
 
-      for (final partial in [created[1], created[2], created[3]]) {
+      expect(created[2].partCode, 'SADP50', reason: 'the typed code was dropped');
+      expect(created[2].partNo, isNull, reason: 'the server stamps the number');
+
+      for (final partial in [created[1], created[3]]) {
         expect(partial.partNo, isNull);
         expect(
           partial.partCode,

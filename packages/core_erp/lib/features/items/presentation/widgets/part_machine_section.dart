@@ -52,7 +52,12 @@ class PartMachineSection extends StatefulWidget {
     required this.onUnstage,
     required this.onMachinesChanged,
     this.framed = true,
+    this.onDirtyChanged,
   });
+
+  /// Told when the sheet starts or stops holding a machine that is typed but
+  /// not held or saved — so the host can warn before leaving with it.
+  final ValueChanged<bool>? onDirtyChanged;
 
   /// Whether the section draws its own card. Off where a host already frames
   /// it — the item sheet's section card — so it is not a card inside a card.
@@ -123,9 +128,41 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// it instead of making a second one.
   String? _unlinkedMachineId;
 
+  /// What the host was last told.
+  bool _reportedDirty = false;
+
+  /// A machine typed and not held or saved: a measured field filled, or one
+  /// open for correcting, or one made and not yet linked. What repeats down
+  /// the sheet (type, maker, dates…) stays after each save on purpose, so it
+  /// alone is not unsaved work.
+  bool get isDirty =>
+      _nameController.text.trim().isNotEmpty ||
+      _yearController.text.trim().isNotEmpty ||
+      _hoursController.text.trim().isNotEmpty ||
+      _strokesController.text.trim().isNotEmpty ||
+      _capacityController.text.trim().isNotEmpty ||
+      _editingMachineId != null ||
+      _editingStagedIndex != null ||
+      _unlinkedMachineId != null;
+
+  void _reportDirty() {
+    final report = widget.onDirtyChanged;
+    final dirty = isDirty;
+    if (report == null || dirty == _reportedDirty) return;
+    _reportedDirty = dirty;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) report(dirty);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _nameController.addListener(_reportDirty);
+    _yearController.addListener(_reportDirty);
+    _hoursController.addListener(_reportDirty);
+    _strokesController.addListener(_reportDirty);
+    _capacityController.addListener(_reportDirty);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSuggestions());
   }
 
@@ -134,6 +171,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.part?.id != widget.part?.id) {
       _corrected.clear();
+      // The part being typed was just saved: what is typed here is for it, so
+      // it stays. Only moving to another part clears the sheet.
+      if (oldWidget.part == null && isDirty) {
+        _rederiveNo();
+        return;
+      }
       _resetSheet();
       return;
     }
@@ -559,6 +602,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
 
   @override
   Widget build(BuildContext context) {
+    _reportDirty();
     final part = widget.part;
     // Open with no part: everything Add does is held until the part is made.
     final enabled = !widget.busy && !_saving;

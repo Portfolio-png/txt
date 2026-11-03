@@ -35,6 +35,7 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     this.partySheet,
     this.dealDraft,
     this.dealContactIds,
+    this.dealCleared,
     this.peopleSheet,
   });
 
@@ -71,6 +72,10 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// people table has actually loaded for the chosen company, or a save would
   /// clear ticks it never showed.
   final List<int>? Function()? dealContactIds;
+
+  /// True when the part was switched to Self on screen — the outside party
+  /// is to come OFF the stored part, not merely be left unsaid.
+  final bool Function()? dealCleared;
 
   /// The people table: one row per person at the deal's company.
   final SheetDef? peopleSheet;
@@ -126,8 +131,8 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       return null;
     }
 
-    final identity = _partIdentity(row);
     final existing = row.entityId == null ? null : _liveItem(row.entityId!);
+    final identity = _partIdentity(row, existing);
     if (row.entityId != null && existing == null) {
       _lastError =
           'That part is no longer in the catalogue, so the edit '
@@ -156,12 +161,10 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
               unitId: unitId,
               variationTree: _variationTree(row),
               developedFor: _developedFor(),
-              // Both keys or neither: the server auto-stamps a part code only
-              // when NEITHER arrives, so sending one turns the stamp off and
-              // leaves the part half-named. `CreateItemInput` has no
-              // `partIdentitySpecified`.
-              partNo: identity?.$1,
-              partCode: identity?.$2,
+              // Only what was typed. With neither the server stamps both; with
+              // a code alone it keeps the code and stamps the number.
+              partNo: identity?.no,
+              partCode: identity?.code,
             ),
           )
         : await items.updateItem(
@@ -220,10 +223,16 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// item editor), every second value of a property, and every node id —
   /// orphaning whatever pointed at them. So only the first value of a
   /// property the sheet shows is touched; everything else goes back as it was.
+  ///
+  /// A shown property comes off the part only when it is in [cleared] — its
+  /// cell is in the row and empty, which is a value the user took away. A
+  /// property the row holds no cell for was never loaded into it, and blank
+  /// recipe columns are not "this part has no variations", so it is kept.
   List<ItemVariationNodeInput> _mergeTree(
     List<ItemVariationNodeDefinition> stored,
-    List<ItemVariationNodeInput> fromSheet,
-  ) {
+    List<ItemVariationNodeInput> fromSheet, {
+    Set<String> cleared = const {},
+  }) {
     final shown = <String>{
       for (final column in _sheet.columns)
         if (SheetBindsTo.isVariation(column.bindsTo))
@@ -245,8 +254,12 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       }
       placed.add(key);
       final incoming = typed[key];
-      // Shown, and the cell is blank: the value was cleared on the sheet.
-      if (incoming == null) continue;
+      if (incoming == null) {
+        // Shown and cleared on the sheet: it comes off. Shown but never in
+        // the row: what is stored goes back as it was.
+        if (!cleared.contains(key)) out.addAll(_treeToInputs([node]));
+        continue;
+      }
 
       final value = incoming.children.isEmpty ? null : incoming.children.first;
       final kept = _treeToInputs(node.children);
@@ -256,8 +269,17 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
             (child) => _normalize(child.name) == _normalize(value.name),
           );
       List<ItemVariationNodeInput> children;
-      if (value == null || alreadyThere) {
+      if (value == null) {
         children = kept;
+      } else if (alreadyThere) {
+        // One of the part's other values was picked: it becomes the first —
+        // the one the cell shows — with every value and id kept.
+        final picked = kept.indexWhere(
+          (child) => _normalize(child.name) == _normalize(value.name),
+        );
+        children = picked <= 0
+            ? kept
+            : [kept[picked], ...kept.take(picked), ...kept.skip(picked + 1)];
       } else if (kept.isEmpty) {
         children = [value];
       } else {
@@ -331,17 +353,16 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// identity, the variation tree and the development deal; everything else is
   /// read off the live record and handed straight back.
   ///
-  /// `partIdentitySpecified` exists on update and not on create. It must be
-  /// true only when both keys are being sent, otherwise a typed code would be
-  /// silently dropped — and false when neither is, so the server keeps the
-  /// stamp it already made rather than clearing it.
+  /// `partIdentitySpecified` exists on update and not on create. True writes
+  /// both halves as given (null and '' clear); false sends only the halves
+  /// that are non-null, and the server keeps the rest.
   UpdateItemInput _updateFor({
     required ItemDefinition existing,
     required String name,
     required int groupId,
     required int unitId,
     required SheetDraft row,
-    required (int?, String?)? identity,
+    required ({int? no, String? code, bool both})? identity,
   }) {
     final tree = _variationTree(row);
     final deal = _developedFor(existing: existing);
@@ -369,9 +390,11 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       namingFormat: existing.namingFormat,
       // An empty tree means the sheet's recipe columns were all blank, which
       // is not the same as "this part has no variations" — keep what is there.
-      variationTree: tree.isEmpty
-          ? _treeToInputs(existing.variationTree)
-          : _mergeTree(existing.variationTree, tree),
+      variationTree: _mergeTree(
+        existing.variationTree,
+        tree,
+        cleared: _clearedProperties(row),
+      ),
       defaultPipelineId: existing.defaultPipelineId,
       baseItemId: existing.baseItemId,
       photoUrl: existing.photoUrl,
@@ -389,9 +412,9 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       penPaperBaseline: existing.penPaperBaseline,
       blankWidthMm: existing.blankWidthMm,
       blankHeightMm: existing.blankHeightMm,
-      partNo: identity?.$1,
-      partCode: identity?.$2,
-      partIdentitySpecified: identity != null,
+      partNo: identity?.no,
+      partCode: identity?.code,
+      partIdentitySpecified: identity?.both ?? false,
       developedFor: deal ?? existing.developedFor,
       // A full replace drops anything it does not carry, and these three are
       // not the sheet's to drop: a part's linked machines and dies live on the
@@ -689,7 +712,15 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       return (value?.textValue ?? value?.optionLabel ?? '').trim();
     }
 
-    final person = PartyContact(
+    final stored = row.entityId == null
+        ? null
+        : _client(partyId)?.contacts.where((c) => c.id == row.entityId).firstOrNull;
+    // Built on the stored person, so what the sheet does not show (their
+    // notes) is sent back as it is — an update writes every key it is given,
+    // and a fresh PartyContact would send notes as '' and wipe them.
+    final person = (stored ??
+            PartyContact(id: row.entityId, partyId: partyId, name: ''))
+        .copyWith(
       id: row.entityId,
       partyId: partyId,
       name: text(SheetBindsTo.personName),
@@ -705,9 +736,6 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     // A row whose only change is the tick is not a change to the person, and
     // the PATCH would be traffic with nothing in it.
     if (person.id != null) {
-      final stored = _client(
-        partyId,
-      )?.contacts.where((c) => c.id == person.id).firstOrNull;
       if (stored != null &&
           stored.name == person.name &&
           stored.designation == person.designation &&
@@ -809,8 +837,18 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
 
   // --- identity -------------------------------------------------------------
 
-  /// `(partNo, partCode)` when BOTH are filled, else null so the server stamps.
-  (int?, String?)? _partIdentity(SheetDraft row) {
+  /// What the user TYPED of the part's identity, or null when they typed
+  /// neither (the server stamps, or keeps what it stamped).
+  ///
+  /// Each half travels only if its own cell was edited: a code typed alone is
+  /// sent alone (the server keeps the number, or stamps one on a create), and
+  /// a cleared cell is sent cleared. `both` asks for the explicit form, where
+  /// a null number and an empty code are written — needed to clear a number,
+  /// so the stored code goes with it untouched.
+  ({int? no, String? code, bool both})? _partIdentity(
+    SheetDraft row,
+    ItemDefinition? existing,
+  ) {
     // Only what the user TYPED. The sheet derives a running number and a code
     // into these cells as soon as a group is picked, and sending that
     // suppressed the server's stamp on every row — handing it a guess instead.
@@ -827,14 +865,27 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     // preview; only an edited one is a commitment.
     final noCell = _cell(row, SheetBindsTo.partNo);
     final codeCell = _cell(row, SheetBindsTo.partCode);
-    final typed =
-        noCell?.mode == ValueMode.edit || codeCell?.mode == ValueMode.edit;
-    if (!typed) return null;
+    final noTyped = noCell?.mode == ValueMode.edit;
+    final codeTyped = codeCell?.mode == ValueMode.edit;
+    if (!noTyped && !codeTyped) return null;
 
-    final no = noCell?.intValue;
-    final code = (codeCell?.textValue ?? '').trim();
-    if (no == null || code.isEmpty) return null;
-    return (no, code);
+    final no = noTyped ? noCell?.intValue : null;
+    final code = codeTyped ? (codeCell?.textValue ?? '').trim() : null;
+    if (existing == null) {
+      // A create. A code is sent with or without its number — the server
+      // stamps the number a code arrives without. A number alone is not: the
+      // server would then build no code, and the part could not be looked up.
+      final sayCode = (code ?? '').isEmpty ? null : code;
+      if (sayCode == null) return null;
+      return (no: no, code: sayCode, both: false);
+    }
+    if (noTyped && codeTyped) return (no: no, code: code, both: true);
+    if (codeTyped) return (no: null, code: code, both: false);
+    // The number alone. A cleared one can only be written in the explicit
+    // form, which carries the code — the stored one, unchanged.
+    return no == null
+        ? (no: null, code: existing.partCode, both: true)
+        : (no: no, code: null, both: false);
   }
 
   /// The group this row's part belongs to: the Type when there is one, else the
@@ -952,6 +1003,16 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// "Thickness" in its Thickness cell and the typed gauge was gone. It also
   /// put the value out of reach of the part code, which is built from the
   /// property values.
+  /// The shown properties whose cell is in [row] and empty — cleared by the
+  /// user, as opposed to never filled.
+  Set<String> _clearedProperties(SheetDraft row) => {
+        for (final column in _sheet.columns)
+          if (SheetBindsTo.isVariation(column.bindsTo) &&
+              row.get(column.id) != null &&
+              _label(row, column.bindsTo!).isEmpty)
+            _normalize(SheetBindsTo.variationProperty(column.bindsTo!)),
+      };
+
   List<ItemVariationNodeInput> _variationTree(SheetDraft row) {
     final out = <ItemVariationNodeInput>[];
     for (final column in _sheet.columns) {
@@ -1016,7 +1077,26 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// cost column and no contractor, so a block made from the cells alone
   /// cleared the cost, turned a contractor deal into a client one, and moved
   /// the deal date to whenever any field on the part was last edited.
+  ///
+  /// Three answers: null says nothing (the server keeps the stored deal), a
+  /// block is written, and a cleared one takes the deal off. Switching the
+  /// part to Self writes Self; emptying the company and the quotation of a
+  /// part that had them writes an empty deal. Both used to answer null, so
+  /// the save said "saved" and the company stayed on the part.
   DevelopedFor? _developedFor({ItemDefinition? existing}) {
+    final prior = existing?.developedFor;
+    // What the sheet can show of a stored deal. A contractor's deal with no
+    // company is not on screen, so the sheet cannot have cleared it.
+    final priorShown = prior != null &&
+        (prior.clientId != null ||
+            prior.quotationAmount != null ||
+            prior.kind == DevelopedForKind.client);
+    if (dealCleared?.call() == true) {
+      return existing == null || !priorShown
+          ? null
+          : DevelopedFor(kind: DevelopedForKind.self, at: DateTime.now());
+    }
+
     final sheet = partySheet;
     final draft = dealDraft?.call();
     if (sheet == null || draft == null) return null;
@@ -1036,9 +1116,10 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
           cost = _money(value.textValue, value.intValue);
       }
     }
-    if (clientId == null && quotation == null && cost == null) return null;
+    if (clientId == null && quotation == null && cost == null) {
+      return priorShown ? DevelopedFor.empty : null;
+    }
 
-    final prior = existing?.developedFor;
     final contractor =
         prior != null &&
         prior.kind == DevelopedForKind.contractor &&

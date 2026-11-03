@@ -97,6 +97,9 @@ class ItemMasterController extends ChangeNotifier {
 
   void setExternal(bool value) {
     _isExternal = value;
+    // Self on a part saved with an outside party takes the party off it at
+    // the next save. A part with none, or a new one, has nothing to clear.
+    _dealCleared = !value && _storedDealOnScreen;
     _statusBarMessage = value
         ? 'Client / Vendor section enabled for external party part.'
         : 'Part set to Self. Client / Vendor draft preserved in memory.';
@@ -408,7 +411,23 @@ class ItemMasterController extends ChangeNotifier {
   void _claimDeal(SheetDraft draft) {
     _dealRowKey = draft.rowKey;
     _dealPartId = draft.entityId;
+    _dealCleared = false;
   }
+
+  /// Switched to Self on a part saved with an outside party, not saved since.
+  bool _dealCleared = false;
+
+  /// Whether the part the deal belongs to was saved with an outside party.
+  bool get _storedDealOnScreen {
+    final writer = binding;
+    final id = _dealPartId;
+    if (writer == null || id == null) return false;
+    final entity = writer.entityById(id);
+    return entity != null && writer.dealOf(entity) != null;
+  }
+
+  /// Whether this save is to take the outside party off the part.
+  bool dealClearedForSave() => _dealCleared && _dealRidesOnThisSave;
 
   /// Puts the cursor row's part's deal on screen when the cursor has moved to
   /// another part. A deal typed and not yet saved is never dropped or carried
@@ -879,8 +898,9 @@ class ItemMasterController extends ChangeNotifier {
   /// Whether the deal or its people changed since the last full save — in
   /// which case parts already written need writing again to carry it.
   bool get _dealDirty =>
-      _isExternal &&
-      (clientVendorController.draft.isDirtySinceSave || _peopleDirty);
+      _dealCleared ||
+      (_isExternal &&
+          (clientVendorController.draft.isDirtySinceSave || _peopleDirty));
 
   /// Writes every typed or changed person to the company. True when nothing
   /// is left unsaved.
@@ -1183,7 +1203,10 @@ class ItemMasterController extends ChangeNotifier {
       // The deal is this part's now, and written — unless it was typed into
       // again while the save ran.
       _dealPartId = id ?? _dealPartId;
-      if (dealSent) clientVendorController.draft.markClean();
+      if (dealSent) {
+        clientVendorController.draft.markClean();
+        _dealCleared = false;
+      }
     }
     if (id != null && at >= 0) {
       groupItemController.markRowSaved(

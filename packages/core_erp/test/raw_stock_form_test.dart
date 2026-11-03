@@ -119,6 +119,23 @@ void main() {
       expect(back.forms.containsKey(RawForm.strip), isFalse);
     });
 
+    test('a form holding only scrap, rejection, loss, sheets in or a note is kept', () {
+      const blank = PenPaperStageReconciliation.empty;
+      for (final (what, reconciliation) in [
+        ('scrap', blank.copyWith(scrapKg: 1.5)),
+        ('rejection', blank.copyWith(rejectionPercent: 2)),
+        ('loss', blank.copyWith(weightLossKg: 0.4)),
+        ('sheets in', blank.copyWith(inputSheets: 3)),
+        ('a note', blank.copyWith(notes: 'edge rusted')),
+      ]) {
+        final plan = const PenPaperBaseline()
+            .withForm(RawForm.coil, RawStockForm(reconciliation: reconciliation));
+        final back = PenPaperBaseline.fromJson(plan.toJson());
+        expect(back.forms.containsKey(RawForm.coil), isTrue,
+            reason: 'a coil with only $what typed must survive the save');
+      }
+    });
+
     test('the sheet-wide pitch an older plan kept becomes a band’s own', () {
       final back = PenPaperBaseline.fromJson(const {
         'kerfMm': 3.0,

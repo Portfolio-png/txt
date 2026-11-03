@@ -188,7 +188,13 @@ ClientDefinition _goldMedal() => ClientDefinition(
           designation: 'Director',
           isPrimary: true,
         ),
-        PartyContact(id: 12, partyId: 5, name: 'Ravi Shah', designation: 'Purchase'),
+        PartyContact(
+          id: 12,
+          partyId: 5,
+          name: 'Ravi Shah',
+          designation: 'Purchase',
+          notes: 'Calls back after 4',
+        ),
         PartyContact(id: 13, partyId: 5, name: 'Old Hand', isArchived: true),
       ],
     );
@@ -308,6 +314,7 @@ void main() {
         partySheet: _dealSheet,
         dealDraft: () => made.dealDraftForSave(),
         dealContactIds: () => made.dealContactIdsForSave(),
+        dealCleared: () => made.dealClearedForSave(),
         peopleSheet: _peopleSheet,
       );
       made = ItemMasterController.live(binding: binding);
@@ -578,6 +585,8 @@ void main() {
       await controller.commitAllRows();
       expect(clientsRepo.changed.single.id, 12);
       expect(clientsRepo.changed.single.phone, '9820012345');
+      expect(clientsRepo.changed.single.notes, 'Calls back after 4',
+          reason: 'the sheet does not show notes, so it must send them back as stored');
       expect(itemsRepo.created.single.developedFor!.contactIds, isEmpty);
     });
 
@@ -615,6 +624,58 @@ void main() {
       expect(controller.dealPartyId, 5);
       expect(controller.clientVendorController.draft.get(25)?.intValue, 85000);
       expect(controller.dealContactIdsForSave(), [12]);
+    });
+
+    DevelopedFor goldDeal() => const DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+          contactIds: [12],
+          quotationAmount: 85000,
+        );
+
+    test('switching a saved part to Self takes the company off it', () async {
+      final saved = _item(id: 500, name: 'Patti', groupId: 11, developedFor: goldDeal());
+      await open(existing: [saved]);
+      controller.loadItems(<ItemDefinition>[saved]);
+
+      controller.setExternal(false);
+      expect(controller.hasUnsavedWork, isTrue,
+          reason: 'Self used to change nothing that a save would write');
+      await controller.commitAllRows();
+
+      final sent = itemsRepo.updated.single.developedFor!;
+      expect(sent.kind, DevelopedForKind.self);
+      expect(sent.clientId, isNull);
+      expect(sent.quotationAmount, isNull);
+      expect(controller.hasUnsavedWork, isFalse);
+    });
+
+    test('emptying the company is refused out loud — Self is how a deal comes off', () async {
+      final saved = _item(id: 500, name: 'Patti', groupId: 11, developedFor: goldDeal());
+      await open(existing: [saved]);
+      controller.loadItems(<ItemDefinition>[saved]);
+
+      final deal = controller.clientVendorController;
+      deal.clearCell(20);
+      deal.updateTextValue(25, '');
+      await controller.commitAllRows();
+      expect(itemsRepo.updated, isEmpty);
+      expect(controller.rowError(0), contains('Company Name is required'),
+          reason: 'not a "saved" that kept the company');
+
+      controller.setExternal(false);
+      await controller.commitAllRows();
+      expect(itemsRepo.updated.single.developedFor!.clientId, isNull);
+    });
+
+    test('Self on a part that never had a company says nothing', () async {
+      final saved = _item(id: 500, name: 'Patti', groupId: 11);
+      await open(existing: [saved]);
+      controller.loadItems(<ItemDefinition>[saved]);
+      controller.setExternal(true);
+      controller.setExternal(false);
+      expect(controller.hasUnsavedWork, isFalse);
     });
 
     test('the deal is each part\'s, and follows the selected row', () async {

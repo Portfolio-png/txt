@@ -55,7 +55,12 @@ class PartDieSection extends StatefulWidget {
     required this.onDiesChanged,
     this.framed = true,
     this.heldSaveBuilder,
+    this.onDirtyChanged,
   });
+
+  /// Told when the sheet starts or stops holding a die that is typed but not
+  /// held or saved — so the host can warn before leaving with it.
+  final ValueChanged<bool>? onDirtyChanged;
 
   /// The host's Save for a held die's row — the part row's own Save part,
   /// since a held die is written only with its part. Null (the quick-entry
@@ -147,9 +152,35 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// instead of making a second one.
   String? _unlinkedDieId;
 
+  /// What the host was last told.
+  bool _reportedDirty = false;
+
+  /// A die typed and not held or saved: a measured field filled, or one
+  /// open for correcting, or one made and not yet linked. What repeats down
+  /// the sheet (type, maker, dates…) stays after each save on purpose, so it
+  /// alone is not unsaved work.
+  bool get isDirty =>
+      _linerController.text.trim().isNotEmpty ||
+      _setsController.text.trim().isNotEmpty ||
+      _editingDieId != null ||
+      _editingStagedIndex != null ||
+      _unlinkedDieId != null;
+
+  void _reportDirty() {
+    final report = widget.onDirtyChanged;
+    final dirty = isDirty;
+    if (report == null || dirty == _reportedDirty) return;
+    _reportedDirty = dirty;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) report(dirty);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _linerController.addListener(_reportDirty);
+    _setsController.addListener(_reportDirty);
 
     // The master is lazy and nothing else on this screen fetches it, so an
     // unfetched picker would be indistinguishable from a shop with no die
@@ -179,6 +210,12 @@ class _PartDieSectionState extends State<PartDieSection> {
     // belonged to the part being left behind.
     if (oldWidget.part?.id != widget.part?.id) {
       _corrected.clear();
+      // The part being typed was just saved: what is typed here is for it, so
+      // it stays. Only moving to another part clears the sheet.
+      if (oldWidget.part == null && isDirty) {
+        _rederiveCode();
+        return;
+      }
       _resetSheet();
       return;
     }
@@ -647,6 +684,7 @@ class _PartDieSectionState extends State<PartDieSection> {
 
   @override
   Widget build(BuildContext context) {
+    _reportDirty();
     final part = widget.part;
     // Open with no part: everything Add does is held until the part is made.
     final enabled = !widget.busy && !_saving;
