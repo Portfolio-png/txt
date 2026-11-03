@@ -206,7 +206,14 @@ void main() {
       await pickInCell(tester, column: 1, label: 'Primary Group');
       await typeNewInCell(tester, column: 3, value: _part);
       await _pickCell(tester, column: 6, label: 'MS');
-      await _pickCell(tester, column: 7, label: '23 Gauge');
+      // Thickness is typed: a number on its own is a gauge.
+      final thickness = find.descendant(
+        of: find.byKey(const ValueKey<String>('cell_item_0_7')),
+        matching: find.byType(TextField),
+      );
+      await tester.ensureVisible(thickness);
+      await tester.enterText(thickness, '23');
+      await tester.pump(const Duration(milliseconds: 200));
     });
 
     // --- who it was developed for ---------------------------------------------
@@ -407,7 +414,22 @@ void main() {
           pumpUntil(tester, finder, timeout: const Duration(seconds: 20), reason: '$what should be retained');
       await stillThere(find.text(_part), 'the part name');
       await stillThere(find.text('MS'), 'the alloy');
-      await stillThere(find.text('23 Gauge'), 'the thickness');
+      await stillThere(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('cell_item_0_7')),
+          matching: find.byWidgetPredicate(
+            (w) => w is TextField && w.controller?.text == '23',
+          ),
+        ),
+        'the thickness, as its number',
+      );
+      await stillThere(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('thickness_unit_0')),
+          matching: find.text('Gauge'),
+        ),
+        'the thickness unit, gauge',
+      );
       await stillThere(find.text(_company), 'the company');
       await stillThere(find.textContaining(_person), 'the person');
       await stillThere(_keyed('quick-entry-die-row-'), 'the die');

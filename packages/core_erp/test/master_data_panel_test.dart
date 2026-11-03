@@ -12,6 +12,7 @@ import 'package:core_erp/features/vendors/domain/vendor_definition.dart';
 import 'package:core_erp/features/vendors/domain/vendor_inputs.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -355,6 +356,28 @@ void main() {
     expect(saved!.isGranular, isTrue);
     expect(saved!.sheetWidthInches, 48);
     expect(saved!.bands, isNotEmpty, reason: 'used to be wiped to defaults');
+  });
+
+  testWidgets('Next beside Edit walks the steps: planning, material, review', (
+    tester,
+  ) async {
+    await mount(tester, baseline: following, readOnly: true, onEdit: () {});
+    final next = find.byKey(const ValueKey<String>('master-data-next'));
+    expect(next, findsOneWidget);
+    expect(find.text('THE SHEET'), findsOneWidget);
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(find.text('WHAT IT PRODUCED'), findsOneWidget);
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(find.text('AS IT WILL BE RECORDED'), findsOneWidget);
+
+    // The last step: drawn off, saying why, not hidden.
+    final button = tester.widget<AppButton>(next);
+    expect(button.onPressed, isNull);
+    expect(find.byTooltip('Review is the last step'), findsOneWidget);
   });
 
   testWidgets('read only, the footer offers Edit and the notes are shut', (

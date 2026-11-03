@@ -5,6 +5,9 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/utils/typed_character.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/fit_to_text.dart';
+import '../../../../core/widgets/searchable_select.dart';
+import '../../../production_pipelines/domain/thickness_label.dart';
+import '../../../units/domain/global_length_units.dart';
 import '../../../../sheet/sheet.dart';
 
 /// The parts on the item sheet, one line each — drawn the way a person is
@@ -307,7 +310,7 @@ class _PartFieldState extends State<_PartField> {
   @override
   void initState() {
     super.initState();
-    _text.text = _shown;
+    _text.text = _isThickness ? _thicknessNumber : _shown;
     _focus.addListener(() {
       if (_focus.hasFocus) {
         _hadFocus = true;
@@ -326,7 +329,12 @@ class _PartFieldState extends State<_PartField> {
     // person is typing in it.
     // A dropdown box is never typed into, so it follows even with focus — a
     // focused Part Name kept its old width and cut the name it now shows.
-    if ((_isList || !_focus.hasFocus) && _text.text != _shown) {
+    if (_isThickness) {
+      // The number follows the cell unless it is being typed.
+      if (!_focus.hasFocus && _text.text != _thicknessNumber) {
+        _text.text = _thicknessNumber;
+      }
+    } else if ((_isList || !_focus.hasFocus) && _text.text != _shown) {
       _text.text = _shown;
     }
     // Focus arrives with the cursor (Add part puts it on the new Group), but
@@ -367,6 +375,7 @@ class _PartFieldState extends State<_PartField> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isThickness) return _thicknessField();
     if (_isList) return _optionField();
     final derived = _isDerived;
     final mode = _value?.mode ?? ValueMode.auto;
@@ -412,6 +421,132 @@ class _PartFieldState extends State<_PartField> {
 
   /// A property — Alloy, Thickness, one added with Add property.
   bool get _isProperty => SheetBindsTo.isVariation(_column.bindsTo);
+
+  // --- Thickness: a number and its unit ---------------------------------------
+
+  /// A gauge column: typed as a number with a unit beside it, not picked from
+  /// the gauge table. A number on its own is a gauge.
+  bool get _isThickness => _column.kind == ColumnKind.gauge;
+
+  /// The unit chosen while the cell is still empty — gauge until changed.
+  String _pendingUnit = 'ga';
+
+  /// The units a thickness is given in: gauge first, the default.
+  static final List<GlobalLengthUnit> _thicknessUnits = [
+    ...globalLengthUnits.where((unit) => unit.isGauge),
+    ...globalLengthUnits.where((unit) => !unit.isGauge),
+  ];
+
+  ThicknessReading? get _thicknessReading => readThickness(_shown);
+
+  /// The cell's number, as typed: "23" for "23 Gauge", "1.2" for "1.2 mm".
+  String get _thicknessNumber {
+    final reading = _thicknessReading;
+    if (reading == null) return _shown;
+    final value = reading.value;
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value
+              .toStringAsFixed(4)
+              .replaceFirst(RegExp(r'0+$'), '')
+              .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  /// The cell's unit, or the one chosen for it before a number was typed.
+  String get _thicknessUnit => _thicknessReading?.unit.symbol ?? _pendingUnit;
+
+  /// Writes number + unit into the cell the way the raw panel does
+  /// ("23 Gauge", "1.2 mm") — a gauge that is in the table is that option.
+  void _writeThickness(String number, String unitSymbol) {
+    final text = number.trim();
+    if (text.isEmpty) {
+      _sheet.clearCell(_column.id, row: widget.row);
+      return;
+    }
+    final value = double.tryParse(text);
+    final label = value == null
+        ? text
+        : writeThickness(value, lengthUnitBySymbol(unitSymbol));
+    final wanted = label.toLowerCase();
+    final option = _sheet.options
+        .where((o) => o.columnId == _column.id && o.label.toLowerCase() == wanted)
+        .firstOrNull;
+    if (option != null) {
+      _sheet.setOption(_column.id, option, row: widget.row);
+    } else {
+      _sheet.updateValue(
+        _column.id,
+        CellValue(columnId: _column.id, optionLabel: label),
+        row: widget.row,
+      );
+    }
+  }
+
+  Widget _thicknessField() {
+    final unit = _thicknessUnit;
+    return SheetStyle.labelled(
+      label: _column.label,
+      actions: [
+        SheetStep.noTab(
+          _PropertyActions(sheet: _sheet, column: _column, row: widget.row),
+        ),
+      ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FitToText(
+            controller: _text,
+            texts: const ['000'],
+            minWidth: 90,
+            chrome: 24,
+            child: TextField(
+              controller: _text,
+              focusNode: _focus,
+              readOnly: _locked,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              // A gauge is a whole number; a measurement may have decimals.
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                  unit == 'ga' ? RegExp(r'[0-9]') : RegExp(r'[0-9.]'),
+                ),
+              ],
+              style: const TextStyle(fontSize: 14),
+              decoration: SheetStyle.field(hint: unit == 'ga' ? 'Gauge' : unit),
+              onChanged: (value) => _writeThickness(value, unit),
+              onSubmitted: (_) => _focus.nextFocus(),
+            ),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 112,
+            child: SearchableSelectField<String>(
+              key: ValueKey<String>('thickness_unit_${widget.row}'),
+              value: unit,
+              fieldEnabled: !_locked,
+              dialogTitle: 'Thickness in',
+              searchHintText: 'Search units',
+              options: [
+                for (final option in _thicknessUnits)
+                  SearchableSelectOption<String>(
+                    value: option.symbol,
+                    label: option.isGauge ? 'Gauge' : option.symbol,
+                    subtitle: option.name,
+                    searchText: '${option.name} ${option.symbol}',
+                  ),
+              ],
+              decoration: SheetStyle.field(),
+              onChanged: (symbol) {
+                if (symbol == null) return;
+                setState(() => _pendingUnit = symbol);
+                // The number keeps what was typed; the unit says what it is.
+                if (_text.text.trim().isNotEmpty) _writeThickness(_text.text, symbol);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _optionField() => SheetStyle.labelled(
         label: _column.label,

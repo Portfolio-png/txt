@@ -2749,6 +2749,28 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     );
   }
 
+  /// The step after this one, or null on the last.
+  _MasterStep? get _nextStep {
+    final at = _MasterStep.values.indexOf(_step);
+    return at + 1 < _MasterStep.values.length ? _MasterStep.values[at + 1] : null;
+  }
+
+  Widget _nextButton() {
+    final next = _nextStep;
+    return Tooltip(
+      message: next == null
+          ? 'Review is the last step'
+          : 'On to ${next.title}',
+      child: AppButton(
+        key: const ValueKey<String>('master-data-next'),
+        label: 'Next',
+        icon: Icons.arrow_forward_rounded,
+        variant: AppButtonVariant.secondary,
+        onPressed: next == null ? null : () => setState(() => _step = next),
+      ),
+    );
+  }
+
   Widget _footer(double width) {
     final buttons = <Widget>[
       if (widget.onCancel != null)
@@ -2778,6 +2800,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               // Without the blank rows the editor keeps for typing into.
               : () => widget.onSave(_recorded),
         ),
+      // The workflow's own way forward, beside Edit: Sheet planning, then
+      // Material data, then Review. On Review it is drawn off, saying why.
+      _nextButton(),
     ];
     final note = !widget.readOnly
         ? 'The drawing follows what you type.'

@@ -1789,6 +1789,7 @@ void main() {
         final key = element.widget.key;
         if (key is ValueKey<String> &&
             (key.value.startsWith('cell_item_') ||
+                key.value.startsWith('thickness_unit_') ||
                 key.value.startsWith('deal_') ||
                 key.value.startsWith('quick-entry-'))) {
           found = key.value;
@@ -1839,7 +1840,14 @@ void main() {
     testWidgets('the sheet opens on Group, and Tab visits the line\'s fields only',
         (tester) async {
       final sheet = await openNew(tester);
-      final keys = lineKeys(sheet);
+      // Thickness is a number and its unit: two stops.
+      final thickness = sheet.sheetDef.columns.firstWhere((c) => c.kind == ColumnKind.gauge);
+      final keys = [
+        for (final key in lineKeys(sheet)) ...[
+          key,
+          if (key == 'cell_item_0_${thickness.id}') 'thickness_unit_0',
+        ],
+      ];
       expect(focusedField(), keys.first, reason: 'the keyboard starts on Group');
       final visited = <String?>[focusedField()];
       for (var i = 1; i < keys.length; i += 1) {
@@ -1999,6 +2007,32 @@ void main() {
         seen.add(focusedField());
       }
       expect(find.byKey(const ValueKey('step_save_dialog')), findsOneWidget, reason: 'went $seen');
+    }, variant: desktop);
+
+    testWidgets('a number typed in Thickness is a gauge; the unit beside it changes that',
+        (tester) async {
+      final sheet = await openNew(tester);
+      final thickness = sheet.sheetDef.columns.firstWhere((c) => c.kind == ColumnKind.gauge);
+      final box = find.descendant(
+        of: find.byKey(ValueKey('cell_item_0_${thickness.id}')),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(box, '23');
+      await tester.pump();
+      expect(sheet.draftAt(0).get(thickness.id)?.optionLabel, '23 Gauge');
+
+      // mm from the unit beside it: the number stays, the unit says what it is.
+      await tester.tap(find.byKey(const ValueKey('thickness_unit_0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'mm');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(sheet.draftAt(0).get(thickness.id)?.optionLabel, '23 mm');
+
+      await tester.enterText(box, '1.2');
+      await tester.pump();
+      expect(sheet.draftAt(0).get(thickness.id)?.optionLabel, '1.2 mm');
     }, variant: desktop);
 
     testWidgets('Shift+Tab goes back without asking', (tester) async {
