@@ -334,7 +334,8 @@ void main() {
 
     // --- raw sheet ---------------------------------------------------------------
     await _step('fill and save the raw sheet', () async {
-      await _tapVisible(tester, find.byKey(const ValueKey<String>('raw_edit')));
+      await _revealInPanel(tester, 'master-data-edit');
+      await _tapVisible(tester, find.byKey(const ValueKey<String>('master-data-edit')));
       await tester.pump(const Duration(milliseconds: 300));
       await _revealInPanel(tester, 'sheet-width');
       await _typeInto(tester, 'sheet-width', '48');

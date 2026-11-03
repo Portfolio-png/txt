@@ -867,7 +867,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             _crumbSep(),
             _crumb('Items'),
             _crumbSep(),
-            _crumb(widget.title, isLast: true),
+            _crumb(_crumbTitle(), isLast: true),
             const SizedBox(width: 20),
             if (_controller.isLoading)
               const Padding(
@@ -1124,13 +1124,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   ),
                   const SizedBox(width: 6),
                 ],
-                if (part != null && !_rawEditing)
-                  OutlinedButton.icon(
-                    key: const ValueKey<String>('raw_edit'),
-                    onPressed: () => setState(() => _rawEditing = true),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit', style: TextStyle(fontSize: 14)),
-                  ),
+                // Its Edit is the panel's own, at the foot where Save will be —
+                // the way a part line's Save becomes its Edit in one place.
                 IconButton(
                   key: const ValueKey<String>('raw_panel_close'),
                   tooltip: 'Fold the raw sheet panel',
@@ -2715,6 +2710,19 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return _controller.rowError(row) == null;
   }
 
+  /// The breadcrumb's last step: the part the cursor is on, by name and
+  /// code — "New part" only while that line is not saved. It used to be the
+  /// title the screen was opened with, so a saved part read as new.
+  String _crumbTitle() {
+    if (_controller.groupItemController.draft.entityId == null) {
+      return widget.title;
+    }
+    final name = _pinnedPartName().trim();
+    final code = _partCodeNow.trim();
+    if (name.isEmpty) return widget.title;
+    return code.isEmpty ? name : '$name · $code';
+  }
+
   String _pinnedPartName() {
     final sheet = _controller.groupItemController.sheetDef;
     final column = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
@@ -2729,6 +2737,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Widget _partySheet() => DealPeopleForm(
         controller: _controller,
         partSaved: _livePart != null,
+        recordedAt: _livePart?.developedFor.at,
         onSaveDeal: _saveDeal,
       );
 

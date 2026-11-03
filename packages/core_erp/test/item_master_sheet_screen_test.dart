@@ -538,6 +538,34 @@ void main() {
       expect(find.text('Quotation (₹)'), findsOneWidget);
     });
 
+    testWidgets('the breadcrumb names the open part, and its deal says when it was recorded',
+        (tester) async {
+      final at = DateTime.utc(2026, 11, 3, 9, 15);
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        developedFor: DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+          at: at,
+        ),
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      expect(find.text('Patti · SADP48'), findsOneWidget,
+          reason: 'a saved part used to read "New part"');
+      expect(find.text('New part'), findsNothing);
+      expect(find.textContaining(partStamp(at)), findsWidgets);
+      expect(find.textContaining('Set on save'), findsNothing,
+          reason: 'the deal is saved, so it has a stamp');
+    });
+
     testWidgets('a die typed and not held survives a fold, and the leave warning names it',
         (tester) async {
       await _pumpScreen(tester, size: const Size(1700, 3200));
@@ -572,7 +600,7 @@ void main() {
         repository: _FakeItemRepository([patti]),
         size: const Size(1700, 3200),
       );
-      await tester.tap(find.byKey(const ValueKey('raw_edit')));
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
       await tester.pump();
       final before = tester.state(find.byType(MasterDataPanel));
 
@@ -778,7 +806,7 @@ void main() {
       await _pumpScreen(tester, size: const Size(1700, 3200));
       expect(find.byKey(const ValueKey('raw_panel')), findsOneWidget);
       expect(find.textContaining('Save the part to plan its raw sheet'), findsOneWidget);
-      expect(find.byKey(const ValueKey('raw_edit')), findsNothing);
+      expect(find.byKey(const ValueKey('master-data-edit')), findsNothing);
     });
 
     testWidgets('a saved part: Edit the raw sheet, Save writes it on the part',
@@ -794,7 +822,7 @@ void main() {
       expect(find.byType(MasterDataPanel), findsOneWidget);
       expect(tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly, isTrue);
 
-      await tester.tap(find.byKey(const ValueKey('raw_edit')));
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
       await tester.pump();
       final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
       expect(panel.readOnly, isFalse);
@@ -820,7 +848,7 @@ void main() {
         size: const Size(1700, 3200),
       );
       expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('raw_edit')));
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
       await tester.pump();
       final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
       expect(find.text('Save raw sheet'), findsOneWidget);

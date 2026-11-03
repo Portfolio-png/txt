@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
+import '../../../../core/utils/stamp_format.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/company_documents_box.dart';
 import '../../../../core/widgets/fit_to_text.dart';
@@ -39,6 +40,7 @@ class DealPeopleForm extends StatefulWidget {
     required this.controller,
     this.partSaved = false,
     this.onSaveDeal,
+    this.recordedAt,
   });
 
   final ItemMasterController controller;
@@ -50,6 +52,9 @@ class DealPeopleForm extends StatefulWidget {
   /// Writes the deal (company, quotation, ticks) on the saved part. True when
   /// it landed.
   final Future<bool> Function()? onSaveDeal;
+
+  /// When the saved part's deal was recorded, or null when it has not been.
+  final DateTime? recordedAt;
 
   @override
   State<DealPeopleForm> createState() => _DealPeopleFormState();
@@ -185,11 +190,11 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     // closed until its Edit.
     final dealLocked = widget.partSaved && !_dealEditing && partyId != null;
 
-    final date = _text(_deal, SheetBindsTo.createdDate);
-    final time = _text(_deal, SheetBindsTo.createdTime);
-    final recorded = date.isEmpty || date == 'Set on save'
-        ? 'Set on save'
-        : '$date · $time';
+    // The stamp the saved part carries. The deal row's own date cells were
+    // filled only by the old whole-sheet save, so a saved deal read "Set on
+    // save" for good.
+    final at = widget.recordedAt;
+    final recorded = at == null ? 'Set on save' : partStamp(at);
 
     return Wrap(
       spacing: 12,
