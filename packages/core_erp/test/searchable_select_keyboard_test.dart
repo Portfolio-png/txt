@@ -1,3 +1,4 @@
+import 'package:core_erp/core/utils/dropdown_intents.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -148,5 +149,44 @@ void main() {
     expect(find.text('Alpha'), findsNothing);
     expect(_picked(tester), isNull);
     expect(_fieldHasFocus(tester), isTrue);
+  }, variant: _desktop);
+
+  testWidgets('arriving by a keyboard flow opens it; a bare Enter keeps the value',
+      (tester) async {
+    await _pump(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB, character: 'b');
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_picked(tester), 'Beta');
+
+    // What the item sheet's Tab sends to the field it lands on.
+    Actions.invoke(FocusManager.instance.primaryFocus!.context!, const OpenDropdownIntent());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('searchable_select_search')), findsOneWidget);
+    expect(find.text('Alpha'), findsOneWidget, reason: 'the whole list, nothing typed');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_picked(tester), 'Beta', reason: 'not the first row, Alpha');
+    expect(find.byKey(const ValueKey<String>('searchable_select_search')), findsNothing);
+    // Focus back on the field does not open it again.
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey<String>('searchable_select_search')), findsNothing);
+  }, variant: _desktop);
+
+  testWidgets('Tab in the open list keeps the value and goes on', (tester) async {
+    await _pump(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('searchable_select_search')), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('searchable_select_search')), findsNothing);
+    expect(_picked(tester), isNull, reason: 'nothing was picked');
+    final focused = FocusManager.instance.primaryFocus?.context
+        ?.findAncestorWidgetOfExactType<TextField>();
+    expect(focused?.key, const ValueKey('after'), reason: 'on to the next field');
   }, variant: _desktop);
 }

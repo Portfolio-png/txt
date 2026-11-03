@@ -6,7 +6,7 @@ import 'support/harness.dart';
 
 // The item sheet from the keyboard, in the real app against the real server:
 // a part, its company and a person, entered with Tab, typing, Enter and the
-// save prompts — no clicks. `scripts/e2e-ui.sh sheet_keyboard` then checks
+// save prompts — no clicks. A dropdown Tab lands on opens by itself. `scripts/e2e-ui.sh sheet_keyboard` then checks
 // what landed in SQLite.
 
 final _stamp = DateTime.now().millisecondsSinceEpoch.toString().substring(7);
@@ -41,17 +41,27 @@ Future<void> _key(WidgetTester tester, LogicalKeyboardKey key, {String? characte
   await tester.pump(const Duration(milliseconds: 200));
 }
 
-/// Types at a closed dropdown — its first letter opens it — then the whole
-/// text into its search, and Enter takes the best row.
+/// A dropdown's list is open: its search box is on screen.
+Finder _search() => find.byWidgetPredicate((widget) {
+  final key = widget.key;
+  return key is ValueKey<String> &&
+      (key.value == 'option_picker_search' || key.value == 'searchable_select_search');
+});
+
+/// Picks [text] in a dropdown: into its list when Tab already opened it,
+/// else typed at the closed box — its first letter opens it. Enter takes the
+/// best row.
 Future<void> _pickByTyping(WidgetTester tester, String text) async {
-  final first = text.substring(0, 1).toLowerCase();
-  await _key(
-    tester,
-    LogicalKeyboardKey(LogicalKeyboardKey.keyA.keyId + first.codeUnitAt(0) - 'a'.codeUnitAt(0)),
-    character: first,
-  );
-  final search = find.byType(TextField).last;
-  await pumpUntil(tester, search, reason: 'a letter should open the dropdown');
+  if (_search().evaluate().isEmpty) {
+    final first = text.substring(0, 1).toLowerCase();
+    await _key(
+      tester,
+      LogicalKeyboardKey(LogicalKeyboardKey.keyA.keyId + first.codeUnitAt(0) - 'a'.codeUnitAt(0)),
+      character: first,
+    );
+  }
+  final search = _search();
+  await pumpUntil(tester, search, reason: 'the dropdown should be open');
   await tester.enterText(search, text);
   await tester.pump(const Duration(milliseconds: 200));
   await _key(tester, LogicalKeyboardKey.enter);
@@ -78,11 +88,15 @@ void main() {
     expect(_focused(), 'cell_item_0_1', reason: 'the sheet opens on Group');
 
     // --- the part line ----------------------------------------------------
+    expect(_search(), findsNothing, reason: 'opening the sheet opens no list');
     await _pickByTyping(tester, 'Primary Group');
+    // Tab onto a dropdown opens it; Tab in its list leaves it and goes on.
+    await _key(tester, LogicalKeyboardKey.tab);
+    await pumpUntil(tester, _search(), reason: 'Tab onto Type should open its list');
     await _key(tester, LogicalKeyboardKey.tab); // Type: left empty
-    await _key(tester, LogicalKeyboardKey.tab); // Part Name
-    expect(_focused(), 'cell_item_0_3');
+    await pumpUntil(tester, _search(), reason: 'and on to Part Name, open too');
     await _pickByTyping(tester, _part);
+    expect(_focused(), 'cell_item_0_3', reason: 'the pick leaves focus on Part Name');
     dumpVisibleText(tester, 'E2E keyboard, part line typed');
     await _tabToPromptAndSave(tester, 'Save part 1?');
     await pumpUntil(tester, find.textContaining('SAVED #'), reason: 'the part should save');
@@ -90,10 +104,11 @@ void main() {
     // --- the company ---------------------------------------------------------
     await pumpUntil(
       tester,
-      find.byWidgetPredicate((_) => _focused() == 'deal_company'),
-      reason: 'after the part, Tab goes on to the company',
+      _search(),
+      reason: 'after the part, Tab goes on to the company, its list open',
     );
     await _pickByTyping(tester, _company);
+    expect(_focused(), 'deal_company');
     await pumpUntil(tester, find.text(_company), reason: 'the company should be added and chosen');
     await _key(tester, LogicalKeyboardKey.tab);
     expect(_focused(), 'deal_quotation');
@@ -113,6 +128,7 @@ void main() {
     );
     await tester.enterText(name, _person);
     await _key(tester, LogicalKeyboardKey.tab);
+    await pumpUntil(tester, _search(), reason: 'Tab onto Designation should open its list');
     await _pickByTyping(tester, 'Purchase Manager');
     await _key(tester, LogicalKeyboardKey.tab);
     await tester.enterText(

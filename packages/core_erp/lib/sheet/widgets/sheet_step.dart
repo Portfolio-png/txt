@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/soft_erp_theme.dart';
+import '../../core/utils/dropdown_intents.dart';
 
 /// The item sheet from the keyboard, one component at a time.
 ///
@@ -14,6 +15,9 @@ import '../../core/theme/soft_erp_theme.dart';
 /// Save or Discard — and then goes on to the next step. Nothing to save, and
 /// it goes on without asking. Shift+Tab goes back and never asks.
 /// Ctrl+Enter (Cmd+Enter on a Mac) saves and starts another of the same.
+///
+/// A dropdown that Tab lands on opens by itself ([OpenDropdownIntent]); Tab
+/// inside its list keeps the value and goes on ([TabOutIntent]).
 ///
 /// [SheetFlow] knows the order of the steps on the screen and moves focus
 /// between them; the host builds it, the steps register with it.
@@ -78,14 +82,15 @@ class SheetFlow {
     if (identical(_steps[id], step)) _steps.remove(id);
   }
 
-  /// Focus [id]'s first field (or its last, going backwards).
-  void focusStep(Object id, {bool last = false}) {
+  /// Focus [id]'s first field (or its last, going backwards). [open]: Tab
+  /// brought it here, so a dropdown there opens.
+  void focusStep(Object id, {bool last = false, bool open = false}) {
     final place = order().where((p) => p.id == id).firstOrNull;
     if (place != null) reveal?.call(place.section);
     // After the frame: a section just unfolded has to be built before its
     // fields can take focus.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _steps[id]?.focusEdge(last: last);
+      _steps[id]?.focusEdge(last: last, open: open);
     });
   }
 
@@ -103,7 +108,7 @@ class SheetFlow {
     // passed over; one in a folded section is still there, and is unfolded.
     for (var i = at + step; i >= 0 && i < places.length; i += step) {
       if (_steps.containsKey(places[i].id)) {
-        focusStep(places[i].id, last: step < 0);
+        focusStep(places[i].id, last: step < 0, open: step > 0);
         return;
       }
     }
@@ -184,13 +189,15 @@ class SheetStepState extends State<SheetStep> {
   }
 
   /// Focus the first field (or the last), and bring it into view.
-  void focusEdge({bool last = false}) {
+  void focusEdge({bool last = false, bool open = false}) {
     final fields = _fields;
     if (fields.isEmpty) return;
-    _focus(last ? fields.last : fields.first);
+    _focus(last ? fields.last : fields.first, open: open);
   }
 
-  void _focus(FocusNode target) {
+  /// [open]: Tab moved here going forward — a dropdown opens its list, so the
+  /// next keys search it. Going back, it stays closed: Shift+Tab walks past.
+  void _focus(FocusNode target, {bool open = false}) {
     target.requestFocus();
     final context = target.context;
     if (context != null) {
@@ -200,6 +207,36 @@ class SheetStepState extends State<SheetStep> {
         duration: const Duration(milliseconds: 120),
       );
     }
+    if (!open) return;
+    // After the frame, once focus has landed — and only if it is still there:
+    // a fast typist may already have moved on.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final at = target.context;
+      if (!mounted || _asking || !target.hasPrimaryFocus || at == null) return;
+      Actions.maybeInvoke(at, const OpenDropdownIntent());
+    });
+  }
+
+  /// Tab (or Shift+Tab) at [node]: the next field, or past the last one the
+  /// save prompt and the next step. False when [node] is not one of ours.
+  bool _tabFrom(FocusNode? node, {required bool back}) {
+    final fields = _fields;
+    final at = node == null ? -1 : fields.indexOf(node);
+    if (at < 0) return false;
+    if (back) {
+      if (at == 0) {
+        widget.flow?.moveBack(widget.id);
+      } else {
+        _focus(fields[at - 1]);
+      }
+      return true;
+    }
+    if (at == fields.length - 1) {
+      unawaited(_leave());
+    } else {
+      _focus(fields[at + 1], open: true);
+    }
+    return true;
   }
 
   bool _isLast(FocusNode? node) {
@@ -227,23 +264,9 @@ class SheetStepState extends State<SheetStep> {
       // The step moves focus itself, field to field in its own order. The
       // platform's "next focus" did not leave a text box in the running app
       // on macOS, and the order here is the one the fields are built in.
-      final fields = _fields;
-      final at = primary == null ? -1 : fields.indexOf(primary);
-      if (at < 0) return KeyEventResult.ignored;
-      if (keyboard.isShiftPressed) {
-        if (at == 0) {
-          widget.flow?.moveBack(widget.id);
-        } else {
-          _focus(fields[at - 1]);
-        }
-        return KeyEventResult.handled;
-      }
-      if (at == fields.length - 1) {
-        unawaited(_leave());
-      } else {
-        _focus(fields[at + 1]);
-      }
-      return KeyEventResult.handled;
+      return _tabFrom(primary, back: keyboard.isShiftPressed)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
     }
     // Enter in the last text box is Tab: it reaches here only when the
     // field did not take it (a dropdown opens on Enter itself).
@@ -297,10 +320,20 @@ class SheetStepState extends State<SheetStep> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _node,
-      onKeyEvent: _onKey,
-      child: FocusTraversalGroup(policy: _policy, child: widget.child),
+    return Actions(
+      actions: {
+        // A dropdown's list closed on Tab: on from that field, as Tab there.
+        TabOutIntent: CallbackAction<TabOutIntent>(
+          // Null when the field is not one of this step's: plain traversal.
+          onInvoke: (intent) =>
+              _tabFrom(intent.from, back: intent.back) ? true : null,
+        ),
+      },
+      child: Focus(
+        focusNode: _node,
+        onKeyEvent: _onKey,
+        child: FocusTraversalGroup(policy: _policy, child: widget.child),
+      ),
     );
   }
 }

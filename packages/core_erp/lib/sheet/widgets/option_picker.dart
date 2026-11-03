@@ -12,6 +12,8 @@ import '../sheet_engine.dart';
 /// picker, shared by the grid's cells and the item sheet's part lines.
 ///
 /// [onDone] runs after a pick or an add — the grid moves to the next cell.
+/// [onTabOut] runs when Tab (false) or Shift+Tab (true) closes the list with
+/// nothing picked; null leaves Tab to the list.
 void showColumnOptionPicker(
   BuildContext context, {
   required ColumnDef column,
@@ -20,6 +22,7 @@ void showColumnOptionPicker(
   required int row,
   VoidCallback? onDone,
   String initialQuery = '',
+  ValueChanged<bool>? onTabOut,
 }) {
   // Anchored under the cell, not a modal sheet.
   //
@@ -34,6 +37,7 @@ void showColumnOptionPicker(
   if (box == null || overlayBox == null || !box.hasSize) return;
   final anchor =
       box.localToGlobal(Offset.zero, ancestor: overlayBox) & box.size;
+  CellValue? current() => controller.draftAt(row).get(column.id);
 
   showDialog<void>(
     context: context,
@@ -54,8 +58,21 @@ void showColumnOptionPicker(
       controller: controller,
       rowIndex: row,
       initialQuery: initialQuery,
+      onTabOut: onTabOut == null
+          ? null
+          : (back) {
+              Navigator.of(ctx).pop();
+              onTabOut(back);
+            },
       onSelectOption: (opt) {
         Navigator.of(ctx).pop();
+        // The value the cell already has, taken again (Enter on a list opened
+        // by Tab): nothing to do. Setting it again would clear what hangs
+        // under it, or load a part picked by its name.
+        if (current()?.optionId == opt.id && !opt.isNew) {
+          onDone?.call();
+          return;
+        }
         controller.setOption(
           column.id,
           opt,
@@ -74,6 +91,10 @@ void showColumnOptionPicker(
       },
       onSelectParty: (p) {
         Navigator.of(ctx).pop();
+        if (current()?.refId == p.id) {
+          onDone?.call();
+          return;
+        }
         controller.updateValue(
           column.id,
           CellValue(
@@ -87,6 +108,11 @@ void showColumnOptionPicker(
       },
       onSelectContact: (c) {
         Navigator.of(ctx).pop();
+        // Taken again, it would write its phone and email over edited ones.
+        if (current()?.refId == c.id) {
+          onDone?.call();
+          return;
+        }
         // Fills this cell AND the designation, phone and email columns beside
         // it. `updateValue` alone wrote only the name, so choosing a contact
         // left its three projection columns blank — the one method that
@@ -203,11 +229,15 @@ class _OptionsPickerSheet extends StatefulWidget {
     required this.onSelectContact,
     this.onAddContact,
     this.initialQuery = '',
+    this.onTabOut,
   });
 
   /// What was typed on the closed box that opened this — the first letters
   /// of the search.
   final String initialQuery;
+
+  /// Tab in the search: closes, keeping the cell as it is, and goes on.
+  final ValueChanged<bool>? onTabOut;
 
   final ColumnDef column;
   final SheetDef sheetDef;
@@ -276,6 +306,11 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       return KeyEventResult.ignored;
     }
     final key = event.logicalKey;
+    final tabOut = widget.onTabOut;
+    if (key == LogicalKeyboardKey.tab && tabOut != null) {
+      if (event is KeyDownEvent) tabOut(HardwareKeyboard.instance.isShiftPressed);
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowUp) {
       if (rows.isEmpty) return KeyEventResult.handled;
       final from = _highlight ?? _bestRow(rows);
@@ -306,11 +341,21 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
   }
 
   /// The row Enter takes before the arrows are touched: the exact match, else
-  /// the first row — which is the "Add" row only when nothing matches.
+  /// the first row — which is the "Add" row only when nothing matches. With
+  /// nothing typed, the cell's own value: a list opened by Tab must not change
+  /// it on a bare Enter.
   int _bestRow(List<_PickerRow> rows) {
+    if (_query.isEmpty) {
+      final current = rows.indexWhere((row) => row.current);
+      if (current >= 0) return current;
+    }
     final exact = rows.indexWhere((row) => row.exact);
     return exact >= 0 ? exact : 0;
   }
+
+  /// What the cell holds now.
+  CellValue? get _cell =>
+      widget.controller.draftAt(widget.rowIndex).get(widget.column.id);
 
   @override
   void dispose() {
@@ -473,6 +518,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
               skipTraversal: true,
               onKeyEvent: (_, event) => _onSearchKey(_currentRows(), event),
               child: TextField(
+                key: const ValueKey<String>('option_picker_search'),
                 controller: _searchController,
                 autofocus: true,
                 onSubmitted: (_) => _submit(),
@@ -540,6 +586,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
         for (final p in filteredParties)
           _PickerRow(
             exact: p.name.toLowerCase() == _query,
+            current: _cell?.refId == p.id,
             take: () => widget.onSelectParty(p),
             build: (on) => tile(
               highlighted: on,
@@ -556,6 +603,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
         for (final c in filteredContacts)
           _PickerRow(
             exact: c.name.toLowerCase() == _query,
+            current: _cell?.refId == c.id,
             take: () => widget.onSelectContact(c),
             build: (on) => tile(
               highlighted: on,
@@ -590,6 +638,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       for (final opt in filteredOptions)
         _PickerRow(
           exact: opt.label.toLowerCase() == _query,
+          current: _cell?.optionId == opt.id,
           take: () => widget.onSelectOption(opt),
           build: (on) => tile(
             highlighted: on,
@@ -709,11 +758,19 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
 /// One row of the picker: how it is drawn (highlighted or not) and what
 /// taking it does — by click, or by Enter while it is highlighted.
 class _PickerRow {
-  const _PickerRow({required this.build, required this.take, this.exact = false});
+  const _PickerRow({
+    required this.build,
+    required this.take,
+    this.exact = false,
+    this.current = false,
+  });
 
   final Widget Function(bool highlighted) build;
   final VoidCallback take;
 
   /// Its text is exactly what was typed: Enter takes it over the first row.
   final bool exact;
+
+  /// It is what the cell holds now: with nothing typed, Enter keeps it.
+  final bool current;
 }

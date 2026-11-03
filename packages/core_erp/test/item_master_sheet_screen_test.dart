@@ -1815,6 +1815,11 @@ void main() {
       return found;
     }
 
+    /// A dropdown's list is open (its search box is on screen).
+    bool listOpen() =>
+        find.byKey(const ValueKey<String>('option_picker_search')).evaluate().isNotEmpty ||
+        find.byKey(const ValueKey<String>('searchable_select_search')).evaluate().isNotEmpty;
+
     Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
       await tester.sendKeyEvent(key);
       await tester.pump();
@@ -1861,13 +1866,71 @@ void main() {
         ],
       ];
       expect(focusedField(), keys.first, reason: 'the keyboard starts on Group');
-      final visited = <String?>[focusedField()];
+      expect(listOpen(), isFalse, reason: 'opening the sheet opens no list');
+      // A dropdown Tab lands on opens, and Tab in its list goes on: the fields
+      // are recorded as focus passes through them.
+      final visited = <String>[keys.first];
+      void record() {
+        final field = focusedField();
+        if (field != null && visited.last != field) visited.add(field);
+      }
+
+      FocusManager.instance.addListener(record);
+      addTearDown(() => FocusManager.instance.removeListener(record));
       for (var i = 1; i < keys.length; i += 1) {
         await press(tester, LogicalKeyboardKey.tab);
-        visited.add(focusedField());
+        await tester.pump(const Duration(milliseconds: 300));
       }
       expect(visited, keys,
           reason: 'no photo, Auto pill, property icon, Save or × in between');
+    }, variant: desktop);
+
+    testWidgets('a dropdown Tab lands on opens; Tab in it keeps the value and goes on',
+        (tester) async {
+      final sheet = await openNew(tester);
+      fillLine(sheet);
+      await tester.pump();
+      final columns = PartRowsForm.lineColumns(sheet.sheetDef);
+      final type = sheet.sheetDef.columns.firstWhere((c) => c.parentId == sheet.sheetDef.groupColumn!.id);
+      final typeBefore = sheet.draftAt(0).get(type.id)?.optionId;
+      expect(typeBefore, isNotNull);
+
+      // Group (focused as the sheet opens) → Tab → Type, open.
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(listOpen(), isTrue, reason: 'Tab onto Type opens its list');
+
+      // A bare Enter keeps what the line has, rather than taking the first row.
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(listOpen(), isFalse);
+      expect(sheet.draftAt(0).get(type.id)?.optionId, typeBefore);
+      expect(focusedField(), 'cell_item_0_${type.id}', reason: 'the pick keeps focus on the box');
+      // Focus coming back after a pick does not reopen it.
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(listOpen(), isFalse);
+
+      // Tab from the closed box: the next box opens; Tab in its list closes
+      // it as it was and goes on to the one after.
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(listOpen(), isTrue, reason: 'Part Name opens on arrival');
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.draftAt(0).get(sheet.sheetDef.itemColumn!.id)?.optionLabel, 'Lid');
+      expect(focusedField(), 'cell_item_0_${columns[3].id}');
+
+      // Shift+Tab walks back past a dropdown without opening it.
+      if (listOpen()) {
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(focusedField(), 'cell_item_0_${sheet.sheetDef.itemColumn!.id}');
+      expect(listOpen(), isFalse, reason: 'going back opens nothing');
     }, variant: desktop);
 
     testWidgets('Tab past the last field asks; Save writes the line and goes on',

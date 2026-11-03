@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/soft_erp_theme.dart';
+import '../utils/dropdown_intents.dart';
 import '../utils/typed_character.dart';
 
 class SearchableSelectOption<T> {
@@ -116,6 +117,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   SearchableSelectDeleteOption<T>? onDeleteOption,
   SearchableSelectDeleteBlocked<T>? deleteBlockedReason,
   String initialQuery = '',
+  ValueChanged<bool>? onTabOut,
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
@@ -154,6 +156,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           onDeleteOption: onDeleteOption,
           deleteBlockedReason: deleteBlockedReason,
           initialQuery: initialQuery,
+          onTabOut: onTabOut,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
       final curvedAnimation = CurvedAnimation(
@@ -207,7 +210,18 @@ class SearchableSelectField<T> extends FormField<T> {
              suffixIcon: const Icon(Icons.keyboard_arrow_down_rounded),
            );
 
-           return Focus(
+           // Tab landing here (the item sheet's keyboard flow) opens the list.
+           return Actions(
+             actions: {
+               OpenDropdownIntent: CallbackAction<OpenDropdownIntent>(
+                 onInvoke: (_) {
+                   if (!widget.fieldEnabled) return null;
+                   field.openSelector();
+                   return true;
+                 },
+               ),
+             },
+             child: Focus(
              focusNode: field.focusNode,
              canRequestFocus: widget.fieldEnabled,
              onKeyEvent: (node, event) {
@@ -283,6 +297,7 @@ class SearchableSelectField<T> extends FormField<T> {
                  );
                },
              ),
+             ),
            );
          },
        );
@@ -330,6 +345,7 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
   }
 
   Future<void> openSelector({String initialQuery = ''}) async {
+    bool? tabbedBack;
     final selected = await showSearchableSelectDialog<T>(
       initialQuery: initialQuery,
       context: context,
@@ -346,12 +362,16 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
           widget.secondaryCreateOptionLabelBuilder,
       inlinePanelBuilder: widget.inlinePanelBuilder,
       keyboardType: widget.keyboardType,
+      onTabOut: (back) => tabbedBack = back,
     );
     // Back on the field, picked or not, so Tab goes on from here. A click
     // never focused it, and a keyboard pick left focus wherever the route
-    // put it back.
+    // put it back. Closed by Tab, it then goes on as Tab on the field would.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.fieldEnabled) focusNode.requestFocus();
+      if (!mounted || !widget.fieldEnabled) return;
+      focusNode.requestFocus();
+      final back = tabbedBack;
+      if (back != null) tabOutFrom(focusNode, back: back);
     });
     if (selected == null) {
       return;
@@ -379,10 +399,15 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     this.onDeleteOption,
     this.deleteBlockedReason,
     this.initialQuery = '',
+    this.onTabOut,
   });
 
   /// The search, started with what was typed at the closed field.
   final String initialQuery;
+
+  /// Tab (false) or Shift+Tab (true) in the search: the list closes with
+  /// nothing picked and the caller moves on. Null: Tab is not handled here.
+  final ValueChanged<bool>? onTabOut;
 
   final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
   final List<SearchableSelectOption<T>> options;
@@ -472,6 +497,7 @@ class _SearchableSelectDialogState<T>
               _highlight = ((_highlight ?? best) + step).clamp(0, rows - 1);
             }),
             searchController: _searchController,
+            onTabOut: widget.onTabOut,
             maxHeight: layout.maxHeight,
             canCreateOption: widget.canCreateOption,
             onCreateOption: widget.onCreateOption,
@@ -592,7 +618,10 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     this.keyboardType,
     this.onDeleteOption,
     this.deleteBlockedReason,
+    this.onTabOut,
   });
+
+  final ValueChanged<bool>? onTabOut;
 
   /// The row ↑ ↓ moved to, or null for the best row.
   final int? highlight;
@@ -657,9 +686,13 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     final rowCount = options.length + createOptionsCount;
     // Before the arrows are touched Enter takes the best row: the exact
     // match, else the first match, else the "add" row when nothing matches.
-    final exactAt = options.indexWhere(
-      (option) => option.normalizedSearchText == normalizedQuery,
-    );
+    // With nothing typed it is the value the field already has — a list
+    // opened by Tab must not change it on a bare Enter.
+    final exactAt = normalizedQuery.isEmpty && selectedValue != null
+        ? options.indexWhere((option) => option.value == selectedValue)
+        : options.indexWhere(
+            (option) => option.normalizedSearchText == normalizedQuery,
+          );
     final bestRow = exactAt >= 0
         ? createOptionsCount + exactAt
         : (options.isNotEmpty ? createOptionsCount : 0);
@@ -685,6 +718,15 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
         return KeyEventResult.ignored;
       }
       final key = event.logicalKey;
+      final tabOut = onTabOut;
+      if (key == LogicalKeyboardKey.tab && tabOut != null) {
+        // Keep what the field has and go on, as Tab on the closed field does.
+        if (event is KeyDownEvent) {
+          tabOut(HardwareKeyboard.instance.isShiftPressed);
+          Navigator.of(context).pop();
+        }
+        return KeyEventResult.handled;
+      }
       if (key == LogicalKeyboardKey.arrowDown ||
           key == LogicalKeyboardKey.arrowUp) {
         if (rowCount > 0) {
@@ -766,6 +808,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                     skipTraversal: true,
                     onKeyEvent: (_, event) => onSearchKey(event),
                     child: TextField(
+                    key: const ValueKey<String>('searchable_select_search'),
                     controller: searchController,
                     keyboardType: keyboardType,
                     // An input method's "done" is Enter too.

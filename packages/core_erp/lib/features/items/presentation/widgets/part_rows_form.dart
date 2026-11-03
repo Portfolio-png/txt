@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/utils/dropdown_intents.dart';
 import '../../../../core/utils/typed_character.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/fit_to_text.dart';
@@ -370,6 +371,14 @@ class _PartFieldState extends State<_PartField> {
           if (mounted) _focus.requestFocus();
         });
       },
+      // Tab in the open list keeps the box as it is and goes on from it.
+      onTabOut: (back) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _focus.requestFocus();
+          tabOutFrom(_focus, back: back);
+        });
+      },
     );
   }
 
@@ -574,7 +583,18 @@ class _PartFieldState extends State<_PartField> {
       minWidth: 150,
       chrome: (isNew ? 96 : 56) + (clearable ? 32 : 0),
       child: Builder(
-        builder: (anchor) => Focus(
+        // Tab landing on the box (the sheet's keyboard flow) opens its list.
+        builder: (anchor) => Actions(
+          actions: {
+            OpenDropdownIntent: CallbackAction<OpenDropdownIntent>(
+              onInvoke: (_) {
+                if (_locked) return null;
+                _open(anchor);
+                return true;
+              },
+            ),
+          },
+          child: Focus(
           focusNode: _focus,
           onKeyEvent: (node, event) {
             if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -686,6 +706,7 @@ class _PartFieldState extends State<_PartField> {
               ),
             ),
           ),
+        ),
         ),
       ),
     );
