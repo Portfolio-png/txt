@@ -429,6 +429,59 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
       await snapshot(tester, name);
     }
+    // --- the report: clicking the part on Items shows all of it ------------------
+    await _step('read the part report from Items', () async {
+      await tester.tap(find.byTooltip('Back').first);
+      await tester.pump(const Duration(milliseconds: 500));
+      final save = find.byKey(const ValueKey<String>('leave_save'));
+      if (save.evaluate().isNotEmpty) {
+        await tester.tap(save);
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      final items = find.byKey(const ValueKey<String>('sidebar_tile_configurator_items'));
+      await pumpUntil(tester, items, reason: 'the Items entry should be in the sidebar');
+      await _tapVisible(tester, items);
+      // Parts are listed under their group, folded until it is opened, and
+      // the list is lazy — scrolled to, a row exists.
+      final group = find.text('Primary Group');
+      await pumpUntil(tester, group, reason: 'the part\'s group should be listed');
+      await tester.tap(group.first);
+      await tester.pump(const Duration(milliseconds: 500));
+      final list = find.ancestor(
+        of: group.first,
+        matching: find.byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        ),
+      );
+      await tester.scrollUntilVisible(
+        find.text(_part),
+        300,
+        scrollable: list.first,
+        maxScrolls: 40,
+      );
+      await pumpUntil(tester, find.text(_part), reason: 'the saved part should be listed');
+      await tester.tap(find.text(_part).first);
+      await pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('item_report')),
+        reason: 'clicking the part should open its report first',
+      );
+      Future<void> reported(Finder finder, String what) => pumpUntil(
+            tester,
+            finder,
+            timeout: const Duration(seconds: 20),
+            reason: 'the report should show $what',
+          );
+      await reported(find.textContaining(' pipeline'), 'the pipeline name');
+      await reported(find.text(_company), 'the company');
+      await reported(find.textContaining(_person), 'the person');
+      await reported(find.text(_vendor), 'the raw sheet vendor');
+      await reported(find.text('MS'), 'the alloy');
+      await reported(find.text('23 Gauge'), 'the thickness');
+      dumpVisibleText(tester, 'E2E journey, the part report');
+      await snapshot(tester, 'item_report');
+    });
+
     final total = _timings.values.fold<int>(0, (a, b) => a + b);
     // ignore: avoid_print
     print('JOURNEY total ms=$total part=$partId');

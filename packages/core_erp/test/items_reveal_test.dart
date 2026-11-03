@@ -322,6 +322,10 @@ void _developedForPanelTests() {
     items.revealItem(id);
     await tester.pumpAndSettle();
     expect(find.byType(ItemDetailPanel), findsOneWidget);
+    // The panel opens on the part's report; the Developed for card is on
+    // its specifications.
+    await tester.tap(find.text('Item Specifications'));
+    await tester.pumpAndSettle();
   }
 
   Finder revealButton() => find.widgetWithText(OutlinedButton, 'Developed for');

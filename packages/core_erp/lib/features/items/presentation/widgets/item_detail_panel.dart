@@ -31,6 +31,7 @@ import '../providers/items_provider.dart';
 import '../screens/item_master_sheet_screen.dart';
 
 import 'item_pipeline_metrics_card.dart';
+import 'item_report.dart';
 
 Future<void> showItemDetailPanel(
   BuildContext context, {
@@ -110,7 +111,9 @@ class ItemDetailPanel extends StatefulWidget {
 
 class _ItemDetailPanelState extends State<ItemDetailPanel> {
   bool _isUploading = false;
-  int _activeTab = 0;
+  /// 2 = the report (what opens first), 0 = specifications, 1 = the
+  /// pipeline and mass balance.
+  int _activeTab = 2;
 
   /// Whether the Developed For card is showing. Off by default: most parts
   /// were not developed for anyone in particular, and nine rows of mostly
@@ -369,31 +372,38 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                     ],
                   ),
                 ),
-                if (item.defaultPipelineId != null &&
-                    item.defaultPipelineId!.isNotEmpty) ...[
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment<int>(
-                        value: 0,
-                        label: Text('Item Specifications'),
-                        icon: Icon(Icons.inventory_2_outlined, size: 15),
-                      ),
-                      ButtonSegment<int>(
+                SegmentedButton<int>(
+                  key: const ValueKey<String>('item_panel_tabs'),
+                  segments: [
+                    // Everything entered for the part, first: clicking a
+                    // part is mostly to read what was recorded for it.
+                    const ButtonSegment<int>(
+                      value: 2,
+                      label: Text('Report'),
+                      icon: Icon(Icons.article_outlined, size: 15),
+                    ),
+                    const ButtonSegment<int>(
+                      value: 0,
+                      label: Text('Item Specifications'),
+                      icon: Icon(Icons.inventory_2_outlined, size: 15),
+                    ),
+                    if (item.defaultPipelineId != null &&
+                        item.defaultPipelineId!.isNotEmpty)
+                      const ButtonSegment<int>(
                         value: 1,
                         label: Text('Pipeline & Mass Balance'),
                         icon: Icon(Icons.analytics_outlined, size: 15),
                       ),
-                    ],
-                    selected: {_activeTab},
-                    onSelectionChanged: (set) =>
-                        setState(() => _activeTab = set.first),
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
+                  ],
+                  selected: {_activeTab},
+                  onSelectionChanged: (set) =>
+                      setState(() => _activeTab = set.first),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  const SizedBox(width: 12),
-                ],
+                ),
+                const SizedBox(width: 12),
                 IconButton(
                   tooltip: 'Close',
                   onPressed: () => Navigator.of(context).pop(),
@@ -406,8 +416,12 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             ),
           ),
           Expanded(
-            child:
-                _activeTab == 1 &&
+            child: _activeTab == 2
+                ? SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: ItemReportView(item: item),
+                  )
+                : _activeTab == 1 &&
                     item.defaultPipelineId != null &&
                     item.defaultPipelineId!.isNotEmpty
                 ? SingleChildScrollView(

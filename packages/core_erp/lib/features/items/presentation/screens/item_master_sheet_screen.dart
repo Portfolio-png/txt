@@ -33,13 +33,11 @@ import '../widgets/margin_health_badge.dart';
 import '../widgets/part_die_section.dart';
 import '../widgets/part_machine_section.dart';
 import '../widgets/deal_people_form.dart';
+import '../widgets/item_report.dart';
 import '../widgets/part_rows_form.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/utils/stamp_format.dart';
-import '../../../../core/widgets/force_capacity_field.dart';
-import '../../../../core/widgets/length_unit_field.dart';
-import '../../../dies/domain/die_code.dart';
 
 /// The item master as a sheet — the real screen behind the PM prototype.
 ///
@@ -1672,20 +1670,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           for (final d in _stagedDies) (heldDieLink(d), true),
         ];
         if (dies.isEmpty) return const [(null, 'No dies yet')];
+        // The same lines the item report prints.
         for (final (die, held) in dies) {
-          add(null, '${die.toolCode.isEmpty ? 'Die' : die.toolCode}${held ? ' (not saved yet)' : ''}');
-          add('Type', DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label);
-          add('Made by', die.madeBy);
-          add('Ordered', stamp(die.poAt));
-          add('Arrived', stamp(die.dateInAt));
-          add(
-            'Liner',
-            die.linerSizeNm == null
-                ? null
-                : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} ${die.linerSizeUnit}',
-          );
-          add('Sets', die.noOfSet);
-          add('Kept', die.whereKept);
+          out.addAll(dieLines(die, held: held));
         }
       case 'machine_master':
         final groups = context.read<GroupsProvider>();
@@ -1703,28 +1690,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         final route = _route;
         if (machines.isEmpty && route == null) return const [(null, 'No machines yet')];
         for (final (machine, held) in machines) {
-          final number = machine.assetId.isNotEmpty ? machine.assetId : machine.name;
-          add(null, '${number.isEmpty ? 'Machine' : number}${held ? ' (not saved yet)' : ''}');
-          if (machine.assetId.isNotEmpty) add('Name', machine.name);
-          add('Type', machine.machineType);
-          add('Make', machine.machineMake);
-          add(
-            'Capacity',
-            capacityLabel(CapacityKind.fromWire(machine.capacityKind), machine.capacityKgf, 'Ton'),
-          );
-          add('Strokes/min', machine.strokesPerMinute);
-          add('Feed', machine.dieFeedType);
-          add('Feeder', machine.feederMake);
-          add('Built', machine.manufacturedYear);
-          add('Running', machine.runningHours == null ? null : '${machine.runningHours} h');
+          out.addAll(machineLines(machine, held: held));
         }
-        if (route != null) {
-          add(
-            'Route',
-            '${route.title} v${route.version} · '
-                '${route.steps.map((step) => step.stageName).join(' → ')}',
-          );
-        }
+        if (route != null) add('Route', routeLine(route));
       default:
         final sheet = _controller.groupItemController;
         final nameColumn = sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ?? sheet.sheetDef.itemColumn;

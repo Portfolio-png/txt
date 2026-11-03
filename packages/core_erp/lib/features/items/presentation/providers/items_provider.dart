@@ -1158,6 +1158,21 @@ class ItemsProvider extends ChangeNotifier {
 
   /// Replaces the machines and/or dies an item is linked to. Attaching one here
   /// is what assigns it to that item's work.
+  /// One part, read from the server rather than the local copy — which can
+  /// lag a save made a moment ago. Null when it is gone. Keeps the list in
+  /// step with what came back.
+  Future<ItemDefinition?> fetchFresh(int id) async {
+    final fresh = await _repository.getItemFresh(id);
+    if (fresh != null) {
+      final at = _items.indexWhere((item) => item.id == id);
+      if (at >= 0) {
+        _items = [..._items]..[at] = fresh;
+        notifyListeners();
+      }
+    }
+    return fresh;
+  }
+
   Future<ItemDefinition?> setItemLinks(
     int itemId, {
     List<String>? machineIds,
