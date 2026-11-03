@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/soft_erp_theme.dart';
+import '../utils/typed_character.dart';
 
 class SearchableSelectOption<T> {
   const SearchableSelectOption({
@@ -113,6 +115,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   TextInputType? keyboardType,
   SearchableSelectDeleteOption<T>? onDeleteOption,
   SearchableSelectDeleteBlocked<T>? deleteBlockedReason,
+  String initialQuery = '',
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
@@ -150,6 +153,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           keyboardType: keyboardType,
           onDeleteOption: onDeleteOption,
           deleteBlockedReason: deleteBlockedReason,
+          initialQuery: initialQuery,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
       final curvedAnimation = CurvedAnimation(
@@ -210,10 +214,19 @@ class SearchableSelectField<T> extends FormField<T> {
                if (!widget.fieldEnabled || event is! KeyDownEvent) {
                  return KeyEventResult.ignored;
                }
-               if (event.logicalKey == LogicalKeyboardKey.enter ||
-                   event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-                   event.logicalKey == LogicalKeyboardKey.space) {
+               final key = event.logicalKey;
+               if (key == LogicalKeyboardKey.enter ||
+                   key == LogicalKeyboardKey.numpadEnter ||
+                   key == LogicalKeyboardKey.space ||
+                   (key == LogicalKeyboardKey.arrowDown &&
+                       HardwareKeyboard.instance.isAltPressed)) {
                  field.openSelector();
+                 return KeyEventResult.handled;
+               }
+               // Typing at the closed field starts the search with it.
+               final typed = typedCharacter(event);
+               if (typed != null) {
+                 field.openSelector(initialQuery: typed);
                  return KeyEventResult.handled;
                }
                return KeyEventResult.ignored;
@@ -310,8 +323,9 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
     }
   }
 
-  Future<void> openSelector() async {
+  Future<void> openSelector({String initialQuery = ''}) async {
     final selected = await showSearchableSelectDialog<T>(
+      initialQuery: initialQuery,
       context: context,
       options: widget.options,
       title: widget.dialogTitle,
@@ -327,6 +341,12 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
       inlinePanelBuilder: widget.inlinePanelBuilder,
       keyboardType: widget.keyboardType,
     );
+    // Back on the field, picked or not, so Tab goes on from here. A click
+    // never focused it, and a keyboard pick left focus wherever the route
+    // put it back.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.fieldEnabled) focusNode.requestFocus();
+    });
     if (selected == null) {
       return;
     }
@@ -352,7 +372,11 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     this.keyboardType,
     this.onDeleteOption,
     this.deleteBlockedReason,
+    this.initialQuery = '',
   });
+
+  /// The search, started with what was typed at the closed field.
+  final String initialQuery;
 
   final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
   final List<SearchableSelectOption<T>> options;
@@ -389,6 +413,21 @@ class _SearchableSelectDialogState<T>
   static const double _minHeight = 180;
   static const double _maxHeight = 420;
 
+  /// The row Enter takes, moved with ↑ and ↓; null means the best row for
+  /// what is typed (see [_SearchableSelectMenu]).
+  int? _highlight;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialQuery.isNotEmpty) {
+      _searchController.value = TextEditingValue(
+        text: widget.initialQuery,
+        selection: TextSelection.collapsed(offset: widget.initialQuery.length),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -418,7 +457,14 @@ class _SearchableSelectDialogState<T>
             selectedValue: widget.selectedValue,
             options: visibleOptions,
             allOptions: options,
-            onQueryChanged: (_) => setState(() {}),
+            // A new search starts from its best row again.
+            onQueryChanged: (_) => setState(() => _highlight = null),
+            highlight: _highlight,
+            // Applied to the highlight as it is now, not as the menu last
+            // drew it: two presses inside one frame are two rows.
+            onMove: (step, rows, best) => setState(() {
+              _highlight = ((_highlight ?? best) + step).clamp(0, rows - 1);
+            }),
             searchController: _searchController,
             maxHeight: layout.maxHeight,
             canCreateOption: widget.canCreateOption,
@@ -520,6 +566,8 @@ class _SearchableSelectDialogState<T>
 
 class _SearchableSelectMenu<T> extends StatelessWidget {
   const _SearchableSelectMenu({
+    this.highlight,
+    this.onMove,
     required this.options,
     required this.selectedValue,
     required this.allOptions,
@@ -539,6 +587,12 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     this.onDeleteOption,
     this.deleteBlockedReason,
   });
+
+  /// The row ↑ ↓ moved to, or null for the best row.
+  final int? highlight;
+
+  /// ↑ (-1) or ↓ (+1), with how many rows there are and which is best.
+  final void Function(int step, int rows, int best)? onMove;
 
   final SearchableSelectInlinePanelBuilder<T>? inlinePanelBuilder;
   final Future<void> Function(SearchableSelectOption<T> option)? onDeleteOption;
@@ -594,6 +648,57 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
         (canCreateOption?.call(query, allOptions) ?? true);
     final createOptionsCount =
         (showCreateOption ? 1 : 0) + (showSecondaryCreateOption ? 1 : 0);
+    final rowCount = options.length + createOptionsCount;
+    // Before the arrows are touched Enter takes the best row: the exact
+    // match, else the first match, else the "add" row when nothing matches.
+    final exactAt = options.indexWhere(
+      (option) => option.normalizedSearchText == normalizedQuery,
+    );
+    final bestRow = exactAt >= 0
+        ? createOptionsCount + exactAt
+        : (options.isNotEmpty ? createOptionsCount : 0);
+    final highlighted = rowCount == 0
+        ? -1
+        : (highlight ?? bestRow).clamp(0, rowCount - 1);
+
+    Future<void> take(int row) async {
+      final navigator = Navigator.of(context);
+      if (row < createOptionsCount) {
+        final create = showCreateOption && row == 0
+            ? onCreateOption!
+            : onSecondaryCreateOption!;
+        final created = await create(query);
+        if (created != null && navigator.mounted) navigator.pop(created);
+        return;
+      }
+      navigator.pop(options[row - createOptionsCount]);
+    }
+
+    KeyEventResult onSearchKey(KeyEvent event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+        return KeyEventResult.ignored;
+      }
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowDown ||
+          key == LogicalKeyboardKey.arrowUp) {
+        if (rowCount > 0) {
+          onMove?.call(
+            key == LogicalKeyboardKey.arrowDown ? 1 : -1,
+            rowCount,
+            bestRow,
+          );
+        }
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.numpadEnter) {
+        if (event is KeyDownEvent && highlighted >= 0) {
+          unawaited(take(highlighted));
+        }
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
 
     return FocusTraversalGroup(
       child: Material(
@@ -650,13 +755,21 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                   height: MediaQuery.of(context).size.width >= 600
                       ? 48.0
                       : 40.0,
-                  child: TextField(
+                  child: Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    onKeyEvent: (_, event) => onSearchKey(event),
+                    child: TextField(
                     controller: searchController,
                     keyboardType: keyboardType,
+                    // An input method's "done" is Enter too.
+                    onSubmitted: (_) {
+                      if (highlighted >= 0) unawaited(take(highlighted));
+                    },
                     autofocus:
                         Theme.of(context).platform != TargetPlatform.android &&
                         Theme.of(context).platform != TargetPlatform.iOS,
-                    textInputAction: TextInputAction.next,
+                    textInputAction: TextInputAction.done,
                     onChanged: onQueryChanged,
                     style: TextStyle(
                       fontSize: MediaQuery.of(context).size.width >= 600
@@ -701,6 +814,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                       ),
                     ),
                   ),
+                  ),
                 ),
               ),
               // Flexible has to be a direct child of the Column, so the panel
@@ -735,6 +849,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                           var currentCreateCount = 0;
                           if (showCreateOption && index == currentCreateCount) {
                             return _SearchableSelectCreateTile<T>(
+                              highlighted: index == highlighted,
                               query: query,
                               label:
                                   createOptionLabelBuilder?.call(query) ??
@@ -748,6 +863,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                           if (showSecondaryCreateOption &&
                               index == currentCreateCount) {
                             return _SearchableSelectCreateTile<T>(
+                              highlighted: index == highlighted,
                               query: query,
                               label:
                                   secondaryCreateOptionLabelBuilder?.call(
@@ -763,6 +879,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                           final optionIndex = index - createOptionsCount;
                           final option = options[optionIndex];
                           return _SearchableSelectOptionTile<T>(
+                            highlighted: index == highlighted,
                             option: option,
                             isSelected: option.value == selectedValue,
                             onDelete: onDeleteOption == null
@@ -785,6 +902,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
 
 class _SearchableSelectOptionTile<T> extends StatefulWidget {
   const _SearchableSelectOptionTile({
+    this.highlighted = false,
     required this.option,
     required this.isSelected,
     this.onDelete,
@@ -793,6 +911,9 @@ class _SearchableSelectOptionTile<T> extends StatefulWidget {
 
   final SearchableSelectOption<T> option;
   final bool isSelected;
+
+  /// The row Enter in the search box would take.
+  final bool highlighted;
 
   /// Null draws no delete button.
   final Future<void> Function()? onDelete;
@@ -811,9 +932,20 @@ class _SearchableSelectOptionTileState<T>
   bool _isHovered = false;
 
   @override
+  void didUpdateWidget(covariant _SearchableSelectOptionTile<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Kept in view as ↑ ↓ move down a long list.
+    if (widget.highlighted && !oldWidget.highlighted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Scrollable.ensureVisible(context, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final baseColor = widget.option.highlightColor;
-    final active = _isFocused || _isHovered;
+    final active = _isFocused || _isHovered || widget.highlighted;
     final backgroundColor = active
         ? (baseColor != null
               ? baseColor.withValues(alpha: 0.25)
@@ -967,6 +1099,7 @@ class _SearchableSelectOptionTileState<T>
 
 class _SearchableSelectCreateTile<T> extends StatefulWidget {
   const _SearchableSelectCreateTile({
+    this.highlighted = false,
     required this.query,
     required this.label,
     required this.onCreateOption,
@@ -978,6 +1111,9 @@ class _SearchableSelectCreateTile<T> extends StatefulWidget {
   final SearchableSelectCreateOption<T> onCreateOption;
   final IconData icon;
 
+  /// The row Enter in the search box would take.
+  final bool highlighted;
+
   @override
   State<_SearchableSelectCreateTile<T>> createState() =>
       _SearchableSelectCreateTileState<T>();
@@ -987,6 +1123,17 @@ class _SearchableSelectCreateTileState<T>
     extends State<_SearchableSelectCreateTile<T>> {
   bool _isCreating = false;
   bool _isFocused = false;
+
+  @override
+  void didUpdateWidget(covariant _SearchableSelectCreateTile<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Kept in view as ↑ ↓ move down a long list.
+    if (widget.highlighted && !oldWidget.highlighted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Scrollable.ensureVisible(context, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+      });
+    }
+  }
 
   Future<void> _create() async {
     if (_isCreating) {
@@ -1012,7 +1159,7 @@ class _SearchableSelectCreateTileState<T>
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor = _isFocused
+    final backgroundColor = _isFocused || widget.highlighted
         ? const Color(0xFFEDE9FF)
         : const Color(0xFFF8FAFF);
 

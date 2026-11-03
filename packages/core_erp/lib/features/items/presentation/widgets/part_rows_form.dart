@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/utils/typed_character.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../sheet/sheet.dart';
@@ -312,7 +313,7 @@ class _PartFieldState extends State<_PartField> {
     super.dispose();
   }
 
-  void _open(BuildContext anchor) {
+  void _open(BuildContext anchor, {String initialQuery = ''}) {
     if (_locked) return;
     _sheet.focusCell(_column.id, row: widget.row);
     showColumnOptionPicker(
@@ -321,8 +322,13 @@ class _PartFieldState extends State<_PartField> {
       sheetDef: _sheet.sheetDef,
       controller: _sheet,
       row: widget.row,
+      initialQuery: initialQuery,
+      // Enter picks and the box keeps focus; Tab moves on. It used to jump to
+      // the next field by itself, so Tab then skipped one.
       onDone: () {
-        if (mounted) _focus.nextFocus();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _focus.requestFocus();
+        });
       },
     );
   }
@@ -405,8 +411,15 @@ class _PartFieldState extends State<_PartField> {
             final alt = HardwareKeyboard.instance.isAltPressed;
             if ((alt && key == LogicalKeyboardKey.arrowDown) ||
                 key == LogicalKeyboardKey.enter ||
+                key == LogicalKeyboardKey.numpadEnter ||
                 key == LogicalKeyboardKey.space) {
               _open(anchor);
+              return KeyEventResult.handled;
+            }
+            // Typing on the closed box starts the search with that letter.
+            final typed = typedCharacter(event);
+            if (typed != null) {
+              _open(anchor, initialQuery: typed);
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -414,6 +427,8 @@ class _PartFieldState extends State<_PartField> {
           child: ListenableBuilder(
             listenable: _focus,
             builder: (context, _) => InkWell(
+              // The box's own Focus is its one Tab stop.
+              canRequestFocus: false,
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
               onTap: () {
                 _focus.requestFocus();

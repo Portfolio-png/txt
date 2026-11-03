@@ -19,6 +19,7 @@ void showColumnOptionPicker(
   required SheetController controller,
   required int row,
   VoidCallback? onDone,
+  String initialQuery = '',
 }) {
   // Anchored under the cell, not a modal sheet.
   //
@@ -52,6 +53,7 @@ void showColumnOptionPicker(
       sheetDef: sheetDef,
       controller: controller,
       rowIndex: row,
+      initialQuery: initialQuery,
       onSelectOption: (opt) {
         Navigator.of(ctx).pop();
         controller.setOption(
@@ -200,7 +202,12 @@ class _OptionsPickerSheet extends StatefulWidget {
     required this.onSelectParty,
     required this.onSelectContact,
     this.onAddContact,
+    this.initialQuery = '',
   });
+
+  /// What was typed on the closed box that opened this — the first letters
+  /// of the search.
+  final String initialQuery;
 
   final ColumnDef column;
   final SheetDef sheetDef;
@@ -231,20 +238,84 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
   /// filed the original, so the two routes disagreed.
   String _typed = '';
 
+  /// The row Enter takes, moved with ↑ and ↓. Null until the arrows are
+  /// used: then the best row for what is typed is the one taken.
+  int? _highlight;
+
+  /// The highlighted row, kept in view as the arrows move it.
+  final GlobalKey _highlightKey = GlobalKey();
+
+  /// The header's ×, left out of Tab — Esc closes too.
+  final FocusNode _closeFocus = FocusNode(skipTraversal: true);
+
   @override
   void initState() {
     super.initState();
+    if (widget.initialQuery.isNotEmpty) {
+      _searchController.value = TextEditingValue(
+        text: widget.initialQuery,
+        selection: TextSelection.collapsed(offset: widget.initialQuery.length),
+      );
+      _typed = widget.initialQuery.trim();
+      _query = _typed.toLowerCase();
+    }
     _searchController.addListener(() {
       setState(() {
         _typed = _searchController.text.trim();
         _query = _typed.toLowerCase();
+        // A new search starts from its best row again.
+        _highlight = null;
       });
     });
+  }
+
+  /// ↑ ↓ move the highlight, Enter takes it. The search box keeps focus, so
+  /// typing goes on narrowing the list.
+  KeyEventResult _onSearchKey(List<_PickerRow> rows, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowUp) {
+      if (rows.isEmpty) return KeyEventResult.handled;
+      final from = _highlight ?? _bestRow(rows);
+      final step = key == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      setState(() => _highlight = (from + step).clamp(0, rows.length - 1));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final row = _highlightKey.currentContext;
+        if (row != null) Scrollable.ensureVisible(row, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+      });
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      if (event is KeyDownEvent) _submit();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Enter, or an input method's "done": the highlighted row — of the list
+  /// for what is typed NOW, which may be ahead of the last frame drawn.
+  void _submit() {
+    final rows = _currentRows();
+    if (rows.isNotEmpty) {
+      rows[(_highlight ?? _bestRow(rows)).clamp(0, rows.length - 1)].take();
+    } else if (_typed.isNotEmpty) {
+      widget.onAddNew(_typed);
+    }
+  }
+
+  /// The row Enter takes before the arrows are touched: the exact match, else
+  /// the first row — which is the "Add" row only when nothing matches.
+  int _bestRow(List<_PickerRow> rows) {
+    final exact = rows.indexWhere((row) => row.exact);
+    return exact >= 0 ? exact : 0;
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _closeFocus.dispose();
     super.dispose();
   }
 
@@ -303,7 +374,8 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
     );
   }
 
-  Widget _buildSheet(BuildContext context) {
+  /// The rows for what is typed now, filtered.
+  List<_PickerRow> _currentRows() {
     final parties = widget.column.source == ColumnSource.party
         ? widget.controller.parties
         : const <Party>[];
@@ -326,6 +398,21 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
     final filteredContacts = contacts
         .where((c) => _query.isEmpty || c.name.toLowerCase().contains(_query))
         .toList();
+
+    return _rows(
+      parties: parties,
+      filteredParties: filteredParties,
+      contacts: contacts,
+      filteredContacts: filteredContacts,
+      filteredOptions: filteredOptions,
+    );
+  }
+
+  Widget _buildSheet(BuildContext context) {
+    final rows = _currentRows();
+    final highlighted = rows.isEmpty
+        ? -1
+        : (_highlight ?? _bestRow(rows)).clamp(0, rows.length - 1);
 
     return Container(
       // No margin and no height of its own: _AnchoredPicker decides where this
@@ -365,6 +452,8 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                   ),
                 ),
                 IconButton(
+                  // Esc closes too; Tab should not land here first.
+                  focusNode: _closeFocus,
                   icon: const Icon(Icons.close_rounded, size: 18),
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
@@ -379,141 +468,153 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              controller: _searchController,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Type to filter, or type new and press Enter...',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+            child: Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              onKeyEvent: (_, event) => _onSearchKey(_currentRows(), event),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                onSubmitted: (_) => _submit(),
+                decoration: InputDecoration(
+                  hintText: 'Type to filter — ↑ ↓ to choose, Enter to pick',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(SoftErpTheme.radiusControl),
+                  ),
                 ),
               ),
-              onSubmitted: (val) {
-                if (val.trim().isNotEmpty) {
-                  widget.onAddNew(val.trim());
-                }
-              },
             ),
           ),
           Flexible(
             child: ListView(
               shrinkWrap: true,
               children: [
-                if (parties.isNotEmpty)
-                  ...filteredParties.map(
-                    (p) => ListTile(
-                      title: Text(
-                        p.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        'Type: ${p.type.toUpperCase()}',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                      trailing: const Icon(
-                        Icons.business_rounded,
-                        size: 16,
-                        color: SoftErpTheme.textMuted,
-                      ),
-                      onTap: () => widget.onSelectParty(p),
-                    ),
-                  )
-                else if (contacts.isNotEmpty) ...[
-                  ...filteredContacts.map(
-                    (c) => ListTile(
-                      title: Text(
-                        c.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        '${c.designation ?? ""} · ${c.phone ?? ""}',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                      trailing: const Icon(
-                        Icons.person_outline_rounded,
-                        size: 16,
-                        color: SoftErpTheme.textMuted,
-                      ),
-                      onTap: () => widget.onSelectContact(c),
-                    ),
+                for (final (index, row) in rows.indexed)
+                  KeyedSubtree(
+                    key: index == highlighted ? _highlightKey : null,
+                    child: row.build(index == highlighted),
                   ),
-                  // A company has as many people as it has, and the one you
-                  // are dealing with today may not be on file yet. Without
-                  // this the contact list could only ever offer people somebody
-                  // had entered on another screen.
-                  if (_query.isNotEmpty &&
-                      widget.onAddContact != null &&
-                      !filteredContacts.any(
-                        (c) => c.name.toLowerCase() == _query,
-                      ))
-                    ListTile(
-                      key: const ValueKey<String>('sheet_add_contact'),
-                      leading: const Icon(
-                        Icons.person_add_alt_1_rounded,
-                        color: SoftErpTheme.accent,
-                      ),
-                      title: Text(
-                        'Add "$_typed" at this company',
-                        style: const TextStyle(
-                          color: SoftErpTheme.accent,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      onTap: () => widget.onAddContact!(_typed),
-                    ),
-                ]
-                else ...[
-                  ...filteredOptions.map(
-                    (opt) => ListTile(
-                      title: Text(
-                        opt.label,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: opt.detail.isEmpty
-                          ? null
-                          : Text(
-                              opt.detail,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                      trailing: _trailingFor(opt),
-                      onTap: () => widget.onSelectOption(opt),
-                    ),
-                  ),
-                  if (_query.isNotEmpty &&
-                      !filteredOptions.any(
-                        (o) => o.label.toLowerCase() == _query,
-                      ))
-                    ListTile(
-                      leading: const Icon(
-                        Icons.add_circle_outline_rounded,
-                        color: SoftErpTheme.accent,
-                      ),
-                      title: Text(
-                        'Add "$_typed" under current path',
-                        style: const TextStyle(
-                          color: SoftErpTheme.accent,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      onTap: () => widget.onAddNew(_typed),
-                    ),
-                  if (filteredOptions.isEmpty && _query.isEmpty) _emptyNote(),
-                ],
-                if (parties.isEmpty &&
-                    contacts.isEmpty &&
-                    widget.column.source != ColumnSource.options)
-                  _emptyNote(),
+                if (rows.isEmpty) _emptyNote(),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Every row the list shows, in order, each with what Enter does on it.
+  List<_PickerRow> _rows({
+    required List<Party> parties,
+    required List<Party> filteredParties,
+    required List<Contact> contacts,
+    required List<Contact> filteredContacts,
+    required List<ColumnOption> filteredOptions,
+  }) {
+    ListTile tile({
+      required bool highlighted,
+      required Widget title,
+      Widget? subtitle,
+      Widget? leading,
+      Widget? trailing,
+      Key? key,
+      required VoidCallback onTap,
+    }) =>
+        ListTile(
+          key: key,
+          selected: highlighted,
+          selectedTileColor: SoftErpTheme.accentSoft,
+          selectedColor: SoftErpTheme.textPrimary,
+          title: title,
+          subtitle: subtitle,
+          leading: leading,
+          trailing: trailing,
+          onTap: onTap,
+        );
+
+    if (parties.isNotEmpty) {
+      return [
+        for (final p in filteredParties)
+          _PickerRow(
+            exact: p.name.toLowerCase() == _query,
+            take: () => widget.onSelectParty(p),
+            build: (on) => tile(
+              highlighted: on,
+              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('Type: ${p.type.toUpperCase()}', style: const TextStyle(fontSize: 14)),
+              trailing: const Icon(Icons.business_rounded, size: 16, color: SoftErpTheme.textMuted),
+              onTap: () => widget.onSelectParty(p),
+            ),
+          ),
+      ];
+    }
+    if (contacts.isNotEmpty) {
+      return [
+        for (final c in filteredContacts)
+          _PickerRow(
+            exact: c.name.toLowerCase() == _query,
+            take: () => widget.onSelectContact(c),
+            build: (on) => tile(
+              highlighted: on,
+              title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('${c.designation ?? ""} · ${c.phone ?? ""}', style: const TextStyle(fontSize: 14)),
+              trailing: const Icon(Icons.person_outline_rounded, size: 16, color: SoftErpTheme.textMuted),
+              onTap: () => widget.onSelectContact(c),
+            ),
+          ),
+        // A company has as many people as it has, and the one you are dealing
+        // with today may not be on file yet. Without this the contact list
+        // could only ever offer people somebody had entered elsewhere.
+        if (_query.isNotEmpty &&
+            widget.onAddContact != null &&
+            !filteredContacts.any((c) => c.name.toLowerCase() == _query))
+          _PickerRow(
+            take: () => widget.onAddContact!(_typed),
+            build: (on) => tile(
+              key: const ValueKey<String>('sheet_add_contact'),
+              highlighted: on,
+              leading: const Icon(Icons.person_add_alt_1_rounded, color: SoftErpTheme.accent),
+              title: Text(
+                'Add "$_typed" at this company',
+                style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w700),
+              ),
+              onTap: () => widget.onAddContact!(_typed),
+            ),
+          ),
+      ];
+    }
+    return [
+      for (final opt in filteredOptions)
+        _PickerRow(
+          exact: opt.label.toLowerCase() == _query,
+          take: () => widget.onSelectOption(opt),
+          build: (on) => tile(
+            highlighted: on,
+            title: Text(opt.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: opt.detail.isEmpty
+                ? null
+                : Text(opt.detail, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
+            trailing: _trailingFor(opt),
+            onTap: () => widget.onSelectOption(opt),
+          ),
+        ),
+      if (_query.isNotEmpty && !filteredOptions.any((o) => o.label.toLowerCase() == _query))
+        _PickerRow(
+          take: () => widget.onAddNew(_typed),
+          build: (on) => tile(
+            highlighted: on,
+            leading: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
+            title: Text(
+              'Add "$_typed" under current path',
+              style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w700),
+            ),
+            onTap: () => widget.onAddNew(_typed),
+          ),
+        ),
+    ];
   }
 
   /// The "New" badge on a value typed this session, and the delete button on
@@ -603,4 +704,16 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       ),
     );
   }
+}
+
+/// One row of the picker: how it is drawn (highlighted or not) and what
+/// taking it does — by click, or by Enter while it is highlighted.
+class _PickerRow {
+  const _PickerRow({required this.build, required this.take, this.exact = false});
+
+  final Widget Function(bool highlighted) build;
+  final VoidCallback take;
+
+  /// Its text is exactly what was typed: Enter takes it over the first row.
+  final bool exact;
 }

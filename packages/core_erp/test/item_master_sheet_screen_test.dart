@@ -26,6 +26,7 @@ import 'package:core_erp/core/network/sitting_scope.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 import 'package:core_erp/sheet/sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -565,6 +566,42 @@ void main() {
       expect(find.textContaining('Set on save'), findsNothing,
           reason: 'the deal is saved, so it has a stamp');
     });
+
+    testWidgets('a part line\'s dropdown: type to search, Enter picks, focus stays',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      sheet.focusCell(1, row: 0);
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyS, character: 's');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Select Group'), findsOneWidget, reason: 'the letter opened it');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final group = sheet.draftAt(0).get(1);
+      expect(group?.optionLabel, 'Switch Action');
+      expect(group?.isNew, isFalse, reason: 'an existing group, not a new one');
+
+      // Typed in full and Enter: still the one that exists, not a duplicate.
+      sheet.focusCell(1, row: 0);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(find.byType(TextField).last, 'switch action');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.draftAt(0).get(1)?.isNew, isFalse);
+      expect(
+        sheet.options.where((o) => o.columnId == 1 && o.label.toLowerCase() == 'switch action'),
+        hasLength(1),
+        reason: 'Enter on an existing name used to file a second one',
+      );
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('a die typed and not held survives a fold, and the leave warning names it',
         (tester) async {
