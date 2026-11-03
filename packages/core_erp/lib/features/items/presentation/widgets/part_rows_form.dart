@@ -31,7 +31,18 @@ class PartRowsForm extends StatelessWidget {
     this.statusBuilder,
     this.onAddProperty,
     this.onRemoveRow,
+    this.flow,
+    this.lineActions,
   });
+
+  /// The keyboard's order of the screen's steps; each line is one.
+  final SheetFlow? flow;
+
+  /// What Tab past a line's last field does — its save prompt.
+  final SheetStepActions Function(int row)? lineActions;
+
+  /// The step id of the line with [rowKey].
+  static Object stepId(Object rowKey) => ('part', rowKey);
 
   final SheetController sheet;
 
@@ -73,22 +84,39 @@ class PartRowsForm extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (var row = 0; row < sheet.rowCount; row += 1) ...[
-              _PartLine(
-                key: ValueKey<Object>(sheet.draftAt(row).rowKey),
-                sheet: sheet,
-                row: row,
-                columns: columns,
-                photo: photoBuilder?.call(row),
-                status: statusBuilder?.call(row),
-                action: actionBuilder(row),
-                onRemove: onRemoveRow,
+              _step(
+                row,
+                _PartLine(
+                  key: ValueKey<Object>(sheet.draftAt(row).rowKey),
+                  sheet: sheet,
+                  row: row,
+                  columns: columns,
+                  photo: photoBuilder?.call(row),
+                  status: statusBuilder?.call(row),
+                  action: actionBuilder(row),
+                  onRemove: onRemoveRow,
+                ),
               ),
               const SizedBox(height: 10),
             ],
-            _footer(columns),
+            SheetStep.noTab(_footer(columns)),
           ],
         );
       },
+    );
+  }
+
+  /// A line as one keyboard step: Tab through its fields, then its save.
+  Widget _step(int row, Widget line) {
+    final actions = lineActions;
+    if (actions == null) return line;
+    final rowKey = sheet.draftAt(row).rowKey;
+    return SheetStep(
+      key: ValueKey<Object>(('step', rowKey)),
+      flow: flow,
+      id: stepId(rowKey),
+      actions: actions(row),
+      child: line,
     );
   }
 
@@ -184,7 +212,11 @@ class _PartLine extends StatelessWidget {
               SizedBox(width: 28, child: status),
               const SizedBox(width: 6),
             ],
-            if (photo != null) ...[photo!, const SizedBox(width: 10)],
+            // Clickable, but not where Tab goes: Tab is for what is typed.
+            if (photo != null) ...[
+              SheetStep.noTab(photo!),
+              const SizedBox(width: 10),
+            ],
             Expanded(
               child: Wrap(
                 spacing: 10,
@@ -204,8 +236,8 @@ class _PartLine extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            action,
-            Tooltip(
+            SheetStep.noTab(action),
+            SheetStep.noTab(Tooltip(
               message: removeWhy ?? 'Remove this line',
               child: IconButton(
                 key: ValueKey<String>('row_remove_$row'),
@@ -214,7 +246,7 @@ class _PartLine extends StatelessWidget {
                     : null,
                 icon: const Icon(Icons.close, size: 18),
               ),
-            ),
+            )),
           ],
         ),
       ),
@@ -360,12 +392,12 @@ class _PartFieldState extends State<_PartField> {
                   padding: const EdgeInsets.only(right: 8),
                   child: Center(
                     widthFactor: 1,
-                    child: ModeChip(
+                    child: SheetStep.noTab(ModeChip(
                       controller: _sheet,
                       columnId: _column.id,
                       row: widget.row,
                       mode: mode,
-                    ),
+                    )),
                   ),
                 )
               : null,
@@ -385,7 +417,11 @@ class _PartFieldState extends State<_PartField> {
         label: _column.label,
         // A property's heading carries its Edit and Delete.
         actions: _isProperty
-            ? [_PropertyActions(sheet: _sheet, column: _column, row: widget.row)]
+            ? [
+                SheetStep.noTab(
+                  _PropertyActions(sheet: _sheet, column: _column, row: widget.row),
+                ),
+              ]
             : const [],
         child: _optionBox(),
       );
@@ -407,6 +443,12 @@ class _PartFieldState extends State<_PartField> {
           focusNode: _focus,
           onKeyEvent: (node, event) {
             if (event is! KeyDownEvent) return KeyEventResult.ignored;
+            // A saved line is closed: its step takes Enter as its Edit. And
+            // Ctrl+Enter is the step's "save and add another".
+            final keyboard = HardwareKeyboard.instance;
+            if (_locked || keyboard.isControlPressed || keyboard.isMetaPressed) {
+              return KeyEventResult.ignored;
+            }
             final key = event.logicalKey;
             final alt = HardwareKeyboard.instance.isAltPressed;
             if ((alt && key == LogicalKeyboardKey.arrowDown) ||
@@ -462,7 +504,7 @@ class _PartFieldState extends State<_PartField> {
                       ),
                     ),
                     if (clearable)
-                      Tooltip(
+                      SheetStep.noTab(Tooltip(
                         message: 'Clear ${_column.label}',
                         child: InkWell(
                           key: ValueKey<String>(
@@ -481,7 +523,7 @@ class _PartFieldState extends State<_PartField> {
                             ),
                           ),
                         ),
-                      ),
+                      )),
                     if (isNew) ...[
                       const SizedBox(width: 6),
                       Container(

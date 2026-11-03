@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -21,6 +23,7 @@ import '../../../../sheet/sheet_binding.dart';
 import '../../../../sheet/sheet_controller.dart';
 import '../../../../sheet/sheet_draft.dart';
 import '../../../../sheet/sheet_style.dart';
+import '../../../../sheet/widgets/sheet_step.dart';
 
 /// The Client / Vendor section as an ordinary form: the deal (company,
 /// quotation, when it was recorded) and the people at that company, each a
@@ -41,6 +44,7 @@ class DealPeopleForm extends StatefulWidget {
     this.partSaved = false,
     this.onSaveDeal,
     this.recordedAt,
+    this.flow,
   });
 
   final ItemMasterController controller;
@@ -55,6 +59,16 @@ class DealPeopleForm extends StatefulWidget {
 
   /// When the saved part's deal was recorded, or null when it has not been.
   final DateTime? recordedAt;
+
+  /// The keyboard's order of the screen's steps: the company line is one,
+  /// each person another.
+  final SheetFlow? flow;
+
+  /// The company line's step id.
+  static const Object companyStep = 'company';
+
+  /// A person row's step id.
+  static Object personStep(Object rowKey) => ('person', rowKey);
 
   @override
   State<DealPeopleForm> createState() => _DealPeopleFormState();
@@ -74,6 +88,15 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   Party? _created;
 
   SheetController get _deal => widget.controller.clientVendorController;
+
+  /// A saved deal is closed until its Edit. One changed and not saved yet is
+  /// not "saved": a company picked after the part was saved used to close at
+  /// once, so its quotation could not be typed and its Save never came.
+  bool get _dealLocked =>
+      widget.partSaved &&
+      !_dealEditing &&
+      widget.controller.dealPartyId != null &&
+      !_deal.draft.isDirtySinceSave;
 
   /// Designations people at any company were given before, then the usual
   /// ones nobody has used yet — so "Purchase Head" is typed once and picked
@@ -139,7 +162,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             const SizedBox(height: 14),
             // The company's own papers — kept on the company, so every part for
             // it shows the same ones, and its view lists them too.
-            CompanyDocumentsBox(
+            // Documents are added with the mouse; Tab goes on to the people.
+            SheetStep.noTab(CompanyDocumentsBox(
               owner: PhotoOwner.client,
               id: widget.controller.dealPartyId?.toString(),
               compact: true,
@@ -147,15 +171,19 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
               note: widget.controller.dealPartyName.trim().isEmpty
                   ? null
                   : 'for ${widget.controller.dealPartyName.trim()}',
-            ),
+            )),
             const SizedBox(height: 18),
             Tooltip(
               message: hasCompany ? '' : 'Pick a company first',
               child: IgnorePointer(
                 ignoring: !hasCompany,
-                child: Opacity(
+                // Nor reachable by Tab: there is nobody to type in yet.
+                child: ExcludeFocus(
+                  excluding: !hasCompany,
+                  child: Opacity(
                   opacity: hasCompany ? 1 : 0.45,
                   child: _peopleList(hasCompany),
+                ),
                 ),
               ),
             ),
@@ -188,7 +216,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
 
     // Before the part exists everything is open; after, a chosen deal is
     // closed until its Edit.
-    final dealLocked = widget.partSaved && !_dealEditing && partyId != null;
+    final dealLocked = _dealLocked;
 
     // The stamp the saved part carries. The deal row's own date cells were
     // filled only by the old whole-sheet save, so a saved deal read "Set on
@@ -202,7 +230,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-    Wrap(
+    _companyStep(dealLocked, Wrap(
       spacing: 12,
       runSpacing: 12,
       crossAxisAlignment: WrapCrossAlignment.start,
@@ -210,7 +238,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         // The company's logo, kept on the company: every part for it shows
         // the same one.
         // Level with the boxes, which sit under their headings.
-        Padding(
+        SheetStep.noTab(Padding(
           padding: const EdgeInsets.only(top: _boxTop),
           child: MiniPhoto(
           owner: PhotoOwner.client,
@@ -221,7 +249,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           fallbackUrl: _companyLogo(partyId),
           disabledReason: 'Pick the company first to add its logo',
         ),
-        ),
+        )),
         SheetStyle.labelled(
           label: 'Company',
           child: FitToText(
@@ -306,9 +334,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         ),
         ),
       ],
-    ),
+    )),
     const SizedBox(height: 10),
-    Wrap(
+    SheetStep.noTab(Wrap(
       spacing: 12,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -340,9 +368,70 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
             ),
           ),
       ],
-    ),
+    )),
       ],
     );
+  }
+
+  /// The company line as one keyboard step: Company, Quotation, then "Save
+  /// Gold Medal?".
+  Widget _companyStep(bool locked, Widget fields) => SheetStep(
+        flow: widget.flow,
+        id: DealPeopleForm.companyStep,
+        actions: SheetStepActions(
+          title: () {
+            final name = widget.controller.dealPartyName.trim();
+            return name.isEmpty ? 'Save the company?' : 'Save $name?';
+          },
+          isDirty: () =>
+              widget.controller.isExternal && _deal.draft.isDirtySinceSave,
+          blockedReason: _dealBlockedReason,
+          save: _saveDealNow,
+          discard: () {
+            widget.controller.discardDeal();
+            setState(() => _dealEditing = false);
+          },
+          isLocked: () => locked,
+          unlock: () => setState(() => _dealEditing = true),
+        ),
+        child: fields,
+      );
+
+  /// Why the company line cannot be saved now, or null.
+  ///
+  /// Enabled only when the save would land: a company, a valid quotation,
+  /// and a part row with every required cell filled. The row's REAL errors,
+  /// not the drawn ones — an untouched empty Group is not drawn red yet, and
+  /// read from those this enabled a Save that then failed.
+  String? _dealBlockedReason() {
+    final sheet = widget.controller.groupItemController;
+    final partyId = widget.controller.dealPartyId;
+    final quotationCol = _column(_deal, SheetBindsTo.developedForQuotation);
+    final quotationError =
+        quotationCol == null ? null : _deal.errors[quotationCol];
+    final activeRow = widget.controller.dealRow ?? sheet.row;
+    if (partyId == null) return 'Pick a company first';
+    if (sheet.isRowBlank(activeRow)) return 'Type the part name first';
+    final partErrors = sheet.errorsForRow(activeRow);
+    if (partErrors.isNotEmpty) return partErrors.values.first.message;
+    if (quotationError != null) return quotationError.message;
+    if (_savingDeal || widget.controller.isSavingNow) return 'Saving…';
+    if (widget.onSaveDeal == null) return 'Save the part from its row';
+    return null;
+  }
+
+  /// Saves the company line, as its Save does.
+  Future<bool> _saveDealNow() async {
+    final save = widget.onSaveDeal;
+    if (save == null) return false;
+    setState(() => _savingDeal = true);
+    final ok = await save();
+    if (!mounted) return ok;
+    setState(() {
+      _savingDeal = false;
+      if (ok) _dealEditing = false;
+    });
+    return ok;
   }
 
   /// The deal line's own Save, or its Edit once saved.
@@ -358,36 +447,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       );
     }
 
-    // Enabled only when the save would land: a company, a valid quotation,
-    // and a part row with every required cell filled. The row's REAL errors,
-    // not the drawn ones — an untouched empty Group is not drawn red yet, and
-    // read from those this enabled a Save that then failed.
-    final sheet = widget.controller.groupItemController;
-    final partyId = widget.controller.dealPartyId;
-    final quotationCol = _column(_deal, SheetBindsTo.developedForQuotation);
-    final quotationError =
-        quotationCol == null ? null : _deal.errors[quotationCol];
-    final activeRow = widget.controller.dealRow ?? sheet.row;
-    final partBlank = sheet.isRowBlank(activeRow);
-    final partErrors = sheet.errorsForRow(activeRow);
+    final why = _dealBlockedReason();
     final isSaving = _savingDeal || widget.controller.isSavingNow;
-
-    final String? why;
-    if (partyId == null) {
-      why = 'Pick a company first';
-    } else if (partBlank) {
-      why = 'Type the part name first';
-    } else if (partErrors.isNotEmpty) {
-      why = partErrors.values.first.message;
-    } else if (quotationError != null) {
-      why = quotationError.message;
-    } else if (isSaving) {
-      why = 'Saving…';
-    } else if (widget.onSaveDeal == null) {
-      why = 'Save the part from its row';
-    } else {
-      why = null;
-    }
     final canSave = why == null;
     final tooltipMessage =
         why ?? 'Saves the part with its company details (Ctrl+S)';
@@ -401,17 +462,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         variant: AppButtonVariant.secondary,
         dense: true,
         isLoading: isSaving,
-        onPressed: canSave
-            ? () async {
-                setState(() => _savingDeal = true);
-                final ok = await widget.onSaveDeal!();
-                if (!mounted) return;
-                setState(() {
-                  _savingDeal = false;
-                  if (ok) _dealEditing = false;
-                });
-              }
-            : null,
+        onPressed: canSave ? () => unawaited(_saveDealNow()) : null,
       ),
     );
   }
@@ -435,16 +486,74 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         ),
         const SizedBox(height: 10),
         for (var row = 0; row < rows; row += 1) ...[
-          _personRow(row),
+          _personStep(row, _personRow(row)),
           const SizedBox(height: 10),
         ],
-        TextButton.icon(
+        SheetStep.noTab(TextButton.icon(
           key: const ValueKey<String>('deal_add_person'),
           onPressed: () => _people.addRow(),
           icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
           label: const Text('Add person', style: TextStyle(fontSize: 14)),
-        ),
+        )),
       ],
+    );
+  }
+
+  /// A person as one keyboard step: Name, Designation, Contact No, Email
+  /// ID, then "Save this contact?". Ctrl+Enter saves and opens the next
+  /// person.
+  Widget _personStep(int row, Widget fields) {
+    final rowKey = _people.draftAt(row).rowKey;
+    int at() => _people.indexOfRowKey(rowKey);
+    Future<bool> save() async {
+      final i = at();
+      return i >= 0 && await widget.controller.savePersonRow(i);
+    }
+
+    return SheetStep(
+      key: ValueKey<Object>(('person_step', rowKey)),
+      flow: widget.flow,
+      id: DealPeopleForm.personStep(rowKey),
+      actions: SheetStepActions(
+        title: () {
+          final i = at();
+          final name = i < 0 ? '' : _text(_people, SheetBindsTo.personName, row: i).trim();
+          return name.isEmpty ? 'Save this contact?' : 'Save $name?';
+        },
+        isDirty: () {
+          final i = at();
+          if (i < 0 || _people.isRowLocked(i) || _people.isRowBlank(i)) return false;
+          final draft = _people.draftAt(i);
+          return draft.entityId == null || draft.isDirtySinceSave;
+        },
+        blockedReason: () {
+          final i = at();
+          if (widget.controller.dealPartyId == null) return 'Pick a company first';
+          if (i < 0) return null;
+          final errors = _people.errorsForRow(i);
+          return errors.isEmpty ? null : errors.values.first.message;
+        },
+        save: save,
+        discard: () {
+          final i = at();
+          if (i >= 0) widget.controller.discardPersonRow(i);
+        },
+        saveAndAddAnother: () async {
+          if (!await save()) return;
+          final added = _people.addRow();
+          final key = _people.draftAt(added).rowKey;
+          widget.flow?.focusStep(DealPeopleForm.personStep(key));
+        },
+        isLocked: () {
+          final i = at();
+          return i >= 0 && _people.isRowLocked(i);
+        },
+        unlock: () {
+          final i = at();
+          if (i >= 0) _people.setRowLocked(i, false);
+        },
+      ),
+      child: fields,
     );
   }
 
@@ -458,8 +567,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     // with the row's Edit. The tick belongs to the DEAL, so it follows the
     // deal line's lock, not the person's.
     final locked = _people.isRowLocked(row);
-    final dealLocked =
-        widget.partSaved && !_dealEditing && widget.controller.dealPartyId != null;
+    final dealLocked = _dealLocked;
     final blank = _people.isRowBlank(row);
 
     Widget field(
@@ -531,7 +639,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.start,
       children: [
-        Padding(
+        SheetStep.noTab(Padding(
           padding: const EdgeInsets.only(top: _boxTop),
           child: MiniPhoto(
           owner: PhotoOwner.person,
@@ -540,8 +648,10 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           what: 'photo',
           disabledReason: 'Save this person first to add a photo',
         ),
-        ),
-        SheetStyle.labelled(
+        )),
+        // Ticked with the mouse (or Space once clicked): Tab goes Name,
+        // Designation, Contact No, Email ID.
+        SheetStep.noTab(SheetStyle.labelled(
           label: 'Dealt with',
           child: SizedBox(
           height: 40,
@@ -564,7 +674,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           ),
         ),
         ),
-        ),
+        )),
         field(SheetBindsTo.personName, 'Name', min: 180),
         field(
           SheetBindsTo.personDesignation,
@@ -618,11 +728,13 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     );
   }
 
-  /// What has no heading, moved down to sit beside the headed boxes.
-  static Widget _beside(Widget child) => Padding(
+  /// What has no heading, moved down to sit beside the headed boxes — and
+  /// left out of Tab: a person's Save, Edit and × are clicked, or answered
+  /// in the prompt Tab shows.
+  static Widget _beside(Widget child) => SheetStep.noTab(Padding(
         padding: const EdgeInsets.only(top: _boxTop),
         child: child,
-      );
+      ));
 }
 
 /// How far a field's box sits below the top of its heading

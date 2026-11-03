@@ -910,6 +910,68 @@ class ItemMasterController extends ChangeNotifier {
       (_isExternal &&
           (clientVendorController.draft.isDirtySinceSave || _peopleDirty));
 
+  // --- Discard, from the keyboard's save prompt ---------------------------
+
+  /// Puts part line [row] back as it was: a saved part re-read from the
+  /// catalogue and closed again, a new line emptied.
+  void discardRow(int row) {
+    final sheet = groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return;
+    final draft = sheet.draftAt(row);
+    final id = draft.entityId;
+    final loaded = id == null ? null : binding?.draftForId(id);
+    if (loaded != null) {
+      sheet.replaceRowAt(row, loaded);
+      sheet.setRowLocked(row, true);
+    } else {
+      sheet.replaceRowAt(row, SheetDraft(sheetKey: sheet.sheetDef.key));
+    }
+    _rowErrors.remove(draft);
+    _statusBarMessage = 'Discarded the changes to part ${row + 1}.';
+    notifyListeners();
+  }
+
+  /// The company line back to what the part was saved with (or empty).
+  void discardDeal() {
+    final writer = binding;
+    final id = _dealPartId;
+    final entity = id == null || writer == null ? null : writer.entityById(id);
+    final deal = entity == null ? null : writer!.dealOf(entity);
+    _dealCleared = false;
+    if (deal == null) {
+      _resetDeal();
+    } else {
+      _applyDeal(deal);
+    }
+    _statusBarMessage = 'Discarded the changes to the company.';
+    notifyListeners();
+  }
+
+  /// Person [row] back to the company's record of them (or empty), the tick
+  /// left as it is on screen.
+  void discardPersonRow(int row) {
+    final people = peopleController;
+    if (row < 0 || row >= people.rowCount) return;
+    final draft = people.draftAt(row);
+    final writer = binding;
+    final party = dealPartyId;
+    SheetDraft? stored;
+    if (draft.entityId != null && writer != null && party != null) {
+      stored = writer
+          .peopleRows(party, ticked: _tickedIds().toSet())
+          .where((r) => r.entityId == draft.entityId)
+          .firstOrNull;
+    }
+    if (stored != null) {
+      people.replaceRowAt(row, stored);
+      people.setRowLocked(row, true);
+    } else {
+      people.replaceRowAt(row, SheetDraft(sheetKey: people.sheetDef.key));
+    }
+    _statusBarMessage = 'Discarded the changes to that person.';
+    notifyListeners();
+  }
+
   /// Writes every typed or changed person to the company. True when nothing
   /// is left unsaved.
   ///

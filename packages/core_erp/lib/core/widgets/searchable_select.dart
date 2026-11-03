@@ -215,6 +215,12 @@ class SearchableSelectField<T> extends FormField<T> {
                  return KeyEventResult.ignored;
                }
                final key = event.logicalKey;
+               // Ctrl/Cmd+Enter belongs to whatever holds this field (the
+               // item sheet's "save and add another").
+               if (HardwareKeyboard.instance.isControlPressed ||
+                   HardwareKeyboard.instance.isMetaPressed) {
+                 return KeyEventResult.ignored;
+               }
                if (key == LogicalKeyboardKey.enter ||
                    key == LogicalKeyboardKey.numpadEnter ||
                    key == LogicalKeyboardKey.space ||

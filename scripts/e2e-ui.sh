@@ -271,6 +271,24 @@ fi
   say "OK — property column only"; exit 0;
 }
 
+# Entered by keyboard alone: one part, its company on it, one person ticked
+# or not — the rows must be there, once each.
+[[ "${TESTS[0]}" == "sheet_keyboard" ]] && {
+  KPART="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM items WHERE name LIKE 'E2E Key Part%';")"
+  KDEAL="$(sqlite3 "${DB}" "
+    SELECT COUNT(*) FROM items i JOIN clients c ON c.id = i.developed_for_client_id
+     WHERE i.name LIKE 'E2E Key Part%' AND c.name LIKE 'E2E Key Company%'
+       AND i.developed_for_quotation_amount = 45000;")"
+  KPERSON="$(sqlite3 "${DB}" "
+    SELECT COUNT(*) FROM party_contacts WHERE name LIKE 'E2E Key Ravi%'
+       AND designation = 'Purchase Manager' AND phone = '9820012345';")"
+  echo "keyboard: parts ${KPART}, with their company ${KDEAL}, people ${KPERSON}"
+  [[ "${KPART}" == "1" ]] || fail "the keyboard part was written ${KPART} times"
+  [[ "${KDEAL}" == "1" ]] || fail "the part does not carry its company and quotation"
+  [[ "${KPERSON}" == "1" ]] || fail "the person was written ${KPERSON} times"
+  say "OK — keyboard only"; exit 0;
+}
+
 ROUTES="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM process_routes WHERE status='active';")"
 if [[ "${ROUTES}" == "0" ]]; then
   echo "No active route was written."

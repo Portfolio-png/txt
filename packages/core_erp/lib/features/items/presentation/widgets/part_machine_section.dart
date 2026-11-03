@@ -4,6 +4,7 @@ import '../../../../core/widgets/pick_or_type_field.dart';
 
 import '../../../../sheet/sheet_engine.dart';
 import '../../../../sheet/sheet_style.dart';
+import '../../../../sheet/widgets/sheet_step.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -53,7 +54,14 @@ class PartMachineSection extends StatefulWidget {
     required this.onMachinesChanged,
     this.framed = true,
     this.onDirtyChanged,
+    this.flow,
   });
+
+  /// The keyboard's order of the screen's steps; the machine form is one.
+  final SheetFlow? flow;
+
+  /// The machine form's step id.
+  static const Object step = 'machine';
 
   /// Told when the sheet starts or stops holding a machine that is typed but
   /// not held or saved — so the host can warn before leaving with it.
@@ -128,6 +136,46 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// it instead of making a second one.
   String? _unlinkedMachineId;
 
+  /// The form as it stood when last cleared — what "typed since" means for
+  /// the keyboard's save prompt. The number counts only once typed over.
+  String? _clean;
+
+  String _snapshot() => [
+        _noPinned ? _noController.text : '',
+        _nameController.text,
+        _makeController.text,
+        _yearController.text,
+        _feederController.text,
+        _hoursController.text,
+        _strokesController.text,
+        _capacityController.text,
+        _feedTypeController.text,
+        '$_groupId',
+        _capacityUnit,
+        _capacityKind.wire,
+      ].join('|');
+
+  /// Anything typed or picked since the form was last cleared, or a machine
+  /// open for correcting.
+  bool get _hasTyped =>
+      _editingMachineId != null ||
+      _editingStagedIndex != null ||
+      _unlinkedMachineId != null ||
+      _snapshot() != (_clean ??= _snapshot());
+
+  /// Everything off the form, the repeating fields too — the prompt's
+  /// Discard.
+  void _clearAll() {
+    _resetSheet();
+    _makeController.clear();
+    _feederController.clear();
+    _feedTypeController.clear();
+    _groupId = null;
+    _capacityUnit = 'Ton';
+    _rederiveNo();
+    _clean = _snapshot();
+  }
+
   /// What the host was last told.
   bool _reportedDirty = false;
 
@@ -163,6 +211,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _hoursController.addListener(_reportDirty);
     _strokesController.addListener(_reportDirty);
     _capacityController.addListener(_reportDirty);
+    _clean = _snapshot();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSuggestions());
   }
 
@@ -289,6 +338,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _capacityController.clear();
     _capacityKind = CapacityKind.unknown;
     _rederiveNo();
+    _clean = _snapshot();
   }
 
   /// Loads a HELD machine back into the sheet. Add then replaces it rather
@@ -646,12 +696,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               ),
               const SizedBox(height: 10),
             ],
-            _machineList(enabled),
+            SheetStep.noTab(_machineList(enabled)),
             const SizedBox(height: 12),
             // Each field as wide as what it holds, side by side, wrapping only
             // when the row is full — a stack of page-wide bars for answers
             // like "2011" and "60" was most of this card's height.
-            Wrap(
+            _formStep(Wrap(
               spacing: 10,
               runSpacing: 12,
               crossAxisAlignment: WrapCrossAlignment.start,
@@ -816,7 +866,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   enabled: enabled,
                 ),
               ],
-            ),
+            )),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(
@@ -840,7 +890,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               ),
             ],
             const SizedBox(height: 12),
-            Row(
+            SheetStep.noTab(Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (editing != null || _editingStagedIndex != null)
@@ -868,7 +918,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   onPressed: enabled ? _saveMachine : null,
                 ),
               ],
-            ),
+            )),
           ],
         ],
       ),
@@ -876,6 +926,38 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   }
 
   /// One pick-or-type field, as wide as its label and longest answer.
+  /// The machine form as one keyboard step: Machine Type, Machine No., Name,
+  /// Make, D.O.M., Running Hrs, Stroke / Min, Capacity, Feeder make, Die
+  /// Type — then "Add this machine?".
+  Widget _formStep(Widget fields) {
+    Future<bool> save() async {
+      await _saveMachine();
+      return mounted && _error == null && _capacityError == null && !_hasTyped;
+    }
+
+    return SheetStep(
+      flow: widget.flow,
+      id: PartMachineSection.step,
+      actions: SheetStepActions(
+        title: () => _editingMachineId != null || _editingStagedIndex != null
+            ? 'Save this machine?'
+            : (widget.part == null ? 'Hold this machine?' : 'Add this machine?'),
+        isDirty: () => _hasTyped,
+        blockedReason: () {
+          if (_groupId == null) return 'Pick the machine type first';
+          if (_noController.text.trim().isEmpty) return 'Give it a machine number';
+          return _numberProblem;
+        },
+        save: save,
+        discard: () => setState(_clearAll),
+        saveAndAddAnother: () async {
+          if (await save()) widget.flow?.focusStep(PartMachineSection.step);
+        },
+      ),
+      child: fields,
+    );
+  }
+
   Widget _pick({
     required String slug,
     required String label,

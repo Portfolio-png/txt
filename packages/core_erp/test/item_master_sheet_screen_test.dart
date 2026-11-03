@@ -1776,6 +1776,270 @@ void main() {
     });
   });
 
+  group('the keyboard: Tab through what is typed, then a save prompt', () {
+    final desktop = TargetPlatformVariant.only(TargetPlatform.macOS);
+
+    /// The key of the field (or form) holding focus: `cell_item_0_3`,
+    /// `deal_company`, `deal_quotation`, …
+    String? focusedField() {
+      final context = FocusManager.instance.primaryFocus?.context;
+      if (context == null) return null;
+      String? found;
+      bool visit(Element element) {
+        final key = element.widget.key;
+        if (key is ValueKey<String> &&
+            (key.value.startsWith('cell_item_') ||
+                key.value.startsWith('deal_') ||
+                key.value.startsWith('quick-entry-'))) {
+          found = key.value;
+          return false;
+        }
+        return true;
+      }
+
+      if (context is Element) visit(context);
+      context.visitAncestorElements(visit);
+      return found;
+    }
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+      await tester.sendKeyEvent(key);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    Future<SheetController> openNew(WidgetTester tester, {_FakeItemRepository? repo}) async {
+      await _pumpScreen(tester, repository: repo ?? _FakeItemRepository([]), size: const Size(1700, 3200));
+      await tester.pump(const Duration(milliseconds: 50));
+      return tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+    }
+
+    void fillLine(SheetController sheet, {int row = 0, String name = 'Lid'}) {
+      final def = sheet.sheetDef;
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+      sheet.updateValue(group.id,
+          CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label), row: row);
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final kind = sheet.options.firstWhere(
+        (o) => o.columnId == type.id && o.parentOptionId == trunk.id,
+      );
+      sheet.updateValue(type.id,
+          CellValue(columnId: type.id, optionId: kind.id, optionLabel: kind.label), row: row);
+      final nameColumn = def.itemColumn!;
+      sheet.updateValue(nameColumn.id,
+          CellValue(columnId: nameColumn.id, optionLabel: name, isNew: true), row: row);
+    }
+
+    List<String> lineKeys(SheetController sheet, {int row = 0}) => [
+          for (final column in PartRowsForm.lineColumns(sheet.sheetDef))
+            'cell_item_${row}_${column.id}',
+        ];
+
+    testWidgets('the sheet opens on Group, and Tab visits the line\'s fields only',
+        (tester) async {
+      final sheet = await openNew(tester);
+      final keys = lineKeys(sheet);
+      expect(focusedField(), keys.first, reason: 'the keyboard starts on Group');
+      final visited = <String?>[focusedField()];
+      for (var i = 1; i < keys.length; i += 1) {
+        await press(tester, LogicalKeyboardKey.tab);
+        visited.add(focusedField());
+      }
+      expect(visited, keys,
+          reason: 'no photo, Auto pill, property icon, Save or × in between');
+    }, variant: desktop);
+
+    testWidgets('Tab past the last field asks; Save writes the line and goes on',
+        (tester) async {
+      final repo = _FakeItemRepository([]);
+      final sheet = await openNew(tester, repo: repo);
+      fillLine(sheet);
+      await tester.pump();
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).last.id, row: 0);
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Save part 1?'), findsOneWidget);
+
+      await tester.runAsync(() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(repo.created, hasLength(1), reason: 'Save wrote the part');
+      expect(focusedField(), 'deal_company',
+          reason: 'and Tab carried on to the company');
+    }, variant: desktop);
+
+    testWidgets('Discard empties a new line; Esc stays on it', (tester) async {
+      final sheet = await openNew(tester);
+      fillLine(sheet);
+      final last = PartRowsForm.lineColumns(sheet.sheetDef).last.id;
+      sheet.focusCell(last, row: 0);
+      await tester.pump();
+
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Save part 1?'), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Save part 1?'), findsNothing);
+      expect(focusedField(), 'cell_item_0_$last', reason: 'Esc keeps typing');
+
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const ValueKey('step_discard')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.isRowBlank(0), isTrue, reason: 'Discard put the line back');
+      expect(focusedField(), 'deal_company');
+    }, variant: desktop);
+
+    testWidgets('an unchanged saved line is passed without asking', (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).last.id, row: 0);
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey('step_save_dialog')), findsNothing);
+      // Nothing after it in this build (no die or machine forms without
+      // their hooks, no company on a part made for nobody): the end.
+      expect(find.textContaining('End of the sheet'), findsOneWidget);
+    }, variant: desktop);
+
+    testWidgets('Enter on a saved line opens it for editing', (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      expect(sheet.isRowLocked(0), isTrue);
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).first.id, row: 0);
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(sheet.isRowLocked(0), isFalse);
+    }, variant: desktop);
+
+    testWidgets('Ctrl+Enter saves the line and opens the next one', (tester) async {
+      final repo = _FakeItemRepository([]);
+      final sheet = await openNew(tester, repo: repo);
+      fillLine(sheet);
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef)[2].id, row: 0);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(repo.created, hasLength(1));
+      expect(sheet.rowCount, 2);
+      expect(focusedField(), lineKeys(sheet, row: 1).first,
+          reason: 'on the new line\'s Group');
+    }, variant: desktop);
+
+    testWidgets('a pick by keyboard leaves focus on the box, and Tab reaches the prompt',
+        (tester) async {
+      final sheet = await openNew(tester);
+      expect(focusedField(), lineKeys(sheet).first);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyS, character: 's');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.draftAt(0).get(1)?.optionLabel, 'Switch Action');
+      expect(focusedField(), lineKeys(sheet).first, reason: 'back on Group after the pick');
+      final seen = <String?>[];
+      for (var i = 0; i < 12 && find.byKey(const ValueKey('step_save_dialog')).evaluate().isEmpty; i += 1) {
+        await press(tester, LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 100));
+        seen.add(focusedField());
+      }
+      expect(find.byKey(const ValueKey('step_save_dialog')), findsOneWidget, reason: 'went $seen');
+    }, variant: desktop);
+
+    testWidgets('a new part name added by keyboard, then Tab on to the prompt',
+        (tester) async {
+      final sheet = await openNew(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyS, character: 's');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 300));
+      await press(tester, LogicalKeyboardKey.tab);
+      await press(tester, LogicalKeyboardKey.tab);
+      expect(focusedField(), lineKeys(sheet)[2]);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyL, character: 'l');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(find.byType(TextField).last, 'Lid Ninety');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.draftAt(0).get(3)?.optionLabel, 'Lid Ninety');
+      final seen = <String?>[];
+      for (var i = 0; i < 12 && find.byKey(const ValueKey('step_save_dialog')).evaluate().isEmpty; i += 1) {
+        await press(tester, LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 100));
+        seen.add(focusedField());
+      }
+      expect(find.byKey(const ValueKey('step_save_dialog')), findsOneWidget, reason: 'went $seen');
+    }, variant: desktop);
+
+    testWidgets('Shift+Tab goes back without asking', (tester) async {
+      final sheet = await openNew(tester);
+      fillLine(sheet);
+      final keys = lineKeys(sheet);
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef)[1].id, row: 0);
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(focusedField(), keys.first);
+      expect(find.byKey(const ValueKey('step_save_dialog')), findsNothing);
+    }, variant: desktop);
+
+    testWidgets('the company line: Company, Quotation, then its prompt', (tester) async {
+      await openNew(tester);
+      final form = tester.widget<DealPeopleForm>(find.byType(DealPeopleForm));
+      final party = form.controller.clientVendorController.sheetDef
+          .columnBoundTo(SheetBindsTo.developedForParty)!;
+      form.controller.clientVendorController.updateValue(
+        party.id,
+        CellValue(columnId: party.id, refId: 5, optionLabel: 'Gold Medal'),
+      );
+      await tester.pump();
+      // Into the company step from the part line's end.
+      form.flow!.focusStep(DealPeopleForm.companyStep);
+      await tester.pump();
+      await tester.pump();
+      expect(focusedField(), 'deal_company');
+      await press(tester, LogicalKeyboardKey.tab);
+      expect(focusedField(), 'deal_quotation');
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Save Gold Medal?'), findsOneWidget);
+      // The part line is blank, so its Save is held back, and says why.
+      expect(find.textContaining('cannot be saved yet'), findsOneWidget);
+    }, variant: desktop);
+  });
+
   group('the parts are lines, drawn like the people', () {
     testWidgets('no table headings, and no Date or Time to type', (tester) async {
       await _pumpScreen(tester, size: const Size(1600, 3200));

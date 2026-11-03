@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../sheet/sheet_engine.dart';
 import '../../../../sheet/sheet_style.dart';
+import '../../../../sheet/widgets/sheet_step.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -56,7 +58,14 @@ class PartDieSection extends StatefulWidget {
     this.framed = true,
     this.heldSaveBuilder,
     this.onDirtyChanged,
+    this.flow,
   });
+
+  /// The keyboard's order of the screen's steps; the die form is one.
+  final SheetFlow? flow;
+
+  /// The die form's step id.
+  static const Object step = 'die';
 
   /// Told when the sheet starts or stops holding a die that is typed but not
   /// held or saved — so the host can warn before leaving with it.
@@ -152,6 +161,34 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// instead of making a second one.
   String? _unlinkedDieId;
 
+  /// The form as it stood when last cleared — what "typed since" means for
+  /// the keyboard's save prompt. The code counts only once typed over; it
+  /// re-derives from the part by itself.
+  String? _clean;
+
+  String _snapshot() => [
+        _codePinned ? _codeController.text : '',
+        _madeByController.text,
+        _linerController.text,
+        _setsController.text,
+        _storeAreaController.text,
+        _rackController.text,
+        _type?.slug ?? '',
+        _type?.label ?? '',
+        '$_dieMakerId',
+        _linerUnit,
+        '$_poAt',
+        '$_dateInAt',
+      ].join('|');
+
+  /// Anything typed or picked since the form was last cleared, or a die
+  /// open for correcting: something Tab past the form should ask about.
+  bool get _hasTyped =>
+      _editingDieId != null ||
+      _editingStagedIndex != null ||
+      _unlinkedDieId != null ||
+      _snapshot() != (_clean ??= _snapshot());
+
   /// What the host was last told.
   bool _reportedDirty = false;
 
@@ -181,6 +218,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     super.initState();
     _linerController.addListener(_reportDirty);
     _setsController.addListener(_reportDirty);
+    _clean = _snapshot();
 
     // The master is lazy and nothing else on this screen fetches it, so an
     // unfetched picker would be indistinguishable from a shop with no die
@@ -341,6 +379,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       _dateInAt = null;
     }
     _rederiveCode();
+    _clean = _snapshot();
   }
 
   /// Loads a die that already exists into the sheet, to be corrected.
@@ -728,8 +767,13 @@ class _PartDieSectionState extends State<PartDieSection> {
               ),
               const SizedBox(height: 10),
             ],
-            _dieList(enabled),
+            // The dies on the part are opened with their Edit (clicked); Tab
+            // goes through the form below.
+            SheetStep.noTab(_dieList(enabled)),
             const SizedBox(height: 12),
+            _formStep(Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
             _typeRow(enabled),
             const SizedBox(height: 10),
             // Each field as wide as what it holds, side by side, wrapping only
@@ -846,6 +890,8 @@ class _PartDieSectionState extends State<PartDieSection> {
                 ),
               ],
             ),
+              ],
+            )),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(
@@ -869,7 +915,7 @@ class _PartDieSectionState extends State<PartDieSection> {
               ),
             ],
             const SizedBox(height: 12),
-            Row(
+            SheetStep.noTab(Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (editing != null || _editingStagedIndex != null)
@@ -897,7 +943,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                   onPressed: enabled ? _saveDie : null,
                 ),
               ],
-            ),
+            )),
           ],
         ],
       ),
@@ -1033,7 +1079,83 @@ class _PartDieSectionState extends State<PartDieSection> {
     });
   }
 
+  /// The die form as one keyboard step: Type, Die Code, Die Made By, Liner,
+  /// Sets, Store Area, Rack No., the two dates — then "Add this die?".
+  Widget _formStep(Widget fields) {
+    Future<bool> save() async {
+      await _saveDie();
+      return mounted && _error == null && _linerError == null && !_hasTyped;
+    }
+
+    return SheetStep(
+      flow: widget.flow,
+      id: PartDieSection.step,
+      actions: SheetStepActions(
+        title: () => _editingDieId != null || _editingStagedIndex != null
+            ? 'Save this die?'
+            : (widget.part == null ? 'Hold this die?' : 'Add this die?'),
+        isDirty: () => _hasTyped,
+        blockedReason: () {
+          if (_type == null) return 'Pick a type — the code is built from it.';
+          return _setsProblem;
+        },
+        save: save,
+        discard: () => setState(() => _resetSheet(keepRepeating: false)),
+        // Another die for the same part: the form clears and Type takes focus.
+        saveAndAddAnother: () async {
+          if (await save()) widget.flow?.focusStep(PartDieSection.step);
+        },
+      ),
+      child: fields,
+    );
+  }
+
+  /// The type as one Tab stop: ← → move the choice through the four built
+  /// in types. The chips stay clickable; a typed type is added with the mouse.
   Widget _typeRow(bool enabled) {
+    return Focus(
+      canRequestFocus: enabled,
+      onKeyEvent: (node, event) {
+        if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+        final step = key == LogicalKeyboardKey.arrowRight
+            ? 1
+            : key == LogicalKeyboardKey.arrowLeft
+            ? -1
+            : 0;
+        if (step == 0) return KeyEventResult.ignored;
+        const types = DieType.values;
+        final at = types.indexWhere((t) => t.slug == _type?.slug);
+        final next = at < 0
+            ? (step > 0 ? 0 : types.length - 1)
+            : (at + step) % types.length;
+        setState(() {
+          _type = DieTypeChoice.of(types[next]);
+          _rederiveCode();
+        });
+        return KeyEventResult.handled;
+      },
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+            border: Border.all(
+              color: Focus.of(context).hasFocus
+                  ? SoftErpTheme.accent
+                  : Colors.transparent,
+              width: 1.6,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: SheetStep.noTab(_typeChips(enabled)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _typeChips(bool enabled) {
     // A heading over its choices, as every field on the sheet has.
     return SheetStyle.labelled(
       label: 'Type',

@@ -245,6 +245,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // Quitting the app — Cmd+Q, or the window's close button, which the
     // window turns into a quit — asks the same question as Back.
     _exitListener = AppLifecycleListener(onExitRequested: _onExitRequested);
+    // The keyboard starts on the first thing to fill in: the part line's
+    // Group (or the first field of whatever step comes first).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _flow.focusFirst();
+    });
 
     // Reference data is loaded again whenever the masters change, not once at
     // open. The screen can be opened before the providers have finished their
@@ -760,14 +765,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           autofocus: true,
           child: Column(
             children: [
-              _topBar(),
+              // Tab goes through what is typed on the sheet, and only that:
+              // the top bar, the rail and the raw panel are clicked.
+              SheetStep.noTab(_topBar()),
               Expanded(
                 child: Row(
                   children: [
                     if (_railCollapsed)
-                      _collapsedRail()
+                      SheetStep.noTab(_collapsedRail())
                     else
-                      Stack(
+                      SheetStep.noTab(Stack(
                         children: [
                           SheetSidebar(
                       controller: _controller.groupItemController,
@@ -798,9 +805,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                             ),
                           ),
                         ],
-                      ),
+                      )),
                     Expanded(child: _body()),
-                    _rawSheetPanel(),
+                    SheetStep.noTab(_rawSheetPanel()),
                   ],
                 ),
               ),
@@ -1495,7 +1502,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_treeDirty) _treeDirtyBar(),
+        if (_treeDirty) SheetStep.noTab(_treeDirtyBar()),
         ...nodes,
       ],
     );
@@ -2253,6 +2260,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // The section card is the frame here; the die list draws its own only
       // where it stands alone, in the quick-entry dialog.
       framed: false,
+      flow: _flow,
       onDirtyChanged: (dirty) {
         if (mounted && dirty != _dieTyping) setState(() => _dieTyping = dirty);
       },
@@ -2280,6 +2288,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       children: [
         PartMachineSection(
           framed: false,
+          flow: _flow,
           onDirtyChanged: (dirty) {
             if (mounted && dirty != _machineTyping) {
               setState(() => _machineTyping = dirty);
@@ -2295,7 +2304,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           onMachinesChanged: _setMachines,
         ),
         const SizedBox(height: 20),
-        _routing(),
+        // Routing is laid out with the mouse; Tab ends at the machine form.
+        SheetStep.noTab(_routing()),
       ],
     );
   }
@@ -2393,6 +2403,110 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       },
       onAddProperty: _addProperty,
       onRemoveRow: _removeLine,
+      flow: _flow,
+      lineActions: _lineActions,
+    );
+  }
+
+  /// The keyboard's way down the sheet: part lines, the company and its
+  /// people, the die form, the machine form — in the order the sections are
+  /// drawn, which the user can rearrange.
+  late final SheetFlow _flow = SheetFlow(
+    order: _stepOrder,
+    reveal: (section) {
+      if (_collapsed.contains(section)) setState(() => _collapsed.remove(section));
+    },
+    onEnd: () => _toast('End of the sheet — Ctrl+S saves everything.'),
+  );
+
+  List<SheetStepPlace> _stepOrder() {
+    final out = <SheetStepPlace>[];
+    void visit(String id) {
+      switch (id) {
+        case 'group_item':
+          final sheet = _controller.groupItemController;
+          for (final draft in sheet.drafts) {
+            out.add((id: PartRowsForm.stepId(draft.rowKey), section: id));
+          }
+        case 'client_vendor':
+          if (_controller.isExternal) {
+            out.add((id: DealPeopleForm.companyStep, section: id));
+            for (final draft in _controller.peopleController.drafts) {
+              out.add((id: DealPeopleForm.personStep(draft.rowKey), section: id));
+            }
+          }
+        case 'die_master':
+          out.add((id: PartDieSection.step, section: id));
+        case 'machine_master':
+          out.add((id: PartMachineSection.step, section: id));
+      }
+      for (final kid in _childrenOf(id)) {
+        visit(kid);
+      }
+    }
+
+    visit('group_item');
+    return out;
+  }
+
+  /// A part line's save prompt: Save writes the line (its held dies and
+  /// machines with it), Discard puts it back, Ctrl+Enter saves and opens the
+  /// next line.
+  SheetStepActions _lineActions(int row) {
+    final sheet = _controller.groupItemController;
+    final rowKey = sheet.draftAt(row).rowKey;
+    int at() => sheet.indexOfRowKey(rowKey);
+    bool saved() {
+      final i = at();
+      return i >= 0 &&
+          sheet.draftAt(i).entityId != null &&
+          !sheet.draftAt(i).isDirtySinceSave;
+    }
+
+    Future<bool> save() async {
+      final i = at();
+      if (i < 0) return false;
+      await _saveRow(i);
+      return saved();
+    }
+
+    return SheetStepActions(
+      title: () => 'Save part ${at() + 1}?',
+      isDirty: () {
+        final i = at();
+        if (i < 0 || sheet.isRowLocked(i)) return false;
+        final held = (_heldDies[rowKey]?.isNotEmpty ?? false) ||
+            (_heldMachines[rowKey]?.isNotEmpty ?? false);
+        return !saved() && (!sheet.isRowBlank(i) || held);
+      },
+      blockedReason: () {
+        final i = at();
+        if (i < 0) return null;
+        final errors = sheet.errorsForRow(i);
+        return errors.isEmpty ? null : errors.values.first.message;
+      },
+      save: save,
+      discard: () {
+        final i = at();
+        if (i >= 0) _controller.discardRow(i);
+      },
+      saveAndAddAnother: () async {
+        if (!await save()) return;
+        sheet.addRow();
+        final first = PartRowsForm.lineColumns(sheet.sheetDef).firstOrNull;
+        if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
+      },
+      isLocked: () {
+        final i = at();
+        return i >= 0 && sheet.isRowLocked(i);
+      },
+      unlock: () {
+        final i = at();
+        if (i < 0) return;
+        sheet.setRowLocked(i, false);
+        sheet.selectRow(i);
+        setState(() {});
+      },
     );
   }
 
@@ -2741,6 +2855,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         controller: _controller,
         partSaved: _livePart != null,
         recordedAt: _livePart?.developedFor.at,
+        flow: _flow,
         onSaveDeal: _saveDeal,
       );
 
@@ -2871,7 +2986,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          // The heading's controls are clicked; Tab is for the fields below.
+          SheetStep.noTab(Row(
             children: [
               // The part itself is the root and stays put; everything else can
               // be dragged onto another section to nest under it.
@@ -2927,10 +3043,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               const SizedBox(width: 8),
               ..._sectionActions(id, heading),
             ],
-          ),
+          )),
           if (collapsed)
             // Folded: one row of what is in it. Tap to open.
-            InkWell(
+            // Tab into a folded section unfolds it (the keyboard flow does).
+            SheetStep.noTab(InkWell(
               key: ValueKey<String>('section_summary_$id'),
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
               onTap: () => _toggle(id),
@@ -2938,7 +3055,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
                 child: _SummaryLine(_sectionSummary(id)),
               ),
-            ),
+            )),
           // Folded is hidden, not thrown away: a route being laid out, a die
           // half typed, a raw sheet being edited all live in the body, and
           // building it only when open disposed them on every fold.

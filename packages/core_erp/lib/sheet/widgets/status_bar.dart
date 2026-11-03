@@ -109,7 +109,10 @@ class SheetStatusBar extends StatelessWidget {
           // important thing in the bar — it gives way before the message does.
           const Flexible(
             child: Text(
-              'Enter: ➔   Alt+↓: list   Esc: restore   Ctrl+S: save',
+              // What the keys do on the sheet. "Esc: restore" was here, and
+              // nothing restored anything.
+              'Tab: next   Type or ↓: search   ↑↓: choose   Enter: pick   '
+                  'Esc: close   Ctrl+Enter: save & add another   Ctrl+S: save all',
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
