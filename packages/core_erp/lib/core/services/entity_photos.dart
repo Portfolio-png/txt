@@ -659,8 +659,18 @@ class EntityPhotosProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final photo = await _repository.upload(owner, id, file);
-      _photos[key] = photo;
-      _checkedAt[key] = photo.fetchedAt;
+      // Shown at once, but its URL is the upload's short one (minutes):
+      // dated as old, so the batch asked for next replaces it with an
+      // hour-long one instead of reusing it until it breaks.
+      _photos[key] = EntityPhoto(
+        assetId: photo.assetId,
+        url: photo.url,
+        thumbUrl: photo.thumbUrl,
+        count: photo.count,
+        fetchedAt: DateTime.fromMillisecondsSinceEpoch(0),
+      );
+      _checkedAt.remove(key);
+      request(owner, id);
       return null;
     } catch (error) {
       return '$error';

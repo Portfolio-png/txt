@@ -53,6 +53,12 @@ void main() {
     expect(shrinkPhotoNow(Uint8List.fromList(utf8.encode('not a picture'))), isNull);
   });
 
+  test('a JPEG the decoder chokes on is sent as it is, not a failure', () {
+    final whole = _jpeg(400, 300);
+    final cut = Uint8List.sublistView(whole, 0, whole.length ~/ 3);
+    expect(() => shrinkPhotoNow(cut, contentType: 'image/jpeg'), returnsNormally);
+  });
+
   test('store sends the shrunk photo and its thumbnail, each to its own URL', () async {
     final calls = <String, http.Request>{};
     Map<String, dynamic>? intent;

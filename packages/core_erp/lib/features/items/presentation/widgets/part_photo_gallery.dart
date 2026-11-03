@@ -297,14 +297,22 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
       return;
     }
     // Some of it may have landed: start again from what the part keeps,
-    // with the error said.
+    // with the error said — and the photos picked here still held, so Save
+    // again sends them (one already stored is matched, not stored twice).
+    final staged = _photos.whereType<StagedGalleryPhoto>().toList();
+    final stagedMain = _main is StagedGalleryPhoto ? _main : null;
     _removed.clear();
     setState(() {
       _saving = false;
       _loading = true;
     });
     await _load(first: true);
-    if (mounted) setState(() => _error = error);
+    if (!mounted) return;
+    setState(() {
+      _photos = [..._photos, ...staged];
+      if (stagedMain != null) _main = stagedMain;
+      _error = error;
+    });
   }
 
   Future<void> _close() async {

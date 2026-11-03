@@ -56,6 +56,22 @@ class _Repo extends EntityPhotoRepository {
   }
 }
 
+/// Answers the batch with a different (long-lived) link than the upload's.
+class _BatchRepo extends _Repo {
+  @override
+  Future<Map<String, EntityPhoto>> primaryPhotos(String owner, List<String> ids) async {
+    final found = await super.primaryPhotos(owner, ids);
+    return {
+      for (final entry in found.entries)
+        entry.key: EntityPhoto(
+          assetId: entry.value.assetId,
+          url: '${entry.value.url}?batch',
+          fetchedAt: DateTime.now(),
+        ),
+    };
+  }
+}
+
 void main() {
   test('one frame of asks is one request per kind of record', () async {
     final repo = _Repo()
@@ -116,6 +132,18 @@ void main() {
     expect(await photos.remove(PhotoOwner.client, '5'), isNull);
     expect(photos.photoOf(PhotoOwner.client, '5'), isNull);
     expect(repo.removed, [1]);
+  });
+
+  test('a photo just uploaded gets the batch\'s long-lived link, not the upload\'s', () async {
+    // The upload answers with a link good for minutes; kept as it was, the
+    // reuse of a known photo's link held it until it broke.
+    final repo = _BatchRepo();
+    final photos = EntityPhotosProvider(repository: repo);
+    addTearDown(photos.dispose);
+    final file = XFile.fromData(Uint8List.fromList(const [1, 2, 3]), name: 'die.png');
+    expect(await photos.upload(PhotoOwner.die, '9', file), isNull);
+    await Future<void>.delayed(Duration.zero);
+    expect(photos.photoOf(PhotoOwner.die, '9')!.url, endsWith('?batch'));
   });
 
   test('a photo stored elsewhere is asked for again when the server says so', () async {

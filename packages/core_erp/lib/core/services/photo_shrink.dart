@@ -47,6 +47,16 @@ ShrunkPhoto? shrinkPhotoNow(Uint8List bytes, {String? contentType}) =>
     _shrink((bytes: bytes, contentType: contentType));
 
 ShrunkPhoto? _shrink(({Uint8List bytes, String? contentType}) input) {
+  try {
+    return _shrinkOrThrow(input);
+  } catch (_) {
+    // A picture the decoder chokes on (an odd or truncated JPEG) is sent as
+    // it is, as before — never a failed upload.
+    return null;
+  }
+}
+
+ShrunkPhoto? _shrinkOrThrow(({Uint8List bytes, String? contentType}) input) {
   final decoded = img.decodeImage(input.bytes);
   if (decoded == null) return null;
   // A phone's JPEG says which way up it was held; turned here, so the

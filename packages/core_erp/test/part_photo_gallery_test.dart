@@ -66,14 +66,29 @@ class _Repo extends EntityPhotoRepository {
   Future<void> remove(String owner, String id, int assetId) async => removed.add(assetId);
 }
 
+/// The arrange step fails once, as a dropped connection would.
+class _FailingRepo extends _Repo {
+  _FailingRepo(super.count);
+  bool failed = false;
+
+  @override
+  Future<List<PartPhoto>> arrangePartPhotos(String itemId, {required List<int> order, int? primaryId}) async {
+    if (!failed) {
+      failed = true;
+      throw const EntityPhotoException('The connection dropped.');
+    }
+    return super.arrangePartPhotos(itemId, order: order, primaryId: primaryId);
+  }
+}
+
 void main() {
   late _Repo repo;
   late EntityPhotosProvider photos;
   late PhotoRequestsProvider requests;
   late bool? saved;
 
-  Future<void> open(WidgetTester tester, {int count = 3}) async {
-    repo = _Repo(count);
+  Future<void> open(WidgetTester tester, {int count = 3, _Repo? using}) async {
+    repo = using ?? _Repo(count);
     photos = EntityPhotosProvider(repository: repo);
     requests = PhotoRequestsProvider(
       repository: PhotoRequestRepository(baseUrl: 'http://x', useMockResponses: true),
@@ -231,5 +246,25 @@ void main() {
     expect(find.text('From phone'), findsOneWidget);
     // It is the part's already: nothing to save.
     expect(saveEnabled(tester), isFalse);
+  });
+
+  testWidgets('a Save that fails keeps the photos picked here, to send again', (tester) async {
+    await open(tester, using: _FailingRepo(2));
+    PartPhotoGallery.debugPickFiles = () async => [
+      XFile.fromData(Uint8List.fromList(const [7, 8, 9]), path: '/tmp/top.jpg'),
+    ];
+    await tester.tap(key('gallery_add_2'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('gallery_from_computer'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('gallery_save'));
+    await tester.pumpAndSettle();
+
+    expect(key('gallery_error'), findsOneWidget);
+    expect(find.text('New — saved on Save'), findsWidgets, reason: 'the pick is still held');
+    expect(saveEnabled(tester), isTrue);
+    await tester.tap(key('gallery_save'));
+    await tester.pumpAndSettle();
+    expect(saved, isTrue);
   });
 }
