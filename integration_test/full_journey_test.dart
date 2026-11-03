@@ -455,7 +455,7 @@ void main() {
       await stillThere(_keyed('quick-entry-die-row-'), 'the die');
       await stillThere(_keyed('quick-entry-machine-row-'), 'the machine');
       await stillThere(find.textContaining(_vendor), 'the raw sheet vendor');
-      await stillThere(find.byTooltip('Open part photo'), 'the part photo');
+      await stillThere(find.byTooltip('Open part photos (1 of 5)'), 'the part photo');
       await stillThere(find.byTooltip('Open company logo'), 'the company logo');
     });
 
