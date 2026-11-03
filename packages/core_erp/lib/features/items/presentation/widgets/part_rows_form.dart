@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../sheet/sheet.dart';
 
@@ -85,9 +86,6 @@ class PartRowsForm extends StatelessWidget {
   }
 
   Widget _footer(List<ColumnDef> columns) {
-    final properties = columns
-        .where((c) => SheetBindsTo.isVariation(c.bindsTo))
-        .toList();
     return Wrap(
       spacing: 6,
       runSpacing: 4,
@@ -110,7 +108,6 @@ class PartRowsForm extends StatelessWidget {
             label: const Text('Add property', style: TextStyle(fontSize: 14)),
           ),
         ),
-        _PropertiesMenu(sheet: sheet, properties: properties),
         Padding(
           padding: const EdgeInsets.only(left: 8),
           child: Text(
@@ -359,7 +356,25 @@ class _PartFieldState extends State<_PartField> {
     );
   }
 
+  /// A property — Alloy, Thickness, one added with Add property.
+  bool get _isProperty => SheetBindsTo.isVariation(_column.bindsTo);
+
   Widget _optionField() {
+    final field = _optionBox(labelInside: !_isProperty);
+    if (!_isProperty) return field;
+    // A property's name is a heading over its box, with its Edit and Delete.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _PropertyHeading(sheet: _sheet, column: _column, row: widget.row),
+        const SizedBox(height: 2),
+        field,
+      ],
+    );
+  }
+
+  Widget _optionBox({required bool labelInside}) {
     final value = _value;
     final label = _shown;
     final isNew = value?.isNew ?? false;
@@ -395,7 +410,7 @@ class _PartFieldState extends State<_PartField> {
                 isFocused: _focus.hasFocus,
                 isEmpty: false,
                 decoration: SheetStyle.field(
-                  label: _column.label,
+                  label: labelInside ? _column.label : null,
                   suffixIcon: _locked
                       ? null
                       : const Icon(
@@ -452,153 +467,85 @@ class _PartFieldState extends State<_PartField> {
   }
 }
 
-/// Rename, edit options, move and remove for the added properties — what each
-/// column heading's ⋮ menu did when the parts were a grid. A choice that does
-/// not apply is drawn disabled, never hidden.
-class _PropertiesMenu extends StatelessWidget {
-  const _PropertiesMenu({required this.sheet, required this.properties});
+/// A property's name over its box, and its two actions: Edit and Delete.
+///
+/// Each asks first — a property is the whole sheet's, not this part's. One
+/// that is built into every part sheet (Alloy, Thickness) has neither, and
+/// says so rather than hiding them.
+class _PropertyHeading extends StatelessWidget {
+  const _PropertyHeading({
+    required this.sheet,
+    required this.column,
+    required this.row,
+  });
 
   final SheetController sheet;
-  final List<ColumnDef> properties;
+  final ColumnDef column;
+  final int row;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: properties.isEmpty
-          ? 'No properties yet — Add property first'
-          : 'Rename, reorder or remove a property',
-      child: PopupMenuButton<(String, ColumnDef)>(
-        key: const ValueKey<String>('part_properties_menu'),
-        enabled: properties.isNotEmpty,
-        tooltip: '',
-        onSelected: (choice) => _act(context, choice.$1, choice.$2),
-        itemBuilder: (context) => [
-          for (final column in properties) ...[
-            PopupMenuItem<(String, ColumnDef)>(
-              enabled: false,
-              height: 32,
-              child: Text(column.label, style: SheetStyle.subHeading),
-            ),
-            _item('rename', column, 'Rename', enabled: !column.isDefault),
-            if (sheet.canEditOptions?.call(column) ?? false)
-              _item('options', column, 'Edit options…'),
-            _item(
-              'left',
-              column,
-              'Move earlier',
-              enabled: sheet.sheetDef.canMoveLeft(column.id).$1,
-            ),
-            _item(
-              'right',
-              column,
-              'Move later',
-              enabled: sheet.sheetDef.canMoveRight(column.id).$1,
-            ),
-            _item(
-              'remove',
-              column,
-              'Remove',
-              enabled: sheet.sheetDef.canRemove(column.id).$1,
-              danger: true,
-            ),
-            if (column != properties.last) const PopupMenuDivider(),
-          ],
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.tune_rounded,
-                size: 18,
-                color: properties.isEmpty
-                    ? SoftErpTheme.textMuted
-                    : SoftErpTheme.accent,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Properties',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: properties.isEmpty
-                      ? SoftErpTheme.textMuted
-                      : SoftErpTheme.accent,
-                ),
-              ),
-              const Icon(Icons.arrow_drop_down_rounded, size: 18),
-            ],
+    // Only a property added here is stored, and so can be edited or removed.
+    final stored = sheet.canEditOptions?.call(column) ?? false;
+    final builtIn = '${column.label} is built into every part sheet';
+    final (removable, removeWhy) = sheet.sheetDef.canRemove(column.id);
+    final String? deleteWhy =
+        !stored ? builtIn : (removable ? null : removeWhy);
+
+    Widget action({
+      required String key,
+      required IconData icon,
+      required String tip,
+      required VoidCallback? onPressed,
+      Color? color,
+    }) =>
+        Tooltip(
+          message: tip,
+          child: IconButton(
+            key: ValueKey<String>(key),
+            onPressed: onPressed,
+            icon: Icon(icon, size: 18),
+            color: color ?? SoftErpTheme.accent,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
           ),
+        );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(column.label, style: SheetStyle.label),
+        const SizedBox(width: 4),
+        action(
+          key: 'property_edit_${column.id}_$row',
+          icon: Icons.edit_outlined,
+          tip: stored ? 'Edit ${column.label}' : builtIn,
+          onPressed: stored ? () => _edit(context) : null,
         ),
-      ),
+        action(
+          key: 'property_delete_${column.id}_$row',
+          icon: Icons.delete_outline_rounded,
+          tip: deleteWhy ?? 'Delete ${column.label}',
+          color: SoftErpTheme.dangerText,
+          // The sheet's own remove asks "Remove … from the sheet?" first.
+          onPressed: deleteWhy == null
+              ? () => sheet.requestRemoveColumn(column.id)
+              : null,
+        ),
+      ],
     );
   }
 
-  PopupMenuItem<(String, ColumnDef)> _item(
-    String action,
-    ColumnDef column,
-    String label, {
-    bool enabled = true,
-    bool danger = false,
-  }) =>
-      PopupMenuItem<(String, ColumnDef)>(
-        value: (action, column),
-        enabled: enabled,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: danger && enabled ? SoftErpTheme.dangerText : null,
-            ),
-          ),
-        ),
-      );
-
-  Future<void> _act(BuildContext context, String action, ColumnDef column) async {
-    switch (action) {
-      case 'rename':
-        final typed = await _askName(context, column.label);
-        if (typed != null && typed.isNotEmpty && typed != column.label) {
-          sheet.renameColumn(column.id, typed);
-        }
-      case 'options':
-        sheet.onEditOptions?.call(column);
-      case 'left':
-        sheet.moveColumn(column.id, -1);
-      case 'right':
-        sheet.moveColumn(column.id, 1);
-      case 'remove':
-        sheet.requestRemoveColumn(column.id);
-    }
-  }
-
-  Future<String?> _askName(BuildContext context, String current) {
-    final text = TextEditingController(text: current);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename property'),
-        content: TextField(
-          key: const ValueKey<String>('part_property_rename_field'),
-          controller: text,
-          autofocus: true,
-          style: const TextStyle(fontSize: 14),
-          decoration: SheetStyle.field(label: 'Name'),
-          onSubmitted: (value) => Navigator.of(ctx).pop(value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(text.text.trim()),
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
-    ).whenComplete(text.dispose);
+  Future<void> _edit(BuildContext context) async {
+    final sure = await showConfirmDialog(
+      context,
+      title: 'Edit ${column.label}?',
+      message: 'Its list is the whole sheet’s — a change shows on every part. '
+          'Parts keep the values they were saved with.',
+      confirmLabel: 'Edit',
+      destructive: false,
+    );
+    if (sure) sheet.onEditOptions?.call(column);
   }
 }

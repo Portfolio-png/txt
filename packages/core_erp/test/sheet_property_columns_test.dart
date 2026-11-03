@@ -10,7 +10,6 @@ import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/sheet_properties_provider.dart';
 import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -340,23 +339,40 @@ void main() {
     expect(props.byKey('plating')!.options, ['Nickel', 'Gold']);
   });
 
+  testWidgets('a property is a heading with Edit and Delete; Edit asks first',
+      (tester) async {
+    await ApiSheetPropertyRepository(useMockResponses: true)
+        .create(name: 'Temper', kind: 'list');
+    await _pump(tester);
+
+    // Built into every part sheet: both drawn, neither pressable, and why.
+    final alloyEdit = find.byTooltip('Alloy is built into every part sheet');
+    expect(alloyEdit, findsWidgets);
+
+    await tester.tap(find.byTooltip('Edit Temper').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Edit Temper?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Options for Temper'), findsNothing,
+        reason: 'Cancel changes nothing');
+
+    await tester.tap(find.byTooltip('Edit Temper').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Edit').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Options for Temper'), findsOneWidget);
+  });
+
   testWidgets('removing a saved column asks first, and Cancel keeps it',
       (tester) async {
     await ApiSheetPropertyRepository(useMockResponses: true)
         .create(name: 'Temper', kind: 'list');
     final props = await _pump(tester);
 
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: Offset.zero);
-    addTearDown(mouse.removePointer);
-
     Future<void> openRemove() async {
-      // The part lines have no column headings: a property's Rename, Move and
-      // Remove are in the Properties menu under them.
-      await tester.tap(find.byKey(const ValueKey('part_properties_menu')));
-      await tester.pumpAndSettle();
-      // Temper was added last, so its Remove is the menu's last.
-      await tester.tap(find.text('Remove').last);
+      // A property's Delete sits beside its heading, over its box.
+      await tester.tap(find.byTooltip('Delete Temper').first);
       await tester.pumpAndSettle();
     }
 
