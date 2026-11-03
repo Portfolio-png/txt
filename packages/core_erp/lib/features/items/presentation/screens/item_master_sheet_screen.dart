@@ -670,6 +670,19 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// Save and close — and answers whether leaving is now all right. Back and
   /// quitting the app both ask through here.
   Future<bool> _askToLeave() async {
+    // One question at a time: Back and then Cmd+Q put two on screen.
+    if (_askingToLeave) return false;
+    _askingToLeave = true;
+    try {
+      return await _askToLeaveOnce();
+    } finally {
+      _askingToLeave = false;
+    }
+  }
+
+  bool _askingToLeave = false;
+
+  Future<bool> _askToLeaveOnce() async {
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -2261,6 +2274,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // The section card is the frame here; the die list draws its own only
       // where it stands alone, in the quick-entry dialog.
       framed: false,
+      lineKey: _cursorRowKey,
       flow: _flow,
       onDirtyChanged: (dirty) {
         if (mounted && dirty != _dieTyping) setState(() => _dieTyping = dirty);
@@ -2289,6 +2303,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       children: [
         PartMachineSection(
           framed: false,
+          lineKey: _cursorRowKey,
           flow: _flow,
           onDirtyChanged: (dirty) {
             if (mounted && dirty != _machineTyping) {
@@ -2861,6 +2876,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// so 85000 became 0) and were cramped pills; see [DealPeopleForm].
   Widget _partySheet() => DealPeopleForm(
         controller: _controller,
+        lineKey: _cursorRowKey,
         partSaved: _livePart != null,
         recordedAt: _livePart?.developedFor.at,
         flow: _flow,

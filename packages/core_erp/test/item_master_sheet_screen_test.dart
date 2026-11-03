@@ -25,6 +25,7 @@ import 'dart:convert';
 import 'package:core_erp/core/network/sitting_scope.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 import 'package:core_erp/sheet/sheet.dart';
+import 'package:core_erp/core/widgets/pick_or_type_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -2219,6 +2220,43 @@ void main() {
       expect(remove.onPressed, isNull);
       expect(find.byTooltip('Saved parts stay in the catalogue — use Archive part'),
           findsOneWidget);
+    });
+
+    testWidgets('a die typed on a new line does not follow the cursor to a saved part',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError('not saved in this test');
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      PartDieSection dies() =>
+          tester.widget<PartDieSection>(find.byType(PartDieSection));
+      // No. of Sets: measured per die, so it is what makes the form "typed".
+      TextEditingController sets() => tester
+          .widget<PickOrTypeField>(find.ancestor(
+            of: find.byKey(const ValueKey<String>('quick-entry-die-sets-field'),
+                skipOffstage: false),
+            matching: find.byType(PickOrTypeField, skipOffstage: false),
+          ))
+          .controller;
+
+      await tester.tap(find.text('Add part').first);
+      await tester.pump();
+      expect(dies().part, isNull);
+      sets().text = '4';
+      await tester.pump();
+
+      // Onto the saved part's line: that is not the new line being saved.
+      await tester.tap(find.text('Patti').first);
+      await tester.pump();
+      expect(dies().part?.id, 500);
+      expect(sets().text, isEmpty,
+          reason: 'what was typed for the new line stays off Patti');
     });
 
     testWidgets('a refused line is said in the app\'s toast, not drawn red',

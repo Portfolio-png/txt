@@ -8,7 +8,12 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/raw_
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'dart:async';
+
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
+import 'package:core_erp/features/items/data/sheet_property_repository.dart';
+import 'package:core_erp/features/items/domain/sheet_property.dart';
+import 'package:core_erp/features/items/presentation/providers/sheet_properties_provider.dart';
 import 'package:core_erp/features/items/domain/item_asset.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/widgets/item_detail_panel.dart';
@@ -42,6 +47,44 @@ class _Items implements ItemRepository {
 
   @override
   Future<List<ItemAsset>> getItemAssets(int itemId) async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Answers each part's fresh read only when told to — to finish them out
+/// of order.
+class _SlowItems implements ItemRepository {
+  _SlowItems(this.parts);
+  final Map<int, ItemDefinition> parts;
+  final Map<int, Completer<ItemDefinition?>> pending = {};
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<ItemDefinition>> getItems() async => parts.values.toList();
+
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) =>
+      (pending[id] = Completer<ItemDefinition?>()).future;
+
+  @override
+  Future<List<ItemAsset>> getItemAssets(int itemId) async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// The property columns cannot be read: every ask fails.
+class _BrokenProperties implements SheetPropertyRepository {
+  int asked = 0;
+
+  @override
+  Future<List<SheetProperty>> list() async {
+    asked += 1;
+    throw Exception('offline');
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -116,6 +159,8 @@ ItemVariationNodeDefinition _property(int id, String name, String value) =>
     );
 
 ItemDefinition _part({
+  int id = 500,
+  String name = 'Patti',
   DevelopedFor developedFor = DevelopedFor.empty,
   List<ItemDieLink> dies = const [],
   List<ItemMachineLink> machines = const [],
@@ -123,10 +168,10 @@ ItemDefinition _part({
   PenPaperBaseline? baseline,
 }) =>
     ItemDefinition(
-      id: 500,
-      name: 'Patti',
+      id: id,
+      name: name,
       alias: '',
-      displayName: 'Patti',
+      displayName: name,
       partNo: 1,
       partCode: 'PGBP1',
       quantity: 0,
@@ -449,5 +494,72 @@ void main() {
         expect(find.text('Ravi Shah'), findsOneWidget);
       });
     }
+  });
+
+  testWidgets('a part clicked after another is the one shown, whichever read ends last',
+      (tester) async {
+    final a = _part(id: 500, name: 'Patti');
+    final b = _part(id: 501, name: 'Strip');
+    final repo = _SlowItems({500: a, 501: b});
+    final items = ItemsProvider(repository: repo);
+    await tester.runAsync(items.refresh);
+    final groups = GroupsProvider(repository: _Groups());
+    await groups.initialize();
+    final shown = ValueNotifier<ItemDefinition>(a);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ItemsProvider>.value(value: items),
+        ChangeNotifierProvider<GroupsProvider>.value(value: groups),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ValueListenableBuilder<ItemDefinition>(
+              valueListenable: shown,
+              builder: (_, part, _) => ItemReportView(item: part),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    shown.value = b;
+    await tester.pump();
+    // Strip's read answers first, Patti's — clicked away from — last.
+    repo.pending[501]!.complete(b);
+    await tester.pump();
+    repo.pending[500]!.complete(a);
+    await tester.pump();
+    await tester.pump();
+    final heading = tester.widget<Text>(find.byKey(const ValueKey<String>('item_report_heading')));
+    expect(heading.data, 'Strip');
+  });
+
+  testWidgets('property columns that cannot be read are asked for once, not in a loop',
+      (tester) async {
+    final part = _part();
+    final items = ItemsProvider(repository: _Items(part));
+    await tester.runAsync(items.refresh);
+    final groups = GroupsProvider(repository: _Groups());
+    await groups.initialize();
+    final broken = _BrokenProperties();
+    final properties = SheetPropertiesProvider(repository: broken);
+    addTearDown(properties.dispose);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ItemsProvider>.value(value: items),
+        ChangeNotifierProvider<GroupsProvider>.value(value: groups),
+        ChangeNotifierProvider<SheetPropertiesProvider>.value(value: properties),
+      ],
+      child: MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: ItemReportView(item: part))),
+      ),
+    ));
+    for (var i = 0; i < 10; i += 1) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+      await tester.pump();
+    }
+    expect(broken.asked, 1);
+    expect(tester.takeException(), isNull);
   });
 }

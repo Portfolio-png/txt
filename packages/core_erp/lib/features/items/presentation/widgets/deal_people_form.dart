@@ -41,6 +41,7 @@ class DealPeopleForm extends StatefulWidget {
   const DealPeopleForm({
     super.key,
     required this.controller,
+    this.lineKey,
     this.partSaved = false,
     this.onSaveDeal,
     this.recordedAt,
@@ -48,6 +49,9 @@ class DealPeopleForm extends StatefulWidget {
   });
 
   final ItemMasterController controller;
+
+  /// The sheet line (the part) the deal is shown for.
+  final Object? lineKey;
 
   /// Whether the part exists yet. Before it does, the deal is saved with the
   /// part row; after, the deal line has its own Save and Edit.
@@ -79,8 +83,15 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   final Map<String, FocusNode> _focus = {};
 
   /// The deal line is open for editing. A saved part's deal opens with its
-  /// Edit and closes again with its Save.
+  /// Edit and closes again with its Save — and closes on another part's line:
+  /// that part's saved deal opens closed, not left open by this one's Edit.
   bool _dealEditing = false;
+
+  @override
+  void didUpdateWidget(covariant DealPeopleForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lineKey != widget.lineKey) _dealEditing = false;
+  }
   bool _savingDeal = false;
 
   /// A company just added from the dropdown, in case the pickers have not

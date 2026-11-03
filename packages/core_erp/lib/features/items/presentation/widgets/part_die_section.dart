@@ -47,6 +47,7 @@ import '../../domain/item_definition.dart';
 class PartDieSection extends StatefulWidget {
   const PartDieSection({
     super.key,
+    this.lineKey,
     required this.part,
     required this.partCode,
     required this.partLabel,
@@ -79,6 +80,10 @@ class PartDieSection extends StatefulWidget {
   /// Whether the section draws its own card. Off where a host already frames
   /// it — the item sheet's section card — so it is not a card inside a card.
   final bool framed;
+
+  /// The sheet line this is typed for. A different line is a different part
+  /// — saved or not — so what was typed for the last one is cleared.
+  final Object? lineKey;
 
   /// The part the sheet is about, or null while it is still being typed.
   ///
@@ -250,10 +255,18 @@ class _PartDieSectionState extends State<PartDieSection> {
       _corrected.clear();
       // The part being typed was just saved: what is typed here is for it, so
       // it stays. Only moving to another part clears the sheet.
-      if (oldWidget.part == null && isDirty) {
+      // (Same line only: from a new, unsaved line onto another part is not
+      // that part being saved, and what was typed stayed for the wrong one.)
+      if (oldWidget.part == null && isDirty && oldWidget.lineKey == widget.lineKey) {
         _rederiveCode();
         return;
       }
+      _resetSheet();
+      return;
+    }
+    // From one new line to another: both have no part yet, but they are not
+    // the same part — and a held one being edited belonged to the other line.
+    if (oldWidget.lineKey != widget.lineKey) {
       _resetSheet();
       return;
     }

@@ -312,6 +312,16 @@ class _ItemReportViewState extends State<ItemReportView> {
     super.initState();
     _item = widget.item;
     unawaited(_load());
+    // Once, not on every build: a failed load would otherwise ask again on
+    // the rebuild its own failure causes, without end.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        unawaited(context.read<SheetPropertiesProvider>().ensureLoaded());
+      } on ProviderNotFoundException {
+        // No property columns in this app: the report shows none.
+      }
+    });
   }
 
   @override
@@ -335,19 +345,21 @@ class _ItemReportViewState extends State<ItemReportView> {
     } catch (_) {
       routes = null;
     }
+    final id = widget.item.id;
     try {
-      final fresh = await items.fetchFresh(widget.item.id);
+      final fresh = await items.fetchFresh(id);
       final partRoutes = routes == null
           ? const <PartRoute>[]
-          : await routes.routesFor(widget.item.id).catchError((_) => const <PartRoute>[]);
-      if (!mounted) return;
+          : await routes.routesFor(id).catchError((_) => const <PartRoute>[]);
+      // Another part was clicked meanwhile: its own load answers for it.
+      if (!mounted || widget.item.id != id) return;
       setState(() {
         _item = fresh ?? _item;
         _routes = partRoutes;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || widget.item.id != id) return;
       setState(() {
         _loading = false;
         _error = 'Could not read this part from the server: $error';
@@ -371,7 +383,7 @@ class _ItemReportViewState extends State<ItemReportView> {
   Map<String, String> _propertyLabels() {
     List<SheetProperty> properties;
     try {
-      final provider = context.watch<SheetPropertiesProvider>()..ensureLoaded();
+      final provider = context.watch<SheetPropertiesProvider>();
       properties = provider.properties;
     } catch (_) {
       properties = const [];
