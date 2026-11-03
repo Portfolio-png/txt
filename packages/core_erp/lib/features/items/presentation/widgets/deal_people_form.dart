@@ -326,24 +326,14 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
 
   /// The deal line's own Save, or its Edit once saved.
   Widget _dealAction(bool locked) {
+    // The same Edit and Save a person's line has, so the page's Saves look
+    // alike.
     if (locked) {
-      return SizedBox(
-        height: 36,
-        child: OutlinedButton.icon(
-          key: const ValueKey<String>('deal_edit'),
-          onPressed: () => setState(() => _dealEditing = true),
-          icon: const Icon(Icons.edit_outlined, size: 16),
-          label: const Text(
-            'Edit',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
-            ),
-          ),
-        ),
+      return OutlinedButton.icon(
+        key: const ValueKey<String>('deal_edit'),
+        onPressed: () => setState(() => _dealEditing = true),
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: const Text('Edit', style: TextStyle(fontSize: 14)),
       );
     }
 
@@ -381,49 +371,26 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     final tooltipMessage =
         why ?? 'Saves the part with its company details (Ctrl+S)';
 
-    return SizedBox(
-      height: 36,
-      child: Tooltip(
-        message: tooltipMessage,
-        child: ElevatedButton.icon(
-          key: const ValueKey<String>('deal_save'),
-          onPressed: canSave
-              ? () async {
-                  setState(() => _savingDeal = true);
-                  final ok = await widget.onSaveDeal!();
-                  if (!mounted) return;
-                  setState(() {
-                    _savingDeal = false;
-                    if (ok) _dealEditing = false;
-                  });
-                }
-              : null,
-          icon: isSaving
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : const Icon(Icons.save_outlined, size: 16),
-          label: Text(
-            isSaving ? 'Saving…' : 'Save company',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: SoftErpTheme.accent,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: SoftErpTheme.accent.withValues(alpha: 0.35),
-            disabledForegroundColor: Colors.white.withValues(alpha: 0.85),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
-            ),
-            elevation: 0,
-          ),
-        ),
+    return Tooltip(
+      message: tooltipMessage,
+      child: AppButton(
+        key: const ValueKey<String>('deal_save'),
+        label: 'Save company',
+        icon: Icons.save_outlined,
+        variant: AppButtonVariant.secondary,
+        dense: true,
+        isLoading: isSaving,
+        onPressed: canSave
+            ? () async {
+                setState(() => _savingDeal = true);
+                final ok = await widget.onSaveDeal!();
+                if (!mounted) return;
+                setState(() {
+                  _savingDeal = false;
+                  if (ok) _dealEditing = false;
+                });
+              }
+            : null,
       ),
     );
   }

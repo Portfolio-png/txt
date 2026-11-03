@@ -33,7 +33,7 @@ void main() {
     for (var row = 0; row < _names.length; row += 1) {
       if (row > 0) {
         // A new row, the way a typist gets one.
-        final addRow = find.text('Add row');
+        final addRow = find.text('Add part');
         await tester.ensureVisible(addRow);
         await tester.pump();
         await tester.tap(addRow);

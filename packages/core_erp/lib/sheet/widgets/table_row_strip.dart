@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import '../column_def.dart';
 import '../sheet_def.dart';
 import '../sheet_draft.dart';
@@ -24,7 +23,6 @@ class TableRowStrip extends StatefulWidget {
     this.createdTitle = 'Created',
     this.rowStatusBuilder,
     this.gutterExtra = 0,
-    this.rowEndActionBuilder,
   });
 
   /// The band container, so a test can measure what the strip actually drew
@@ -58,9 +56,6 @@ class TableRowStrip extends StatefulWidget {
 
   /// Width the gutter needs beyond its status chip — a photo per row.
   final double gutterExtra;
-
-  /// Action widget rendered at the end of each row (e.g. Save part / Edit).
-  final Widget? Function(int row)? rowEndActionBuilder;
 
   @override
   State<TableRowStrip> createState() => _TableRowStripState();
@@ -105,14 +100,12 @@ class _TableRowStripState extends State<TableRowStrip> {
         // when only two are drawn, then added 24px of its own padding on top of
         // the host's — about 36px of demand for nothing, which is most of what
         // a first added property needs.
-        final hasEndAction = widget.rowEndActionBuilder != null;
         final rendered = [groupCols, propertyCols, independentCols, createdCols]
             .where((c) => c.isNotEmpty)
-            .length + (hasEndAction ? 1 : 0);
+            .length;
         final fixed = rendered * 2 +
             (widget.rowStatusBuilder != null ? base.gutterWidth : 0) +
-            (hasEndAction ? 124 : 0) +
-            base.tableGap * (rendered - 1).clamp(0, 4);
+            base.tableGap * (rendered - 1).clamp(0, 3);
 
         final metrics = base.fitTo(
           constraints.maxWidth,
@@ -238,91 +231,7 @@ class _TableRowStripState extends State<TableRowStrip> {
             metrics: metrics,
             maxWidth: maxWidth,
           ),
-
-        // 5. Action table at the end of the row (Save part / Edit)
-        if (widget.rowEndActionBuilder != null)
-          _buildActionTable(context, metrics, maxWidth),
       ],
-    );
-  }
-
-  Widget _buildActionTable(
-    BuildContext context,
-    SheetMetrics metrics,
-    double maxWidth,
-  ) {
-    const double actionWidth = 124;
-    final rowCount = widget.rowDrafts.isNotEmpty
-        ? widget.rowDrafts.length
-        : widget.controller.rowCount;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-        border: Border.all(color: SoftErpTheme.borderStrong),
-        boxShadow: SoftErpTheme.insetShadow,
-      ),
-      child: SizedBox(
-        width: actionWidth - 2,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              height: metrics.titleBarHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: const BoxDecoration(
-                color: SoftErpTheme.sectionSurface,
-                border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
-              ),
-              child: Text(
-                'Action',
-                style: TextStyle(
-                  fontSize: metrics.labelFontSize,
-                  fontWeight: FontWeight.w800,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ),
-            Container(
-              width: actionWidth - 2,
-              height: metrics.headerHeight,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: SoftErpTheme.border),
-                ),
-              ),
-              child: Text(
-                'Save / Edit',
-                style: TextStyle(
-                  fontSize: metrics.valueFontSize - 1,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ),
-            for (int r = 0; r < rowCount; r++)
-              Container(
-                width: actionWidth - 2,
-                height: metrics.rowHeight,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                decoration: BoxDecoration(
-                  color: r == widget.selectedRowIndex
-                      ? SoftErpTheme.accent.withValues(alpha: 0.05)
-                      : SoftErpTheme.cardSurface,
-                  border: const Border(
-                    bottom: BorderSide(color: SoftErpTheme.border),
-                  ),
-                ),
-                child: widget.rowEndActionBuilder!(r) ?? const SizedBox.shrink(),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

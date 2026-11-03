@@ -1327,18 +1327,21 @@ class _DieRow extends StatelessWidget {
                   width: _kStatusWidth,
                   child: !pending
                       ? null
-                      : (saveAction ??
-                            Row(
-                              children: [
-                                _DieCell(
-                                  partExists
-                                      ? 'Not saved yet'
-                                      : 'Saves with the part',
-                                  flex: 1,
-                                  muted: true,
-                                ),
-                              ],
-                            )),
+                      : saveAction != null
+                      ? FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: saveAction,
+                        )
+                      : Row(
+                          children: [
+                            _DieCell(
+                              partExists ? 'Not saved yet' : 'Saves with the part',
+                              flex: 1,
+                              muted: true,
+                            ),
+                          ],
+                        ),
                 ),
                 const SizedBox(width: 6),
                 // Its Edit, said out loud: a saved row opens in the form above,
@@ -1384,7 +1387,7 @@ class _DieRow extends StatelessWidget {
 /// The last column is the status, at a fixed width: a held row draws the part's
 /// Save part there, which a flex share could not be trusted to fit.
 const List<int> _kDieFlex = [22, 12, 18, 15, 15, 11, 6, 18];
-const double _kStatusWidth = 128;
+const double _kStatusWidth = 150;
 const List<String> _kDieHeads = [
   'Die Code',
   'Type',

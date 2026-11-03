@@ -11,6 +11,7 @@ import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
 import 'package:core_erp/features/items/presentation/widgets/deal_people_form.dart';
+import 'package:core_erp/features/items/presentation/widgets/part_rows_form.dart';
 import 'package:core_erp/features/process_routes/data/process_route_service.dart';
 import 'package:core_erp/features/process_routes/domain/part_route.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
@@ -593,7 +594,7 @@ void main() {
       // with Archive part in the top bar.
       expect(find.byKey(const ValueKey('section_clear_group_item')), findsNothing);
       // A blank new row has nothing to save yet: drawn, disabled, saying why.
-      final save = tester.widget<ElevatedButton>(find.byKey(const ValueKey('row_save_0')));
+      final save = tester.widget<AppButton>(find.byKey(const ValueKey('row_save_0')));
       expect(save.onPressed, isNull);
       expect(find.byTooltip('Type a part name first'), findsOneWidget);
     });
@@ -984,7 +985,7 @@ void main() {
       PartDieSection dies() =>
           tester.widget<PartDieSection>(find.byType(PartDieSection));
 
-      await tester.tap(find.text('Add row').first);
+      await tester.tap(find.text('Add part').first);
       await tester.pump();
       expect(dies().part, isNull, reason: 'a new row is a new part');
       dies().onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
@@ -997,9 +998,7 @@ void main() {
       expect(dies().staged, isEmpty, reason: 'held for the other row');
 
       await tester.tap(
-        find.byWidgetPredicate(
-          (w) => w is ValueCell && w.rowIndex == 1 && w.column.id == 3,
-        ),
+        find.byKey(const ValueKey('cell_item_1_3')),
       );
       await tester.pump();
       expect(dies().staged.single.toolCode, 'D1');
@@ -1011,15 +1010,15 @@ void main() {
           throw UnimplementedError('not saved in this test');
       addTearDown(() => AppFlowHooks.createDieFromSheet = null);
       await _pumpScreen(tester, size: const Size(1700, 3200));
-      final strip = tester.widget<TableRowStrip>(find.byType(TableRowStrip));
-      final sheet = strip.controller;
-      final def = strip.sheetDef;
+      final strip = tester.widget<PartRowsForm>(find.byType(PartRowsForm));
+      final sheet = strip.sheet;
+      final def = strip.sheet.sheetDef;
 
       tester
           .widget<PartDieSection>(find.byType(PartDieSection))
           .onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
       await tester.pump();
-      ElevatedButton heldSave() => tester.widget<ElevatedButton>(
+      AppButton heldSave() => tester.widget<AppButton>(
             find.byKey(const ValueKey('die_held_save_0')),
           );
       expect(
@@ -1056,7 +1055,7 @@ void main() {
       await tester.pump();
       expect(heldSave().onPressed, isNotNull);
       expect(
-        tester.widget<ElevatedButton>(find.byKey(const ValueKey('row_save_0')))
+        tester.widget<AppButton>(find.byKey(const ValueKey('row_save_0')))
             .onPressed,
         isNotNull,
       );
@@ -1080,7 +1079,7 @@ void main() {
       );
       expect(find.byKey(const ValueKey<String>('photo-item-500')), findsOneWidget);
 
-      await tester.tap(find.text('Add row').first);
+      await tester.tap(find.text('Add part').first);
       await tester.pump();
       expect(find.byTooltip('Save the part to add its photo'),
           findsOneWidget);
@@ -1278,11 +1277,11 @@ void main() {
     testWidgets('the row\'s one Save sits at its end and waits for the required cells',
         (tester) async {
       await _pumpScreen(tester, size: const Size(1600, 3200));
-      ElevatedButton save() =>
-          tester.widget<ElevatedButton>(find.byKey(const ValueKey('row_save_0')));
-      final strip = tester.widget<TableRowStrip>(find.byType(TableRowStrip));
-      final sheet = strip.controller;
-      final def = strip.sheetDef;
+      AppButton save() =>
+          tester.widget<AppButton>(find.byKey(const ValueKey('row_save_0')));
+      final strip = tester.widget<PartRowsForm>(find.byType(PartRowsForm));
+      final sheet = strip.sheet;
+      final def = strip.sheet.sheetDef;
 
       // One Save per row: the gutter carries status, not a second button.
       expect(find.byKey(const ValueKey('row_save_0')), findsOneWidget);
@@ -1315,8 +1314,8 @@ void main() {
         CellValue(columnId: partyColumn.id, refId: 5, optionLabel: 'Gold Medal'),
       );
       await tester.pump();
-      ElevatedButton dealSave() =>
-          tester.widget<ElevatedButton>(find.byKey(const ValueKey('deal_save')));
+      AppButton dealSave() =>
+          tester.widget<AppButton>(find.byKey(const ValueKey('deal_save')));
       expect(dealSave().onPressed, isNull,
           reason: 'the part row still misses a required cell');
 
@@ -1356,7 +1355,7 @@ void main() {
 
       await tester.tap(edit);
       await tester.pump();
-      final save = tester.widget<ElevatedButton>(
+      final save = tester.widget<AppButton>(
         find.byKey(const ValueKey('row_save_0')),
       );
       expect(save.onPressed, isNotNull);
@@ -1396,6 +1395,109 @@ void main() {
       );
       expect(edit.onPressed, isNull);
       expect(find.byTooltip(controller.rowError(0)!), findsWidgets);
+    });
+  });
+
+  group('the parts are lines, drawn like the people', () {
+    testWidgets('no table headings, and no Date or Time to type', (tester) async {
+      await _pumpScreen(tester, size: const Size(1600, 3200));
+      for (final heading in ['Group and item', 'Created', 'Action', 'Save / Edit']) {
+        expect(find.text(heading), findsNothing, reason: heading);
+      }
+      final form = tester.widget<PartRowsForm>(find.byType(PartRowsForm));
+      final stamps = form.sheet.sheetDef.columns.where((c) => c.isStamp);
+      expect(stamps, isNotEmpty);
+      for (final stamp in stamps) {
+        expect(find.byKey(ValueKey('cell_item_0_${stamp.id}')), findsNothing,
+            reason: '${stamp.label} is filled in by the save');
+      }
+      // The line ends in its own Save, then the × — inside the part's line,
+      // right of every field, however the fields wrap.
+      final line = tester.getRect(find.byKey(const ValueKey('part_line_0')));
+      final save = tester.getRect(find.byKey(const ValueKey('row_save_0')));
+      final remove = tester.getRect(find.byKey(const ValueKey('row_remove_0')));
+      expect(line.contains(save.center), isTrue);
+      for (final column in form.sheet.sheetDef.columns.where((c) => !c.isStamp)) {
+        final field = find.byKey(ValueKey('cell_item_0_${column.id}'));
+        expect(tester.getRect(field).right, lessThanOrEqualTo(save.left),
+            reason: column.label);
+      }
+      expect(remove.left, greaterThanOrEqualTo(save.right));
+    });
+
+    testWidgets('a field opens the sheet\'s own picker and takes the pick',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1600, 3200));
+      await tester.tap(find.byKey(const ValueKey('cell_item_0_1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.textContaining('Type to filter'), findsOneWidget);
+      await tester.tap(find.text('Switch Action').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('cell_item_0_1')),
+          matching: find.text('Switch Action'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a saved line is read only and cannot be removed', (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1600, 3200),
+      );
+      final form = tester.widget<PartRowsForm>(find.byType(PartRowsForm));
+      final partNo = form.sheet.sheetDef.columns
+          .firstWhere((c) => c.bindsTo == SheetBindsTo.partNo);
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byKey(ValueKey('cell_item_0_${partNo.id}')),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(field.readOnly, isTrue);
+      final remove = tester.widget<IconButton>(
+        find.byKey(const ValueKey('row_remove_0')),
+      );
+      expect(remove.onPressed, isNull);
+      expect(find.byTooltip('Saved parts stay in the catalogue — use Archive part'),
+          findsOneWidget);
+    });
+
+    testWidgets('a refused line is said in the app\'s toast, not drawn red',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1600, 3200));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      final name = sheet.sheetDef.itemColumn!;
+      sheet.updateValue(
+        name.id,
+        CellValue(columnId: name.id, optionLabel: 'Patti', isNew: true),
+      );
+      sheet.addRow();
+      await tester.pump();
+      // Leaving the line writes it, and it is refused: no Group.
+      await tester.runAsync(() async {
+        sheet.selectRow(1);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.textContaining('Part 1:'), findsOneWidget);
+      // Nothing on the line is outlined red.
+      final decorators = tester.widgetList<InputDecorator>(
+        find.descendant(
+          of: find.byKey(const ValueKey('part_line_0')),
+          matching: find.byType(InputDecorator),
+        ),
+      );
+      expect(decorators.every((d) => d.decoration.errorText == null), isTrue);
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 

@@ -14,6 +14,8 @@ export 'item_master_controller.dart';
 export 'widgets/mini_table.dart';
 export 'widgets/header_cell.dart';
 export 'widgets/value_cell.dart';
+export 'widgets/option_picker.dart';
+export 'widgets/mode_chip.dart';
 export 'widgets/table_row_strip.dart';
 export 'widgets/status_bar.dart';
 export 'widgets/item_master_sidebar.dart';

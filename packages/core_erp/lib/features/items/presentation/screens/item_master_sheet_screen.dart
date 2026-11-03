@@ -33,6 +33,8 @@ import '../widgets/margin_health_badge.dart';
 import '../widgets/part_die_section.dart';
 import '../widgets/part_machine_section.dart';
 import '../widgets/deal_people_form.dart';
+import '../widgets/part_rows_form.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/utils/stamp_format.dart';
 import '../../../../core/widgets/force_capacity_field.dart';
@@ -427,6 +429,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// refusal costs only the row it refused.
   Future<void> _commitOnLeave(int row) async {
     if (!_controller.savedRows.contains(row)) {
+      final left = _controller.groupItemController.draftAt(row);
       final ok = await _controller.commitRow(row);
       if (!mounted) return;
       if (ok) {
@@ -436,6 +439,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         await _flushStaged();
         // A nesting arranged before the part existed is saved with it now.
         if (mounted && _treeDirty) await _saveTree();
+      } else {
+        // The line keeps everything typed; what stopped it is said once.
+        final at = _controller.groupItemController.indexOfDraft(left);
+        final why = at < 0 ? null : _controller.rowError(at);
+        if (why != null) _toast('Part ${at + 1}: $why', isError: true);
       }
     }
   }
@@ -538,14 +546,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (machinesAdded) await _setMachinesOn(part.id, machineIds);
   }
 
+  /// Every save and every refusal on this screen is said here, in the app's
+  /// own toast — nothing on the lines is drawn red.
   void _toast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(fontSize: 14)),
-        backgroundColor:
-            isError ? SoftErpTheme.dangerText : SoftErpTheme.successText,
-        duration: const Duration(seconds: 3),
-      ),
+    if (message.trim().isEmpty) return;
+    showAppToast(
+      context,
+      message,
+      kind: isError ? AppToastKind.error : AppToastKind.success,
     );
   }
 
@@ -2223,35 +2231,22 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return SheetEngine.parseMoney(value.textValue) ?? value.intValue?.toDouble();
   }
 
+  /// The parts, one line each, drawn like the people under a company: see
+  /// [PartRowsForm]. It replaced a grid of titled tables whose Save sat in an
+  /// "Action" table of its own, which wrapped off the part's line.
   Widget _groupItemSheet() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _rowToolbar(
-          label: 'Parts on this sheet',
-          count: _controller.groupItemController.rowCount,
-          onAdd: () => _controller.groupItemController.addRow(),
-          onRemove: _controller.groupItemController.rowCount > 1
-              ? () => _controller.groupItemController.removeRow(
-                    _controller.groupItemController.row,
-                  )
-              : null,
-        ),
-        const SizedBox(height: 8),
-        // No fixed height: the strip is as tall as the rows it holds, so the
-        // box cannot drift from the cells the way `96 + 50n` did against a
-        // real 46px row.
-        TableRowStrip(
-          sheetDef: _controller.groupItemController.sheetDef,
-          controller: _controller.groupItemController,
-          selectedRowIndex: _controller.groupItemController.row,
-          onRowSelected: _controller.groupItemController.selectRow,
-          rowStatusBuilder: _photosOn ? _rowGutter : _rowStatus,
-          gutterExtra: _photosOn ? _rowPhotoSize + 6 : 0,
-          onAddPropertyColumn: _addProperty,
-          rowEndActionBuilder: _rowEndAction,
-        ),
-      ],
+    final sheet = _controller.groupItemController;
+    return PartRowsForm(
+      sheet: sheet,
+      photoBuilder: _photosOn ? _rowPhoto : null,
+      statusBuilder: _rowStatus,
+      actionBuilder: (row) => _rowEndAction(row) ?? const SizedBox.shrink(),
+      onAddPart: () {
+        sheet.addRow();
+        final first = PartRowsForm.lineColumns(sheet.sheetDef).firstOrNull;
+        if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
+      },
+      onAddProperty: _addProperty,
     );
   }
 
@@ -2265,27 +2260,17 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
   }
 
-  static const double _rowPhotoSize = 32;
-
-  /// A part row's photo beside its status chip.
-  Widget _rowGutter(int row) {
-    final sheet = _controller.groupItemController;
-    final id = sheet.draftAt(row).entityId;
+  /// A part line's photo — the size a person's is.
+  Widget _rowPhoto(int row) {
+    final id = _controller.groupItemController.draftAt(row).entityId;
     final part = id == null ? null : _partById(id);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        MiniPhoto(
-          owner: PhotoOwner.item,
-          id: id?.toString(),
-          size: _rowPhotoSize,
-          what: 'part photo',
-          fallbackUrl: part?.photoUrl,
-          disabledReason: 'Save the part to add its photo',
-        ),
-        const SizedBox(width: 2),
-        SizedBox(width: 28, child: _rowStatus(row)),
-      ],
+    return MiniPhoto(
+      owner: PhotoOwner.item,
+      id: id?.toString(),
+      size: 40,
+      what: 'part photo',
+      fallbackUrl: part?.photoUrl,
+      disabledReason: 'Save the part to add its photo',
     );
   }
 
@@ -2350,10 +2335,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (row < 0 || row >= sheet.rowCount) return null;
     final saved = _controller.savedRows.contains(row);
     final locked = sheet.isRowLocked(row);
-    const labelStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w700);
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
-    );
 
     // Deleted or archived (here or anywhere): there is nothing to edit, so
     // the button says why instead of offering an Edit that cannot save.
@@ -2363,29 +2344,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         message: gone
             ? (_controller.rowError(row) ??
                   'This part is no longer in the catalogue.')
-            : 'Edit item #${sheet.draftAt(row).entityId}',
-        child: SizedBox(
-          height: 32,
-          child: OutlinedButton.icon(
-            key: ValueKey<String>('row_edit_$row'),
-            onPressed: gone
-                ? null
-                : () {
-                    sheet.setRowLocked(row, false);
-                    sheet.selectRow(row);
-                    setState(() {});
-                  },
-            icon: const Icon(Icons.edit_outlined, size: 16),
-            label: const Text('Edit', style: labelStyle),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: SoftErpTheme.accent,
-              side: BorderSide(
-                color: gone ? SoftErpTheme.border : SoftErpTheme.accent,
-              ),
-              shape: shape,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
-          ),
+            : _savedLine(row),
+        child: OutlinedButton.icon(
+          key: ValueKey<String>('row_edit_$row'),
+          onPressed: gone
+              ? null
+              : () {
+                  sheet.setRowLocked(row, false);
+                  sheet.selectRow(row);
+                  setState(() {});
+                },
+          icon: const Icon(Icons.edit_outlined, size: 18),
+          label: const Text('Edit', style: TextStyle(fontSize: 14)),
         ),
       );
     }
@@ -2421,45 +2391,35 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     } else {
       tip = readyTip;
     }
+    // The same button as a person's Save contact, so the Saves on this page
+    // look alike.
     return Tooltip(
       message: tip,
-      child: SizedBox(
-        height: 32,
-        child: ElevatedButton.icon(
-          key: ValueKey<String>(key),
-          onPressed: !blank && errors.isEmpty && !busy
-              ? () => _saveRow(row)
-              : null,
-          icon: savingThis
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.save_outlined, size: 16),
-          label: const Text(
-            'Save part',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: SoftErpTheme.accent,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: SoftErpTheme.accent.withValues(
-              alpha: 0.35,
-            ),
-            disabledForegroundColor: Colors.white.withValues(alpha: 0.85),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-          ),
-        ),
+      child: AppButton(
+        key: ValueKey<String>(key),
+        label: 'Save part',
+        icon: Icons.save_outlined,
+        variant: AppButtonVariant.secondary,
+        dense: true,
+        isLoading: savingThis,
+        onPressed: !blank && errors.isEmpty && !busy
+            ? () => _saveRow(row)
+            : null,
       ),
     );
+  }
+
+  /// "Saved as item #500 on 03 Nov 2026, 10:05" — the stamps the save wrote,
+  /// which the line no longer draws as fields of their own.
+  String _savedLine(int row) {
+    final sheet = _controller.groupItemController;
+    final draft = sheet.draftAt(row);
+    final when = [
+      for (final column in sheet.sheetDef.columns.where((c) => c.isStamp))
+        draft.get(column.id)?.textValue?.trim() ?? '',
+    ].where((t) => t.isNotEmpty && t != 'Set on save').join(', ');
+    final what = 'Saved as item #${draft.entityId}';
+    return when.isEmpty ? '$what — Edit to change it' : '$what on $when — Edit to change it';
   }
 
   /// Archive for the part on the selected row. Drawn always, disabled with
@@ -2618,57 +2578,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _rowToolbar({
-    required String label,
-    required int count,
-    required VoidCallback onAdd,
-    VoidCallback? onRemove,
-    String addLabel = 'Add row',
-    String removeLabel = 'Remove',
-    String removeDisabledReason = 'A sheet always keeps one row',
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Row(
-        children: [
-          Flexible(
-            child: Text(
-              '$label: $count',
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: SoftErpTheme.textSecondary,
-              ),
-            ),
-          ),
-          const Spacer(),
-          TextButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: Text(addLabel, style: const TextStyle(fontSize: 14)),
-          ),
-          const SizedBox(width: 4),
-          Tooltip(
-            message: onRemove == null
-                ? removeDisabledReason
-                : 'Remove the selected row',
-            child: TextButton.icon(
-              onPressed: onRemove,
-              icon: const Icon(Icons.remove_rounded, size: 18),
-              label: Text(removeLabel, style: const TextStyle(fontSize: 14)),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

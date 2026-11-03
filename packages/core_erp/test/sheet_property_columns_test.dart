@@ -351,19 +351,12 @@ void main() {
     addTearDown(mouse.removePointer);
 
     Future<void> openRemove() async {
-      // The menu shows on hover.
-      await mouse.moveTo(tester.getCenter(find.text('Temper').first));
+      // The part lines have no column headings: a property's Rename, Move and
+      // Remove are in the Properties menu under them.
+      await tester.tap(find.byKey(const ValueKey('part_properties_menu')));
       await tester.pumpAndSettle();
-      final menu = find.descendant(
-        of: find.ancestor(
-          of: find.text('Temper').first,
-          matching: find.byWidgetPredicate((w) => w.runtimeType.toString() == 'HeaderCell'),
-        ),
-        matching: find.byIcon(Icons.more_vert_rounded),
-      );
-      await tester.tap(menu);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove column'));
+      // Temper was added last, so its Remove is the menu's last.
+      await tester.tap(find.text('Remove').last);
       await tester.pumpAndSettle();
     }
 
