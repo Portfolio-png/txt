@@ -1,16 +1,13 @@
 import 'dart:math' as math;
 import 'package:core_erp/core/widgets/app_toast.dart';
 
-import 'package:crypto/crypto.dart';
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
-import 'package:mime/mime.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/app_flow_hooks.dart';
+import '../../../../core/widgets/mini_photo.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../links/domain/entity_link.dart';
 import '../../../links/presentation/widgets/ecosystem_inspector.dart';
@@ -32,6 +29,7 @@ import '../screens/item_master_sheet_screen.dart';
 
 import 'item_pipeline_metrics_card.dart';
 import 'item_report.dart';
+import 'part_photo_gallery.dart';
 
 Future<void> showItemDetailPanel(
   BuildContext context, {
@@ -110,7 +108,6 @@ class ItemDetailPanel extends StatefulWidget {
 }
 
 class _ItemDetailPanelState extends State<ItemDetailPanel> {
-  bool _isUploading = false;
   /// 2 = the report (what opens first), 0 = specifications, 1 = the
   /// pipeline and mass balance.
   int _activeTab = 2;
@@ -131,126 +128,14 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
     });
   }
 
-  Future<void> _pickAndUploadImage() async {
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(
-          label: 'Images',
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-          extensions: ['png', 'jpg', 'jpeg', 'webp'],
-        ),
-      ],
-    );
-    if (file == null || !mounted) {
-      return;
-    }
-
-    setState(() => _isUploading = true);
-    final provider = context.read<ItemsProvider>();
-    try {
-      final bytes = await file.readAsBytes();
-      final digest = sha256.convert(bytes).toString();
-      final contentType =
-          file.mimeType ??
-          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
-          _contentTypeFromExtension(file.name);
-      final intent = await provider.createAssetUploadIntent(
-        ItemAssetUploadIntentInput(
-          itemId: widget.item.id,
-          fileName: file.name,
-          contentType: contentType,
-          sizeBytes: bytes.length,
-          sha256: digest,
-          isPrimary: true,
-        ),
-      );
-      if (intent == null) {
-        throw Exception(provider.errorMessage ?? 'Failed to prepare upload.');
-      }
-      if (intent.alreadyUploaded && intent.asset != null) {
-        await provider.loadItemAssets(widget.item.id);
-        showAppSnack(const SnackBar(content: Text('Image already uploaded.')));
-        return;
-      }
-      final upload = intent.upload;
-      if (upload == null) {
-        throw Exception('Upload target was not returned.');
-      }
-      if (upload.uploadUrl.host != 'mock.local') {
-        final response = await http.put(
-          upload.uploadUrl,
-          headers: upload.headers,
-          body: bytes,
-        );
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          throw Exception(
-            'Image upload failed with status ${response.statusCode}.',
-          );
-        }
-      }
-      final completed = await provider.completeAssetUpload(
-        CompleteItemAssetUploadInput(
-          uploadSessionId: upload.uploadSessionId,
-          objectKey: upload.objectKey,
-          itemId: widget.item.id,
-        ),
-      );
-      if (completed == null) {
-        throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
-      }
-      showAppSnack(const SnackBar(content: Text('Item image uploaded.')));
-    } catch (error) {
-      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
-    }
-  }
-
-  Future<void> _deleteImage(ItemAsset asset) async {
-    final provider = context.read<ItemsProvider>();
-    final success = await provider.deleteAsset(asset);
-    if (!mounted) {
-      return;
-    }
-    showAppSnack(
-      SnackBar(
-        content: Text(
-          success
-              ? 'Image removed.'
-              : provider.errorMessage ?? 'Failed to remove image.',
-        ),
-      ),
-    );
-  }
-
-  void _openImagePreview(String imageUrl) {
-    if (imageUrl.isEmpty) {
-      return;
-    }
-    showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(32),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Image.network(imageUrl, fit: BoxFit.contain),
-        ),
-      ),
-    );
-  }
-
-  String _contentTypeFromExtension(String fileName) {
-    final lower = fileName.toLowerCase();
-    if (lower.endsWith('.png')) {
-      return 'image/png';
-    }
-    if (lower.endsWith('.webp')) {
-      return 'image/webp';
-    }
-    return 'image/jpeg';
+  /// The part's photos, in their gallery: up to five views, the main one
+  /// shown here. Reloaded after, so this preview shows what was saved.
+  Future<void> _openGallery() async {
+    if (!MiniPhoto.isAvailable(context)) return;
+    final item = widget.item;
+    final name = item.displayName.trim().isEmpty ? item.name : item.displayName.trim();
+    final saved = await showPartPhotoGallery(context, itemId: '${item.id}', partName: name);
+    if (saved && mounted) await context.read<ItemsProvider>().loadItemAssets(item.id);
   }
 
   /// Walks to a neighbour in the cluster.
@@ -447,20 +332,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                       final imagePreview = _ItemImagePreview(
                         item: item,
                         primaryAsset: primaryAsset,
-                        isUploading:
-                            _isUploading || itemsProvider.isAssetUploading,
-                        onUpload: _pickAndUploadImage,
-                        onOpenImage:
-                            (primaryAsset?.readUrl?.toString() ?? item.photoUrl)
-                                .isEmpty
-                            ? null
-                            : () => _openImagePreview(
-                                primaryAsset?.readUrl?.toString() ??
-                                    item.photoUrl,
-                              ),
-                        onDeleteImage: primaryAsset == null
-                            ? null
-                            : () => _deleteImage(primaryAsset),
+                        isUploading: itemsProvider.isAssetUploading,
+                        onUpload: _openGallery,
+                        onOpenImage: _openGallery,
+                        onDeleteImage: null,
                       );
                       final factsheet = _ItemFactsheet(
                         item: item,
@@ -745,8 +620,8 @@ class _ItemImagePreview extends StatelessWidget {
                                 : Icons.upload_file_outlined,
                             tooltip:
                                 (primaryAsset == null && item.photoUrl.isEmpty)
-                                ? 'Upload image'
-                                : 'Replace image',
+                                ? 'Add photos'
+                                : 'Photos of the part',
                             onTap: onUpload,
                           ),
                         ],

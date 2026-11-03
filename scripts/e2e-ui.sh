@@ -237,23 +237,54 @@ if [[ "${BULK}" != "0" ]]; then
     SELECT '  ' || name || '  ' || COALESCE(NULLIF(part_code,''),'(unstamped)')
       FROM items WHERE name LIKE 'E2E Bulk%' ORDER BY id;"
 fi
-# A part's photo, uploaded from its row: one asset row, and the file on disk.
+# A part's photos, through its gallery: two added, one removed — so one kept
+# (the main one, first, with its thumbnail) and one deleted, both photo and
+# thumbnail on disk until the sweep a day on.
 PHOTOS="$(sqlite3 "${DB}" "
   SELECT COUNT(*) FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
    WHERE a.entity_type = 'item' AND a.status = 'uploaded'
      AND i.name = 'E2E Photo Part';")"
 if [[ "${PHOTOS}" != "0" ]]; then
-  echo "part photos written: ${PHOTOS}"
-  [[ "${PHOTOS}" == "1" ]] || fail "one upload made ${PHOTOS} photos"
-  KEY="$(sqlite3 "${DB}" "
-    SELECT a.object_key FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
-     WHERE a.entity_type = 'item' AND i.name = 'E2E Photo Part' LIMIT 1;")"
-  [[ -s "${WORK}/uploads/${KEY}" ]] || fail "the photo's file is not in the local store"
-  echo "  ${KEY}"
+  echo "part photos kept: ${PHOTOS}"
+  sqlite3 -noheader "${DB}" "
+    SELECT '  #' || a.id || ' ' || a.status || ' pos=' || COALESCE(a.position,'-')
+           || ' main=' || a.is_primary || ' ' || a.width || 'x' || a.height
+           || ' ' || a.size_bytes || 'B thumb=' || COALESCE(a.thumb_key,'(none)')
+      FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
+     WHERE a.entity_type = 'item' AND i.name = 'E2E Photo Part' ORDER BY a.id;"
+  KEPT="$(sqlite3 -separator ' ' "${DB}" "
+    SELECT a.object_key, a.thumb_key FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
+     WHERE a.entity_type = 'item' AND i.name = 'E2E Photo Part' AND a.status = 'uploaded'
+       AND a.is_primary = 1 AND a.position = 1 AND a.thumb_key IS NOT NULL;")"
+  [[ -n "${KEPT}" ]] || fail "the kept photo is not the main one at position 1 with a thumbnail"
+  for KEY in ${KEPT}; do
+    [[ -s "${WORK}/uploads/${KEY}" ]] || fail "${KEY} is not in the local store"
+  done
+  GONE="$(sqlite3 -separator ' ' "${DB}" "
+    SELECT a.object_key, a.thumb_key FROM uploaded_assets a JOIN items i ON i.id = a.entity_id
+     WHERE a.entity_type = 'item' AND i.name = 'E2E Photo Part' AND a.status = 'deleted';")"
+  [[ -n "${GONE}" ]] || fail "the removed photo was not marked deleted"
+  for KEY in ${GONE}; do
+    [[ -s "${WORK}/uploads/${KEY}" ]] || fail "${KEY} went before its day was up"
+  done
+  # The sweep, a day on: the deleted one's files go, the kept one's stay.
+  ( cd "${REPO}/backend" && DB_PATH="${DB}" PAPER_UPLOAD_DIR="${WORK}/uploads" \
+      PAPER_S3_BUCKET_NAME= S3_BUCKET= node -e "
+        require('./server.js')
+          .sweepDeletedAssets({ now: new Date(Date.now() + 25 * 3600 * 1000) })
+          .then((r) => { console.log('swept ' + JSON.stringify(r)); process.exit(0); })
+          .catch((e) => { console.error(e); process.exit(1); });" ) 2>/dev/null \
+    | grep '^swept' || fail "the sweep did not run"
+  for KEY in ${GONE}; do
+    [[ ! -e "${WORK}/uploads/${KEY}" ]] || fail "the sweep left ${KEY}"
+  done
+  for KEY in ${KEPT}; do
+    [[ -s "${WORK}/uploads/${KEY}" ]] || fail "the sweep took the kept ${KEY}"
+  done
 fi
 [[ "${TESTS[0]}" == "sheet_photo" ]] && {
-  [[ "${PHOTOS}" == "1" ]] || fail "the part photo was not stored"
-  say "OK — part photo only"; exit 0;
+  [[ "${PHOTOS}" == "1" ]] || fail "the part's photos were not stored as one kept, one removed"
+  say "OK — part photos only"; exit 0;
 }
 
 # A property column added with +: one row, with the option it was given.

@@ -34,7 +34,12 @@ class _Repo extends EntityPhotoRepository {
   }
 
   @override
-  Future<EntityPhoto> upload(String owner, String id, XFile file) async {
+  Future<EntityPhoto> upload(
+    String owner,
+    String id,
+    XFile file, {
+    bool isPrimary = true,
+  }) async {
     final photo = EntityPhoto(
       assetId: _ids++,
       url: 'http://x/$owner/$id/${file.name}',

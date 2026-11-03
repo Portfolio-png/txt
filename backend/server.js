@@ -28942,6 +28942,21 @@ app.post('/api/assets/primary', requireAssetEntityPermission('read', assetEntity
         `,
         [entityType, ...ids],
       );
+      // How many each keeps, for a slot's count ("3 photos").
+      const counts = new Map(
+        (
+          await all(
+            `
+            SELECT entity_id, COUNT(*) AS count
+            FROM uploaded_assets
+            WHERE entity_type = ? AND status = 'uploaded' AND document_title IS NULL
+              AND entity_id IN (${ids.map(() => '?').join(',')})
+            GROUP BY entity_id
+            `,
+            [entityType, ...ids],
+          )
+        ).map((row) => [Number(row.entity_id), Number(row.count)]),
+      );
       for (const row of rows) {
         try {
           const payload = await assetReadUrlPayload(row.object_key, 3600);
@@ -28953,6 +28968,7 @@ app.post('/api/assets/primary', requireAssetEntityPermission('read', assetEntity
             thumbReadUrl: row.thumb_key
               ? (await assetReadUrlPayload(row.thumb_key, 3600)).readUrl
               : null,
+            count: counts.get(Number(row.entity_id)) || 1,
             expiresAt: payload.expiresAt,
           };
         } catch (_) {

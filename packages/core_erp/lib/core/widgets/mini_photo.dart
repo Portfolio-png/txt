@@ -26,6 +26,7 @@ class MiniPhoto extends StatelessWidget {
     this.disabledReason,
     this.label,
     this.note,
+    this.onOpen,
   });
 
   /// [PhotoOwner] — what kind of record.
@@ -53,6 +54,10 @@ class MiniPhoto extends StatelessWidget {
   /// Where this slot sits, shown on the phone above the camera ("for part
   /// HH1") — the record's own details come from the server.
   final String? note;
+
+  /// Opens the record's own place for its photos (a part's gallery) instead
+  /// of the one-photo dialog — the same whether it has a photo or not.
+  final VoidCallback? onOpen;
 
   /// Overrides the file picker, for tests.
   @visibleForTesting
@@ -126,10 +131,69 @@ class MiniPhoto extends StatelessWidget {
 
     photos.request(owner, id);
     final photo = photos.photoOf(owner, id);
-    final url = photo?.url ?? _fallback;
+    // A slot loads the small copy; the full photo is for the big view.
+    final url = photo?.smallUrl ?? _fallback;
     final busy = photos.isBusy(owner, id);
     final requests = _requestsOf(context);
     final onPhone = requests?.pendingFor(owner, id) != null;
+    final count = photo?.count ?? 0;
+    final onOpen = this.onOpen;
+    if (onOpen != null) {
+      return Tooltip(
+        message: onPhone
+            ? 'Waiting for your phone — click to open the photos'
+            : count == 0 && url == null
+            ? 'Add ${what}s'
+            : 'Open ${what}s ($count of $maxPartPhotos)',
+        child: InkWell(
+          key: ValueKey<String>('photo-$owner-$id'),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+          onTap: busy ? null : onOpen,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _frame(
+                child: busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : onPhone && url == null
+                    ? _waiting()
+                    : url == null
+                    ? _empty(SoftErpTheme.accent)
+                    : _image(url, size),
+              ),
+              // How many views there are, when there is more than the one shown.
+              if (count > 1)
+                Positioned(
+                  right: -5,
+                  bottom: -5,
+                  child: Container(
+                    key: ValueKey<String>('photo-count-$owner-$id'),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: SoftErpTheme.accent,
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     Future<void> upload() async {
       final file = await _pick();
@@ -168,7 +232,8 @@ class MiniPhoto extends StatelessWidget {
             ? takeBack
             : url == null
             ? () => _choose(context, requests, upload, sendToPhone)
-            : () => _open(context, photos, requests, id, url, upload, sendToPhone),
+            // The full photo for the large view, not the slot's small copy.
+            : () => _open(context, photos, requests, id, photo?.url ?? url, upload, sendToPhone),
         child: _frame(
           child: busy
               ? const SizedBox(

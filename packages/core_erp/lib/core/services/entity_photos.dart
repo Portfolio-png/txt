@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
+import 'photo_shrink.dart';
 import 'socket_service.dart';
 
 /// What a photo can belong to. The server's `uploaded_assets.entity_type`.
@@ -37,12 +38,71 @@ class EntityPhoto {
     required this.assetId,
     required this.url,
     required this.fetchedAt,
+    this.thumbUrl,
+    this.count = 1,
   });
 
   final int assetId;
   final String url;
   final DateTime fetchedAt;
+
+  /// The small copy, for a slot in a list. Null for a photo stored before
+  /// thumbnails: [url] is shown instead.
+  final String? thumbUrl;
+
+  /// How many photos the record keeps — a part keeps several views.
+  final int count;
+
+  /// What a small slot shows.
+  String get smallUrl => thumbUrl ?? url;
 }
+
+/// One of a part's photos, as the gallery shows it. The links are permanent
+/// (each leads to a fresh signed URL), so a picture fetched once is kept by
+/// the image cache however often the gallery opens.
+@immutable
+class PartPhoto {
+  const PartPhoto({
+    required this.id,
+    required this.thumbUrl,
+    required this.viewUrl,
+    this.isPrimary = false,
+    this.position,
+    this.width,
+    this.height,
+  });
+
+  factory PartPhoto.fromJson(Map<String, dynamic> json) => PartPhoto(
+    id: (json['id'] as num).toInt(),
+    thumbUrl: json['thumbUrl'] as String? ?? json['viewUrl'] as String? ?? '',
+    viewUrl: json['viewUrl'] as String? ?? '',
+    isPrimary: json['isPrimary'] == true,
+    position: (json['position'] as num?)?.toInt(),
+    width: (json['width'] as num?)?.toInt(),
+    height: (json['height'] as num?)?.toInt(),
+  );
+
+  final int id;
+  final String thumbUrl;
+  final String viewUrl;
+  final bool isPrimary;
+  final int? position;
+  final int? width;
+  final int? height;
+
+  PartPhoto copyWith({bool? isPrimary, int? position}) => PartPhoto(
+    id: id,
+    thumbUrl: thumbUrl,
+    viewUrl: viewUrl,
+    isPrimary: isPrimary ?? this.isPrimary,
+    position: position ?? this.position,
+    width: width,
+    height: height,
+  );
+}
+
+/// How many photos a part keeps. The server holds the same line.
+const int maxPartPhotos = 5;
 
 /// The server's asset store, for photos of parts, dies, machines, companies
 /// and people.
@@ -67,6 +127,13 @@ class EntityPhotoRepository {
 
   final Map<String, ({int assetId, String url})> _mock = {};
   int _mockIds = 1;
+
+  /// Demo mode's photos of each part, in order.
+  final Map<String, List<PartPhoto>> _mockGallery = {};
+
+  /// Demo mode's picture, for every upload in the app.
+  static const _mockUrl =
+      'https://images.unsplash.com/photo-1550439062-609e1531270e?auto=format&fit=crop&q=80';
 
   /// The primary photo of each of [ids], by id. Ids without one are absent.
   Future<Map<String, EntityPhoto>> primaryPhotos(
@@ -97,28 +164,80 @@ class EntityPhotoRepository {
           entry.key: EntityPhoto(
             assetId: (entry.value['assetId'] as num).toInt(),
             url: entry.value['readUrl'] as String,
+            thumbUrl: entry.value['thumbReadUrl'] as String?,
+            count: (entry.value['count'] as num?)?.toInt() ?? 1,
             fetchedAt: now,
           ),
     };
+  }
+
+  /// [itemId]'s photos, first to last — one request for the whole gallery.
+  Future<List<PartPhoto>> partPhotos(String itemId) async {
+    if (useMockResponses) return List.of(_mockGallery[itemId] ?? const []);
+    final payload = await _send('GET', '/api/items/$itemId/photos', null);
+    return [
+      for (final row in payload['photos'] as List<dynamic>? ?? const [])
+        if (row is Map<String, dynamic>) PartPhoto.fromJson(row),
+    ];
+  }
+
+  /// The gallery's Save: the photos in [order], [primaryId] the main one.
+  /// Answers the photos as the server now keeps them.
+  Future<List<PartPhoto>> arrangePartPhotos(
+    String itemId, {
+    required List<int> order,
+    int? primaryId,
+  }) async {
+    if (useMockResponses) {
+      final photos = _mockGallery[itemId] ?? const <PartPhoto>[];
+      final byId = {for (final photo in photos) photo.id: photo};
+      final ids = [...order, ...photos.map((p) => p.id).where((id) => !order.contains(id))];
+      final primary = primaryId ?? photos.where((p) => p.isPrimary).firstOrNull?.id;
+      final arranged = [
+        for (final (index, id) in ids.indexed)
+          if (byId[id] case final photo?)
+            photo.copyWith(position: index + 1, isPrimary: id == primary),
+      ];
+      _mockGallery[itemId] = arranged;
+      if (arranged.where((p) => p.isPrimary).firstOrNull case final main?) {
+        _mock['${PhotoOwner.item}:$itemId'] = (assetId: main.id, url: _mockUrl);
+      }
+      return List.of(arranged);
+    }
+    final payload = await _send('PUT', '/api/items/$itemId/photos', {
+      'order': order,
+      'primaryId': ?primaryId,
+    });
+    return [
+      for (final row in payload['photos'] as List<dynamic>? ?? const [])
+        if (row is Map<String, dynamic>) PartPhoto.fromJson(row),
+    ];
   }
 
   /// The documents stored in demo mode, oldest first.
   @visibleForTesting
   final List<({String owner, String id, String title, int assetId})> mockDocuments = [];
 
-  /// Stores [file] as [owner] [id]'s photo, replacing the one it had.
-  Future<EntityPhoto> upload(String owner, String id, XFile file) async =>
-      _photoFrom(await store(owner, id, file));
+  /// Stores [file] as [owner] [id]'s photo — the shown one, unless
+  /// [isPrimary] is false (one more of a part's views).
+  Future<EntityPhoto> upload(
+    String owner,
+    String id,
+    XFile file, {
+    bool isPrimary = true,
+  }) async => _photoFrom(await store(owner, id, file, isPrimary: isPrimary));
 
   /// Stores [file] on [owner] [id] and answers the server's asset. Without
-  /// [documentTitle] it is the record's photo, replacing the shown one; with
-  /// one it is a document of the company under that name — any kind of file,
-  /// and never its picture.
+  /// [documentTitle] it is one of the record's photos — shrunk first, and
+  /// sent with a thumbnail — and the shown one when [isPrimary]; with one it
+  /// is a document of the company under that name — any kind of file, sent
+  /// as it is, and never its picture.
   Future<Map<String, dynamic>> store(
     String owner,
     String id,
     XFile file, {
     String? documentTitle,
+    bool isPrimary = true,
   }) async {
     final isDocument = documentTitle != null;
     if (useMockResponses) {
@@ -127,23 +246,54 @@ class EntityPhotoRepository {
         mockDocuments.add((owner: owner, id: id, title: documentTitle, assetId: assetId));
         return {'id': assetId, 'documentTitle': documentTitle, 'fileName': file.name};
       }
-      // The picture every demo upload in the app shows.
-      const url =
-          'https://images.unsplash.com/photo-1550439062-609e1531270e?auto=format&fit=crop&q=80';
-      _mock['$owner:$id'] = (assetId: assetId, url: url);
-      return {'id': assetId, 'readUrl': url};
+      if (owner == PhotoOwner.item) {
+        final gallery = _mockGallery[id] ??= [];
+        if (gallery.length >= maxPartPhotos) {
+          throw const EntityPhotoException(
+            'A part keeps up to $maxPartPhotos photos — remove one first.',
+            code: 'photo_limit',
+          );
+        }
+        final main = isPrimary || gallery.isEmpty;
+        if (main) {
+          for (final (index, photo) in gallery.indexed) {
+            gallery[index] = photo.copyWith(isPrimary: false);
+          }
+        }
+        gallery.add(PartPhoto(
+          id: assetId,
+          thumbUrl: _mockUrl,
+          viewUrl: _mockUrl,
+          isPrimary: main,
+          position: gallery.length + 1,
+        ));
+        if (!main) return {'id': assetId, 'readUrl': _mockUrl};
+      }
+      _mock['$owner:$id'] = (assetId: assetId, url: _mockUrl);
+      return {'id': assetId, 'readUrl': _mockUrl};
     }
-    final bytes = await file.readAsBytes();
-    final contentType =
+    var bytes = await file.readAsBytes();
+    var contentType =
         lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
         'application/octet-stream';
+    // A photo is shrunk to what a screen needs, with a small copy for lists:
+    // a few hundred KB stored and sent instead of a phone's 3–8 MB.
+    final shrunk = isDocument ? null : await shrinkPhoto(bytes, contentType: contentType);
+    if (shrunk != null) {
+      bytes = shrunk.photo;
+      contentType = shrunk.contentType;
+    }
     // Named for what it is, with an extension: a file handed over without a
     // name became a stored object nothing could tell was a picture.
     final named = file.name.trim();
     final extension =
         extensionFromMime(contentType) ?? (isDocument ? 'bin' : 'png');
+    final stem = named.contains('.') ? named.substring(0, named.lastIndexOf('.')) : named;
     final fileName = named.isEmpty
         ? '${isDocument ? 'document' : 'photo'}.$extension'
+        // A shrunk photo is a JPEG whatever it came as.
+        : shrunk != null
+        ? '${stem.isEmpty ? 'photo' : stem}.jpg'
         : (named.contains('.') ? named : '$named.$extension');
     final intent = await _post('/api/assets/upload-intent', {
       'uploadType': isDocument ? 'PARTY_DOCUMENT' : PhotoOwner.uploadTypeOf(owner),
@@ -156,14 +306,22 @@ class EntityPhotoRepository {
       if (isDocument)
         'documentTitle': documentTitle
       else
-        // A new photo replaces the shown one.
-        'isPrimary': true,
+        'isPrimary': isPrimary,
+      if (shrunk != null) ...{
+        'thumbnail': {
+          'sizeBytes': shrunk.thumb.length,
+          'sha256': sha256.convert(shrunk.thumb).toString(),
+        },
+        'width': shrunk.width,
+        'height': shrunk.height,
+      },
     });
     final body = intent['intent'] as Map<String, dynamic>? ?? const {};
     final existing = body['asset'] as Map<String, dynamic>?;
     if (body['alreadyUploaded'] == true && existing != null) {
-      // The same document under the same name is the one already there.
-      if (isDocument) return existing;
+      // The same document under the same name is the one already there; the
+      // same picture as one more view is the view already there.
+      if (isDocument || !isPrimary) return existing;
       // The same picture again: make it the shown one.
       final id = (existing['id'] as num).toInt();
       final primary = await _send('PATCH', '/api/assets/$id/primary', null);
@@ -183,6 +341,21 @@ class EntityPhotoRepository {
     if (put.statusCode < 200 || put.statusCode >= 300) {
       throw EntityPhotoException(_reason(put.body) ?? 'The upload was refused.');
     }
+    final thumbSlot = upload['thumbnail'] as Map<String, dynamic>?;
+    if (shrunk != null && thumbSlot != null) {
+      final thumbPut = await _uploadClient.put(
+        Uri.parse(thumbSlot['uploadUrl'] as String? ?? ''),
+        headers: {
+          for (final entry
+              in (thumbSlot['headers'] as Map<String, dynamic>? ?? const {}).entries)
+            entry.key: '${entry.value}',
+        },
+        body: shrunk.thumb,
+      );
+      if (thumbPut.statusCode < 200 || thumbPut.statusCode >= 300) {
+        throw EntityPhotoException(_reason(thumbPut.body) ?? 'The thumbnail was refused.');
+      }
+    }
     final done = await _post('/api/assets/upload-complete', {
       'uploadSessionId': upload['uploadSessionId'],
       'objectKey': upload['objectKey'],
@@ -192,6 +365,21 @@ class EntityPhotoRepository {
 
   Future<void> remove(String owner, String id, int assetId) async {
     if (useMockResponses) {
+      final gallery = _mockGallery[id];
+      if (owner == PhotoOwner.item && gallery != null) {
+        final wasMain = gallery.any((p) => p.id == assetId && p.isPrimary);
+        gallery.removeWhere((p) => p.id == assetId);
+        for (final (index, photo) in gallery.indexed) {
+          gallery[index] = photo.copyWith(
+            position: index + 1,
+            isPrimary: photo.isPrimary || (wasMain && index == 0),
+          );
+        }
+        if (gallery.isNotEmpty) {
+          _mock['$owner:$id'] = (assetId: gallery.firstWhere((p) => p.isPrimary).id, url: _mockUrl);
+          return;
+        }
+      }
       _mock.remove('$owner:$id');
       return;
     }
@@ -234,6 +422,7 @@ class EntityPhotoRepository {
       throw EntityPhotoException(
         payload['error'] as String? ??
             'The server answered ${response.statusCode}.',
+        code: payload['code'] as String?,
       );
     }
     return payload;
@@ -248,9 +437,34 @@ class EntityPhotoRepository {
   }
 }
 
+/// A photo in an open gallery: one the part keeps, or one picked on this PC
+/// and held here until Save.
+sealed class GalleryPhoto {
+  const GalleryPhoto();
+}
+
+final class StoredGalleryPhoto extends GalleryPhoto {
+  const StoredGalleryPhoto(this.photo, {this.fromPhone = false});
+  final PartPhoto photo;
+
+  /// It arrived from the phone while the gallery was open.
+  final bool fromPhone;
+}
+
+final class StagedGalleryPhoto extends GalleryPhoto {
+  StagedGalleryPhoto(this.file, this.bytes);
+  final XFile file;
+
+  /// Shown from memory: nothing is uploaded until Save.
+  final Uint8List bytes;
+}
+
 class EntityPhotoException implements Exception {
-  const EntityPhotoException(this.message);
+  const EntityPhotoException(this.message, {this.code});
   final String message;
+
+  /// The server's reason, when it gave one: `photo_limit`.
+  final String? code;
 
   @override
   String toString() => message;
@@ -286,7 +500,71 @@ class EntityPhotosProvider extends ChangeNotifier {
     final owner = '${data['entityType'] ?? ''}';
     final id = '${data['entityId'] ?? ''}';
     if (owner.isEmpty || id.isEmpty) return;
+    _bump(owner, id);
     forget(owner, id);
+  }
+
+  final Map<String, int> _revisions = {};
+
+  /// Goes up each time [owner] [id]'s photos change anywhere — a shot from
+  /// the phone, another desktop, a save here. An open gallery reads it to
+  /// know when to look again.
+  int revisionOf(String owner, String id) => _revisions[_key(owner, id)] ?? 0;
+
+  void _bump(String owner, String id) {
+    final key = _key(owner, id);
+    _revisions[key] = (_revisions[key] ?? 0) + 1;
+    if (!_disposed) notifyListeners();
+  }
+
+  /// [itemId]'s photos, first to last.
+  Future<List<PartPhoto>> partPhotos(String itemId) => _repository.partPhotos(itemId);
+
+  /// The gallery's Save, in the order that keeps a part under its limit:
+  /// [removed] first, then each new photo of [order] uploaded (shrunk, as one
+  /// more view), then one request for the order and [main]. Answers why not,
+  /// or null when all of it landed.
+  Future<String?> saveGallery(
+    String itemId, {
+    required List<int> removed,
+    required List<GalleryPhoto> order,
+    required GalleryPhoto? main,
+  }) async {
+    const owner = PhotoOwner.item;
+    final key = _key(owner, itemId);
+    _busy.add(key);
+    notifyListeners();
+    try {
+      for (final assetId in removed) {
+        await _repository.remove(owner, itemId, assetId);
+      }
+      final ids = <int>[];
+      int? mainId;
+      for (final photo in order) {
+        final int id;
+        switch (photo) {
+          case StoredGalleryPhoto(:final photo):
+            id = photo.id;
+          case StagedGalleryPhoto(:final file):
+            final asset = await _repository.store(owner, itemId, file, isPrimary: false);
+            id = (asset['id'] as num).toInt();
+        }
+        // The same picture picked twice is stored once.
+        if (!ids.contains(id)) ids.add(id);
+        if (identical(photo, main)) mainId = id;
+      }
+      if (ids.isNotEmpty) {
+        await _repository.arrangePartPhotos(itemId, order: ids, primaryId: mainId);
+      }
+      return null;
+    } catch (error) {
+      return '$error';
+    } finally {
+      _busy.remove(key);
+      _bump(owner, itemId);
+      _checkedAt.remove(key);
+      request(owner, itemId);
+    }
   }
 
   /// Drops what is known about [owner] [id] and asks again, if anything on
@@ -298,6 +576,9 @@ class EntityPhotosProvider extends ChangeNotifier {
   }
 
   final Map<String, EntityPhoto> _photos = {};
+
+  /// A signed read URL lives an hour; one is reused for most of it.
+  static const _keepUrlFor = Duration(minutes: 50);
 
   /// When each record was last asked about, photo or not — so a record with
   /// no photo is not asked about again on every rebuild.
@@ -340,8 +621,24 @@ class EntityPhotosProvider extends ChangeNotifier {
         for (final id in ids) {
           final key = _key(entry.key, id);
           final photo = found[id];
+          final old = _photos[key];
           if (photo == null) {
             changed |= _photos.remove(key) != null;
+          } else if (old != null &&
+              old.assetId == photo.assetId &&
+              now.difference(old.fetchedAt) < _keepUrlFor) {
+            // The same photo: its URL is kept while it still works, so the
+            // image cache answers and nothing is downloaded again.
+            if (old.count != photo.count) {
+              _photos[key] = EntityPhoto(
+                assetId: old.assetId,
+                url: old.url,
+                thumbUrl: old.thumbUrl,
+                count: photo.count,
+                fetchedAt: old.fetchedAt,
+              );
+              changed = true;
+            }
           } else {
             _photos[key] = photo;
             changed = true;

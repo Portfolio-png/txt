@@ -36,6 +36,7 @@ import '../widgets/part_machine_section.dart';
 import '../widgets/deal_people_form.dart';
 import '../widgets/item_report.dart';
 import '../widgets/part_rows_form.dart';
+import '../widgets/part_photo_gallery.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/utils/stamp_format.dart';
@@ -2568,17 +2569,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
   }
 
-  /// A part line's photo — the size a person's is.
+  /// A part line's photo — the size a person's is. A click opens the part's
+  /// gallery: its views, up to five.
   Widget _rowPhoto(int row) {
     final id = _controller.groupItemController.draftAt(row).entityId;
     final part = id == null ? null : _partById(id);
+    final name = part == null
+        ? 'this part'
+        : (part.displayName.trim().isEmpty ? part.name : part.displayName.trim());
     return MiniPhoto(
       owner: PhotoOwner.item,
       id: id?.toString(),
       size: 40,
       what: 'part photo',
       fallbackUrl: part?.photoUrl,
-      disabledReason: 'Save the part to add its photo',
+      disabledReason: 'Save the part to add its photos',
+      onOpen: id == null
+          ? null
+          : () => showPartPhotoGallery(context, itemId: '$id', partName: name),
     );
   }
 

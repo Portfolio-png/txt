@@ -1446,9 +1446,21 @@ void main() {
       );
       expect(find.byKey(const ValueKey<String>('photo-item-500')), findsOneWidget);
 
+      // A click opens the part's gallery: its views, up to five.
+      await tester.tap(find.byKey(const ValueKey<String>('photo-item-500')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey<String>('part_photo_gallery')), findsOneWidget);
+      expect(find.text('Photos of Patti'), findsOneWidget);
+      expect(find.text('0 of 5'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey<String>('gallery_close')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey<String>('part_photo_gallery')), findsNothing);
+
       await tester.tap(find.text('Add part').first);
       await tester.pump();
-      expect(find.byTooltip('Save the part to add its photo'),
+      expect(find.byTooltip('Save the part to add its photos'),
           findsOneWidget);
       expect(tester.takeException(), isNull);
     });

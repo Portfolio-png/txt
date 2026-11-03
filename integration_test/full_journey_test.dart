@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:core_erp/core/widgets/mini_photo.dart';
+import 'package:core_erp/features/items/presentation/widgets/part_photo_gallery.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -194,7 +195,13 @@ void main() {
   ) async {
     MiniPhoto.debugPickFile = () async =>
         XFile.fromData(_png, name: 'e2e.png', mimeType: 'image/png');
-    addTearDown(() => MiniPhoto.debugPickFile = null);
+    PartPhotoGallery.debugPickFiles = () async => [
+      XFile.fromData(_png, path: '/tmp/e2e-part.png', mimeType: 'image/png'),
+    ];
+    addTearDown(() {
+      MiniPhoto.debugPickFile = null;
+      PartPhotoGallery.debugPickFiles = null;
+    });
 
     await _step('boot and open the sheet', () async {
       await bootApp(tester);
@@ -299,8 +306,21 @@ void main() {
     });
 
     // --- photos ----------------------------------------------------------------
-    await _step('upload the part photo', () => _uploadPhoto(tester, 'photo-item-'));
-    await _letToastGo(tester);
+    await _step('upload the part photo', () async {
+      // A part's photo is one of its views, added through its gallery.
+      await pumpUntil(tester, _keyed('photo-item-'), reason: 'a part thumbnail should be drawn');
+      await _tapVisible(tester, _keyed('photo-item-'));
+      await pumpUntil(tester, find.byKey(const ValueKey<String>('gallery_add_0')),
+          reason: 'the part photo should open its gallery');
+      await tester.tap(find.byKey(const ValueKey<String>('gallery_add_0')));
+      await pumpUntil(tester, find.byKey(const ValueKey<String>('gallery_from_computer')),
+          reason: 'a + slot should offer a file');
+      await tester.tap(find.byKey(const ValueKey<String>('gallery_from_computer')));
+      await pumpUntil(tester, find.text('1 of 5'), reason: 'the file should be held');
+      await tester.tap(find.byKey(const ValueKey<String>('gallery_save')));
+      await pumpUntil(tester, find.text('Photos saved.'), reason: 'the part photo should upload');
+    });
+    await pumpUntilGone(tester, find.text('Photos saved.'), timeout: const Duration(seconds: 10));
     await _step('upload the company logo', () => _uploadPhoto(tester, 'photo-client-'));
     await _letToastGo(tester);
     await _step('upload the person photo', () => _uploadPhoto(tester, 'photo-party_contact-'));

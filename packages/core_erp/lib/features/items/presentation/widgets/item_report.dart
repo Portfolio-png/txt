@@ -29,6 +29,7 @@ import '../../domain/item_definition.dart';
 import '../../domain/sheet_property.dart';
 import '../providers/items_provider.dart';
 import '../providers/sheet_properties_provider.dart';
+import 'part_photo_gallery.dart';
 
 // Everything entered for a part on the item sheet, as plain text: the part,
 // who it was made for, its dies and machines, its route and its raw sheet.
@@ -627,6 +628,7 @@ class _ReportHeader extends StatelessWidget {
               size: 72,
               what: 'part photo',
               fallbackUrl: item.photoUrl,
+              onOpen: () => showPartPhotoGallery(context, itemId: '${item.id}', partName: name),
             ),
             const SizedBox(width: 16),
           ],

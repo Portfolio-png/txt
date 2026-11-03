@@ -174,6 +174,7 @@ test('a part keeps up to five photos, each with a thumbnail, in an order', async
       entityIds: [part.id],
     });
     assert.ok(primary.body.photos[part.id].thumbReadUrl);
+    assert.equal(primary.body.photos[part.id].count, 5);
 
     // The gallery's Save: a new order and a new main photo, in one request.
     const [a, b, c, d, e] = uploaded.map((x) => x.id);

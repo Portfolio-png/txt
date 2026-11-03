@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:core_erp/core/services/entity_photos.dart';
-import 'package:core_erp/core/widgets/mini_photo.dart';
+import 'package:core_erp/features/items/presentation/widgets/part_photo_gallery.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,20 +10,23 @@ import 'package:provider/provider.dart';
 
 import 'support/harness.dart';
 
-// A part's photo, uploaded through the sheet's own thumbnail, against the real
-// server with NO S3 bucket — the store this machine actually has. Before the
-// local store, this upload answered 503 on every machine without a bucket.
+// A part's photos, through its gallery, against the real server with NO S3
+// bucket — the store this machine actually has: two views picked from this
+// computer, the second made the main one, saved; then one removed.
 //
-// `scripts/e2e-ui.sh` reads the asset row back out of SQLite and finds the
-// file on disk; this file asserts the UI could be driven to put it there and
-// that the signed link it shows really serves the picture.
+// `scripts/e2e-ui.sh sheet_photo` reads the rows back out of SQLite — one
+// kept with its thumbnail, one deleted — finds the files on disk, and runs
+// the sweep a day on to see the deleted one's files go.
 
 const _seededGroup = 'Primary Group';
 const _newPart = 'E2E Photo Part';
 
-// A real 1x1 PNG, standing in for the file the picker would return.
-final _png = base64Decode(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+// Two small real PNGs, different bytes: two views, not one twice.
+final _front = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAEUlEQVR4nGM4oaGBFTEMpAQAgPc0gUXKIv0AAAAASUVORK5CYII=',
+);
+final _side = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAYAAAAICAIAAABVpBlvAAAAEUlEQVR4nGPQ0DiBhhgGgxAAeXk0gfi/cm4AAAAASUVORK5CYII=',
 );
 
 Finder _partPhoto() => find.byWidgetPredicate((widget) {
@@ -33,15 +36,30 @@ Finder _partPhoto() => find.byWidgetPredicate((widget) {
       key.value != 'photo-item-none';
 });
 
+Finder _key(String value) => find.byKey(ValueKey<String>(value));
+
+Future<void> _openGallery(WidgetTester tester) async {
+  await tester.tap(_partPhoto().first);
+  await pumpUntil(tester, _key('gallery_count'), reason: 'the part photo should open its gallery');
+}
+
+Future<void> _save(WidgetTester tester) async {
+  await tester.tap(_key('gallery_save'));
+  await pumpUntil(tester, find.text('Photos saved.'), reason: 'Save should upload and arrange');
+  await pumpUntilGone(tester, _key('part_photo_gallery'), timeout: const Duration(seconds: 10));
+}
+
 void main() {
   ensureBinding();
 
-  testWidgets('a part photo is uploaded from the sheet and served back', (
+  testWidgets('a part keeps its views: two added, the second made main, one removed', (
     tester,
   ) async {
-    MiniPhoto.debugPickFile = () async =>
-        XFile.fromData(_png, name: 'e2e-part.png', mimeType: 'image/png');
-    addTearDown(() => MiniPhoto.debugPickFile = null);
+    PartPhotoGallery.debugPickFiles = () async => [
+      XFile.fromData(_front, path: '/tmp/e2e-front.png', mimeType: 'image/png'),
+      XFile.fromData(_side, path: '/tmp/e2e-side.png', mimeType: 'image/png'),
+    ];
+    addTearDown(() => PartPhotoGallery.debugPickFiles = null);
 
     await bootApp(tester);
     await openItemSheet(tester);
@@ -58,40 +76,47 @@ void main() {
       find.textContaining('SAVED #'),
       reason: 'the part has to exist before it can hold a photo',
     );
+    await pumpUntil(tester, _partPhoto(), reason: 'a saved row should offer its photos');
 
-    // Before the save the row's photo was the disabled kind; now it is the
-    // part's own button.
-    await pumpUntil(
-      tester,
-      _partPhoto(),
-      reason: 'a saved row should offer an upload for its photo',
-    );
-    await tester.tap(_partPhoto().first);
-    // An empty slot asks how: the phone, or a file from this PC.
-    await pumpUntil(tester, find.byKey(const ValueKey<String>('photo-choose-file')),
-        reason: 'an empty photo slot should offer a file');
-    await tester.tap(find.byKey(const ValueKey<String>('photo-choose-file')));
-    await pumpUntil(
-      tester,
-      find.text('Photo saved.'),
-      reason: 'the upload should go through the local store and complete',
-    );
-    dumpVisibleText(tester, 'E2E after the photo upload');
+    // --- two views from this computer, the second the main one ---------------
+    await _openGallery(tester);
+    expect(find.text('0 of 5'), findsOneWidget);
+    await tester.tap(_key('gallery_add_0'));
+    await pumpUntil(tester, _key('gallery_from_computer'), reason: 'a + slot asks how');
+    await tester.tap(_key('gallery_from_computer'));
+    await pumpUntil(tester, find.text('2 of 5'), reason: 'both files should be held');
+    await tester.tap(_key('gallery_star_1'));
+    await tester.pump(const Duration(milliseconds: 200));
+    dumpVisibleText(tester, 'E2E gallery before Save');
+    await _save(tester);
 
-    // What the thumbnail shows is a signed link; fetch it as the image would.
     final key = tester.widget(_partPhoto().first).key! as ValueKey<String>;
     final partId = key.value.substring('photo-item-'.length);
     final photos = Provider.of<EntityPhotosProvider>(
       tester.element(_partPhoto().first),
       listen: false,
     );
-    final photo = photos.photoOf(PhotoOwner.item, partId);
-    expect(photo, isNotNull, reason: 'the provider should hold the new photo');
-    final served = await tester.runAsync(
-      () => http.get(Uri.parse(photo!.url)),
-    );
-    expect(served!.statusCode, 200, reason: photo!.url);
-    expect(served.headers['content-type'], 'image/png');
-    expect(served.bodyBytes, _png);
+    final saved = (await tester.runAsync(() => photos.partPhotos(partId)))!;
+    expect(saved, hasLength(2));
+    expect(saved.map((p) => p.isPrimary), [false, true], reason: 'the second is the main one');
+
+    // The thumbnail's permanent link leads to a small JPEG.
+    final thumb = await tester.runAsync(() => http.get(Uri.parse(saved.first.thumbUrl)));
+    expect(thumb!.statusCode, 200, reason: saved.first.thumbUrl);
+    expect(thumb.headers['content-type'], 'image/jpeg');
+
+    // --- one removed ----------------------------------------------------------
+    await _openGallery(tester);
+    expect(find.text('2 of 5'), findsOneWidget);
+    await tester.tap(_key('gallery_remove_0'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('1 of 5'), findsOneWidget);
+    await _save(tester);
+
+    final left = (await tester.runAsync(() => photos.partPhotos(partId)))!;
+    expect(left, hasLength(1));
+    expect(left.single.isPrimary, isTrue);
+    expect(left.single.id, saved.last.id);
+    dumpVisibleText(tester, 'E2E after the gallery');
   });
 }

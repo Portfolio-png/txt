@@ -96,7 +96,7 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
     try {
       final store = context.read<EntityPhotoRepository>();
       // A document of the company is filed under its name beside the logo;
-      // anything else becomes the record's photo.
+      // anything else is one of the record's photos, shrunk before it goes.
       final int assetId;
       if (request.documentTitle case final title?) {
         final asset = await store.store(
@@ -107,7 +107,14 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
         );
         assetId = (asset['id'] as num).toInt();
       } else {
-        assetId = (await store.upload(request.owner, request.entityId, shot)).assetId;
+        // A part keeps several views: the shot is one more (the main one only
+        // while the part has none). Anything else has one photo, replaced.
+        assetId = (await store.upload(
+          request.owner,
+          request.entityId,
+          shot,
+          isPrimary: request.owner != PhotoOwner.item,
+        )).assetId;
       }
       final error = await requests.complete(request, assetId: assetId);
       // The photo is on the record either way; a job the desktop closed in the
