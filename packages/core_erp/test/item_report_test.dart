@@ -16,6 +16,8 @@ import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -344,9 +346,108 @@ void main() {
     expect(find.byKey(const ValueKey('item_report')), findsOneWidget,
         reason: 'the report is what a click opens');
     expect(repo.fresh, contains(500), reason: 'read from the server, not the replica');
-    expect(find.textContaining('Patti — PGBP1 · saved '), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('item_report_heading'))).data,
+      'Patti',
+      reason: 'the part, large, on its own',
+    );
+    expect(find.text('PGBP1'), findsOneWidget, reason: 'its code as a pill');
     expect(find.text('Primary Group › Brackets'), findsOneWidget);
+    expect(find.text('MS'), findsOneWidget, reason: 'a property chip, its value bold');
     expect(find.text('Report'), findsOneWidget);
     expect(find.text('Item Specifications'), findsOneWidget);
+  });
+
+  group('the report, drawn', () {
+    Future<void> pumpReport(WidgetTester tester, ItemDefinition part, {Size size = const Size(1100, 2400)}) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final items = ItemsProvider(repository: _Items(part));
+      await tester.runAsync(items.refresh);
+      final groups = GroupsProvider(repository: _Groups());
+      await groups.initialize();
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ItemsProvider>.value(value: items),
+          ChangeNotifierProvider<GroupsProvider>.value(value: groups),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: ItemReportView(item: part),
+            ),
+          ),
+        ),
+      ));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+    }
+
+    testWidgets('an empty part says so in each card, never 0', (tester) async {
+      await pumpReport(tester, _part());
+      expect(find.text('No company recorded'), findsOneWidget);
+      expect(find.text('No route yet'), findsOneWidget);
+      expect(find.text('No dies on this part'), findsOneWidget);
+      expect(find.text('No machines on this part'), findsOneWidget);
+      expect(find.text('No raw sheet recorded'), findsOneWidget);
+      expect(find.text('—'), findsWidgets, reason: 'a figure nobody recorded is a dash');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the part code copies; a die row opens the die', (tester) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+      AppFlowHooks.dieInspector = (context, id) => Material(child: Text('DIE $id'));
+      addTearDown(() => AppFlowHooks.dieInspector = null);
+
+      await pumpReport(
+        tester,
+        _part(dies: [ItemDieLink(id: 'd1', toolCode: 'CDPGBP1', dieType: 'cutting')]),
+      );
+      expect(find.text('1 die'), findsOneWidget, reason: 'the figure tile');
+
+      await tester.tap(find.byKey(const ValueKey('item_report_code')));
+      await tester.pump();
+      expect(copied, 'PGBP1');
+
+      await tester.tap(find.byKey(const ValueKey('item_report_die_d1')));
+      await tester.pumpAndSettle();
+      expect(find.text('DIE d1'), findsOneWidget, reason: 'the die opens from its row');
+    });
+
+    for (final width in [560.0, 1020.0]) {
+      testWidgets('fits a ${width.toInt()}px panel', (tester) async {
+        await pumpReport(
+          tester,
+          _part(
+            variationTree: [_property(1, 'Alloy', 'MS'), _property(2, 'Thickness', '23 Gauge')],
+            dies: [ItemDieLink(id: 'd1', toolCode: 'CDPGBP1', dieType: 'cutting', madeBy: 'Shree Tools')],
+            machines: const [ItemMachineLink(id: 'm1', name: 'Press', assetId: 'EP-1', machineType: 'Power press')],
+            developedFor: DevelopedFor(
+              kind: DevelopedForKind.client,
+              clientId: 7,
+              companyName: 'Gold Medal',
+              quotationAmount: 45000,
+              contacts: const [
+                PartyContact(id: 1, name: 'Ravi Shah', designation: 'Purchase Manager', phone: '9820012345', email: 'ravi@example.com'),
+              ],
+            ),
+          ),
+          size: Size(width + 40, 2600),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.text('Gold Medal'), findsOneWidget);
+        expect(find.text('Ravi Shah'), findsOneWidget);
+      });
+    }
   });
 }

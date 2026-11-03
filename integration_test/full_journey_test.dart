@@ -511,6 +511,10 @@ void main() {
       await reported(find.text('23 Gauge'), 'the thickness');
       dumpVisibleText(tester, 'E2E journey, the part report');
       await snapshot(tester, 'item_report');
+      // And its lower half: machines and the raw sheet.
+      await tester.ensureVisible(find.text('Raw sheet').last);
+      await tester.pump(const Duration(milliseconds: 400));
+      await snapshot(tester, 'item_report_lower');
     });
 
     final total = _timings.values.fold<int>(0, (a, b) => a + b);
