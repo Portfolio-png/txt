@@ -97,8 +97,8 @@ void main() {
     await pumpUntil(tester, _search(), reason: 'and on to Part Name, open too');
     await _pickByTyping(tester, _part);
     expect(_focused(), 'cell_item_0_3', reason: 'the pick leaves focus on Part Name');
-    expect(find.byKey(const ValueKey<String>('part_photos_section')), findsOneWidget,
-        reason: 'working on the part, its photos are open beside it');
+    expect(find.byKey(const ValueKey<String>('part_showcase_photo_0')), findsOneWidget,
+        reason: 'working on the part, its photo is big on its line');
     dumpVisibleText(tester, 'E2E keyboard, part line typed');
     await _tabToPromptAndSave(tester, 'Save part 1?');
     await pumpUntil(tester, find.textContaining('SAVED #'), reason: 'the part should save');
@@ -109,8 +109,8 @@ void main() {
       find.byKey(const ValueKey<String>('master-data-save')),
       reason: 'the saved part\'s raw material should open for editing',
     );
-    expect(find.byKey(const ValueKey<String>('part_photos_section')), findsNothing,
-        reason: 'and its photos roll away to the part line');
+    expect(find.byKey(const ValueKey<String>('part_showcase_photo_0')), findsOneWidget,
+        reason: 'and its photo stays on its line');
     // Tab walks its pages — Sheet planning, Material data, Review — and past
     // the Review asks to save it when anything changed; Enter saves.
     var askedRaw = false;

@@ -1467,53 +1467,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('working on the part rolls raw material up and shows its photos; chevrons roll each',
-        (tester) async {
-      final photos = EntityPhotosProvider(
-        repository: _GalleryRepository(const [
-          PartPhoto(id: 1, thumbUrl: 'http://x/t1.jpg', viewUrl: 'http://x/v1.jpg', isPrimary: true, position: 1),
-          PartPhoto(id: 2, thumbUrl: 'http://x/t2.jpg', viewUrl: 'http://x/v2.jpg', position: 2),
-        ]),
-      );
-      addTearDown(photos.dispose);
-      final patti = _item(id: 500, name: 'Patti', groupId: 11);
-      await _pumpScreen(
-        tester,
-        initialItems: [patti],
-        repository: _FakeItemRepository([patti]),
-        size: const Size(1700, 3200),
-        photos: photos,
-      );
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byType(MasterDataPanel), findsOneWidget, reason: 'open until the part is worked on');
-      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing);
-
-      // Into the part's line: raw material rolls up (kept, not drawn) and the
-      // part's photos open beside it.
-      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
-      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).first.id, row: 0);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byType(MasterDataPanel), findsNothing);
-      expect(find.byType(MasterDataPanel, skipOffstage: false), findsOneWidget);
-      expect(find.byKey(const ValueKey('part_photos_thumb_1')), findsOneWidget);
-      expect(find.byKey(const ValueKey('part_photos_thumb_2')), findsOneWidget);
-      expect(find.text('2 of 5'), findsOneWidget);
-
-      await tester.tap(find.byKey(const ValueKey('raw_roll')));
-      await tester.pump();
-      expect(find.byType(MasterDataPanel), findsOneWidget, reason: 'its chevron rolls it down');
-      await tester.tap(find.byKey(const ValueKey('photos_roll')));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing,
-          reason: 'and the photos roll up by theirs');
-      await tester.tap(find.byKey(const ValueKey('raw_roll')));
-      await tester.pump();
-      expect(find.byType(MasterDataPanel), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('the photos sit in the right column while the line is typed in, then come to the line, big',
+    testWidgets('the part\'s photo is big on its line; the right column is raw material\'s alone',
         (tester) async {
       final photos = EntityPhotosProvider(
         repository: _GalleryRepository(const [
@@ -1534,25 +1488,29 @@ void main() {
           .getSize(find.byKey(const ValueKey<String>('photo-item-500')).first)
           .width;
 
-      // Raw material has the right column, so the part's photo is on its line,
-      // big: a square beside the fields.
       expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsOneWidget);
       expect(lineSide(), greaterThan(120));
+      expect(find.byType(MasterDataPanel), findsOneWidget);
 
-      // Into the line: the photos go to the right column, the line keeps a
-      // small one.
+      // Into the line: the photo stays on it, big, and raw material stays open.
       final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
       sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).first.id, row: 0);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byKey(const ValueKey('part_photos_section')), findsOneWidget);
-      expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsNothing);
-      expect(lineSide(), 48);
-
-      // Rolled away again (on to raw material): back on the line, big.
-      await tester.tap(find.byKey(const ValueKey('photos_roll')));
-      await tester.pump();
       expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsOneWidget);
+      expect(lineSide(), greaterThan(120));
+      expect(find.byType(MasterDataPanel), findsOneWidget);
+      expect(find.byKey(const ValueKey('photos_roll')), findsNothing,
+          reason: 'no photos in the right column');
+
+      // Raw material's chevron rolls it up and down.
+      await tester.tap(find.byKey(const ValueKey('raw_roll')));
+      await tester.pump();
+      expect(find.byType(MasterDataPanel), findsNothing);
+      expect(find.byType(MasterDataPanel, skipOffstage: false), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('raw_roll')));
+      await tester.pump();
+      expect(find.byType(MasterDataPanel), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -1565,8 +1523,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('part_photos_section')),
-          matching: find.text('Save the part to add its photos'),
+          of: find.byKey(const ValueKey('part_showcase_photo_0')),
+          matching: find.byTooltip('Save the part to add its photos'),
         ),
         findsOneWidget,
       );
@@ -2178,8 +2136,6 @@ void main() {
         isFalse,
         reason: 'editing',
       );
-      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing,
-          reason: 'the photos rolled away to the part line');
     }, variant: desktop);
 
     testWidgets('Tab goes through raw material page by page, asks, then on to the company',

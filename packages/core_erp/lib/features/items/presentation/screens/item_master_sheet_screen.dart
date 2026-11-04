@@ -161,12 +161,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   int? _rawPartId;
   static const double _rawPanelWidth = 520;
 
-  /// The right column's two sections, each rolled up to its heading or down:
-  /// Raw material, and the part's photos under it. Working on the part rolls
-  /// raw material up and its photos down; the part's own Save turns that
-  /// round and puts the keyboard in raw material, editing.
+  /// Raw material rolled up to its heading by its chevron. The right column
+  /// is raw material's alone: the part's photos are on its own line.
   bool _rawRolled = false;
-  bool _photosRolled = true;
 
   /// The part whose raw sheet opens in edit mode once the panel is drawn for
   /// it — set by that part's Save. Without it the panel's own part-change
@@ -1253,14 +1250,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   Widget _rawPanelFrame(ItemDefinition? part, Widget panel) {
-    final name = part == null
-        ? _partLabelNow
-        : (part.displayName.trim().isEmpty ? part.name : part.displayName.trim());
-    // Rolled up, a section keeps its place and its state — Offstage, at a
-    // sliver of the room — so rolling is never a way to lose an edit, and the
-    // tree keeps its shape (moving the panel would rebuild it from nothing).
-    final rawFlex = _rawRolled ? 1 : (_photosRolled ? 1000 : 7);
-    final photosFlex = _photosRolled ? 1 : (_rawRolled ? 1000 : 3);
     return Container(
       key: const ValueKey<String>('raw_panel'),
       width: _rawPanelWidth,
@@ -1321,8 +1310,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               ),
             ),
           const Divider(height: 1),
-          Flexible(
-            flex: rawFlex,
+          // Rolled up, it keeps its place and its state — Offstage — so
+          // rolling is never a way to lose an edit.
+          Expanded(
             child: _rolled(
               _rawRolled,
               SheetStep(
@@ -1339,44 +1329,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               ),
             ),
           ),
-          if (_photosOn) ...[
-            const Divider(height: 1),
-            SheetStep.noTab(Padding(
-              padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 8, 8, 6),
-              child: Row(
-                children: [
-                  SheetStyle.iconTile(Icons.photo_library_outlined),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('Photos', style: SheetStyle.sectionTitle),
-                  ),
-                  _rollButton(
-                    key: 'photos_roll',
-                    what: 'the photos',
-                    rolled: _photosRolled,
-                    onPressed: () => setState(() => _photosRolled = !_photosRolled),
-                  ),
-                ],
-              ),
-            )),
-            Flexible(
-              flex: photosFlex,
-              child: _rolled(
-                _photosRolled,
-                SheetStep.noTab(_PartPhotosSection(
-                  key: const ValueKey<String>('part_photos_section'),
-                  partId: part?.id,
-                  partName: name,
-                )),
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  /// A section of the right column, [rolled] up or not. Rolled, it is laid out
+  /// Raw material, [rolled] up or not. Rolled, it is laid out
   /// at a size it fits (it would overflow the sliver it is given) and not
   /// drawn; the widgets stay the same either way, so their state does too.
   Widget _rolled(bool rolled, Widget child) => Offstage(
@@ -1429,20 +1387,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         },
         nextPage: () => _rawNextPage?.call() ?? false,
       );
-
-  /// The cursor is on the part's line: raw material rolls up, the part's
-  /// photos roll down beside it. Never over raw edits not yet saved — those
-  /// stay in view, and the photos open under them.
-  void _workingOnPart() {
-    if (!_rawPanelShown) return;
-    final keepRaw = _rawEditing && _rawDirty;
-    final rawRolled = keepRaw ? _rawRolled : true;
-    if (rawRolled == _rawRolled && !_photosRolled) return;
-    setState(() {
-      _rawRolled = rawRolled;
-      _photosRolled = false;
-    });
-  }
 
   /// Reads [partId]'s route — the active one, else the newest draft, which is
   /// the order the service answers in. A build with no route service, or a
@@ -2697,20 +2641,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// "Action" table of its own, which wrapped off the part's line.
   Widget _groupItemSheet() {
     final sheet = _controller.groupItemController;
-    // Into any field of the lines: the right column shows the part's photos.
-    return Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onFocusChange: (inside) {
-        if (inside) _workingOnPart();
-      },
-      child: PartRowsForm(
+    return PartRowsForm(
       sheet: sheet,
       photoBuilder: _photosOn ? _rowPhoto : null,
-      // The photos are in the right-hand column while the part line is being
-      // typed in; once the work is on raw material (or the column is not on
-      // screen at all) they come over to the part's own line, big.
-      showcaseRow: _photosOn && (!_rawPanelShown || _photosRolled) ? sheet.row : null,
+      // The part being worked on shows its photo big on its own line; the
+      // right column is raw material's alone.
+      showcaseRow: _photosOn ? sheet.row : null,
       showcasePhotoBuilder: (row, side) => _rowPhoto(row, size: side),
       statusBuilder: _rowStatus,
       actionBuilder: (row) => _rowEndAction(row) ?? const SizedBox.shrink(),
@@ -2724,7 +2660,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       flow: _flow,
       lineActions: _lineActions,
       showShortcuts: _altPressed,
-      ),
     );
   }
 
@@ -2735,13 +2670,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     order: _stepOrder,
     reveal: (section) {
       if (section == 'raw') {
-        // Raw material is open to whoever arrives: rolled down, photos up.
-        if (_rawRolled || !_photosRolled) {
-          setState(() {
-            _rawRolled = false;
-            _photosRolled = true;
-          });
-        }
+        // Raw material is open to whoever arrives.
+        if (_rawRolled) setState(() => _rawRolled = false);
         return;
       }
       if (_collapsed.contains(section)) setState(() => _collapsed.remove(section));
@@ -3156,8 +3086,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         _controller.savedRows.contains(at) &&
         !sheet.draftAt(at).isDirtySinceSave;
     if (savedNow) sheet.setRowLocked(at, true);
-    // The part is filled in and saved: its photos roll away to its line, and
-    // raw material opens, editing, with the keyboard in it.
+    // The part is filled in and saved: raw material opens, editing, with the
+    // keyboard in it.
     final rawFor = openRaw && savedNow && at == sheet.row
         ? sheet.draftAt(at).entityId
         : null;
@@ -3165,7 +3095,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       if (rawFor != null) {
         _rawPanelOpen = true;
         _rawRolled = false;
-        _photosRolled = true;
         if (_rawPartId == rawFor) {
           _rawEditing = true;
         } else {
@@ -3934,244 +3863,6 @@ class _HeadingStampState extends State<_HeadingStamp> {
               Text(
                 time,
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The part's photos beside the sheet while it is being worked on: one large,
-/// the other views under it, and the gallery a click away. The same photos
-/// as the line's thumbnail — read from the part's gallery, and read again
-/// when they change ([EntityPhotosProvider.revisionOf]: a phone shot, a
-/// gallery Save).
-class _PartPhotosSection extends StatefulWidget {
-  const _PartPhotosSection({
-    super.key,
-    required this.partId,
-    required this.partName,
-  });
-
-  /// Null until the part is saved: photos are kept on a part.
-  final int? partId;
-  final String partName;
-
-  @override
-  State<_PartPhotosSection> createState() => _PartPhotosSectionState();
-}
-
-class _PartPhotosSectionState extends State<_PartPhotosSection> {
-  EntityPhotosProvider? _store;
-  List<PartPhoto> _photos = const [];
-  bool _loading = false;
-  String? _error;
-  int _revision = -1;
-
-  /// The photo drawn large: the one clicked, else the main one.
-  int? _shownId;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final store = context.read<EntityPhotosProvider>();
-    if (!identical(store, _store)) {
-      _store?.removeListener(_onStoreChanged);
-      _store = store..addListener(_onStoreChanged);
-      _revision = -1;
-      _reload();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _PartPhotosSection old) {
-    super.didUpdateWidget(old);
-    if (old.partId != widget.partId) {
-      _photos = const [];
-      _shownId = null;
-      _error = null;
-      _revision = -1;
-      _reload();
-    }
-  }
-
-  @override
-  void dispose() {
-    _store?.removeListener(_onStoreChanged);
-    super.dispose();
-  }
-
-  void _onStoreChanged() => _reload();
-
-  /// Reads the part's photos when there is a part and its photos changed.
-  void _reload() {
-    final id = widget.partId;
-    final store = _store;
-    if (id == null || store == null) return;
-    final revision = store.revisionOf(PhotoOwner.item, '$id');
-    if (revision == _revision) return;
-    _revision = revision;
-    unawaited(_load(id));
-  }
-
-  Future<void> _load(int id) async {
-    if (_photos.isEmpty) setState(() => _loading = true);
-    try {
-      final photos = await _store!.partPhotos('$id');
-      // Another part was picked meanwhile: its own read answers for it.
-      if (!mounted || widget.partId != id) return;
-      setState(() {
-        _photos = photos;
-        _loading = false;
-        _error = null;
-        if (!photos.any((p) => p.id == _shownId)) _shownId = null;
-      });
-    } catch (error) {
-      if (!mounted || widget.partId != id) return;
-      setState(() {
-        _loading = false;
-        _error = 'The photos did not load: $error';
-      });
-    }
-  }
-
-  Future<void> _openGallery() async {
-    final id = widget.partId;
-    if (id == null) return;
-    await showPartPhotoGallery(
-      context,
-      itemId: '$id',
-      partName: widget.partName,
-      openOn: _shownId,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final id = widget.partId;
-    if (id == null) {
-      return _note(
-        Icons.add_a_photo_outlined,
-        'Save the part to add its photos',
-      );
-    }
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final error = _error;
-    if (error != null) return _note(Icons.broken_image_outlined, error);
-    if (_photos.isEmpty) {
-      return _note(
-        Icons.add_a_photo_outlined,
-        'No photos of ${widget.partName} yet',
-        action: 'Add photos',
-      );
-    }
-    final shown = _photos.where((p) => p.id == _shownId).firstOrNull ??
-        _photos.where((p) => p.isPrimary).firstOrNull ??
-        _photos.first;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 4, SheetStyle.cardPadding, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: InkWell(
-              key: const ValueKey<String>('part_photos_large'),
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-              onTap: _openGallery,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-                child: ColoredBox(
-                  color: SoftErpTheme.sectionSurface,
-                  child: Image.network(
-                    shown.viewUrl,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Center(
-                      child: Icon(Icons.broken_image_outlined, size: 32, color: SoftErpTheme.textMuted),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              for (final photo in _photos) ...[
-                _thumb(photo, selected: identical(photo, shown)),
-                const SizedBox(width: 8),
-              ],
-              const Spacer(),
-              TextButton.icon(
-                key: const ValueKey<String>('part_photos_manage'),
-                onPressed: _openGallery,
-                icon: const Icon(Icons.photo_library_outlined, size: 18),
-                label: Text(
-                  '${_photos.length} of $maxPartPhotos',
-                  style: const TextStyle(fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _thumb(PartPhoto photo, {required bool selected}) {
-    return Tooltip(
-      message: photo.isPrimary ? 'The main photo' : 'Show this view',
-      child: InkWell(
-        key: ValueKey<String>('part_photos_thumb_${photo.id}'),
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-        onTap: () => setState(() => _shownId = photo.id),
-        child: Container(
-          width: 52,
-          height: 52,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-            border: Border.all(
-              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Image.network(
-            photo.thumbUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined, size: 18),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Nothing to show yet: why, and the way to add some when there is one.
-  Widget _note(IconData icon, String text, {String? action}) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(SheetStyle.cardPadding),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 32, color: SoftErpTheme.textMuted),
-            const SizedBox(height: 8),
-            Text(
-              text,
-              key: const ValueKey<String>('part_photos_note'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
-            ),
-            if (action != null) ...[
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                key: const ValueKey<String>('part_photos_add'),
-                onPressed: _openGallery,
-                icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-                label: Text(action, style: const TextStyle(fontSize: 14)),
               ),
             ],
           ],
