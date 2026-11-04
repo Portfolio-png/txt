@@ -1513,6 +1513,49 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('the photos sit in the right column while the line is typed in, then come to the line, big',
+        (tester) async {
+      final photos = EntityPhotosProvider(
+        repository: _GalleryRepository(const [
+          PartPhoto(id: 1, thumbUrl: 'http://x/t1.jpg', viewUrl: 'http://x/v1.jpg', isPrimary: true, position: 1),
+        ]),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      double lineSide() => tester
+          .getSize(find.byKey(const ValueKey<String>('photo-item-500')).first)
+          .width;
+
+      // Raw material has the right column, so the part's photo is on its line,
+      // big: a square beside the fields.
+      expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsOneWidget);
+      expect(lineSide(), greaterThan(120));
+
+      // Into the line: the photos go to the right column, the line keeps a
+      // small one.
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).first.id, row: 0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byKey(const ValueKey('part_photos_section')), findsOneWidget);
+      expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsNothing);
+      expect(lineSide(), 48);
+
+      // Rolled away again (on to raw material): back on the line, big.
+      await tester.tap(find.byKey(const ValueKey('photos_roll')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a new part\'s photos say they come with its save', (tester) async {
       final photos = EntityPhotosProvider(
         repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),

@@ -274,6 +274,20 @@ class SheetStepState extends State<SheetStep> {
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
     }
+    // ← is Shift+Tab: back a field (and from the first, back a step). In a
+    // text box only from the very start of its text, so it still moves the
+    // caret through what was typed; a dropdown, a tick or a button has no
+    // caret, so there it always goes back.
+    if (key == LogicalKeyboardKey.arrowLeft &&
+        !keyboard.isShiftPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed &&
+        _atStartOrNoCaret(primary)) {
+      return _tabFrom(primary, back: true)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
     // Enter in the last text box is Tab: it reaches here only when the
     // field did not take it (a dropdown opens on Enter itself).
     if (enter && _isLast(primary)) {
@@ -281,6 +295,16 @@ class SheetStepState extends State<SheetStep> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  /// Whether [node] has no caret to move (not a text box), or its caret is
+  /// at the very start with nothing selected.
+  static bool _atStartOrNoCaret(FocusNode? node) {
+    final editable = node?.context?.findAncestorStateOfType<EditableTextState>();
+    if (editable == null) return true;
+    final selection = editable.textEditingValue.selection;
+    return !selection.isValid ||
+        (selection.isCollapsed && selection.baseOffset == 0);
   }
 
   /// Past the last field: ask, if there is anything to ask about, then go.

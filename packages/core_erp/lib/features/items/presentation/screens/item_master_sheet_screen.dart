@@ -2707,6 +2707,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       child: PartRowsForm(
       sheet: sheet,
       photoBuilder: _photosOn ? _rowPhoto : null,
+      // The photos are in the right-hand column while the part line is being
+      // typed in; once the work is on raw material (or the column is not on
+      // screen at all) they come over to the part's own line, big.
+      showcaseRow: _photosOn && (!_rawPanelShown || _photosRolled) ? sheet.row : null,
+      showcasePhotoBuilder: (row, side) => _rowPhoto(row, size: side),
       statusBuilder: _rowStatus,
       actionBuilder: (row) => _rowEndAction(row) ?? const SizedBox.shrink(),
       onAddPart: () {
@@ -2899,7 +2904,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// A part line's photo — the size a person's is. A click opens the part's
   /// gallery: its views, up to five.
-  Widget _rowPhoto(int row) {
+  Widget _rowPhoto(int row, {double size = 48}) {
     final id = _controller.groupItemController.draftAt(row).entityId;
     final part = id == null ? null : _partById(id);
     final name = part == null
@@ -2908,7 +2913,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return MiniPhoto(
       owner: PhotoOwner.item,
       id: id?.toString(),
-      size: 48,
+      size: size,
       what: 'part photo',
       fallbackUrl: part?.photoUrl,
       disabledReason: 'Save the part to add its photos',

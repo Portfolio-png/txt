@@ -131,8 +131,9 @@ class MiniPhoto extends StatelessWidget {
 
     photos.request(owner, id);
     final photo = photos.photoOf(owner, id);
-    // A slot loads the small copy; the full photo is for the big view.
-    final url = photo?.smallUrl ?? _fallback;
+    // A slot loads the small copy; the full photo is for the big view — and
+    // for a slot drawn big, where the small copy would show its pixels.
+    final url = (size > 120 ? photo?.url : photo?.smallUrl) ?? _fallback;
     final busy = photos.isBusy(owner, id);
     final requests = _requestsOf(context);
     final onPhone = requests?.pendingFor(owner, id) != null;
@@ -317,6 +318,21 @@ class MiniPhoto extends StatelessWidget {
   Widget _empty(Color color) {
     const icon = Icons.add_a_photo_outlined;
     final label = this.label;
+    if (size > 120) {
+      // A big empty slot says what it is for; an 18px camera in it is lost.
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 40, color: color),
+          const SizedBox(height: 8),
+          Text(
+            label ?? 'Add ${what}s',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color),
+          ),
+        ],
+      );
+    }
     if (label == null) return Icon(icon, size: 18, color: color);
     return Column(
       mainAxisSize: MainAxisSize.min,

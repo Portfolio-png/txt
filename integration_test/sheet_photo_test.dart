@@ -38,7 +38,16 @@ Finder _partPhoto() => find.byWidgetPredicate((widget) {
 
 Finder _key(String value) => find.byKey(ValueKey<String>(value));
 
+/// Text inside the gallery: the right column's photos section shows the same
+/// count beside it.
+Finder _inGallery(String text) =>
+    find.descendant(of: _key('part_photo_gallery'), matching: find.text(text));
+
 Future<void> _openGallery(WidgetTester tester) async {
+  // Centred, not just "visible": scrolled to the top edge, the photo sits
+  // under the pinned header and the tap lands on the header instead.
+  await Scrollable.ensureVisible(tester.element(_partPhoto().first), alignment: 0.5);
+  await tester.pump(const Duration(milliseconds: 200));
   await tester.tap(_partPhoto().first);
   await pumpUntil(tester, _key('gallery_count'), reason: 'the part photo should open its gallery');
 }
@@ -80,11 +89,11 @@ void main() {
 
     // --- two views from this computer, the second the main one ---------------
     await _openGallery(tester);
-    expect(find.text('0 of 5'), findsOneWidget);
+    expect(_inGallery('0 of 5'), findsOneWidget);
     await tester.tap(_key('gallery_add_0'));
     await pumpUntil(tester, _key('gallery_from_computer'), reason: 'a + slot asks how');
     await tester.tap(_key('gallery_from_computer'));
-    await pumpUntil(tester, find.text('2 of 5'), reason: 'both files should be held');
+    await pumpUntil(tester, _inGallery('2 of 5'), reason: 'both files should be held');
     await tester.tap(_key('gallery_star_1'));
     await tester.pump(const Duration(milliseconds: 200));
     dumpVisibleText(tester, 'E2E gallery before Save');
@@ -107,10 +116,10 @@ void main() {
 
     // --- one removed ----------------------------------------------------------
     await _openGallery(tester);
-    expect(find.text('2 of 5'), findsOneWidget);
+    expect(_inGallery('2 of 5'), findsOneWidget);
     await tester.tap(_key('gallery_remove_0'));
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('1 of 5'), findsOneWidget);
+    expect(_inGallery('1 of 5'), findsOneWidget);
     await _save(tester);
 
     final left = (await tester.runAsync(() => photos.partPhotos(partId)))!;

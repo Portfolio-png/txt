@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
@@ -38,7 +41,20 @@ class PartRowsForm extends StatelessWidget {
     this.flow,
     this.lineActions,
     this.showShortcuts = false,
+    this.showcaseRow,
+    this.showcasePhotoBuilder,
   });
+
+  /// The line whose photo is shown big, beside its fields — as tall as they
+  /// are — with Save and × under it. Null shows every line's small photo.
+  ///
+  /// The host decides when: the photos sit in the right-hand column while a
+  /// line is being typed in, and come over to the line once the work has
+  /// moved on to the right-hand form (raw material).
+  final int? showcaseRow;
+
+  /// The showcased line's photo at [side] × [side].
+  final Widget Function(int row, double side)? showcasePhotoBuilder;
 
   /// Whether to display Alt keytip badges for rapid keyboard navigation.
   final bool showShortcuts;
@@ -74,8 +90,8 @@ class PartRowsForm extends StatelessWidget {
   /// The fields of a line, row by row as [lineGrid] draws them — which is
   /// also the order Tab visits them in.
   static List<ColumnDef> lineColumns(SheetDef def) => [
-        for (final cells in lineGrid(def)) ...cells.whereType<ColumnDef>(),
-      ];
+    for (final cells in lineGrid(def)) ...cells.whereType<ColumnDef>(),
+  ];
 
   /// A line's fields as four even columns, so every part reads the same:
   ///
@@ -150,6 +166,9 @@ class PartRowsForm extends StatelessWidget {
                   action: actionBuilder(row),
                   onRemove: onRemoveRow,
                   showShortcuts: showShortcuts,
+                  showcasePhoto: row == showcaseRow
+                      ? showcasePhotoBuilder
+                      : null,
                 ),
               ),
               const SizedBox(height: 10),
@@ -207,7 +226,10 @@ class PartRowsForm extends StatelessWidget {
                 key: const ValueKey<String>('mini_table_add_properties_item'),
                 onPressed: onAddProperty,
                 icon: const Icon(Icons.playlist_add_rounded, size: 18),
-                label: const Text('Add property', style: TextStyle(fontSize: 14)),
+                label: const Text(
+                  'Add property',
+                  style: TextStyle(fontSize: 14),
+                ),
               ),
             ),
             if (showShortcuts) ...[
@@ -240,9 +262,13 @@ class _PartLine extends StatelessWidget {
     required this.action,
     this.onRemove,
     this.showShortcuts = false,
+    this.showcasePhoto,
   });
 
   final Future<void> Function(int row)? onRemove;
+
+  /// Set when this line shows its photo big ([PartRowsForm.showcaseRow]).
+  final Widget Function(int row, double side)? showcasePhoto;
   final SheetController sheet;
   final int row;
   final bool showShortcuts;
@@ -282,72 +308,134 @@ class _PartLine extends StatelessWidget {
         ),
         // The fields sit in even columns; Save and × stay at the line's end
         // whatever the width, with the part's photo showcased right above Save.
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (status != null) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 20),
-                child: SizedBox(width: 28, child: status),
-              ),
-              const SizedBox(width: 6),
-            ],
-            Expanded(
-              child: EvenGrid(
-                columns: PartRowsForm.gridColumns,
-                minColumnWidth: 160,
-                children: [
-                  for (final cells in grid)
-                    for (final column in cells)
-                      column == null
-                          ? const SizedBox.shrink()
-                          : _PartField(
-                              key: ValueKey<String>(
-                                'cell_${sheet.sheetDef.key}_${row}_${column.id}',
-                              ),
-                              sheet: sheet,
-                              row: row,
-                              column: column,
-                              showShortcuts: showShortcuts,
-                            ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Padding(
-              padding: EdgeInsets.only(top: photo != null ? 2 : 20),
-              child: Column(
+        child: showcasePhoto != null
+            ? _showcase(context, removeWhy)
+            : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (photo != null) ...[
-                    SheetStep.noTab(photo!),
-                    const SizedBox(height: 8),
+                  if (status != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 20),
+                      child: SizedBox(width: 28, child: status),
+                    ),
+                    const SizedBox(width: 6),
                   ],
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SheetStep.noTab(action),
-                      SheetStep.noTab(Tooltip(
-                        message: removeWhy ?? 'Remove this line',
-                        child: IconButton(
-                          key: ValueKey<String>('row_remove_$row'),
-                          onPressed: removeWhy == null
-                              ? () => onRemove == null ? sheet.removeRow(row) : onRemove!(row)
-                              : null,
-                          icon: const Icon(Icons.close, size: 18),
+                  Expanded(child: _fields()),
+                  const SizedBox(width: 10),
+                  Padding(
+                    padding: EdgeInsets.only(top: photo != null ? 2 : 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (photo != null) ...[
+                          SheetStep.noTab(photo!),
+                          const SizedBox(height: 8),
+                        ],
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SheetStep.noTab(action),
+                            SheetStep.noTab(_removeButton(removeWhy)),
+                          ],
                         ),
-                      )),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
+
+  /// The line's fields in even columns: see [PartRowsForm.lineGrid].
+  ///
+  /// Keyed globally to the line: it switches between its two layouts (small
+  /// photo, big photo) the moment one of its fields takes focus, and without
+  /// the key the fields were rebuilt in the new layout and lost that focus.
+  Widget _fields() => EvenGrid(
+    key: _LineFieldsKey(sheet.draftAt(row).rowKey),
+    columns: PartRowsForm.gridColumns,
+    minColumnWidth: 160,
+    children: [
+      for (final cells in grid)
+        for (final column in cells)
+          column == null
+              ? const SizedBox.shrink()
+              : _PartField(
+                  key: ValueKey<String>(
+                    'cell_${sheet.sheetDef.key}_${row}_${column.id}',
+                  ),
+                  sheet: sheet,
+                  row: row,
+                  column: column,
+                  showShortcuts: showShortcuts,
+                ),
+    ],
+  );
+
+  Widget _removeButton(String? removeWhy) => Tooltip(
+    message: removeWhy ?? 'Remove this line',
+    child: IconButton(
+      key: ValueKey<String>('row_remove_$row'),
+      onPressed: removeWhy == null
+          ? () => onRemove == null ? sheet.removeRow(row) : onRemove!(row)
+          : null,
+      icon: const Icon(Icons.close, size: 18),
+    ),
+  );
+
+  /// The line with its photo shown big: the fields, and beside them the
+  /// photo as a square as tall as they are; Save and × under the photo.
+  Widget _showcase(BuildContext context, String? removeWhy) {
+    final build = showcasePhoto!;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (status != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: SizedBox(width: 28, child: status),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _FieldsBesidePhoto(
+                fields: _fields(),
+                photo: SheetStep.noTab(
+                  LayoutBuilder(
+                    builder: (context, box) => KeyedSubtree(
+                      key: ValueKey<String>('part_showcase_photo_$row'),
+                      child: build(row, box.maxWidth),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SheetStep.noTab(action),
+                    SheetStep.noTab(_removeButton(removeWhy)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A part line's fields, by the line's own identity (not its index).
+class _LineFieldsKey extends GlobalObjectKey {
+  const _LineFieldsKey(super.value);
 }
 
 /// One labelled field of a part line.
@@ -451,7 +539,8 @@ class _PartFieldState extends State<_PartField> {
     }
     // Focus arrives with the cursor (Add part puts it on the new Group), but
     // only on arrival: taking it on every rebuild stole it from other fields.
-    final wanted = _sheet.row == widget.row &&
+    final wanted =
+        _sheet.row == widget.row &&
         !_sheet.isHeaderFocused &&
         _sheet.focusedColumnId == _column.id;
     if (wanted && !_wasWanted && !_focus.hasFocus) _focus.requestFocus();
@@ -476,6 +565,10 @@ class _PartFieldState extends State<_PartField> {
       controller: _sheet,
       row: widget.row,
       initialQuery: initialQuery,
+      // However it closes — a pick, Escape, a click outside, Tab. The flag was
+      // set here and never cleared, so after a field's first pick neither a
+      // click nor a key could open its list again.
+      onClosed: () => _isPickerOpen = false,
       onDone: () {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _focus.requestFocus();
@@ -498,7 +591,8 @@ class _PartFieldState extends State<_PartField> {
     if (_isList) return _optionField();
     final derived = _isDerived;
     final mode = _value?.mode ?? ValueMode.auto;
-    final numeric = _column.kind == ColumnKind.seq ||
+    final numeric =
+        _column.kind == ColumnKind.seq ||
         _column.kind == ColumnKind.number ||
         _column.kind == ColumnKind.money;
     return SheetStyle.labelled(
@@ -517,12 +611,14 @@ class _PartFieldState extends State<_PartField> {
                   padding: const EdgeInsets.only(right: 8),
                   child: Center(
                     widthFactor: 1,
-                    child: SheetStep.noTab(ModeChip(
-                      controller: _sheet,
-                      columnId: _column.id,
-                      row: widget.row,
-                      mode: mode,
-                    )),
+                    child: SheetStep.noTab(
+                      ModeChip(
+                        controller: _sheet,
+                        columnId: _column.id,
+                        row: widget.row,
+                        mode: mode,
+                      ),
+                    ),
                   ),
                 )
               : null,
@@ -584,7 +680,9 @@ class _PartFieldState extends State<_PartField> {
         : writeThickness(value, lengthUnitBySymbol(unitSymbol));
     final wanted = label.toLowerCase();
     final option = _sheet.options
-        .where((o) => o.columnId == _column.id && o.label.toLowerCase() == wanted)
+        .where(
+          (o) => o.columnId == _column.id && o.label.toLowerCase() == wanted,
+        )
         .firstOrNull;
     if (option != null) {
       _sheet.setOption(_column.id, option, row: widget.row);
@@ -615,7 +713,9 @@ class _PartFieldState extends State<_PartField> {
               controller: _text,
               focusNode: _focus,
               readOnly: _locked,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               // A gauge is a whole number; a measurement may have decimals.
               inputFormatters: [
                 FilteringTextInputFormatter.allow(
@@ -651,7 +751,8 @@ class _PartFieldState extends State<_PartField> {
                 if (symbol == null) return;
                 setState(() => _pendingUnit = symbol);
                 // The number keeps what was typed; the unit says what it is.
-                if (_text.text.trim().isNotEmpty) _writeThickness(_text.text, symbol);
+                if (_text.text.trim().isNotEmpty)
+                  _writeThickness(_text.text, symbol);
               },
             ),
           ),
@@ -661,18 +762,18 @@ class _PartFieldState extends State<_PartField> {
   }
 
   Widget _optionField() => SheetStyle.labelled(
-        label: _column.label,
-        shortcutKey: _shortcutKey,
-        showShortcut: widget.showShortcuts,
-        actions: _isProperty
-            ? [
-                SheetStep.noTab(
-                  _PropertyActions(sheet: _sheet, column: _column, row: widget.row),
-                ),
-              ]
-            : const [],
-        child: _optionBox(),
-      );
+    label: _column.label,
+    shortcutKey: _shortcutKey,
+    showShortcut: widget.showShortcuts,
+    actions: _isProperty
+        ? [
+            SheetStep.noTab(
+              _PropertyActions(sheet: _sheet, column: _column, row: widget.row),
+            ),
+          ]
+        : const [],
+    child: _optionBox(),
+  );
 
   Widget _optionBox() {
     final value = _value;
@@ -682,25 +783,27 @@ class _PartFieldState extends State<_PartField> {
     // takes the value off. Group, Type and the name are not optional.
     final clearable = _isProperty && !_locked && label.isNotEmpty;
     return Builder(
-        // Tab landing on the box (the sheet's keyboard flow) opens its list.
-        builder: (anchor) => Actions(
-          actions: {
-            OpenDropdownIntent: CallbackAction<OpenDropdownIntent>(
-              onInvoke: (_) {
-                if (_locked) return null;
-                _open(anchor);
-                return true;
-              },
-            ),
-          },
-          child: Focus(
+      // Tab landing on the box (the sheet's keyboard flow) opens its list.
+      builder: (anchor) => Actions(
+        actions: {
+          OpenDropdownIntent: CallbackAction<OpenDropdownIntent>(
+            onInvoke: (_) {
+              if (_locked) return null;
+              _open(anchor);
+              return true;
+            },
+          ),
+        },
+        child: Focus(
           focusNode: _focus,
           onKeyEvent: (node, event) {
             if (event is! KeyDownEvent) return KeyEventResult.ignored;
             // A saved line is closed: its step takes Enter as its Edit. And
             // Ctrl+Enter is the step's "save and add another".
             final keyboard = HardwareKeyboard.instance;
-            if (_locked || keyboard.isControlPressed || keyboard.isMetaPressed) {
+            if (_locked ||
+                keyboard.isControlPressed ||
+                keyboard.isMetaPressed) {
               return KeyEventResult.ignored;
             }
             final key = event.logicalKey;
@@ -758,26 +861,29 @@ class _PartFieldState extends State<_PartField> {
                       ),
                     ),
                     if (clearable)
-                      SheetStep.noTab(Tooltip(
-                        message: 'Clear ${_column.label}',
-                        child: InkWell(
-                          key: ValueKey<String>(
-                            'property_clear_${_column.id}_${widget.row}',
-                          ),
-                          borderRadius:
-                              BorderRadius.circular(SoftErpTheme.radiusXs),
-                          onTap: () =>
-                              _sheet.clearCell(_column.id, row: widget.row),
-                          child: const Padding(
-                            padding: EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: SoftErpTheme.textSecondary,
+                      SheetStep.noTab(
+                        Tooltip(
+                          message: 'Clear ${_column.label}',
+                          child: InkWell(
+                            key: ValueKey<String>(
+                              'property_clear_${_column.id}_${widget.row}',
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              SoftErpTheme.radiusXs,
+                            ),
+                            onTap: () =>
+                                _sheet.clearCell(_column.id, row: widget.row),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 18,
+                                color: SoftErpTheme.textSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      )),
+                      ),
                     if (isNew) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -787,8 +893,9 @@ class _PartFieldState extends State<_PartField> {
                         ),
                         decoration: BoxDecoration(
                           color: SoftErpTheme.successBg,
-                          borderRadius:
-                              BorderRadius.circular(SoftErpTheme.radiusXs),
+                          borderRadius: BorderRadius.circular(
+                            SoftErpTheme.radiusXs,
+                          ),
                         ),
                         child: const Text(
                           'New',
@@ -806,7 +913,7 @@ class _PartFieldState extends State<_PartField> {
             ),
           ),
         ),
-        ),
+      ),
     );
   }
 }
@@ -833,8 +940,9 @@ class _PropertyActions extends StatelessWidget {
     final stored = sheet.canEditOptions?.call(column) ?? false;
     final builtIn = '${column.label} is built into every part sheet';
     final (removable, removeWhy) = sheet.sheetDef.canRemove(column.id);
-    final String? deleteWhy =
-        !stored ? builtIn : (removable ? null : removeWhy);
+    final String? deleteWhy = !stored
+        ? builtIn
+        : (removable ? null : removeWhy);
 
     Widget action({
       required String key,
@@ -842,25 +950,24 @@ class _PropertyActions extends StatelessWidget {
       required String tip,
       required VoidCallback? onPressed,
       Color? color,
-    }) =>
-        Tooltip(
-          message: tip,
-          child: Opacity(
-            opacity: stored ? 1.0 : 0.4,
-            child: IconButton(
-              key: ValueKey<String>(key),
-              onPressed: onPressed,
-              icon: Icon(icon, size: stored ? 16 : 14),
-              color: color ?? SoftErpTheme.textSecondary,
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: BoxConstraints.tightFor(
-                width: stored ? 24 : 20,
-                height: stored ? 24 : 20,
-              ),
-            ),
+    }) => Tooltip(
+      message: tip,
+      child: Opacity(
+        opacity: stored ? 1.0 : 0.4,
+        child: IconButton(
+          key: ValueKey<String>(key),
+          onPressed: onPressed,
+          icon: Icon(icon, size: stored ? 16 : 14),
+          color: color ?? SoftErpTheme.textSecondary,
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(
+            width: stored ? 24 : 20,
+            height: stored ? 24 : 20,
           ),
-        );
+        ),
+      ),
+    );
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -889,11 +996,102 @@ class _PropertyActions extends StatelessWidget {
     final sure = await showConfirmDialog(
       context,
       title: 'Edit ${column.label}?',
-      message: 'Its list is the whole sheet’s — a change shows on every part. '
+      message:
+          'Its list is the whole sheet’s — a change shows on every part. '
           'Parts keep the values they were saved with.',
       confirmLabel: 'Edit',
       destructive: false,
     );
     if (sure) sheet.onEditOptions?.call(column);
   }
+}
+
+/// A line's fields with its photo beside them, the photo a square exactly as
+/// tall as the fields are.
+///
+/// The fields' height depends on their width (four columns fold to two on a
+/// narrow line), and their width on how much the photo takes — so this lays
+/// the fields out, sizes the photo to them, and lays them out again if that
+/// changed the fold. Two or three passes settle it. [EvenGrid] has no
+/// intrinsic height to ask for instead, and its text fields have no dry
+/// layout.
+class _FieldsBesidePhoto extends MultiChildRenderObjectWidget {
+  _FieldsBesidePhoto({required Widget fields, required Widget photo})
+    : super(children: [fields, photo]);
+
+  /// Between the fields and the photo.
+  static const double gap = 16;
+
+  /// The photo stays recognisable, and never crowds the fields out.
+  static const double minSide = 120;
+  static const double maxSide = 320;
+  static const double maxShare = 0.38;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFieldsBesidePhoto();
+}
+
+class _FieldsBesidePhotoParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderFieldsBesidePhoto extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _FieldsBesidePhotoParentData>,
+        RenderBoxContainerDefaultsMixin<
+          RenderBox,
+          _FieldsBesidePhotoParentData
+        > {
+  /// The side the last layout settled on: the first guess for the next one,
+  /// so a line that has not changed shape settles in one pass.
+  double _side = _FieldsBesidePhoto.minSide;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _FieldsBesidePhotoParentData) {
+      child.parentData = _FieldsBesidePhotoParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final fields = firstChild!;
+    final photo = childAfter(fields)!;
+    final width = constraints.maxWidth;
+    final largest = math.min(
+      _FieldsBesidePhoto.maxSide,
+      math.max(_FieldsBesidePhoto.minSide, width * _FieldsBesidePhoto.maxShare),
+    );
+    var side = _side.clamp(_FieldsBesidePhoto.minSide, largest);
+    for (var pass = 0; pass < 3; pass += 1) {
+      final fieldsWidth = math.max(0.0, width - _FieldsBesidePhoto.gap - side);
+      fields.layout(
+        BoxConstraints.tightFor(width: fieldsWidth),
+        parentUsesSize: true,
+      );
+      final next = fields.size.height.clamp(
+        _FieldsBesidePhoto.minSide,
+        largest,
+      );
+      if ((next - side).abs() < 0.5) break;
+      side = next;
+    }
+    _side = side;
+    photo.layout(BoxConstraints.tight(Size(side, side)), parentUsesSize: true);
+    (fields.parentData! as _FieldsBesidePhotoParentData).offset = Offset.zero;
+    (photo.parentData! as _FieldsBesidePhotoParentData).offset = Offset(
+      width - side,
+      0,
+    );
+    size = constraints.constrain(
+      Size(width, math.max(fields.size.height, side)),
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
