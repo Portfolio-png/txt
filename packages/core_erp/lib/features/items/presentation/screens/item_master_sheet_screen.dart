@@ -161,6 +161,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   int? _rawPartId;
   static const double _rawPanelWidth = 520;
 
+  /// The right column's two sections, each rolled up to its heading or down:
+  /// Raw material, and the part's photos under it. Working on the part rolls
+  /// raw material up and its photos down; the part's own Save turns that
+  /// round and puts the keyboard in raw material, editing.
+  bool _rawRolled = false;
+  bool _photosRolled = true;
+
+  /// The part whose raw sheet opens in edit mode once the panel is drawn for
+  /// it — set by that part's Save. Without it the panel's own part-change
+  /// reset would close edit mode again on the very next build.
+  int? _rawEditFor;
+
+  /// The raw panel's Next: Tab past a page's last field turns the page.
+  bool Function()? _rawNextPage;
+
+  /// Raw material's place in the keyboard's way down the sheet.
+  static const Object _rawStep = 'raw_material';
+
   /// The part's authored route, which IS its pipeline — Author route is only
   /// the way a pipeline is drawn. Read for the raw sheet panel, so its stages
   /// and its "attached to" follow the route rather than the legacy
@@ -902,7 +920,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                         ],
                       )),
                     Expanded(child: _body()),
-                    SheetStep.noTab(_rawSheetPanel()),
+                    // Raw material is a keyboard step of its own (_rawStep); its
+                    // fold strip and headings are clicked.
+                    _rawSheetPanel(),
                   ],
                 ),
               ),
@@ -1096,7 +1116,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         );
       }
       _rawPartId = part?.id;
-      _rawEditing = false;
+      _rawEditing = part != null && part.id == _rawEditFor;
+      if (_rawEditing) _rawEditFor = null;
       _rawDirty = false;
     }
     if (part?.id != _routeForPartId) {
@@ -1165,6 +1186,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           _rawDraft = null;
         }
       },
+      onPagerSource: (next, alive) {
+        if (alive) {
+          _rawNextPage = next;
+        } else if (identical(_rawNextPage, next)) {
+          _rawNextPage = null;
+        }
+      },
       onSave: (saved) => unawaited(_saveRawSheet(saved)),
       onCancel: _rawEditing
           ? () => setState(() {
@@ -1175,7 +1203,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           : null,
     );
 
-    final strip = Container(
+    final strip = SheetStep.noTab(Container(
       key: const ValueKey<String>('raw_panel_closed'),
       width: 44,
       decoration: const BoxDecoration(
@@ -1209,7 +1237,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
         ],
       ),
-    );
+    ));
     final shown = _rawPanelShown;
     // Folded — by its button, or a window under 1500 wide — while editing:
     // the panel is kept, hidden, so folding is not a way to lose the edits.
@@ -1225,6 +1253,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   Widget _rawPanelFrame(ItemDefinition? part, Widget panel) {
+    final name = part == null
+        ? _partLabelNow
+        : (part.displayName.trim().isEmpty ? part.name : part.displayName.trim());
+    // Rolled up, a section keeps its place and its state — Offstage, at a
+    // sliver of the room — so rolling is never a way to lose an edit, and the
+    // tree keeps its shape (moving the panel would rebuild it from nothing).
+    final rawFlex = _rawRolled ? 1 : (_photosRolled ? 1000 : 7);
+    final photosFlex = _photosRolled ? 1 : (_rawRolled ? 1000 : 3);
     return Container(
       key: const ValueKey<String>('raw_panel'),
       width: _rawPanelWidth,
@@ -1235,7 +1271,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
+          // Headings are clicked; Tab goes through what is typed.
+          SheetStep.noTab(Padding(
             padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 10, 8, 6),
             child: Row(
               children: [
@@ -1254,6 +1291,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   ),
                   const SizedBox(width: 6),
                 ],
+                _rollButton(
+                  key: 'raw_roll',
+                  what: 'raw material',
+                  rolled: _rawRolled,
+                  onPressed: () => setState(() => _rawRolled = !_rawRolled),
+                ),
                 // Its Edit is the panel's own, at the foot where Save will be —
                 // the way a part line's Save becomes its Edit in one place.
                 IconButton(
@@ -1268,7 +1311,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 ],
               ],
             ),
-          ),
+          )),
           if (part == null)
             const Padding(
               padding: EdgeInsets.fromLTRB(SheetStyle.cardPadding, 0, SheetStyle.cardPadding, 8),
@@ -1278,16 +1321,127 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               ),
             ),
           const Divider(height: 1),
-          Expanded(
-            child: part == null
-                // Drawn so the shape of the step is visible, but not usable
-                // until there is a part to store it on.
-                ? IgnorePointer(child: Opacity(opacity: 0.5, child: panel))
-                : panel,
+          Flexible(
+            flex: rawFlex,
+            child: _rolled(
+              _rawRolled,
+              SheetStep(
+                key: const ValueKey<String>('raw_step'),
+                // Only a saved part has a raw sheet to type into.
+                flow: part == null ? null : _flow,
+                id: _rawStep,
+                actions: _rawStepActions(),
+                child: part == null
+                    // Drawn so the shape of the step is visible, but not
+                    // usable until there is a part to store it on.
+                    ? IgnorePointer(child: Opacity(opacity: 0.5, child: panel))
+                    : panel,
+              ),
+            ),
           ),
+          if (_photosOn) ...[
+            const Divider(height: 1),
+            SheetStep.noTab(Padding(
+              padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 8, 8, 6),
+              child: Row(
+                children: [
+                  SheetStyle.iconTile(Icons.photo_library_outlined),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('Photos', style: SheetStyle.sectionTitle),
+                  ),
+                  _rollButton(
+                    key: 'photos_roll',
+                    what: 'the photos',
+                    rolled: _photosRolled,
+                    onPressed: () => setState(() => _photosRolled = !_photosRolled),
+                  ),
+                ],
+              ),
+            )),
+            Flexible(
+              flex: photosFlex,
+              child: _rolled(
+                _photosRolled,
+                SheetStep.noTab(_PartPhotosSection(
+                  key: const ValueKey<String>('part_photos_section'),
+                  partId: part?.id,
+                  partName: name,
+                )),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// A section of the right column, [rolled] up or not. Rolled, it is laid out
+  /// at a size it fits (it would overflow the sliver it is given) and not
+  /// drawn; the widgets stay the same either way, so their state does too.
+  Widget _rolled(bool rolled, Widget child) => Offstage(
+        offstage: rolled,
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minHeight: rolled ? 0 : null,
+          maxHeight: rolled ? 640 : null,
+          child: child,
+        ),
+      );
+
+  /// A section's chevron: up rolls it to its heading, down opens it again.
+  Widget _rollButton({
+    required String key,
+    required String what,
+    required bool rolled,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      key: ValueKey<String>(key),
+      tooltip: rolled ? 'Roll $what down' : 'Roll $what up',
+      onPressed: onPressed,
+      icon: Icon(
+        rolled ? Icons.expand_more_rounded : Icons.expand_less_rounded,
+        size: 24,
+      ),
+    );
+  }
+
+  /// Raw material as a keyboard step: Tab through a page, past its last
+  /// field to the next page, past Review to "Save raw material?", then on.
+  SheetStepActions _rawStepActions() => SheetStepActions(
+        title: () => 'Save raw material?',
+        isDirty: () => _rawEditing && _rawDirty,
+        save: () async {
+          final read = _rawDraft;
+          if (read == null) return true;
+          await _saveRawSheet(read());
+          return mounted && !_rawEditing;
+        },
+        discard: () => setState(() {
+          _rawEditing = false;
+          _rawDirty = false;
+          _rawEpoch += 1;
+        }),
+        isLocked: () => !_rawEditing,
+        unlock: () {
+          if (_livePart != null) setState(() => _rawEditing = true);
+        },
+        nextPage: () => _rawNextPage?.call() ?? false,
+      );
+
+  /// The cursor is on the part's line: raw material rolls up, the part's
+  /// photos roll down beside it. Never over raw edits not yet saved — those
+  /// stay in view, and the photos open under them.
+  void _workingOnPart() {
+    if (!_rawPanelShown) return;
+    final keepRaw = _rawEditing && _rawDirty;
+    final rawRolled = keepRaw ? _rawRolled : true;
+    if (rawRolled == _rawRolled && !_photosRolled) return;
+    setState(() {
+      _rawRolled = rawRolled;
+      _photosRolled = false;
+    });
   }
 
   /// Reads [partId]'s route — the active one, else the newest draft, which is
@@ -2543,7 +2697,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// "Action" table of its own, which wrapped off the part's line.
   Widget _groupItemSheet() {
     final sheet = _controller.groupItemController;
-    return PartRowsForm(
+    // Into any field of the lines: the right column shows the part's photos.
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: (inside) {
+        if (inside) _workingOnPart();
+      },
+      child: PartRowsForm(
       sheet: sheet,
       photoBuilder: _photosOn ? _rowPhoto : null,
       statusBuilder: _rowStatus,
@@ -2558,6 +2719,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       flow: _flow,
       lineActions: _lineActions,
       showShortcuts: _altPressed,
+      ),
     );
   }
 
@@ -2567,6 +2729,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   late final SheetFlow _flow = SheetFlow(
     order: _stepOrder,
     reveal: (section) {
+      if (section == 'raw') {
+        // Raw material is open to whoever arrives: rolled down, photos up.
+        if (_rawRolled || !_photosRolled) {
+          setState(() {
+            _rawRolled = false;
+            _photosRolled = true;
+          });
+        }
+        return;
+      }
       if (_collapsed.contains(section)) setState(() => _collapsed.remove(section));
     },
     onEnd: () => _toast('End of the sheet — Ctrl+S saves everything.'),
@@ -2578,8 +2750,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       switch (id) {
         case 'group_item':
           final sheet = _controller.groupItemController;
-          for (final draft in sheet.drafts) {
+          for (final (at, draft) in sheet.drafts.indexed) {
             out.add((id: PartRowsForm.stepId(draft.rowKey), section: id));
+            // Raw material is the part under the cursor's: from its line the
+            // keyboard goes into the panel, then on down the sheet.
+            if (at == sheet.row) out.add((id: _rawStep, section: 'raw'));
           }
         case 'client_vendor':
           if (_controller.isExternal) {
@@ -2616,10 +2791,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           !sheet.draftAt(i).isDirtySinceSave;
     }
 
-    Future<bool> save() async {
+    Future<bool> save({bool openRaw = true}) async {
       final i = at();
       if (i < 0) return false;
-      await _saveRow(i);
+      await _saveRow(i, openRaw: openRaw);
       return saved();
     }
 
@@ -2644,7 +2819,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (i >= 0) _controller.discardRow(i);
       },
       saveAndAddAnother: () async {
-        if (!await save()) return;
+        // Straight on to the next part: raw material waits.
+        if (!await save(openRaw: false)) return;
         sheet.addRow();
         final first = PartRowsForm.lineColumns(sheet.sheetDef).firstOrNull;
         if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
@@ -2936,7 +3112,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// One row's Save: write it, carry the held dies and machines and the
   /// nesting with it, then close it until its Edit.
-  Future<void> _saveRow(int row) async {
+  /// [openRaw]: once saved, raw material opens for it, editing, with the
+  /// keyboard in it — the part is filled in, its sheet comes next.
+  Future<void> _saveRow(int row, {bool openRaw = true}) async {
     final sheet = _controller.groupItemController;
     if (row < 0 || row >= sheet.rowCount) return;
     final before = sheet.draftAt(row);
@@ -2968,14 +3146,35 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final error = at < 0 ? null : _controller.rowError(at);
     // Saved — or already saved with nothing changed — closes the row. Not
     // while it holds an edit made during the save; that is still to write.
-    if (at >= 0 &&
+    final savedNow = at >= 0 &&
         error == null &&
         _controller.savedRows.contains(at) &&
-        !sheet.draftAt(at).isDirtySinceSave) {
-      sheet.setRowLocked(at, true);
-    }
-    setState(() {});
+        !sheet.draftAt(at).isDirtySinceSave;
+    if (savedNow) sheet.setRowLocked(at, true);
+    // The part is filled in and saved: its photos roll away to its line, and
+    // raw material opens, editing, with the keyboard in it.
+    final rawFor = openRaw && savedNow && at == sheet.row
+        ? sheet.draftAt(at).entityId
+        : null;
+    setState(() {
+      if (rawFor != null) {
+        _rawPanelOpen = true;
+        _rawRolled = false;
+        _photosRolled = true;
+        if (_rawPartId == rawFor) {
+          _rawEditing = true;
+        } else {
+          _rawEditFor = rawFor;
+        }
+      }
+    });
     _toast(error ?? _controller.statusBarMessage, isError: error != null);
+    if (rawFor != null) {
+      // Drawn for the part first: a part saved for the first time had no
+      // raw step for the keyboard to move into until now.
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted) _flow.focusStep(_rawStep);
+    }
   }
 
   /// The deal line's Save on a saved part: the deal travels with its part's
@@ -3730,6 +3929,244 @@ class _HeadingStampState extends State<_HeadingStamp> {
               Text(
                 time,
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The part's photos beside the sheet while it is being worked on: one large,
+/// the other views under it, and the gallery a click away. The same photos
+/// as the line's thumbnail — read from the part's gallery, and read again
+/// when they change ([EntityPhotosProvider.revisionOf]: a phone shot, a
+/// gallery Save).
+class _PartPhotosSection extends StatefulWidget {
+  const _PartPhotosSection({
+    super.key,
+    required this.partId,
+    required this.partName,
+  });
+
+  /// Null until the part is saved: photos are kept on a part.
+  final int? partId;
+  final String partName;
+
+  @override
+  State<_PartPhotosSection> createState() => _PartPhotosSectionState();
+}
+
+class _PartPhotosSectionState extends State<_PartPhotosSection> {
+  EntityPhotosProvider? _store;
+  List<PartPhoto> _photos = const [];
+  bool _loading = false;
+  String? _error;
+  int _revision = -1;
+
+  /// The photo drawn large: the one clicked, else the main one.
+  int? _shownId;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final store = context.read<EntityPhotosProvider>();
+    if (!identical(store, _store)) {
+      _store?.removeListener(_onStoreChanged);
+      _store = store..addListener(_onStoreChanged);
+      _revision = -1;
+      _reload();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PartPhotosSection old) {
+    super.didUpdateWidget(old);
+    if (old.partId != widget.partId) {
+      _photos = const [];
+      _shownId = null;
+      _error = null;
+      _revision = -1;
+      _reload();
+    }
+  }
+
+  @override
+  void dispose() {
+    _store?.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() => _reload();
+
+  /// Reads the part's photos when there is a part and its photos changed.
+  void _reload() {
+    final id = widget.partId;
+    final store = _store;
+    if (id == null || store == null) return;
+    final revision = store.revisionOf(PhotoOwner.item, '$id');
+    if (revision == _revision) return;
+    _revision = revision;
+    unawaited(_load(id));
+  }
+
+  Future<void> _load(int id) async {
+    if (_photos.isEmpty) setState(() => _loading = true);
+    try {
+      final photos = await _store!.partPhotos('$id');
+      // Another part was picked meanwhile: its own read answers for it.
+      if (!mounted || widget.partId != id) return;
+      setState(() {
+        _photos = photos;
+        _loading = false;
+        _error = null;
+        if (!photos.any((p) => p.id == _shownId)) _shownId = null;
+      });
+    } catch (error) {
+      if (!mounted || widget.partId != id) return;
+      setState(() {
+        _loading = false;
+        _error = 'The photos did not load: $error';
+      });
+    }
+  }
+
+  Future<void> _openGallery() async {
+    final id = widget.partId;
+    if (id == null) return;
+    await showPartPhotoGallery(
+      context,
+      itemId: '$id',
+      partName: widget.partName,
+      openOn: _shownId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final id = widget.partId;
+    if (id == null) {
+      return _note(
+        Icons.add_a_photo_outlined,
+        'Save the part to add its photos',
+      );
+    }
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final error = _error;
+    if (error != null) return _note(Icons.broken_image_outlined, error);
+    if (_photos.isEmpty) {
+      return _note(
+        Icons.add_a_photo_outlined,
+        'No photos of ${widget.partName} yet',
+        action: 'Add photos',
+      );
+    }
+    final shown = _photos.where((p) => p.id == _shownId).firstOrNull ??
+        _photos.where((p) => p.isPrimary).firstOrNull ??
+        _photos.first;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 4, SheetStyle.cardPadding, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: InkWell(
+              key: const ValueKey<String>('part_photos_large'),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+              onTap: _openGallery,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+                child: ColoredBox(
+                  color: SoftErpTheme.sectionSurface,
+                  child: Image.network(
+                    shown.viewUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Center(
+                      child: Icon(Icons.broken_image_outlined, size: 32, color: SoftErpTheme.textMuted),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (final photo in _photos) ...[
+                _thumb(photo, selected: identical(photo, shown)),
+                const SizedBox(width: 8),
+              ],
+              const Spacer(),
+              TextButton.icon(
+                key: const ValueKey<String>('part_photos_manage'),
+                onPressed: _openGallery,
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: Text(
+                  '${_photos.length} of $maxPartPhotos',
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _thumb(PartPhoto photo, {required bool selected}) {
+    return Tooltip(
+      message: photo.isPrimary ? 'The main photo' : 'Show this view',
+      child: InkWell(
+        key: ValueKey<String>('part_photos_thumb_${photo.id}'),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        onTap: () => setState(() => _shownId = photo.id),
+        child: Container(
+          width: 52,
+          height: 52,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Image.network(
+            photo.thumbUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined, size: 18),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Nothing to show yet: why, and the way to add some when there is one.
+  Widget _note(IconData icon, String text, {String? action}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(SheetStyle.cardPadding),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 32, color: SoftErpTheme.textMuted),
+            const SizedBox(height: 8),
+            Text(
+              text,
+              key: const ValueKey<String>('part_photos_note'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+            ),
+            if (action != null) ...[
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                key: const ValueKey<String>('part_photos_add'),
+                onPressed: _openGallery,
+                icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                label: Text(action, style: const TextStyle(fontSize: 14)),
               ),
             ],
           ],

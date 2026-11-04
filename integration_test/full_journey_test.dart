@@ -361,9 +361,18 @@ void main() {
 
     // --- raw sheet ---------------------------------------------------------------
     await _step('fill and save the raw sheet', () async {
-      await _revealInPanel(tester, 'master-data-edit');
-      await _tapVisible(tester, find.byKey(const ValueKey<String>('master-data-edit')));
-      await tester.pump(const Duration(milliseconds: 300));
+      // Saving the part opened it for editing; working on the part since may
+      // have rolled it up.
+      final rollDown = find.byTooltip('Roll raw material down');
+      if (rollDown.evaluate().isNotEmpty) {
+        await _tapVisible(tester, rollDown);
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      final edit = find.byKey(const ValueKey<String>('master-data-edit'));
+      if (edit.evaluate().isNotEmpty) {
+        await _tapVisible(tester, edit);
+        await tester.pump(const Duration(milliseconds: 300));
+      }
       await _revealInPanel(tester, 'sheet-width');
       await _typeInto(tester, 'sheet-width', '48');
       await _revealInPanel(tester, 'sheet-length');
@@ -454,6 +463,13 @@ void main() {
       await stillThere(find.textContaining(_person), 'the person');
       await stillThere(_keyed('quick-entry-die-row-'), 'the die');
       await stillThere(_keyed('quick-entry-machine-row-'), 'the machine');
+      // Reopened on its line, the part's photos are out and raw material is
+      // rolled up beside them; its chevron rolls it down.
+      final rollDown = find.byTooltip('Roll raw material down');
+      if (rollDown.evaluate().isNotEmpty) {
+        await _tapVisible(tester, rollDown);
+        await tester.pump(const Duration(milliseconds: 300));
+      }
       await stillThere(find.textContaining(_vendor), 'the raw sheet vendor');
       await stillThere(find.byTooltip('Open part photos (1 of 5)'), 'the part photo');
       await stillThere(find.byTooltip('Open company logo'), 'the company logo');

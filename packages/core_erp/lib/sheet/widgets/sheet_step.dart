@@ -33,6 +33,7 @@ class SheetStepActions {
     this.saveAndAddAnother,
     this.isLocked,
     this.unlock,
+    this.nextPage,
   });
 
   /// The prompt's question: "Save part 2?", "Save this contact?".
@@ -56,6 +57,11 @@ class SheetStepActions {
   /// A saved row, closed until its Edit: Enter on one of its fields opens it.
   final bool Function()? isLocked;
   final VoidCallback? unlock;
+
+  /// A step drawn in pages (the raw panel's Sheet planning, Material data,
+  /// Review): Tab past a page's last field turns to the next page and stays —
+  /// true. False on the last page, and the step is left as any other is.
+  final bool Function()? nextPage;
 }
 
 /// Where a step sits on the screen, for [SheetFlow.order].
@@ -280,6 +286,19 @@ class SheetStepState extends State<SheetStep> {
   /// Past the last field: ask, if there is anything to ask about, then go.
   Future<void> _leave() async {
     final actions = widget.actions;
+    if (actions.nextPage?.call() ?? false) {
+      // On to the page's first field once it is built. A page with nothing to
+      // type (a review) is passed straight through, to the save prompt.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_fields.isEmpty) {
+          unawaited(_leave());
+        } else {
+          focusEdge(open: true);
+        }
+      });
+      return;
+    }
     if (!actions.isDirty()) {
       widget.flow?.moveOn(widget.id);
       return;

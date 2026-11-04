@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../sheet/sheet_style.dart';
+import '../../../../sheet/widgets/sheet_step.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
@@ -104,6 +105,7 @@ class MasterDataPanel extends StatefulWidget {
     this.onEdit,
     this.onDirtyChanged,
     this.onDraftSource,
+    this.onPagerSource,
     this.saving = false,
     this.alloy,
     this.grade,
@@ -150,6 +152,12 @@ class MasterDataPanel extends StatefulWidget {
   /// the cursor moving to another part, or Save and close.
   final void Function(PenPaperBaseline Function() read, bool alive)?
       onDraftSource;
+
+  /// Hands the host the panel's Next, the way [onDraftSource] hands its
+  /// draft: `next()` turns to the following step (Sheet planning, Material
+  /// data, Review) and answers true, or false on the last. The keyboard uses
+  /// it so Tab past a page's last field goes on to the next page.
+  final void Function(bool Function() next, bool alive)? onPagerSource;
 
   /// Called by Close and Cancel. When null there is nothing to back out of —
   /// an always-open side panel — so neither control is drawn.
@@ -280,11 +288,19 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// What Save would write now, as one reader the host can hold and compare.
   late final PenPaperBaseline Function() _readDraft = () => _recorded;
 
+  late final bool Function() _turnPage = () {
+    final next = _nextStep;
+    if (next == null || !mounted) return false;
+    setState(() => _step = next);
+    return true;
+  };
+
   @override
   void initState() {
     super.initState();
     _baseline = _withoutSheetPitch(widget.baseline);
     widget.onDraftSource?.call(_readDraft, true);
+    widget.onPagerSource?.call(_turnPage, true);
     _widthController = TextEditingController();
     _heightController = TextEditingController();
     _thicknessController = TextEditingController();
@@ -466,6 +482,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   @override
   void dispose() {
     widget.onDraftSource?.call(_readDraft, false);
+    widget.onPagerSource?.call(_turnPage, false);
     _vendors?.removeListener(_onVendorsChanged);
     _widthController.dispose();
     _heightController.dispose();
@@ -862,8 +879,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return Column(
       children: [
         if (widget.showHeader) _header(),
-        _formBar(width),
-        _stepBar(width),
+        // Beside the sheet these are clicked, not Tabbed through: Tab in the
+        // panel goes through what is typed, as everywhere on the sheet.
+        _clickOnly(_formBar(width)),
+        _clickOnly(_stepBar(width)),
         Expanded(
           child: Padding(
             padding: narrow && widget.embedded
@@ -877,10 +896,15 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             },
           ),
         ),
-        _footer(width),
+        _clickOnly(_footer(width)),
       ],
     );
   }
+
+  /// Out of Tab when embedded beside the sheet ([SheetStep.noTab]); the
+  /// dialog keeps its own Tab order.
+  Widget _clickOnly(Widget child) =>
+      widget.embedded ? SheetStep.noTab(child) : child;
 
   Widget _stepBar(double width) {
     final compact = width < _compactStepBarWidth;

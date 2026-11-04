@@ -1160,8 +1160,9 @@ void main() {
         repository: repo,
         size: const Size(1700, 3200),
       );
-      MasterDataPanel panel() =>
-          tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      // Rolled up while the part line has the cursor: there, not drawn.
+      MasterDataPanel panel() => tester.widget<MasterDataPanel>(
+          find.byType(MasterDataPanel, skipOffstage: false));
       PartDieSection dies() =>
           tester.widget<PartDieSection>(find.byType(PartDieSection));
       expect(panel().itemName, 'Patti');
@@ -1464,6 +1465,99 @@ void main() {
       expect(find.byTooltip('Save the part to add its photos'),
           findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('working on the part rolls raw material up and shows its photos; chevrons roll each',
+        (tester) async {
+      final photos = EntityPhotosProvider(
+        repository: _GalleryRepository(const [
+          PartPhoto(id: 1, thumbUrl: 'http://x/t1.jpg', viewUrl: 'http://x/v1.jpg', isPrimary: true, position: 1),
+          PartPhoto(id: 2, thumbUrl: 'http://x/t2.jpg', viewUrl: 'http://x/v2.jpg', position: 2),
+        ]),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(MasterDataPanel), findsOneWidget, reason: 'open until the part is worked on');
+      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing);
+
+      // Into the part's line: raw material rolls up (kept, not drawn) and the
+      // part's photos open beside it.
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).first.id, row: 0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(MasterDataPanel), findsNothing);
+      expect(find.byType(MasterDataPanel, skipOffstage: false), findsOneWidget);
+      expect(find.byKey(const ValueKey('part_photos_thumb_1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('part_photos_thumb_2')), findsOneWidget);
+      expect(find.text('2 of 5'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('raw_roll')));
+      await tester.pump();
+      expect(find.byType(MasterDataPanel), findsOneWidget, reason: 'its chevron rolls it down');
+      await tester.tap(find.byKey(const ValueKey('photos_roll')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing,
+          reason: 'and the photos roll up by theirs');
+      await tester.tap(find.byKey(const ValueKey('raw_roll')));
+      await tester.pump();
+      expect(find.byType(MasterDataPanel), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a new part\'s photos say they come with its save', (tester) async {
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      await _pumpScreen(tester, size: const Size(1700, 3200), photos: photos);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('part_photos_section')),
+          matching: find.text('Save the part to add its photos'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('raw edits not saved are never rolled away by the part line',
+        (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+      await tester.pump();
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('sheet-width')),
+          matching: find.byType(EditableText),
+        ),
+        '48',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byKey(const ValueKey('raw_unsaved')), findsOneWidget);
+
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).first.id, row: 0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(MasterDataPanel), findsOneWidget,
+          reason: 'what was typed stays in view');
     });
 
     testWidgets('part code appears before time&date stamp, and camera photo sits above save',
@@ -1824,6 +1918,19 @@ void main() {
 
     /// The key of the field (or form) holding focus: `cell_item_0_3`,
     /// `deal_company`, `deal_quotation`, …
+    bool focusIn(Key key) {
+      final context = FocusManager.instance.primaryFocus?.context;
+      if (context == null) return false;
+      var found = false;
+      context.visitAncestorElements((element) {
+        if (element.widget.key == key) found = true;
+        return !found;
+      });
+      return found;
+    }
+
+    bool focusInRaw() => focusIn(const ValueKey('raw_step'));
+
     String? focusedField() {
       final context = FocusManager.instance.primaryFocus?.context;
       if (context == null) return null;
@@ -2019,8 +2126,67 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(repo.created, hasLength(1), reason: 'Save wrote the part');
-      expect(focusedField(), 'deal_company',
-          reason: 'and Tab carried on to the company');
+      expect(focusInRaw(), isTrue, reason: 'and the keyboard went into raw material');
+      // No vendors master in this build, so no Vendor row: Width is first.
+      expect(focusIn(const ValueKey('sheet-width')), isTrue,
+          reason: 'on its first field, not the form chips or the step bar');
+      expect(
+        tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
+        isFalse,
+        reason: 'editing',
+      );
+      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing,
+          reason: 'the photos rolled away to the part line');
+    }, variant: desktop);
+
+    testWidgets('Tab goes through raw material page by page, asks, then on to the company',
+        (tester) async {
+      final repo = _FakeItemRepository([]);
+      final sheet = await openNew(tester, repo: repo);
+      fillLine(sheet);
+      await tester.pump();
+      sheet.focusCell(PartRowsForm.lineColumns(sheet.sheetDef).last.id, row: 0);
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.tab);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.runAsync(() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(focusIn(const ValueKey('sheet-width')), isTrue);
+
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('sheet-width')),
+          matching: find.byType(EditableText),
+        ),
+        '48',
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+
+      var sawMaterial = false;
+      for (var i = 0; i < 60 && find.text('Save raw material?').evaluate().isEmpty; i += 1) {
+        await press(tester, LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 200));
+        if (find.byKey(const ValueKey('material-input-kg')).evaluate().isNotEmpty) {
+          sawMaterial = true;
+        }
+      }
+      expect(sawMaterial, isTrue, reason: 'Tab past Sheet planning turned to Material data');
+      expect(find.text('Save raw material?'), findsOneWidget,
+          reason: 'past the Review: the prompt, as for any step');
+
+      await tester.runAsync(() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(repo.updated.last.penPaperBaseline?.sheetWidthInches, 48,
+          reason: 'Save wrote the raw sheet on the part');
+      expect(focusedField(), 'deal_company', reason: 'and the keyboard went on to the company');
     }, variant: desktop);
 
     testWidgets('Discard empties a new line; Esc stays on it', (tester) async {
@@ -2062,9 +2228,12 @@ void main() {
       await press(tester, LogicalKeyboardKey.tab);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const ValueKey('step_save_dialog')), findsNothing);
-      // Nothing after it in this build (no die or machine forms without
-      // their hooks, no company on a part made for nobody): the end.
-      expect(find.textContaining('End of the sheet'), findsOneWidget);
+      // Its raw material comes next, closed until its Edit (Enter).
+      expect(focusInRaw(), isTrue);
+      expect(
+        tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
+        isTrue,
+      );
     }, variant: desktop);
 
     testWidgets('Enter on a saved line opens it for editing', (tester) async {
@@ -2381,4 +2550,15 @@ void main() {
       });
     }
   });
+}
+
+
+/// A part's gallery, as the server would answer it.
+class _GalleryRepository extends EntityPhotoRepository {
+  _GalleryRepository(this.photos) : super(baseUrl: '', useMockResponses: true);
+
+  final List<PartPhoto> photos;
+
+  @override
+  Future<List<PartPhoto>> partPhotos(String itemId) async => photos;
 }
