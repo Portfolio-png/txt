@@ -78,10 +78,8 @@ class ItemMasterSheetScreen extends StatefulWidget {
   }) {
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => ItemMasterSheetScreen(
-          initialItems: initialItems,
-          title: title,
-        ),
+        builder: (_) =>
+            ItemMasterSheetScreen(initialItems: initialItems, title: title),
       ),
     );
   }
@@ -198,7 +196,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   bool _railCollapsed = false;
   static const _railPrefKey = 'item_sheet.rail_collapsed';
 
-
   /// Dies and machines entered before their row's part exists, held per row
   /// and written onto THAT row's part once it does. One list for the screen
   /// put a die held on row 2 onto whichever part was open when something
@@ -285,23 +282,39 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     ColumnDef? col;
 
     if (key == LogicalKeyboardKey.keyG) {
-      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.group).firstOrNull;
+      col = def.columns
+          .where((c) => c.bindsTo == SheetBindsTo.group)
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyT) {
       col = def.columns.where((c) => c.bindsTo == SheetBindsTo.set).firstOrNull;
     } else if (key == LogicalKeyboardKey.keyN) {
-      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.name).firstOrNull;
+      col = def.columns
+          .where((c) => c.bindsTo == SheetBindsTo.name)
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyC) {
-      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.partCode).firstOrNull;
+      col = def.columns
+          .where((c) => c.bindsTo == SheetBindsTo.partCode)
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyP) {
-      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.partNo).firstOrNull;
+      col = def.columns
+          .where((c) => c.bindsTo == SheetBindsTo.partNo)
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyA) {
-      col = def.columns.where((c) => c.label.toLowerCase().contains('alloy')).firstOrNull;
+      col = def.columns
+          .where((c) => c.label.toLowerCase().contains('alloy'))
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyK) {
-      col = def.columns.where((c) => c.label.toLowerCase().contains('thick')).firstOrNull;
+      col = def.columns
+          .where((c) => c.label.toLowerCase().contains('thick'))
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyR) {
-      col = def.columns.where((c) => c.label.toLowerCase().contains('grade')).firstOrNull;
+      col = def.columns
+          .where((c) => c.label.toLowerCase().contains('grade'))
+          .firstOrNull;
     } else if (key == LogicalKeyboardKey.keyH) {
-      col = def.columns.where((c) => c.label.toLowerCase().contains('hard')).firstOrNull;
+      col = def.columns
+          .where((c) => c.label.toLowerCase().contains('hard'))
+          .firstOrNull;
     }
 
     if (col != null) {
@@ -634,8 +647,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// are created first and only then linked, so a create that succeeded but a
   /// link that failed leaves the record in its master rather than losing it.
   Future<void> _flushHeldOnto(ItemDefinition part, Object rowKey) async {
-    final partName =
-        part.displayName.trim().isEmpty ? part.name : part.displayName;
+    final partName = part.displayName.trim().isEmpty
+        ? part.name
+        : part.displayName;
     final held = _heldDies[rowKey] ?? <DieSheetDraft>[];
     final dieIds = <String>[for (final d in part.dies) d.id];
     final diesMade = <DieSheetDraft>[];
@@ -645,8 +659,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // a second time.
       var id = _madeDies[draft];
       if (id == null) {
-        final outcome =
-            await AppFlowHooks.createDieFromSheet?.call(context, draft);
+        final outcome = await AppFlowHooks.createDieFromSheet?.call(
+          context,
+          draft,
+        );
         id = outcome?.record?.id;
         if (id == null) {
           // Still held, so it is tried again on the next save — but say why it
@@ -673,8 +689,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       if (!mounted) return;
       var id = _madeMachines[draft];
       if (id == null) {
-        final outcome =
-            await AppFlowHooks.createMachineFromSheet?.call(context, draft);
+        final outcome = await AppFlowHooks.createMachineFromSheet?.call(
+          context,
+          draft,
+        );
         id = outcome?.record?.id;
         if (id == null) {
           if (mounted) {
@@ -759,16 +777,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// section layout and an open raw sheet used to be left out, so the screen
   /// closed on them without a word.
   List<String> _unsavedWork() => [
-        if (_controller.hasUnsavedWork) 'rows or edits to parts',
-        if (_heldDies.values.any((held) => held.isNotEmpty) ||
-            _heldMachines.values.any((held) => held.isNotEmpty))
-          'dies or machines waiting for their part',
-        if (_treeDirty && _livePart != null) 'the section layout',
-        if (_rawEditing && _rawDirty) 'the raw sheet',
-        if (_showRoutePanel && _routeDirty) 'the route',
-        if (_dieTyping) 'a die being typed',
-        if (_machineTyping) 'a machine being typed',
-      ];
+    if (_controller.hasUnsavedWork) 'rows or edits to parts',
+    if (_heldDies.values.any((held) => held.isNotEmpty) ||
+        _heldMachines.values.any((held) => held.isNotEmpty))
+      'dies or machines waiting for their part',
+    if (_treeDirty && _livePart != null) 'the section layout',
+    if (_rawEditing && _rawDirty) 'the raw sheet',
+    if (_showRoutePanel && _routeDirty) 'the route',
+    if (_dieTyping) 'a die being typed',
+    if (_machineTyping) 'a machine being typed',
+  ];
 
   /// Back with something unwritten. Rows commit as the cursor leaves them,
   /// but the row under the cursor, an edit to a saved row and held dies were
@@ -857,7 +875,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return await _askToLeave() ? AppExitResponse.exit : AppExitResponse.cancel;
   }
 
-
   /// Set once the user has chosen to go, so the pop is not intercepted again.
   bool _leaving = false;
 
@@ -895,38 +912,40 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                     if (_railCollapsed)
                       SheetStep.noTab(_collapsedRail())
                     else
-                      SheetStep.noTab(Stack(
-                        children: [
-                          SheetSidebar(
-                      controller: _controller.groupItemController,
-                      sections: [
-                        for (final section in _sections)
-                          if (section.id != 'client_vendor' ||
-                              _controller.isExternal)
-                            section,
-                      ],
-                      activeSection: _controller.activeSection,
-                      onSelectSection: _goTo,
-                      // The part is pinned above the content now, so the
-                      // sidebar naming it too would say it twice.
-                      showIdentity: false,
-                    ),
-                          Positioned(
-                            top: 4,
-                            right: 4,
-                            child: IconButton(
-                              key: const ValueKey<String>('rail_collapse'),
-                              tooltip: 'Fold the side column to icons',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => _setRailCollapsed(true),
-                              icon: const Icon(
-                                Icons.keyboard_double_arrow_left_rounded,
-                                size: 20,
+                      SheetStep.noTab(
+                        Stack(
+                          children: [
+                            SheetSidebar(
+                              controller: _controller.groupItemController,
+                              sections: [
+                                for (final section in _sections)
+                                  if (section.id != 'client_vendor' ||
+                                      _controller.isExternal)
+                                    section,
+                              ],
+                              activeSection: _controller.activeSection,
+                              onSelectSection: _goTo,
+                              // The part is pinned above the content now, so the
+                              // sidebar naming it too would say it twice.
+                              showIdentity: false,
+                            ),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: IconButton(
+                                key: const ValueKey<String>('rail_collapse'),
+                                tooltip: 'Fold the side column to icons',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _setRailCollapsed(true),
+                                icon: const Icon(
+                                  Icons.keyboard_double_arrow_left_rounded,
+                                  size: 20,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      )),
+                          ],
+                        ),
+                      ),
                     Expanded(child: _body()),
                     // Raw material is a keyboard step of its own (_rawStep); its
                     // fold strip and headings are clicked.
@@ -1050,14 +1069,17 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Tooltip(
-                  message: 'Saves every row: the part, its deal and people, dies '
+                  message:
+                      'Saves every row: the part, its deal and people, dies '
                       'and machines waiting to be added, and the section layout. '
                       'The raw sheet and the route have their own Save.',
                   child: AppButton(
                     key: const ValueKey('save_item_sheet_btn'),
                     label: _controller.isSavingNow
                         ? 'Saving…'
-                        : (_controller.isSaved ? 'Save changes (Ctrl+S)' : 'Save part (Ctrl+S)'),
+                        : (_controller.isSaved
+                              ? 'Save changes (Ctrl+S)'
+                              : 'Save part (Ctrl+S)'),
                     icon: _controller.isSaved
                         ? Icons.check_circle_rounded
                         : Icons.save_rounded,
@@ -1078,18 +1100,21 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   Widget _crumb(String text, {bool isLast = false}) => Text(
-        text,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: isLast ? FontWeight.w800 : FontWeight.w600,
-          color: isLast ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
-        ),
-      );
+    text,
+    style: TextStyle(
+      fontSize: 14,
+      fontWeight: isLast ? FontWeight.w800 : FontWeight.w600,
+      color: isLast ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
+    ),
+  );
 
   Widget _crumbSep() => const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 6),
-        child: Text('›', style: TextStyle(fontSize: 14, color: SoftErpTheme.textMuted)),
-      );
+    padding: EdgeInsets.symmetric(horizontal: 6),
+    child: Text(
+      '›',
+      style: TextStyle(fontSize: 14, color: SoftErpTheme.textMuted),
+    ),
+  );
 
   /// The section the rail has selected, and only that one.
   ///
@@ -1133,7 +1158,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       _route = null;
       final id = part?.id;
       if (id != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_loadRoute(id)));
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => unawaited(_loadRoute(id)),
+        );
       }
     }
     final route = _route;
@@ -1164,7 +1191,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             stageIndex: step.seq - 1,
           ),
       ],
-      unattachedHint: 'No route yet — use Author route below, so stages and '
+      unattachedHint:
+          'No route yet — use Author route below, so stages and '
           'yields have a route to describe.',
       parts: _plannableParts(),
       // Alloy and the sheet's material are one thing: the panel shows the
@@ -1204,48 +1232,50 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       onSave: (saved) => unawaited(_saveRawSheet(saved)),
       onCancel: _rawEditing
           ? () => setState(() {
-                _rawEditing = false;
-                _rawDirty = false;
-                _rawEpoch += 1;
-              })
+              _rawEditing = false;
+              _rawDirty = false;
+              _rawEpoch += 1;
+            })
           : null,
     );
 
-    final strip = SheetStep.noTab(Container(
-      key: const ValueKey<String>('raw_panel_closed'),
-      width: 44,
-      decoration: const BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        border: Border(left: BorderSide(color: SoftErpTheme.border)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          IconButton(
-            key: const ValueKey<String>('raw_panel_open'),
-            tooltip: 'Open the raw sheet & strips',
-            onPressed: () => setState(() => _rawPanelOpen = true),
-            icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
-          ),
-          if (_altPressed) ...[
-            const SizedBox(height: 4),
-            const KeyTipBadge(label: 'Alt+M'),
-          ],
-          const SizedBox(height: 8),
-          const RotatedBox(
-            quarterTurns: 1,
-            child: Text(
-              'Raw material',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: SoftErpTheme.textSecondary,
+    final strip = SheetStep.noTab(
+      Container(
+        key: const ValueKey<String>('raw_panel_closed'),
+        width: 44,
+        decoration: const BoxDecoration(
+          color: SoftErpTheme.cardSurface,
+          border: Border(left: BorderSide(color: SoftErpTheme.border)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            IconButton(
+              key: const ValueKey<String>('raw_panel_open'),
+              tooltip: 'Open the raw sheet & strips',
+              onPressed: () => setState(() => _rawPanelOpen = true),
+              icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
+            ),
+            if (_altPressed) ...[
+              const SizedBox(height: 4),
+              const KeyTipBadge(label: 'Alt+M'),
+            ],
+            const SizedBox(height: 8),
+            const RotatedBox(
+              quarterTurns: 1,
+              child: Text(
+                'Raw material',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textSecondary,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ));
+    );
     final shown = _rawPanelShown;
     // Folded — by its button, or a window under 1500 wide — while editing:
     // the panel is kept, hidden, so folding is not a way to lose the edits.
@@ -1263,7 +1293,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Widget _rawPanelFrame(ItemDefinition? part, Widget panel) {
     final name = part == null
         ? _partLabelNow
-        : (part.displayName.trim().isEmpty ? part.name : part.displayName.trim());
+        : (part.displayName.trim().isEmpty
+              ? part.name
+              : part.displayName.trim());
     return Container(
       key: const ValueKey<String>('raw_panel'),
       width: _rawPanelWidth,
@@ -1275,49 +1307,62 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Headings are clicked; Tab goes through what is typed.
-          SheetStep.noTab(Padding(
-            padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 10, 8, 6),
-            child: Row(
-              children: [
-                SheetStyle.iconTile(Icons.grid_on_rounded),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text('Raw material', style: SheetStyle.sectionTitle),
-                ),
-                if (_rawEditing && _rawDirty) ...[
-                  Tooltip(
-                    message: 'Not saved yet — Save raw sheet at the bottom '
-                        'writes it. Save part does not.',
-                    child: SheetStyle.unsavedPill(
-                      key: const ValueKey<String>('raw_unsaved'),
-                    ),
+          SheetStep.noTab(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                SheetStyle.cardPadding,
+                10,
+                8,
+                6,
+              ),
+              child: Row(
+                children: [
+                  SheetStyle.iconTile(Icons.grid_on_rounded),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('Raw material', style: SheetStyle.sectionTitle),
                   ),
-                  const SizedBox(width: 6),
+                  if (_rawEditing && _rawDirty) ...[
+                    Tooltip(
+                      message:
+                          'Not saved yet — Save raw sheet at the bottom '
+                          'writes it. Save part does not.',
+                      child: SheetStyle.unsavedPill(
+                        key: const ValueKey<String>('raw_unsaved'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  _rollButton(
+                    key: 'raw_roll',
+                    what: 'raw material',
+                    rolled: _rawRolled,
+                    onPressed: () => setState(() => _rawRolled = !_rawRolled),
+                  ),
+                  // Its Edit is the panel's own, at the foot where Save will be —
+                  // the way a part line's Save becomes its Edit in one place.
+                  IconButton(
+                    key: const ValueKey<String>('raw_panel_close'),
+                    tooltip: 'Fold the raw sheet panel',
+                    onPressed: () => setState(() => _rawPanelOpen = false),
+                    icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
+                  ),
+                  if (_altPressed) ...[
+                    const SizedBox(width: 4),
+                    const KeyTipBadge(label: 'Alt+M'),
+                  ],
                 ],
-                _rollButton(
-                  key: 'raw_roll',
-                  what: 'raw material',
-                  rolled: _rawRolled,
-                  onPressed: () => setState(() => _rawRolled = !_rawRolled),
-                ),
-                // Its Edit is the panel's own, at the foot where Save will be —
-                // the way a part line's Save becomes its Edit in one place.
-                IconButton(
-                  key: const ValueKey<String>('raw_panel_close'),
-                  tooltip: 'Fold the raw sheet panel',
-                  onPressed: () => setState(() => _rawPanelOpen = false),
-                  icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
-                ),
-                if (_altPressed) ...[
-                  const SizedBox(width: 4),
-                  const KeyTipBadge(label: 'Alt+M'),
-                ],
-              ],
+              ),
             ),
-          )),
+          ),
           if (part == null)
             const Padding(
-              padding: EdgeInsets.fromLTRB(SheetStyle.cardPadding, 0, SheetStyle.cardPadding, 8),
+              padding: EdgeInsets.fromLTRB(
+                SheetStyle.cardPadding,
+                0,
+                SheetStyle.cardPadding,
+                8,
+              ),
               child: Text(
                 'Save the part to plan its raw sheet.',
                 style: SheetStyle.hint,
@@ -1346,25 +1391,34 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
           if (_photosInColumn) ...[
             const Divider(height: 1),
-            SheetStep.noTab(Padding(
-              padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 8, 8, 6),
-              child: Row(
-                children: [
-                  SheetStyle.iconTile(Icons.photo_library_outlined),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('Photos', style: SheetStyle.sectionTitle),
-                  ),
-                ],
+            SheetStep.noTab(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  SheetStyle.cardPadding,
+                  8,
+                  8,
+                  6,
+                ),
+                child: Row(
+                  children: [
+                    SheetStyle.iconTile(Icons.photo_library_outlined),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text('Photos', style: SheetStyle.sectionTitle),
+                    ),
+                  ],
+                ),
               ),
-            )),
+            ),
             Flexible(
               flex: 1000,
-              child: SheetStep.noTab(_PartPhotosSection(
-                key: const ValueKey<String>('part_photos_section'),
-                partId: part?.id,
-                partName: name,
-              )),
+              child: SheetStep.noTab(
+                _PartPhotosSection(
+                  key: const ValueKey<String>('part_photos_section'),
+                  partId: part?.id,
+                  partName: name,
+                ),
+              ),
             ),
           ],
         ],
@@ -1376,14 +1430,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// at a size it fits (it would overflow the sliver it is given) and not
   /// drawn; the widgets stay the same either way, so their state does too.
   Widget _rolled(bool rolled, Widget child) => Offstage(
-        offstage: rolled,
-        child: OverflowBox(
-          alignment: Alignment.topCenter,
-          minHeight: rolled ? 0 : null,
-          maxHeight: rolled ? 640 : null,
-          child: child,
-        ),
-      );
+    offstage: rolled,
+    child: OverflowBox(
+      alignment: Alignment.topCenter,
+      minHeight: rolled ? 0 : null,
+      maxHeight: rolled ? 640 : null,
+      child: child,
+    ),
+  );
 
   /// A section's chevron: up rolls it to its heading, down opens it again.
   Widget _rollButton({
@@ -1406,25 +1460,25 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// Raw material as a keyboard step: Tab through a page, past its last
   /// field to the next page, past Review to "Save raw material?", then on.
   SheetStepActions _rawStepActions() => SheetStepActions(
-        title: () => 'Save raw material?',
-        isDirty: () => _rawEditing && _rawDirty,
-        save: () async {
-          final read = _rawDraft;
-          if (read == null) return true;
-          await _saveRawSheet(read());
-          return mounted && !_rawEditing;
-        },
-        discard: () => setState(() {
-          _rawEditing = false;
-          _rawDirty = false;
-          _rawEpoch += 1;
-        }),
-        isLocked: () => !_rawEditing,
-        unlock: () {
-          if (_livePart != null) setState(() => _rawEditing = true);
-        },
-        nextPage: () => _rawNextPage?.call() ?? false,
-      );
+    title: () => 'Save raw material?',
+    isDirty: () => _rawEditing && _rawDirty,
+    save: () async {
+      final read = _rawDraft;
+      if (read == null) return true;
+      await _saveRawSheet(read());
+      return mounted && !_rawEditing;
+    },
+    discard: () => setState(() {
+      _rawEditing = false;
+      _rawDirty = false;
+      _rawEpoch += 1;
+    }),
+    isLocked: () => !_rawEditing,
+    unlock: () {
+      if (_livePart != null) setState(() => _rawEditing = true);
+    },
+    nextPage: () => _rawNextPage?.call() ?? false,
+  );
 
   /// Reads [partId]'s route — the active one, else the newest draft, which is
   /// the order the service answers in. A build with no route service, or a
@@ -1432,7 +1486,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Future<void> _loadRoute(int partId) async {
     PartRoute? route;
     try {
-      final routes = await context.read<ProcessRouteService>().routesFor(partId);
+      final routes = await context.read<ProcessRouteService>().routesFor(
+        partId,
+      );
       route = routes.firstOrNull;
     } catch (_) {
       route = null;
@@ -1455,7 +1511,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _toast(
       saved == null
           ? 'The raw sheet for $name did not save: '
-              '${items.errorMessage ?? 'try again from that part'}.'
+                '${items.errorMessage ?? 'try again from that part'}.'
           : 'Raw material saved on $name.',
       isError: saved == null,
     );
@@ -1517,7 +1573,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (!item.isArchived && item.hasBlankSize)
           SheetPart(
             id: item.id,
-            name: item.displayName.trim().isEmpty ? item.name : item.displayName,
+            name: item.displayName.trim().isEmpty
+                ? item.name
+                : item.displayName,
             widthMm: item.blankWidthMm,
             heightMm: item.blankHeightMm,
           ),
@@ -1610,7 +1668,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
-
   static const List<String> _sectionIds = [
     'group_item',
     'client_vendor',
@@ -1637,10 +1694,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   List<String> _childrenOf(String id) => [
-        for (final child in _sectionIds)
-          if (child != 'group_item' && _visible(child) && _shownParentOf(child) == id)
-            child,
-      ];
+    for (final child in _sectionIds)
+      if (child != 'group_item' &&
+          _visible(child) &&
+          _shownParentOf(child) == id)
+        child,
+  ];
 
   /// [id] and everything nested under it.
   Set<String> _subtree(String id) {
@@ -1737,13 +1796,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final nodes = <Widget>[];
     void visit(String id, int depth, List<bool> continues, bool isLast) {
       final collapsed = _collapsed.contains(id);
-      nodes.add(_TreeNode(
-        indent: indent,
-        depth: depth,
-        continues: continues,
-        isLast: isLast,
-        child: _dropTarget(id, _sectionFor(id, collapsed: collapsed)),
-      ));
+      nodes.add(
+        _TreeNode(
+          indent: indent,
+          depth: depth,
+          continues: continues,
+          isLast: isLast,
+          child: _dropTarget(id, _sectionFor(id, collapsed: collapsed)),
+        ),
+      );
       // Folding a section folds only that section: what is nested under it
       // stays on the page.
       final kids = _childrenOf(id);
@@ -1762,10 +1823,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     visit('group_item', 0, const [], true);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_treeDirty) SheetStep.noTab(_treeDirtyBar()),
-        ...nodes,
-      ],
+      children: [if (_treeDirty) SheetStep.noTab(_treeDirtyBar()), ...nodes],
     );
   }
 
@@ -1782,14 +1840,21 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.account_tree_outlined, size: 18, color: SoftErpTheme.warningText),
+          const Icon(
+            Icons.account_tree_outlined,
+            size: 18,
+            color: SoftErpTheme.warningText,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               saved
                   ? 'Section layout changed — save it so this part\'s client, dies and machines follow it.'
                   : 'Section layout changed — it is saved with the part.',
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.warningText,
+              ),
             ),
           ),
           TextButton(
@@ -1836,8 +1901,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   void _toggle(String id) => setState(() {
-        if (!_collapsed.remove(id)) _collapsed.add(id);
-      });
+    if (!_collapsed.remove(id)) _collapsed.add(id);
+  });
 
   /// The rail is a table of contents: open the section (and every one it is
   /// nested in) and bring it into view.
@@ -1863,18 +1928,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final part = _livePart;
     final (title, detail) = switch (id) {
       'client_vendor' => (
-          'Clear who this part was developed for?',
-          'Removes the company, the quotation and the people ticked on this part. '
-              'The company and its people stay in the clients master.',
-        ),
+        'Clear who this part was developed for?',
+        'Removes the company, the quotation and the people ticked on this part. '
+            'The company and its people stay in the clients master.',
+      ),
       'die_master' => (
-          'Take every die off this part?',
-          'The dies stay in the die master — only their link to this part goes.',
-        ),
+        'Take every die off this part?',
+        'The dies stay in the die master — only their link to this part goes.',
+      ),
       _ => (
-          'Take every machine off this part?',
-          'The machines stay in the machine master. The route is left as it is.',
-        ),
+        'Take every machine off this part?',
+        'The machines stay in the machine master. The route is left as it is.',
+      ),
     };
     final ok = await showConfirmDialog(
       context,
@@ -1891,7 +1956,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         _controller.clearDeal();
       } else {
         final items = context.read<ItemsProvider>();
-        final saved = await items.setItemDevelopedFor(part.id, DevelopedFor.empty);
+        final saved = await items.setItemDevelopedFor(
+          part.id,
+          DevelopedFor.empty,
+        );
         if (!mounted) return;
         if (saved == null) {
           error = items.errorMessage ?? 'That did not clear.';
@@ -1931,7 +1999,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       final column = sheet.sheetDef.columnBoundTo(binds);
       if (column == null) return null;
       final value = sheet.draft.get(column.id);
-      return value?.optionLabel ?? value?.textValue ?? value?.intValue?.toString();
+      return value?.optionLabel ??
+          value?.textValue ??
+          value?.intValue?.toString();
     }
 
     String? money(double? amount) => amount == null ? null : rupeeStamp(amount);
@@ -1942,19 +2012,29 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         final company = _controller.dealPartyName;
         if (company.isEmpty) return const [(null, 'No company chosen yet')];
         add('Company', company);
-        add('Quotation', money(_moneyBoundTo(SheetBindsTo.developedForQuotation)));
+        add(
+          'Quotation',
+          money(_moneyBoundTo(SheetBindsTo.developedForQuotation)),
+        );
         add('Cost', money(_moneyBoundTo(SheetBindsTo.developedForCost)));
         final people = _controller.peopleController;
-        final tick = people.sheetDef.columnBoundTo(SheetBindsTo.personDealtWith);
+        final tick = people.sheetDef.columnBoundTo(
+          SheetBindsTo.personDealtWith,
+        );
         final name = people.sheetDef.columnBoundTo(SheetBindsTo.personName);
-        final role = people.sheetDef.columnBoundTo(SheetBindsTo.personDesignation);
+        final role = people.sheetDef.columnBoundTo(
+          SheetBindsTo.personDesignation,
+        );
         final dealtWith = <String>[
           for (final d in people.drafts)
             if (tick != null && name != null && d.get(tick.id)?.intValue == 1)
               [
                 (d.get(name.id)?.textValue ?? '').trim(),
                 if (role != null)
-                  (d.get(role.id)?.optionLabel ?? d.get(role.id)?.textValue ?? '').trim(),
+                  (d.get(role.id)?.optionLabel ??
+                          d.get(role.id)?.textValue ??
+                          '')
+                      .trim(),
               ].where((p) => p.isNotEmpty).join(', '),
         ].where((p) => p.isNotEmpty);
         add('Dealt with', dealtWith.join('; '));
@@ -1972,26 +2052,41 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       case 'machine_master':
         final groups = context.read<GroupsProvider>();
         final machines = [
-          for (final m in _livePart?.machines ?? const <ItemMachineLink>[]) (m, false),
+          for (final m in _livePart?.machines ?? const <ItemMachineLink>[])
+            (m, false),
           for (final m in _stagedMachines)
             (
               heldMachineLink(
                 m,
-                typeName: m.groupId == null ? '' : groups.findById(m.groupId!)?.name ?? '',
+                typeName: m.groupId == null
+                    ? ''
+                    : groups.findById(m.groupId!)?.name ?? '',
               ),
               true,
             ),
         ];
         final route = _route;
-        if (machines.isEmpty && route == null) return const [(null, 'No machines yet')];
+        if (machines.isEmpty && route == null)
+          return const [(null, 'No machines yet')];
         for (final (machine, held) in machines) {
           out.addAll(machineLines(machine, held: held));
         }
         if (route != null) add('Route', routeLine(route));
       default:
         final sheet = _controller.groupItemController;
-        final nameColumn = sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ?? sheet.sheetDef.itemColumn;
-        add('Group', nameColumn == null ? null : SheetEngine.groupPathString(sheet.sheetDef, sheet.draft, nameColumn.id));
+        final nameColumn =
+            sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ??
+            sheet.sheetDef.itemColumn;
+        add(
+          'Group',
+          nameColumn == null
+              ? null
+              : SheetEngine.groupPathString(
+                  sheet.sheetDef,
+                  sheet.draft,
+                  nameColumn.id,
+                ),
+        );
         add('Part', cell(sheet, SheetBindsTo.name));
         add('Part No', cell(sheet, SheetBindsTo.partNo));
         add('Code', _partCodeNow);
@@ -2003,7 +2098,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         final part = _livePart;
         add('Created', stamp(part?.createdAt));
         // Only when it says something the created stamp does not.
-        if (part != null && part.updatedAt.difference(part.createdAt).inMinutes.abs() >= 1) {
+        if (part != null &&
+            part.updatedAt.difference(part.createdAt).inMinutes.abs() >= 1) {
           add('Updated', stamp(part.updatedAt));
         }
         if (out.isEmpty) return const [(null, 'Nothing entered yet')];
@@ -2022,21 +2118,22 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       required String tip,
       VoidCallback? onPressed,
       Color? color,
-    }) =>
-        IconButton(
-          key: ValueKey<String>(key),
-          tooltip: tip,
-          visualDensity: VisualDensity.compact,
-          onPressed: onPressed,
-          icon: Icon(icon, size: 20, color: onPressed == null ? null : color),
-        );
+    }) => IconButton(
+      key: ValueKey<String>(key),
+      tooltip: tip,
+      visualDensity: VisualDensity.compact,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20, color: onPressed == null ? null : color),
+    );
 
     return [
       if (!root) ...[
         action(
           key: 'section_outdent_$id',
           icon: Icons.subdirectory_arrow_left_rounded,
-          tip: canOutdent ? 'Move $heading one level out' : 'Already directly under the part',
+          tip: canOutdent
+              ? 'Move $heading one level out'
+              : 'Already directly under the part',
           onPressed: canOutdent ? () => _outdent(id) : null,
         ),
         action(
@@ -2112,7 +2209,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (heading == null) return null;
     return Align(
       alignment: Alignment.centerRight,
-      child: _codeChip(heading.label, heading.value, key: ValueKey<String>(key)),
+      child: _codeChip(
+        heading.label,
+        heading.value,
+        key: ValueKey<String>(key),
+      ),
     );
   }
 
@@ -2133,7 +2234,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           children: [
             TextSpan(
               text: label,
-              style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 13,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
             TextSpan(
               text: none ? 'assigned on save' : code,
@@ -2168,8 +2272,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         ? ''
         : SheetEngine.groupPathString(sheet, draft, nameColumn.id);
     final codeColumn = sheet.columnBoundTo(SheetBindsTo.partCode);
-    final code =
-        codeColumn == null ? null : draft.get(codeColumn.id)?.textValue;
+    final code = codeColumn == null
+        ? null
+        : draft.get(codeColumn.id)?.textValue;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
@@ -2279,7 +2384,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
     if (!mounted) return;
     if (saved == null) {
-      _toast(provider.errorMessage ?? 'The column was not added.', isError: true);
+      _toast(
+        provider.errorMessage ?? 'The column was not added.',
+        isError: true,
+      );
       return;
     }
     _syncPropertyColumns();
@@ -2295,10 +2403,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// value: what is typed joins the list for everyone, so the two differ only
   /// in what was picked when the column was added.
   static ColumnKind _columnKindFor(String kind) => switch (kind) {
-        'material' => ColumnKind.material,
-        'gauge' => ColumnKind.gauge,
-        _ => ColumnKind.list,
-      };
+    'material' => ColumnKind.material,
+    'gauge' => ColumnKind.gauge,
+    _ => ColumnKind.list,
+  };
 
   /// The stored column [column] is, or null for one that is not stored
   /// (Alloy, Thickness, the identity columns).
@@ -2395,8 +2503,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         .items
         .where((item) => !item.isArchived)
         .where((item) {
-          final value =
-              ItemSheetBinding.propertyValueOf(item, property.propertyName);
+          final value = ItemSheetBinding.propertyValueOf(
+            item,
+            property.propertyName,
+          );
           return value != null && _keyOf(value) == wanted;
         })
         .length;
@@ -2417,7 +2527,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       final saved = await provider.removeOption(property.id, option.label);
       if (!mounted) return false;
       if (saved == null) {
-        _toast(provider.errorMessage ?? 'The option was not deleted.', isError: true);
+        _toast(
+          provider.errorMessage ?? 'The option was not deleted.',
+          isError: true,
+        );
         return false;
       }
       return true;
@@ -2429,7 +2542,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return showConfirmDialog(
       context,
       title: 'Remove ${column.label} from the sheet?',
-      message: 'It goes for everyone, with its list of options. Parts keep '
+      message:
+          'It goes for everyone, with its list of options. Parts keep '
           'the values they were saved with.',
       confirmLabel: 'Remove',
     );
@@ -2443,7 +2557,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     unawaited(() async {
       final done = await provider.remove(property.id);
       if (!done && mounted) {
-        _toast(provider.errorMessage ?? 'The column was not removed.', isError: true);
+        _toast(
+          provider.errorMessage ?? 'The column was not removed.',
+          isError: true,
+        );
       }
     }());
   }
@@ -2466,7 +2583,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final saved = await provider.replaceOptions(property.id, result.options);
     if (!mounted) return;
     if (saved == null) {
-      _toast(provider.errorMessage ?? 'The options were not saved.', isError: true);
+      _toast(
+        provider.errorMessage ?? 'The options were not saved.',
+        isError: true,
+      );
       return;
     }
     await _controller.loadReferenceData();
@@ -2489,7 +2609,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final sheet = _controller.groupItemController.sheetDef;
     final column = sheet.columnBoundTo(SheetBindsTo.partCode);
     if (column == null) return '';
-    return _controller.groupItemController.draft.get(column.id)?.textValue ?? '';
+    return _controller.groupItemController.draft.get(column.id)?.textValue ??
+        '';
   }
 
   /// The part's Alloy as the sheet shows it now — typed or picked, saved or
@@ -2535,7 +2656,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
     final wanted = label.toLowerCase();
     final option = sheet.options
-        .where((o) => o.columnId == column.id && o.label.toLowerCase() == wanted)
+        .where(
+          (o) => o.columnId == column.id && o.label.toLowerCase() == wanted,
+        )
         .firstOrNull;
     if (option != null) {
       sheet.setOption(column.id, option);
@@ -2652,11 +2775,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// The heading's right end: the part's code, then when the part was made.
   Widget _partHeading() => Wrap(
-        alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 6,
-        children: [_identityChip(), _stampChip()],
-      );
+    alignment: WrapAlignment.end,
+    spacing: 8,
+    runSpacing: 6,
+    children: [_identityChip(), _stampChip()],
+  );
 
   /// When the part under the cursor was saved — the Date and Time its line
   /// leaves out. A part not saved yet shows the time now, muted: its save is
@@ -2666,7 +2789,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final draft = _controller.groupItemController.draft;
     String? stamped(String binds) {
       final column = sheet.columnBoundTo(binds);
-      final text = column == null ? null : draft.get(column.id)?.textValue?.trim();
+      final text = column == null
+          ? null
+          : draft.get(column.id)?.textValue?.trim();
       return (text == null || text.isEmpty) ? null : text;
     }
 
@@ -2694,8 +2819,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Part code: ',
-              style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
+          const Text(
+            'Part code: ',
+            style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+          ),
           Text(
             (code == null || code.isEmpty) ? 'assigned on save' : code,
             style: TextStyle(
@@ -2720,7 +2847,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // Rupees as typed, paise included — the text is the figure, and intValue
     // is only there for a whole amount. Stripping to digits and dots read
     // "Rs. 85,000" as 0.85 (the dot of "Rs." led).
-    return SheetEngine.parseMoney(value.textValue) ?? value.intValue?.toDouble();
+    return SheetEngine.parseMoney(value.textValue) ??
+        value.intValue?.toDouble();
   }
 
   /// The parts, one line each, drawn like the people under a company: see
@@ -2761,7 +2889,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (_rawRolled) setState(() => _rawRolled = false);
         return;
       }
-      if (_collapsed.contains(section)) setState(() => _collapsed.remove(section));
+      if (_collapsed.contains(section))
+        setState(() => _collapsed.remove(section));
     },
     onEnd: () => _toast('End of the sheet — Ctrl+S saves everything.'),
   );
@@ -2782,7 +2911,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           if (_controller.isExternal) {
             out.add((id: DealPeopleForm.companyStep, section: id));
             for (final draft in _controller.peopleController.drafts) {
-              out.add((id: DealPeopleForm.personStep(draft.rowKey), section: id));
+              out.add((
+                id: DealPeopleForm.personStep(draft.rowKey),
+                section: id,
+              ));
             }
           }
         case 'die_master':
@@ -2825,7 +2957,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       isDirty: () {
         final i = at();
         if (i < 0 || sheet.isRowLocked(i)) return false;
-        final held = (_heldDies[rowKey]?.isNotEmpty ?? false) ||
+        final held =
+            (_heldDies[rowKey]?.isNotEmpty ?? false) ||
             (_heldMachines[rowKey]?.isNotEmpty ?? false);
         return !saved() && (!sheet.isRowBlank(i) || held);
       },
@@ -2886,7 +3019,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       final sure = await showConfirmDialog(
         context,
         title: 'Remove part ${row + 1}?',
-        message: '${what[0].toUpperCase()}${what.substring(1)} '
+        message:
+            '${what[0].toUpperCase()}${what.substring(1)} '
             '${typed || dies + machines > 1 ? 'are' : 'is'} removed. '
             'None of it has been saved.',
         confirmLabel: 'Remove',
@@ -2926,7 +3060,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final part = id == null ? null : _partById(id);
     final name = part == null
         ? 'this part'
-        : (part.displayName.trim().isEmpty ? part.name : part.displayName.trim());
+        : (part.displayName.trim().isEmpty
+              ? part.name
+              : part.displayName.trim());
     return MiniPhoto(
       owner: PhotoOwner.item,
       id: id?.toString(),
@@ -3029,8 +3165,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return _savePartButton(
       row,
       key: 'row_save_$row',
-      readyTip:
-          saved ? 'Save the changes to this part' : 'Save this row\'s part',
+      readyTip: saved
+          ? 'Save the changes to this part'
+          : 'Save this row\'s part',
     );
   }
 
@@ -3085,7 +3222,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         draft.get(column.id)?.textValue?.trim() ?? '',
     ].where((t) => t.isNotEmpty && t != 'Set on save').join(', ');
     final what = 'Saved as item #${draft.entityId}';
-    return when.isEmpty ? '$what — Edit to change it' : '$what on $when — Edit to change it';
+    return when.isEmpty
+        ? '$what — Edit to change it'
+        : '$what on $when — Edit to change it';
   }
 
   /// Archive for the part on the selected row. Drawn always, disabled with
@@ -3098,10 +3237,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final String? why = id == null
         ? 'Select a saved part to archive it'
         : (_controller.isRowGone(row)
-            ? _controller.rowError(row)
-            : (_controller.isSavingNow ? 'Still saving' : null));
+              ? _controller.rowError(row)
+              : (_controller.isSavingNow ? 'Still saving' : null));
     return Tooltip(
-      message: why ?? 'Archive item #$id — kept, restorable from the Items screen',
+      message:
+          why ?? 'Archive item #$id — kept, restorable from the Items screen',
       child: OutlinedButton.icon(
         key: const ValueKey('archive_part_btn'),
         onPressed: why == null ? () => _archivePart(id!) : null,
@@ -3116,7 +3256,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final ok = await showConfirmDialog(
       context,
       title: 'Archive $label?',
-      message: 'It leaves every picker and list but is kept, and can be '
+      message:
+          'It leaves every picker and list but is kept, and can be '
           'restored from the Items screen.',
       confirmLabel: 'Archive',
     );
@@ -3168,7 +3309,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final error = at < 0 ? null : _controller.rowError(at);
     // Saved — or already saved with nothing changed — closes the row. Not
     // while it holds an edit made during the save; that is still to write.
-    final savedNow = at >= 0 &&
+    final savedNow =
+        at >= 0 &&
         error == null &&
         _controller.savedRows.contains(at) &&
         !sheet.draftAt(at).isDirtySinceSave;
@@ -3232,13 +3374,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// spreadsheet cells here ate keystrokes (each rebuild re-selected the cell,
   /// so 85000 became 0) and were cramped pills; see [DealPeopleForm].
   Widget _partySheet() => DealPeopleForm(
-        controller: _controller,
-        lineKey: _cursorRowKey,
-        partSaved: _livePart != null,
-        recordedAt: _livePart?.developedFor.at,
-        flow: _flow,
-        onSaveDeal: _saveDeal,
-      );
+    controller: _controller,
+    lineKey: _cursorRowKey,
+    partSaved: _livePart != null,
+    recordedAt: _livePart?.developedFor.at,
+    flow: _flow,
+    onSaveDeal: _saveDeal,
+  );
 
   /// Cancel on the route panel. Stages laid out and not saved are asked
   /// about first — Cancel used to drop them without a word.
@@ -3247,7 +3389,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       final discard = await showConfirmDialog(
         context,
         title: 'Discard route changes?',
-        message: 'The stages laid out here are not saved. Discarding puts the '
+        message:
+            'The stages laid out here are not saved. Discarding puts the '
             'part\'s route back as it was.',
         confirmLabel: 'Discard',
         destructive: true,
@@ -3274,7 +3417,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         pendingPartName: rowPartId == null ? _pinnedPartName() : null,
         madeHereItemIds: _madeHere,
         onDirtyChanged: (dirty) {
-          if (mounted && dirty != _routeDirty) setState(() => _routeDirty = dirty);
+          if (mounted && dirty != _routeDirty)
+            setState(() => _routeDirty = dirty);
         },
         onSaved: (record) {
           setState(() {
@@ -3297,8 +3441,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             hasPart
                 ? 'This part can be routed through the process stages.'
                 : 'Save the part to attach a route — you can lay out the '
-                    'stages now.',
-            style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+                      'stages now.',
+            style: const TextStyle(
+              fontSize: 14,
+              color: SoftErpTheme.textSecondary,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -3341,7 +3488,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           const SizedBox(height: 4),
           Text(
             detail,
-            style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
+            style: const TextStyle(
+              fontSize: 14,
+              color: SoftErpTheme.warningText,
+            ),
           ),
         ],
       ),
@@ -3368,77 +3518,90 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // The heading's controls are clicked; Tab is for the fields below.
-          SheetStep.noTab(Row(
-            children: [
-              // The part itself is the root and stays put; everything else can
-              // be dragged onto another section to nest under it.
-              if (id != 'group_item')
-                Draggable<String>(
-                  data: id,
-                  feedback: Material(
-                    elevation: 6,
-                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      child: Text(
-                        heading,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          SheetStep.noTab(
+            Row(
+              children: [
+                // The part itself is the root and stays put; everything else can
+                // be dragged onto another section to nest under it.
+                if (id != 'group_item')
+                  Draggable<String>(
+                    data: id,
+                    feedback: Material(
+                      elevation: 6,
+                      borderRadius: BorderRadius.circular(
+                        SoftErpTheme.radiusSm,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        child: Text(
+                          heading,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    child: Tooltip(
+                      message:
+                          'Drag onto another section to nest $heading under it',
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Icon(
+                          Icons.drag_indicator_rounded,
+                          key: ValueKey<String>('section_drag_$id'),
+                          size: 22,
+                          color: SoftErpTheme.textSecondary,
+                        ),
                       ),
                     ),
                   ),
-                  child: Tooltip(
-                    message: 'Drag onto another section to nest $heading under it',
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.grab,
-                      child: Icon(
-                        Icons.drag_indicator_rounded,
-                        key: ValueKey<String>('section_drag_$id'),
-                        size: 22,
-                        color: SoftErpTheme.textSecondary,
-                      ),
-                    ),
+                // Fold / unfold, like a folder in a file tree.
+                IconButton(
+                  key: ValueKey<String>('section_toggle_$id'),
+                  tooltip: collapsed ? 'Open $heading' : 'Fold $heading',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _toggle(id),
+                  icon: Icon(
+                    collapsed
+                        ? Icons.chevron_right_rounded
+                        : Icons.expand_more_rounded,
+                    size: 22,
+                    color: SoftErpTheme.textSecondary,
                   ),
                 ),
-              // Fold / unfold, like a folder in a file tree.
-              IconButton(
-                key: ValueKey<String>('section_toggle_$id'),
-                tooltip: collapsed ? 'Open $heading' : 'Fold $heading',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _toggle(id),
-                icon: Icon(
-                  collapsed
-                      ? Icons.chevron_right_rounded
-                      : Icons.expand_more_rounded,
-                  size: 22,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 4),
-              SheetStyle.iconTile(icon),
-              const SizedBox(width: 10),
-              Expanded(child: Text(heading, style: SheetStyle.sectionTitle)),
-              if (trailing != null) ...[
-                const SizedBox(width: 12),
-                // Most of the room, so a narrow card wraps its chips rather
-                // than pushing the actions off the end.
-                Flexible(flex: 3, child: trailing),
+                const SizedBox(width: 4),
+                SheetStyle.iconTile(icon),
+                const SizedBox(width: 10),
+                Expanded(child: Text(heading, style: SheetStyle.sectionTitle)),
+                if (trailing != null) ...[
+                  const SizedBox(width: 12),
+                  // Most of the room, so a narrow card wraps its chips rather
+                  // than pushing the actions off the end.
+                  Flexible(flex: 3, child: trailing),
+                ],
+                const SizedBox(width: 8),
+                ..._sectionActions(id, heading),
               ],
-              const SizedBox(width: 8),
-              ..._sectionActions(id, heading),
-            ],
-          )),
+            ),
+          ),
           if (collapsed)
             // Folded: one row of what is in it. Tap to open.
             // Tab into a folded section unfolds it (the keyboard flow does).
-            SheetStep.noTab(InkWell(
-              key: ValueKey<String>('section_summary_$id'),
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-              onTap: () => _toggle(id),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
-                child: _SummaryLine(_sectionSummary(id)),
+            SheetStep.noTab(
+              InkWell(
+                key: ValueKey<String>('section_summary_$id'),
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+                onTap: () => _toggle(id),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
+                  child: _SummaryLine(_sectionSummary(id)),
+                ),
               ),
-            )),
+            ),
           // Folded is hidden, not thrown away: a route being laid out, a die
           // half typed, a raw sheet being edited all live in the body, and
           // building it only when open disposed them on every fold.
@@ -3469,32 +3632,39 @@ class _SummaryLine extends StatelessWidget {
     final spans = <InlineSpan>[];
     for (final (i, (label, value)) in pairs.indexed) {
       if (i > 0) {
-        spans.add(TextSpan(
-          // A record's own name starts a new one: a wider gap before it.
-          text: label == null ? '   |   ' : '  ·  ',
-          style: const TextStyle(color: SoftErpTheme.textMuted),
-        ));
+        spans.add(
+          TextSpan(
+            // A record's own name starts a new one: a wider gap before it.
+            text: label == null ? '   |   ' : '  ·  ',
+            style: const TextStyle(color: SoftErpTheme.textMuted),
+          ),
+        );
       }
       if (label != null) {
-        spans.add(TextSpan(
-          text: '$label ',
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: SoftErpTheme.textSecondary,
+        spans.add(
+          TextSpan(
+            text: '$label ',
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: SoftErpTheme.textSecondary,
+            ),
           ),
-        ));
+        );
       }
-      spans.add(TextSpan(
-        text: value,
-        style: TextStyle(
-          fontWeight: label == null ? FontWeight.w800 : FontWeight.w700,
-          color: SoftErpTheme.textPrimary,
+      spans.add(
+        TextSpan(
+          text: value,
+          style: TextStyle(
+            fontWeight: label == null ? FontWeight.w800 : FontWeight.w700,
+            color: SoftErpTheme.textPrimary,
+          ),
         ),
-      ));
+      );
     }
     return Tooltip(
       message: [
-        for (final (label, value) in pairs) label == null ? value : '$label: $value',
+        for (final (label, value) in pairs)
+          label == null ? value : '$label: $value',
       ].join('\n'),
       waitDuration: const Duration(milliseconds: 400),
       child: Text.rich(
@@ -3589,7 +3759,11 @@ class _TreeGuidePainter extends CustomPainter {
     // This node: down from the parent, across into the card; on past it when
     // a sibling follows (├), stopping at the elbow when it is the last (└).
     final x = (depth - 1) * indent + _offset;
-    canvas.drawLine(Offset(x, -18), Offset(x, isLast ? _elbowY : size.height), paint);
+    canvas.drawLine(
+      Offset(x, -18),
+      Offset(x, isLast ? _elbowY : size.height),
+      paint,
+    );
     canvas.drawLine(Offset(x, _elbowY), Offset(depth * indent, _elbowY), paint);
   }
 
@@ -3870,9 +4044,7 @@ class _KindTile extends StatelessWidget {
 /// the save has not stamped yet.
 class _HeadingStamp extends StatefulWidget {
   const _HeadingStamp({required String this.date, this.time});
-  const _HeadingStamp.now()
-      : date = null,
-        time = null;
+  const _HeadingStamp.now() : date = null, time = null;
 
   final String? date;
   final String? time;
@@ -3941,7 +4113,11 @@ class _HeadingStampState extends State<_HeadingStamp> {
             const SizedBox(width: 6),
             Text(
               date,
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: colour,
+              ),
             ),
             if (time != null) ...[
               const SizedBox(width: 10),
@@ -3949,7 +4125,11 @@ class _HeadingStampState extends State<_HeadingStamp> {
               const SizedBox(width: 6),
               Text(
                 time,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: colour,
+                ),
               ),
             ],
           ],
@@ -4085,11 +4265,17 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
         action: 'Add photos',
       );
     }
-    final shown = _photos.where((p) => p.id == _shownId).firstOrNull ??
+    final shown =
+        _photos.where((p) => p.id == _shownId).firstOrNull ??
         _photos.where((p) => p.isPrimary).firstOrNull ??
         _photos.first;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(SheetStyle.cardPadding, 4, SheetStyle.cardPadding, 12),
+      padding: const EdgeInsets.fromLTRB(
+        SheetStyle.cardPadding,
+        4,
+        SheetStyle.cardPadding,
+        12,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -4106,7 +4292,11 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
                     shown.viewUrl,
                     fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => const Center(
-                      child: Icon(Icons.broken_image_outlined, size: 32, color: SoftErpTheme.textMuted),
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 32,
+                        color: SoftErpTheme.textMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -4158,7 +4348,8 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
           child: Image.network(
             photo.thumbUrl,
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined, size: 18),
+            errorBuilder: (_, _, _) =>
+                const Icon(Icons.broken_image_outlined, size: 18),
           ),
         ),
       ),
@@ -4179,7 +4370,10 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
               text,
               key: const ValueKey<String>('part_photos_note'),
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
             if (action != null) ...[
               const SizedBox(height: 10),
