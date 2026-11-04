@@ -1173,6 +1173,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// in types. The chips stay clickable; a typed type is added with the mouse.
   Widget _typeRow(bool enabled) {
     return Focus(
+      key: const ValueKey<String>('quick-entry-die-type'),
       canRequestFocus: enabled,
       onKeyEvent: (node, event) {
         if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;

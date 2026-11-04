@@ -75,14 +75,17 @@ class SheetFlow {
   final List<SheetStepPlace> Function() order;
 
   /// Opens [section] (unfolds it) so a step in it can take focus.
-  final void Function(String section)? reveal;
+  /// Returns true if a section was unfolded and needs a frame to build.
+  final bool Function(String section)? reveal;
 
   /// Tab past the last step of the screen.
   final VoidCallback? onEnd;
 
   final Map<Object, SheetStepState> _steps = {};
 
-  void _register(Object id, SheetStepState step) => _steps[id] = step;
+  void _register(Object id, SheetStepState step) {
+    _steps[id] = step;
+  }
 
   void _unregister(Object id, SheetStepState step) {
     if (identical(_steps[id], step)) _steps.remove(id);
@@ -94,9 +97,16 @@ class SheetFlow {
     final place = order().where((p) => p.id == id).firstOrNull;
     if (place != null) reveal?.call(place.section);
     // After the frame: a section just unfolded has to be built before its
-    // fields can take focus.
+    // fields can take focus, and a dismissed save prompt must finish closing.
+    WidgetsBinding.instance.scheduleFrame();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _steps[id]?.focusEdge(last: last, open: open);
+      final step = _steps[id];
+      if (step == null) return;
+      if (step._fields.isEmpty) {
+        _move(id, last ? -1 : 1);
+        return;
+      }
+      step.focusEdge(last: last, open: open);
     });
   }
 
@@ -146,11 +156,11 @@ class SheetStep extends StatefulWidget {
   /// Leaves [child] clickable but out of Tab: a photo, a Save button, an
   /// icon. Tab on the sheet goes through what is filled in, and only that.
   static Widget noTab(Widget child) => Focus(
-        canRequestFocus: false,
-        skipTraversal: true,
-        descendantsAreTraversable: false,
-        child: child,
-      );
+    canRequestFocus: false,
+    skipTraversal: true,
+    descendantsAreTraversable: false,
+    child: child,
+  );
 
   @override
   State<SheetStep> createState() => SheetStepState();
@@ -256,7 +266,8 @@ class SheetStepState extends State<SheetStep> {
     final key = event.logicalKey;
     final primary = FocusManager.instance.primaryFocus;
     final enter =
-        key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter;
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter;
 
     if (enter && (keyboard.isControlPressed || keyboard.isMetaPressed)) {
       unawaited(_saveAndAddAnother());
@@ -300,7 +311,8 @@ class SheetStepState extends State<SheetStep> {
   /// Whether [node] has no caret to move (not a text box), or its caret is
   /// at the very start with nothing selected.
   static bool _atStartOrNoCaret(FocusNode? node) {
-    final editable = node?.context?.findAncestorStateOfType<EditableTextState>();
+    final editable = node?.context
+        ?.findAncestorStateOfType<EditableTextState>();
     if (editable == null) return true;
     final selection = editable.textEditingValue.selection;
     return !selection.isValid ||
@@ -402,7 +414,10 @@ Future<StepChoice?> showStepSaveDialog(
           if (blockedReason != null) ...[
             Text(
               'It cannot be saved yet: $blockedReason',
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.dangerText),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.dangerText,
+              ),
             ),
             const SizedBox(height: 10),
           ],

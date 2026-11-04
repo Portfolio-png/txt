@@ -1991,6 +1991,19 @@ void main() {
             reason: 'in the $title title bar',
           );
           expect(tester.getCenter(heading).dx, greaterThan(bar.dx));
+          // Lined up under Item Master's "Part code" chip, right edge on
+          // right edge — not ragged against each bar's own buttons.
+          final partCode = find
+              .ancestor(
+                of: find.text('Part code: '),
+                matching: find.byType(Container),
+              )
+              .first;
+          expect(
+            tester.getTopRight(heading).dx,
+            closeTo(tester.getTopRight(partCode).dx, 1),
+            reason: '$title under the part code',
+          );
         }
         expect(tester.takeException(), isNull);
       },
@@ -2506,6 +2519,7 @@ void main() {
     }
 
     bool focusInRaw() => focusIn(const ValueKey('raw_step'));
+    bool focusInRouting() => focusIn(const ValueKey('routing_step'));
 
     String? focusedField() {
       final context = FocusManager.instance.primaryFocus?.context;
@@ -2769,7 +2783,7 @@ void main() {
     );
 
     testWidgets(
-      'Tab past the last field asks; Save writes the line and goes on',
+      'Tab past the last field asks; Save writes the line and goes on to client',
       (tester) async {
         final repo = _FakeItemRepository([]);
         final sheet = await openNew(tester, repo: repo);
@@ -2792,28 +2806,30 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         expect(repo.created, hasLength(1), reason: 'Save wrote the part');
         expect(
-          focusInRaw(),
-          isTrue,
-          reason: 'and the keyboard went into raw material',
-        );
-        // No vendors master in this build, so no Vendor row: Width is first.
-        expect(
-          focusIn(const ValueKey('sheet-width')),
-          isTrue,
-          reason: 'on its first field, not the form chips or the step bar',
-        );
-        expect(
-          tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
-          isFalse,
-          reason: 'editing',
+          focusedField(),
+          'deal_company',
+          reason: 'and the keyboard went to client',
         );
       },
       variant: desktop,
     );
 
     testWidgets(
-      'Tab goes through raw material page by page, asks, then on to the company',
+      'Tab sequence is item master -> client -> die -> machines -> routing -> raw material',
       (tester) async {
+        AppFlowHooks.createDieFromSheet = (context, draft) async =>
+            const DieCreateOutcome.created(
+              CreatedRecord(id: '31', title: 'Die 31'),
+            );
+        AppFlowHooks.createMachineFromSheet = (context, draft) async =>
+            const MachineCreateOutcome.created(
+              CreatedRecord(id: '41', title: 'Machine 41'),
+            );
+        addTearDown(() {
+          AppFlowHooks.createDieFromSheet = null;
+          AppFlowHooks.createMachineFromSheet = null;
+        });
+
         final repo = _FakeItemRepository([]);
         final sheet = await openNew(tester, repo: repo);
         fillLine(sheet);
@@ -2825,64 +2841,79 @@ void main() {
         await tester.pump();
         await press(tester, LogicalKeyboardKey.tab);
         await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Save part 1?'), findsOneWidget);
+
         await tester.runAsync(() async {
           await tester.sendKeyEvent(LogicalKeyboardKey.enter);
           await Future<void>.delayed(const Duration(milliseconds: 100));
         });
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
-        expect(focusIn(const ValueKey('sheet-width')), isTrue);
 
-        await tester.enterText(
-          find.descendant(
-            of: find.byKey(const ValueKey('sheet-width')),
-            matching: find.byType(EditableText),
-          ),
-          '48',
-        );
-        await tester.pump(const Duration(milliseconds: 50));
+        // 1. After saving item master, Tab goes to Client (NOT raw material)
+        expect(focusedField(), 'deal_company');
 
-        var sawMaterial = false;
+        // 2. Client -> Die Process Master
+        await press(tester, LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 300));
+        if (listOpen()) {
+          await press(tester, LogicalKeyboardKey.tab);
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+        expect(focusedField(), 'deal_quotation');
         for (
           var i = 0;
-          i < 60 && find.text('Save raw material?').evaluate().isEmpty;
+          i < 10 && focusedField() != 'quick-entry-die-type';
           i += 1
         ) {
           await press(tester, LogicalKeyboardKey.tab);
           await tester.pump(const Duration(milliseconds: 200));
-          if (find
-              .byKey(const ValueKey('material-input-kg'))
-              .evaluate()
-              .isNotEmpty) {
-            sawMaterial = true;
-          }
         }
-        expect(
-          sawMaterial,
-          isTrue,
-          reason: 'Tab past Sheet planning turned to Material data',
-        );
-        expect(
-          find.text('Save raw material?'),
-          findsOneWidget,
-          reason: 'past the Review: the prompt, as for any step',
-        );
+        expect(focusedField(), 'quick-entry-die-type');
 
-        await tester.runAsync(() async {
-          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        });
-        await tester.pump();
+        // 3. Die Process Master -> Machines
+        for (
+          var i = 0;
+          i < 15 && focusedField() != 'quick-entry-die-date-in-field';
+          i += 1
+        ) {
+          await press(tester, LogicalKeyboardKey.tab);
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+        expect(focusedField(), 'quick-entry-die-date-in-field');
+
+        // Tab from last die field arrives at Machine Type (dropdown opens on arrival)
+        await press(tester, LogicalKeyboardKey.tab);
         await tester.pump(const Duration(milliseconds: 300));
         expect(
-          repo.updated.last.penPaperBaseline?.sheetWidthInches,
-          48,
-          reason: 'Save wrote the raw sheet on the part',
+          listOpen(),
+          isTrue,
+          reason: 'Machine Type dropdown opens on arrival',
         );
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(focusedField(), 'quick-entry-machine-type-field');
+
+        // 4. Machines -> Routing
+        for (var i = 0; i < 20 && !focusInRouting(); i += 1) {
+          await press(tester, LogicalKeyboardKey.tab);
+          await tester.pump(const Duration(milliseconds: 200));
+        }
         expect(
-          focusedField(),
-          'deal_company',
-          reason: 'and the keyboard went on to the company',
+          focusInRouting(),
+          isTrue,
+          reason: 'Tab reaches routing after machines',
+        );
+
+        // 5. Routing -> Raw material
+        for (var i = 0; i < 15 && !focusInRaw(); i += 1) {
+          await press(tester, LogicalKeyboardKey.tab);
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+        expect(
+          focusInRaw(),
+          isTrue,
+          reason: 'Tab reaches raw material after routing',
         );
       },
       variant: desktop,
@@ -2931,12 +2962,15 @@ void main() {
       await press(tester, LogicalKeyboardKey.tab);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const ValueKey('step_save_dialog')), findsNothing);
-      // Its raw material comes next, closed until its Edit (Enter).
-      expect(focusInRaw(), isTrue);
-      expect(
-        tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
-        isTrue,
-      );
+      for (
+        var i = 0;
+        i < 20 && find.textContaining('End of the sheet').evaluate().isEmpty;
+        i += 1
+      ) {
+        await press(tester, LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.textContaining('End of the sheet'), findsOneWidget);
     }, variant: desktop);
 
     testWidgets('Enter on a saved line opens it for editing', (tester) async {

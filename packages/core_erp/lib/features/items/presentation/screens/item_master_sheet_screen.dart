@@ -170,6 +170,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   ({String label, String? value})? _dieHeading;
   ({String label, String? value})? _machineHeading;
 
+  /// Item Master's "Part code" chip: the die and machine chips line up under
+  /// its right edge.
+  final GlobalKey _partCodeChipKey = GlobalKey(debugLabel: 'part_code_chip');
+
   /// Whether the part's photos are in the right column (raw material rolled
   /// up) rather than big on the part's line.
   bool get _photosInColumn => _photosOn && _rawPanelShown && _rawRolled;
@@ -182,7 +186,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// The raw panel's Next: Tab past a page's last field turns the page.
   bool Function()? _rawNextPage;
 
-  /// Raw material's place in the keyboard's way down the sheet.
+  /// The route's and raw material's places in the keyboard's way down the
+  /// sheet: the route after the machines, raw material last of all.
+  static const Object _routeStep = 'routing';
   static const Object _rawStep = 'raw_material';
 
   /// The part's authored route, which IS its pipeline — Author route is only
@@ -2204,11 +2210,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   /// A die or machine form's heading, on the right of its section's title
-  /// bar, drawn as Item Master's "Part code" chip is.
+  /// bar, drawn as Item Master's "Part code" chip is and lined up under it:
+  /// the bars end differently (the date beside the part code, the section
+  /// buttons beside these), so right-aligning alone left them ragged.
   Widget? _formHeading(String key, ({String label, String? value})? heading) {
     if (heading == null) return null;
-    return Align(
-      alignment: Alignment.centerRight,
+    return _AlignRightTo(
+      anchor: _partCodeChipKey,
       child: _codeChip(
         heading.label,
         heading.value,
@@ -2739,8 +2747,27 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           onMachinesChanged: _setMachines,
         ),
         const SizedBox(height: 20),
-        // Routing is laid out with the mouse; Tab ends at the machine form.
-        SheetStep.noTab(_routing()),
+        SheetStep(
+          key: const ValueKey<String>('routing_step'),
+          flow: _flow,
+          id: _routeStep,
+          actions: SheetStepActions(
+            title: () => 'Save the route?',
+            isDirty: () => _routeDirty,
+            // The panel's own Save; true when nothing is left unsaved.
+            save: () async =>
+                await _routePanelKey.currentState?.save() ?? true,
+            discard: () {
+              if (_showRoutePanel) {
+                setState(() {
+                  _showRoutePanel = false;
+                  _routeDirty = false;
+                });
+              }
+            },
+          ),
+          child: _routing(),
+        ),
       ],
     );
   }
@@ -2810,6 +2837,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         ? null
         : _controller.groupItemController.draft.get(column.id)?.textValue;
     return Container(
+      key: _partCodeChipKey,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: SoftErpTheme.sectionSurface,
@@ -2886,11 +2914,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     reveal: (section) {
       if (section == 'raw') {
         // Raw material is open to whoever arrives.
-        if (_rawRolled) setState(() => _rawRolled = false);
-        return;
+        if (_rawRolled || !_rawPanelShown) {
+          setState(() {
+            _rawPanelOpen = true;
+            _rawRolled = false;
+          });
+          return true;
+        }
+        return false;
       }
-      if (_collapsed.contains(section))
+      if (_collapsed.contains(section)) {
         setState(() => _collapsed.remove(section));
+        return true;
+      }
+      return false;
     },
     onEnd: () => _toast('End of the sheet — Ctrl+S saves everything.'),
   );
@@ -2901,26 +2938,26 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       switch (id) {
         case 'group_item':
           final sheet = _controller.groupItemController;
-          for (final (at, draft) in sheet.drafts.indexed) {
+          for (final draft in sheet.drafts) {
             out.add((id: PartRowsForm.stepId(draft.rowKey), section: id));
-            // Raw material is the part under the cursor's: from its line the
-            // keyboard goes into the panel, then on down the sheet.
-            if (at == sheet.row) out.add((id: _rawStep, section: 'raw'));
           }
         case 'client_vendor':
           if (_controller.isExternal) {
             out.add((id: DealPeopleForm.companyStep, section: id));
-            for (final draft in _controller.peopleController.drafts) {
-              out.add((
-                id: DealPeopleForm.personStep(draft.rowKey),
-                section: id,
-              ));
+            if (_controller.dealPartyId != null) {
+              for (final draft in _controller.peopleController.drafts) {
+                out.add((
+                  id: DealPeopleForm.personStep(draft.rowKey),
+                  section: id,
+                ));
+              }
             }
           }
         case 'die_master':
           out.add((id: PartDieSection.step, section: id));
         case 'machine_master':
           out.add((id: PartMachineSection.step, section: id));
+          out.add((id: _routeStep, section: id));
       }
       for (final kid in _childrenOf(id)) {
         visit(kid);
@@ -2928,6 +2965,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
 
     visit('group_item');
+    out.add((id: _rawStep, section: 'raw'));
     return out;
   }
 
@@ -3275,8 +3313,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// One row's Save: write it, carry the held dies and machines and the
   /// nesting with it, then close it until its Edit.
-  /// [openRaw]: once saved, raw material opens for it, editing, with the
-  /// keyboard in it — the part is filled in, its sheet comes next.
+  /// [openRaw]: once saved, its raw material is set to editing, ready for
+  /// when the keyboard gets there — last, after the client, dies, machines
+  /// and route. The keyboard itself goes on to the client.
   Future<void> _saveRow(int row, {bool openRaw = true}) async {
     final sheet = _controller.groupItemController;
     if (row < 0 || row >= sheet.rowCount) return;
@@ -3315,15 +3354,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         _controller.savedRows.contains(at) &&
         !sheet.draftAt(at).isDirtySinceSave;
     if (savedNow) sheet.setRowLocked(at, true);
-    // The part is filled in and saved: raw material opens, editing, with the
-    // keyboard in it.
     final rawFor = openRaw && savedNow && at == sheet.row
         ? sheet.draftAt(at).entityId
         : null;
     setState(() {
       if (rawFor != null) {
-        _rawPanelOpen = true;
-        _rawRolled = false;
         if (_rawPartId == rawFor) {
           _rawEditing = true;
         } else {
@@ -3332,12 +3367,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       }
     });
     _toast(error ?? _controller.statusBarMessage, isError: error != null);
-    if (rawFor != null) {
-      // Drawn for the part first: a part saved for the first time had no
-      // raw step for the keyboard to move into until now.
-      await WidgetsBinding.instance.endOfFrame;
-      if (mounted) _flow.focusStep(_rawStep);
-    }
   }
 
   /// The deal line's Save on a saved part: the deal travels with its part's
@@ -4042,6 +4071,54 @@ class _KindTile extends StatelessWidget {
 /// The date and time in the Item Master heading. Given a [date], it is the
 /// part's stamp; without one it is the clock, moved on each minute, for a part
 /// the save has not stamped yet.
+/// [child] at the right of the room it is given, moved left as far as it
+/// takes for its right edge to sit under [anchor]'s. Never moved right: past
+/// the room's end are the section's own buttons. While the anchor is not on
+/// screen (scrolled away) it keeps where it last lined up.
+class _AlignRightTo extends StatefulWidget {
+  const _AlignRightTo({required this.anchor, required this.child});
+
+  final GlobalKey anchor;
+  final Widget child;
+
+  @override
+  State<_AlignRightTo> createState() => _AlignRightToState();
+}
+
+class _AlignRightToState extends State<_AlignRightTo> {
+  double _inset = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    // Measured after every layout — a resize, a section nested deeper — since
+    // both edges are only known once laid out.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: EdgeInsets.only(right: _inset),
+            child: widget.child,
+          ),
+        );
+      },
+    );
+  }
+
+  void _measure() {
+    if (!mounted) return;
+    final mine = context.findRenderObject();
+    final anchor = widget.anchor.currentContext?.findRenderObject();
+    if (mine is! RenderBox || !mine.hasSize) return;
+    if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
+    final myRight = mine.localToGlobal(Offset(mine.size.width, 0)).dx;
+    final anchorRight = anchor.localToGlobal(Offset(anchor.size.width, 0)).dx;
+    final inset = (myRight - anchorRight).clamp(0.0, mine.size.width);
+    if ((inset - _inset).abs() > 0.5) setState(() => _inset = inset);
+  }
+}
+
 class _HeadingStamp extends StatefulWidget {
   const _HeadingStamp({required String this.date, this.time});
   const _HeadingStamp.now() : date = null, time = null;

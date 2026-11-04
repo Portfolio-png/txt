@@ -103,33 +103,11 @@ void main() {
     await _tabToPromptAndSave(tester, 'Save part 1?');
     await pumpUntil(tester, find.textContaining('SAVED #'), reason: 'the part should save');
 
-    // --- raw material: open, editing, with the keyboard in it ------------------
-    await pumpUntil(
-      tester,
-      find.byKey(const ValueKey<String>('master-data-save')),
-      reason: 'the saved part\'s raw material should open for editing',
-    );
-    expect(find.byKey(const ValueKey<String>('part_showcase_photo_0')), findsOneWidget,
-        reason: 'and its photo stays on its line');
-    // Tab walks its pages — Sheet planning, Material data, Review — and past
-    // the Review asks to save it when anything changed; Enter saves.
-    var askedRaw = false;
-    for (var i = 0; i < 80 && _focused() != 'deal_company'; i += 1) {
-      if (find.text('Save raw material?').evaluate().isNotEmpty) {
-        askedRaw = true;
-        await _key(tester, LogicalKeyboardKey.enter);
-        await pumpUntilGone(tester, find.text('Save raw material?'));
-        continue;
-      }
-      await _key(tester, LogicalKeyboardKey.tab);
-    }
-    debugPrint('E2E keyboard: raw material asked to save: $askedRaw');
-
     // --- the company ---------------------------------------------------------
     await pumpUntil(
       tester,
       _search(),
-      reason: 'after raw material, Tab goes on to the company, its list open',
+      reason: 'after the part, Tab goes on to the company, its list open',
     );
     await _pickByTyping(tester, _company);
     expect(_focused(), 'deal_company');
