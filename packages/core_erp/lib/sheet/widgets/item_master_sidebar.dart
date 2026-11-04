@@ -180,7 +180,7 @@ class ItemMasterSidebar extends StatelessWidget {
           ),
           _buildSectionNavTile(
             id: 'machine_master',
-            title: 'Machines & Routing',
+            title: 'Machines',
             subtitle: 'Shop floor routing & specs',
             icon: Icons.settings_suggest_rounded,
             isSelected: controller.activeSection == 'machine_master',

@@ -256,6 +256,45 @@ SheetController _controllerWith({
   counters: counters,
 );
 
+/// A pick-or-type field ([fieldKey]): its controller's text.
+String _pickText(WidgetTester tester, String fieldKey) => tester
+    .widget<PickOrTypeField>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey<String>(fieldKey)),
+            matching: find.byType(PickOrTypeField),
+          )
+          .first,
+    )
+    .controller
+    .text;
+
+/// Types [value] into a pick-or-type field the way a person does: open it,
+/// type in its search, take "Use".
+Future<void> _pickOrType(
+  WidgetTester tester,
+  String fieldKey,
+  String value,
+) async {
+  // Pumps, not pumpAndSettle: the heading's clock never lets this screen
+  // settle.
+  Future<void> settle() async {
+    for (var i = 0; i < 6; i += 1) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
+  await tester.ensureVisible(find.byKey(ValueKey<String>(fieldKey)));
+  await tester.pump();
+  await tester.tap(find.byKey(ValueKey<String>(fieldKey)));
+  await settle();
+  await tester.enterText(find.byType(TextField).last, value);
+  await settle();
+  final use = find.text('Use "$value"');
+  await tester.tap(use.evaluate().isNotEmpty ? use : find.text(value).last);
+  await settle();
+}
+
 void main() {
   tearDown(SittingScope.reset);
 
@@ -525,7 +564,7 @@ void main() {
         'Item Master',
         'Developed For',
         'Die Process Master',
-        'Machines & Routing',
+        'Machines',
       ]) {
         expect(
           find.text(section),
@@ -1515,6 +1554,116 @@ void main() {
       expect(dies().staged.single.toolCode, 'D1');
     });
 
+    testWidgets('the die\'s type fills the machine\'s Die Type, never over a typed one',
+        (tester) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
+      AppFlowHooks.createMachineFromSheet = (context, draft) async =>
+          const MachineCreateOutcome.created(CreatedRecord(id: '41', title: 'M'));
+      addTearDown(() {
+        AppFlowHooks.createDieFromSheet = null;
+        AppFlowHooks.createMachineFromSheet = null;
+      });
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      Finder dieChip(String label) => find.descendant(
+        of: find.byType(PartDieSection),
+        matching: find.text(label),
+      );
+      String machineDieType() =>
+          _pickText(tester, 'quick-entry-machine-feed-field');
+
+      await tester.tap(dieChip('Cutting').first);
+      await tester.pump();
+      await tester.pump();
+      expect(machineDieType(), 'Cutting', reason: 'picked on the die, filled on the machine');
+
+      await tester.tap(dieChip('Bending').first);
+      await tester.pump();
+      await tester.pump();
+      expect(machineDieType(), 'Bending', reason: 'and follows it while untouched');
+
+      // Typed on the machine: the die no longer writes over it.
+      await _pickOrType(tester, 'quick-entry-machine-feed-field', 'Progressive');
+      expect(machineDieType(), 'Progressive');
+      await tester.tap(dieChip('Riveting').first);
+      await tester.pump();
+      await tester.pump();
+      expect(machineDieType(), 'Progressive');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a die\'s Cavity sits beside No. of Sets and is sent with it',
+        (tester) async {
+      DieSheetDraft? sent;
+      AppFlowHooks.createDieFromSheet = (context, draft) async {
+        sent = draft;
+        return const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
+      };
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      final sets = tester.getRect(find.byKey(const ValueKey('quick-entry-die-sets-field')));
+      final cavity = tester.getRect(find.byKey(const ValueKey('quick-entry-die-cavity-field')));
+      expect(cavity.top, closeTo(sets.top, 1), reason: 'on the same line');
+      expect(cavity.left, greaterThan(sets.right), reason: 'beside it, after it');
+
+      await tester.tap(
+        find.descendant(of: find.byType(PartDieSection), matching: find.text('Cutting')).first,
+      );
+      await tester.pump();
+      await _pickOrType(tester, 'quick-entry-die-sets-field', '2');
+      await _pickOrType(tester, 'quick-entry-die-cavity-field', '4');
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('quick-entry-add-die')));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      expect(sent, isNotNull, reason: 'the die was sent');
+      expect(sent!.noOfSet, 2);
+      expect(sent!.numberOfCavities, 4);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Routing is its own section, nested under Machines, and stays there',
+        (tester) async {
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+      // The cards, not their fold buttons: Routing has no drag handle, so
+      // its button sits further left in its bar.
+      Rect card(String id) => tester.getRect(
+        find
+            .ancestor(
+              of: find.byKey(ValueKey<String>('section_toggle_$id')),
+              matching: find.byWidgetPredicate(
+                (w) => w is Container && w.key is GlobalKey,
+              ),
+            )
+            .first,
+      );
+      final machines = card('machine_master');
+      final routing = card('routing');
+      expect(routing.top, greaterThan(machines.top), reason: 'below the machines');
+      expect(routing.left, greaterThan(machines.left), reason: 'indented under them');
+      expect(find.byKey(const ValueKey('section_drag_routing')), findsNothing,
+          reason: 'not moved about: it is the machines\' own');
+      expect(find.byKey(const ValueKey('section_drag_machine_master')), findsOneWidget);
+      expect(find.text('Routing'), findsWidgets);
+      expect(find.byKey(const ValueKey('routing_step')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a held die made but not attached stays held, and says so', (
       tester,
     ) async {
@@ -1959,7 +2108,7 @@ void main() {
           ),
           (
             'machine_heading',
-            'Machines & Routing',
+            'Machines',
             'machine_master',
             'New machine for part code: ',
           ),
@@ -2324,7 +2473,7 @@ void main() {
       'Author route opens before a save, and says the part comes next',
       (tester) async {
         await _pumpScreen(tester);
-        await tester.tap(find.text('Machines & Routing').first);
+        await tester.tap(find.text('Machines').first);
         await tester.pump();
 
         expect(
@@ -3419,7 +3568,7 @@ void main() {
           'Item Master',
           'Developed For',
           'Die Process Master',
-          'Machines & Routing',
+          'Machines',
         ]) {
           await tester.tap(find.text(section).first);
           await tester.pump();

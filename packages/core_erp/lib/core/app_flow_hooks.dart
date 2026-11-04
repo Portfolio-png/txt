@@ -47,6 +47,7 @@ class DieSheetDraft {
     this.linerSizeNm,
     this.linerSizeUnit = 'mm',
     this.noOfSet,
+    this.numberOfCavities,
     this.storeArea = '',
     this.rackNo = '',
     this.partCode = '',
@@ -87,6 +88,9 @@ class DieSheetDraft {
   /// How that size was read. Display only; it never enters arithmetic.
   final String linerSizeUnit;
   final int? noOfSet;
+
+  /// Pieces the die makes per stroke.
+  final int? numberOfCavities;
   final String storeArea;
   final String rackNo;
 
@@ -108,6 +112,7 @@ class DieSheetDraft {
     'linerSizeNm': linerSizeNm,
     'linerSizeUnit': linerSizeUnit,
     'noOfSet': noOfSet,
+    'numberOfCavities': numberOfCavities,
     'storeArea': storeArea,
     'rackNo': rackNo,
     'partCode': partCode,
@@ -286,6 +291,7 @@ class DieSheetSuggestions {
     this.storeAreas = const <String>[],
     this.rackNos = const <String>[],
     this.noOfSets = const <String>[],
+    this.cavities = const <String>[],
     this.linerSizesNm = const <int>[],
     this.typedTypes = const <({String slug, String label})>[],
     this.toolCodes = const <String>{},
@@ -295,6 +301,7 @@ class DieSheetSuggestions {
   final List<String> storeAreas;
   final List<String> rackNos;
   final List<String> noOfSets;
+  final List<String> cavities;
 
   /// Liner sizes in whole nanometres; the sheet shows them in whichever unit
   /// is picked.

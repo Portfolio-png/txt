@@ -442,6 +442,7 @@ class ItemDieLink {
     this.linerSizeNm,
     this.linerSizeUnit = 'mm',
     this.noOfSet,
+    this.numberOfCavities,
     this.storeArea = '',
     this.rackNo = '',
   });
@@ -492,6 +493,9 @@ class ItemDieLink {
   final int? linerSizeNm;
   final String linerSizeUnit;
   final int? noOfSet;
+
+  /// Pieces the die makes per stroke.
+  final int? numberOfCavities;
   final String storeArea;
   final String rackNo;
 

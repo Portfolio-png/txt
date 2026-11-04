@@ -73,14 +73,14 @@ void main() {
       reason: 'the saved part should carry the id the server assigned',
     );
 
-    // Routing is in the Machines & Routing section. Every section is on one
-    // page now, nested like a file tree; the rail (the first match — the
+    // Routing is its own section, under Machines. Every section is on one
+    // page, nested like a file tree; the rail (the first match — the
     // section's own heading is the second) scrolls to it.
-    await tester.tap(find.text('Machines & Routing').first);
+    await tester.tap(find.text('Routing').first);
     await pumpUntil(
       tester,
       find.text('Author route'),
-      reason: 'the Machines & Routing section should be open',
+      reason: 'the Routing section should be open',
     );
     await tester.pump();
     await tester.ensureVisible(find.text('Author route'));

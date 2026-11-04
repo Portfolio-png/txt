@@ -343,7 +343,7 @@ void main() {
 
     // --- route -----------------------------------------------------------------
     await _step('author the route', () async {
-      await tester.tap(find.text('Machines & Routing').first);
+      await tester.tap(find.text('Routing').first);
       await pumpUntil(tester, find.text('Author route'), reason: 'routing should open');
       await _tapVisible(tester, find.text('Author route'));
       await pumpUntil(
@@ -482,7 +482,8 @@ void main() {
     for (final (section, name) in const [
       ('Developed For', 'sheet_client'),
       ('Die Process Master', 'sheet_die'),
-      ('Machines & Routing', 'sheet_machine'),
+      ('Machines', 'sheet_machine'),
+      ('Routing', 'sheet_routing'),
     ]) {
       await tester.tap(find.text(section).first);
       await tester.pump(const Duration(milliseconds: 600));

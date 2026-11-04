@@ -104,6 +104,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     'client_vendor': GlobalKey(),
     'die_master': GlobalKey(),
     'machine_master': GlobalKey(),
+    'routing': GlobalKey(),
   };
 
   bool _showRoutePanel = false;
@@ -170,6 +171,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// D-12"), shown in their sections' title bars.
   ({String label, String? value})? _dieHeading;
   ({String label, String? value})? _machineHeading;
+
+  /// The die form's type, last one picked or typed: the machine form's Die
+  /// Type is filled with it. Kept when the die form clears after a save, so
+  /// the machine typed next still reads it.
+  String _dieType = '';
 
   /// Item Master's "Part code" chip: the die and machine chips start where
   /// it starts.
@@ -250,9 +256,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     ),
     SheetSection(
       id: 'machine_master',
-      title: 'Machines & Routing',
-      subtitle: 'Shop floor routing & specs',
+      title: 'Machines',
+      subtitle: 'Shop floor machines & specs',
       icon: Icons.settings_suggest_rounded,
+    ),
+    SheetSection(
+      id: 'routing',
+      title: 'Routing',
+      subtitle: 'The stages the part goes through',
+      icon: Icons.route_rounded,
     ),
   ];
 
@@ -1684,6 +1696,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           _visible(child) &&
           _shownParentOf(child) == id)
         child,
+    // Routing is the machines' own: always directly under them, after
+    // whatever else is nested there, and wherever they are moved. It is not
+    // part of the stored nesting (the server keeps only the four record
+    // sections), so it is never dragged and nothing is nested under it.
+    if (id == 'machine_master') 'routing',
   ];
 
   /// [id] and everything nested under it.
@@ -1864,6 +1881,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// Every section is somewhere another can be dropped — "nest under this".
   Widget _dropTarget(String id, Widget child) {
+    if (id == 'routing') return child;
     return DragTarget<String>(
       onWillAcceptWithDetails: (details) => _canNest(details.data, id),
       onAcceptWithDetails: (details) => _nest(details.data, id),
@@ -2051,13 +2069,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               true,
             ),
         ];
-        final route = _route;
-        if (machines.isEmpty && route == null)
-          return const [(null, 'No machines yet')];
+        if (machines.isEmpty) return const [(null, 'No machines yet')];
         for (final (machine, held) in machines) {
           out.addAll(machineLines(machine, held: held));
         }
-        if (route != null) add('Route', routeLine(route));
+      case 'routing':
+        final route = _route;
+        if (route == null) return const [(null, 'No route yet')];
+        add('Route', routeLine(route));
       default:
         final sheet = _controller.groupItemController;
         final nameColumn =
@@ -2095,7 +2114,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// The header controls of a section: move it, edit it, clear it.
   List<Widget> _sectionActions(String id, String heading) {
-    final root = id == 'group_item';
+    // The part, and Routing (always under the machines), are not moved or
+    // cleared from their bars.
+    final root = id == 'group_item' || id == 'routing';
     final above = root ? null : _siblingAbove(id);
     final canOutdent = !root && (_parentOf[id] ?? 'group_item') != 'group_item';
     Widget action({
@@ -2174,14 +2195,22 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         return _section(
           id: 'machine_master',
           icon: Icons.settings_suggest_rounded,
-          heading: 'Machines & Routing',
+          heading: 'Machines',
           collapsed: collapsed,
           trailing: _formHeading(
             'machine_heading',
             'machine_master',
             _machineHeading,
           ),
-          child: _machinesAndRouting(),
+          child: _machineSheet(),
+        );
+      case 'routing':
+        return _section(
+          id: 'routing',
+          icon: Icons.route_rounded,
+          heading: 'Routing',
+          collapsed: collapsed,
+          child: _routeSheet(),
         );
       default:
         return _section(
@@ -2689,6 +2718,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // where it stands alone, in the quick-entry dialog.
       framed: false,
       onHeading: (text) => setState(() => _dieHeading = text),
+      onTypeChanged: (type) {
+        if (type.isNotEmpty && type != _dieType) {
+          setState(() => _dieType = type);
+        }
+      },
       lineKey: _cursorRowKey,
       flow: _flow,
       onDirtyChanged: (dirty) {
@@ -2712,54 +2746,49 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
-  Widget _machinesAndRouting() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        PartMachineSection(
-          framed: false,
-          onHeading: (text) => setState(() => _machineHeading = text),
-          lineKey: _cursorRowKey,
-          flow: _flow,
-          onDirtyChanged: (dirty) {
-            if (mounted && dirty != _machineTyping) {
-              setState(() => _machineTyping = dirty);
-            }
-          },
-          part: _livePart,
-          partCode: _partCodeNow,
-          partLabel: _partLabelNow,
-          busy: _controller.isSavingNow,
-          staged: _stagedMachines,
-          onStage: (draft) => setState(() => _stagedMachines.add(draft)),
-          onUnstage: (index) => setState(() => _stagedMachines.removeAt(index)),
-          onMachinesChanged: _setMachines,
-        ),
-        const SizedBox(height: 20),
-        SheetStep(
-          key: const ValueKey<String>('routing_step'),
-          flow: _flow,
-          id: _routeStep,
-          actions: SheetStepActions(
-            title: () => 'Save the route?',
-            isDirty: () => _routeDirty,
-            // The panel's own Save; true when nothing is left unsaved.
-            save: () async =>
-                await _routePanelKey.currentState?.save() ?? true,
-            discard: () {
-              if (_showRoutePanel) {
-                setState(() {
-                  _showRoutePanel = false;
-                  _routeDirty = false;
-                });
-              }
-            },
-          ),
-          child: _routing(),
-        ),
-      ],
-    );
-  }
+  Widget _machineSheet() => PartMachineSection(
+    framed: false,
+    onHeading: (text) => setState(() => _machineHeading = text),
+    dieType: _dieType,
+    lineKey: _cursorRowKey,
+    flow: _flow,
+    onDirtyChanged: (dirty) {
+      if (mounted && dirty != _machineTyping) {
+        setState(() => _machineTyping = dirty);
+      }
+    },
+    part: _livePart,
+    partCode: _partCodeNow,
+    partLabel: _partLabelNow,
+    busy: _controller.isSavingNow,
+    staged: _stagedMachines,
+    onStage: (draft) => setState(() => _stagedMachines.add(draft)),
+    onUnstage: (index) => setState(() => _stagedMachines.removeAt(index)),
+    onMachinesChanged: _setMachines,
+  );
+
+  /// The route as a keyboard step: past it, "Save the route?" when stages
+  /// were laid out and not saved.
+  Widget _routeSheet() => SheetStep(
+    key: const ValueKey<String>('routing_step'),
+    flow: _flow,
+    id: _routeStep,
+    actions: SheetStepActions(
+      title: () => 'Save the route?',
+      isDirty: () => _routeDirty,
+      // The panel's own Save; true when nothing is left unsaved.
+      save: () async => await _routePanelKey.currentState?.save() ?? true,
+      discard: () {
+        if (_showRoutePanel) {
+          setState(() {
+            _showRoutePanel = false;
+            _routeDirty = false;
+          });
+        }
+      },
+    ),
+    child: _routing(),
+  );
 
   /// Dies and machines are written as two calls, not one.
   ///
@@ -2946,6 +2975,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           out.add((id: PartDieSection.step, section: id));
         case 'machine_master':
           out.add((id: PartMachineSection.step, section: id));
+        case 'routing':
           out.add((id: _routeStep, section: id));
       }
       for (final kid in _childrenOf(id)) {
@@ -3577,7 +3607,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               children: [
                 // The part itself is the root and stays put; everything else can
                 // be dragged onto another section to nest under it.
-                if (id != 'group_item')
+                // Nor Routing, which always sits under the machines.
+                if (id != 'group_item' && id != 'routing')
                   Draggable<String>(
                     data: id,
                     feedback: Material(

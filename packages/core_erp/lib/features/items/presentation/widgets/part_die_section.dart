@@ -58,6 +58,7 @@ class PartDieSection extends StatefulWidget {
     required this.onDiesChanged,
     this.framed = true,
     this.onHeading,
+    this.onTypeChanged,
     this.heldSaveBuilder,
     this.onDirtyChanged,
     this.flow,
@@ -88,6 +89,10 @@ class PartDieSection extends StatefulWidget {
   /// SADP48", "Editing die: D-12". Set, the section stops drawing it
   /// itself and reports it here whenever it changes.
   final ValueChanged<({String label, String? value})>? onHeading;
+
+  /// The type picked or typed on the form ("Cutting", "Deep Drawing"), each
+  /// time it changes — the item sheet fills the machine's Die Type with it.
+  final ValueChanged<String>? onTypeChanged;
 
   /// The sheet line this is typed for. A different line is a different part
   /// — saved or not — so what was typed for the last one is cleared.
@@ -134,6 +139,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   final TextEditingController _madeByController = TextEditingController();
   final TextEditingController _linerController = TextEditingController();
   final TextEditingController _setsController = TextEditingController();
+  final TextEditingController _cavityController = TextEditingController();
   final TextEditingController _storeAreaController = TextEditingController();
   final TextEditingController _rackController = TextEditingController();
 
@@ -184,6 +190,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     _madeByController.text,
     _linerController.text,
     _setsController.text,
+    _cavityController.text,
     _storeAreaController.text,
     _rackController.text,
     _type?.slug ?? '',
@@ -212,6 +219,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   bool get isDirty =>
       _linerController.text.trim().isNotEmpty ||
       _setsController.text.trim().isNotEmpty ||
+      _cavityController.text.trim().isNotEmpty ||
       _editingDieId != null ||
       _editingStagedIndex != null ||
       _unlinkedDieId != null;
@@ -231,6 +239,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     super.initState();
     _linerController.addListener(_reportDirty);
     _setsController.addListener(_reportDirty);
+    _cavityController.addListener(_reportDirty);
     _clean = _snapshot();
 
     // The master is lazy and nothing else on this screen fetches it, so an
@@ -301,6 +310,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     _madeByController.dispose();
     _linerController.dispose();
     _setsController.dispose();
+    _cavityController.dispose();
     _storeAreaController.dispose();
     _rackController.dispose();
     super.dispose();
@@ -348,6 +358,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       linerSizeNm: sent.linerSizeNm,
       linerSizeUnit: sent.linerSizeUnit,
       noOfSet: sent.noOfSet,
+      numberOfCavities: sent.numberOfCavities,
       storeArea: sent.storeArea,
       rackNo: sent.rackNo,
     );
@@ -369,6 +380,7 @@ class _PartDieSectionState extends State<PartDieSection> {
               fresh.dieMakerId == mine.dieMakerId &&
               fresh.linerSizeNm == mine.linerSizeNm &&
               fresh.noOfSet == mine.noOfSet &&
+              fresh.numberOfCavities == mine.numberOfCavities &&
               fresh.storeArea == mine.storeArea &&
               fresh.rackNo == mine.rackNo &&
               fresh.poAt == mine.poAt &&
@@ -392,6 +404,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     _codePinned = false;
     _linerController.clear();
     _setsController.clear();
+    _cavityController.clear();
     if (!keepRepeating) {
       _type = null;
       _dieMakerId = null;
@@ -428,6 +441,7 @@ class _PartDieSectionState extends State<PartDieSection> {
         draft.linerSizeUnit,
       );
       _setsController.text = draft.noOfSet?.toString() ?? '';
+      _cavityController.text = draft.numberOfCavities?.toString() ?? '';
       _storeAreaController.text = draft.storeArea;
       _rackController.text = draft.rackNo;
       _poAt = draft.poAt;
@@ -456,6 +470,7 @@ class _PartDieSectionState extends State<PartDieSection> {
         die.linerSizeUnit,
       );
       _setsController.text = die.noOfSet?.toString() ?? '';
+      _cavityController.text = die.numberOfCavities?.toString() ?? '';
       _storeAreaController.text = die.storeArea;
       _rackController.text = die.rackNo;
       _poAt = die.poAt;
@@ -530,8 +545,12 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// parse to null and replace the stored count.
   String? get _setsProblem {
     final text = _setsController.text.trim();
-    return text.isNotEmpty && SheetEngine.parseWhole(text) == null
-        ? 'No. of sets takes a whole number.'
+    if (text.isNotEmpty && SheetEngine.parseWhole(text) == null) {
+      return 'No. of sets takes a whole number.';
+    }
+    final cavity = _cavityController.text.trim();
+    return cavity.isNotEmpty && SheetEngine.parseWhole(cavity) == null
+        ? 'Cavity takes a whole number.'
         : null;
   }
 
@@ -572,6 +591,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       linerSizeNm: liner.nanometres,
       linerSizeUnit: _linerUnit,
       noOfSet: SheetEngine.parseWhole(_setsController.text),
+      numberOfCavities: SheetEngine.parseWhole(_cavityController.text),
       storeArea: _storeAreaController.text.trim(),
       rackNo: _rackController.text.trim(),
       partCode: partCode,
@@ -644,6 +664,7 @@ class _PartDieSectionState extends State<PartDieSection> {
         linerSizeNm: liner.nanometres,
         linerSizeUnit: _linerUnit,
         noOfSet: SheetEngine.parseWhole(_setsController.text),
+        numberOfCavities: SheetEngine.parseWhole(_cavityController.text),
         storeArea: _storeAreaController.text.trim(),
         rackNo: _rackController.text.trim(),
         partCode: part.partCode,
@@ -747,6 +768,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   @override
   Widget build(BuildContext context) {
     _reportDirty();
+    _reportType();
     final part = widget.part;
     // Open with no part: everything Add does is held until the part is made.
     final enabled = !widget.busy && !_saving;
@@ -866,13 +888,29 @@ class _PartDieSectionState extends State<PartDieSection> {
                           ),
                         ),
                       ),
-                      _pick(
-                        slug: 'sets',
-                        label: 'No. of Sets',
-                        controller: _setsController,
-                        options: _suggestions.noOfSets,
-                        enabled: enabled,
-                        numeric: true,
+                      // How many sets, and the pieces each makes a stroke: one pair.
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _pick(
+                            slug: 'sets',
+                            label: 'No. of Sets',
+                            controller: _setsController,
+                            options: _suggestions.noOfSets,
+                            enabled: enabled,
+                            numeric: true,
+                          ),
+                          const SizedBox(width: 10),
+                          _pick(
+                            slug: 'cavity',
+                            label: 'Cavity',
+                            controller: _cavityController,
+                            options: _suggestions.cavities,
+                            enabled: enabled,
+                            numeric: true,
+                          ),
+                        ],
                       ),
                       // Where the die is kept reads as one place — area, then
                       // rack — so the two never wrap apart.
@@ -1029,6 +1067,20 @@ class _PartDieSectionState extends State<PartDieSection> {
   }
 
   ({String label, String? value})? _reportedHeading;
+
+  String? _reportedType;
+
+  /// Hands the type to [PartDieSection.onTypeChanged] once it has changed —
+  /// after the frame, since the host rebuilds on it.
+  void _reportType() {
+    final report = widget.onTypeChanged;
+    final type = _type?.label ?? '';
+    if (report == null || type == _reportedType) return;
+    _reportedType = type;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) report(type);
+    });
+  }
 
   /// Hands [heading] to [PartDieSection.onHeading] once it has changed — after
   /// the frame, since the host's title bar is already built by then.
@@ -1546,7 +1598,11 @@ class _DieRow extends StatelessWidget {
                   die.noOfSet == null ? '' : '${die.noOfSet}',
                   flex: _kDieFlex[6],
                 ),
-                _DieCell(die.whereKept, flex: _kDieFlex[7]),
+                _DieCell(
+                  die.numberOfCavities == null ? '' : '${die.numberOfCavities}',
+                  flex: _kDieFlex[7],
+                ),
+                _DieCell(die.whereKept, flex: _kDieFlex[8]),
                 if (showStatus)
                   SizedBox(
                     width: _kStatusWidth,
@@ -1633,7 +1689,7 @@ class _DieRow extends StatelessWidget {
 /// Column weights shared by the header strip and every row, so they line up.
 /// The last column is the status, at a fixed width: a held row draws the part's
 /// Save part there, which a flex share could not be trusted to fit.
-const List<int> _kDieFlex = [26, 12, 14, 11, 11, 11, 8, 12];
+const List<int> _kDieFlex = [26, 12, 14, 11, 11, 11, 8, 8, 12];
 const double _kStatusWidth = 150;
 const List<String> _kDieHeads = [
   'Code',
@@ -1646,6 +1702,7 @@ const List<String> _kDieHeads = [
   'In',
   'Liner',
   'Sets',
+  'Cavity',
   'Kept',
 ];
 
@@ -1854,6 +1911,7 @@ ItemDieLink heldDieLink(DieSheetDraft draft) => ItemDieLink(
   linerSizeNm: draft.linerSizeNm,
   linerSizeUnit: draft.linerSizeUnit,
   noOfSet: draft.noOfSet,
+  numberOfCavities: draft.numberOfCavities,
   storeArea: draft.storeArea,
   rackNo: draft.rackNo,
 );

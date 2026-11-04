@@ -55,6 +55,7 @@ class PartMachineSection extends StatefulWidget {
     required this.onMachinesChanged,
     this.framed = true,
     this.onHeading,
+    this.dieType = '',
     this.onDirtyChanged,
     this.flow,
   });
@@ -79,6 +80,12 @@ class PartMachineSection extends StatefulWidget {
   /// SADP48", "Editing machine: D-12". Set, the section stops drawing it
   /// itself and reports it here whenever it changes.
   final ValueChanged<({String label, String? value})>? onHeading;
+
+  /// The die form's type ("Cutting", or one typed in), filled into Die Type:
+  /// the die this machine runs is the one just described above it. Only
+  /// fills an empty Die Type, or one still holding what was filled before —
+  /// never a word somebody typed there themselves.
+  final String dieType;
 
   /// The sheet line this is typed for. A different line is a different part
   /// — saved or not — so what was typed for the last one is cleared.
@@ -149,6 +156,23 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// it instead of making a second one.
   String? _unlinkedMachineId;
 
+  /// What was last filled into Die Type from the die form.
+  String _filledDieType = '';
+
+  /// Fills Die Type from [PartMachineSection.dieType]; see there.
+  void _fillDieType() {
+    final wanted = widget.dieType.trim();
+    if (wanted.isEmpty) return;
+    final now = _feedTypeController.text.trim();
+    if (now.isNotEmpty && now != _filledDieType) return;
+    // Filling is not typing: a clean form stays clean, so it is not taken
+    // for unsaved work.
+    final wasClean = _clean == null || _snapshot() == _clean;
+    _feedTypeController.text = wanted;
+    _filledDieType = wanted;
+    if (wasClean) _clean = _snapshot();
+  }
+
   /// The form as it stood when last cleared — what "typed since" means for
   /// the keyboard's save prompt. The number counts only once typed over.
   String? _clean;
@@ -187,6 +211,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _capacityUnit = 'Ton';
     _rederiveNo();
     _clean = _snapshot();
+    _fillDieType();
   }
 
   /// What the host was last told.
@@ -225,12 +250,14 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _strokesController.addListener(_reportDirty);
     _capacityController.addListener(_reportDirty);
     _clean = _snapshot();
+    _fillDieType();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSuggestions());
   }
 
   @override
   void didUpdateWidget(PartMachineSection oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.dieType != widget.dieType) _fillDieType();
     if (oldWidget.part?.id != widget.part?.id) {
       _corrected.clear();
       // The part being typed was just saved: what is typed here is for it, so

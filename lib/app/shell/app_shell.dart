@@ -698,7 +698,9 @@ void _registerAppFlowHooks() {
         operationalNotes: existing?.operationalNotes ?? '',
         compatibleMachineGroupIds:
             existing?.compatibleMachineGroupIds ?? const <int>[],
-        numberOfCavities: existing?.numberOfCavities,
+        // The sheet's Cavity, as Sets beside it: what the form shows is what
+        // is stored (it was loaded from the die when corrected).
+        numberOfCavities: draft.numberOfCavities,
         strokeCount: existing?.strokeCount,
         maxStrokes: existing?.maxStrokes,
         strokesPerPiece: existing?.strokesPerPiece,
@@ -764,6 +766,7 @@ void _registerAppFlowHooks() {
       storeAreas: distinct((d) => d.storeArea),
       rackNos: distinct((d) => d.rackNo),
       noOfSets: distinct((d) => d.noOfSet?.toString() ?? ''),
+      cavities: distinct((d) => d.numberOfCavities?.toString() ?? ''),
       linerSizesNm: [
         for (final size in distinct((d) => d.linerSizeNm?.toString() ?? ''))
           int.parse(size),

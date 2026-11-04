@@ -3213,6 +3213,7 @@ async function rowToItemDto(row) {
            dies.die_type, dies.die_type_label, dies.made_by, dies.die_maker_id,
            dies.po_at, dies.date_in_at,
            dies.liner_size_nm, dies.liner_size_unit, dies.no_of_set,
+           dies.number_of_cavities,
            dies.store_area, dies.rack_no
     FROM item_dies
     INNER JOIN dies ON dies.id = item_dies.die_id
@@ -3308,6 +3309,8 @@ async function rowToItemDto(row) {
         linerSizeNm: entry.liner_size_nm == null ? null : Number(entry.liner_size_nm),
         linerSizeUnit: entry.liner_size_unit || 'mm',
         noOfSet: entry.no_of_set == null ? null : Number(entry.no_of_set),
+        numberOfCavities:
+          entry.number_of_cavities == null ? null : Number(entry.number_of_cavities),
         storeArea: entry.store_area || '',
         rackNo: entry.rack_no || '',
       };

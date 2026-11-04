@@ -294,6 +294,7 @@ class ItemDto {
               linerSizeNm: entry['linerSizeNm'] as int?,
               linerSizeUnit: entry['linerSizeUnit'] as String? ?? 'mm',
               noOfSet: entry['noOfSet'] as int?,
+              numberOfCavities: entry['numberOfCavities'] as int?,
               storeArea: entry['storeArea'] as String? ?? '',
               rackNo: entry['rackNo'] as String? ?? '',
             ),

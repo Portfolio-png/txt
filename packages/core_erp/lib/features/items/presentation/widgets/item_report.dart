@@ -64,6 +64,7 @@ List<ReportLine> dieLines(ItemDieLink die, {bool held = false}) {
         : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} ${die.linerSizeUnit}',
   );
   add('Sets', die.noOfSet);
+  add('Cavity', die.numberOfCavities);
   add('Kept', die.whereKept);
   return out;
 }

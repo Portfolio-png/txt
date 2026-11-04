@@ -689,6 +689,7 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
           linerSizeNm: draft.linerSizeNm,
           linerSizeUnit: draft.linerSizeUnit,
           noOfSet: draft.noOfSet,
+          numberOfCavities: draft.numberOfCavities,
           storeArea: draft.storeArea,
           rackNo: draft.rackNo,
           partCode: part.partCode,
