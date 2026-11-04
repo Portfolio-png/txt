@@ -699,18 +699,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             )
           else ...[
-            if (holding) ...[
-              const Text(
-                'Fill this in now — each machine is saved together with the part.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 10),
+            if (_machines.isNotEmpty || widget.staged.isNotEmpty) ...[
+              SheetStep.noTab(_machineList(enabled)),
+              const SizedBox(height: 12),
             ],
-            SheetStep.noTab(_machineList(enabled)),
-            const SizedBox(height: 12),
             // Each field as wide as what it holds, side by side, wrapping only
             // when the row is full — a stack of page-wide bars for answers
             // like "2011" and "60" was most of this card's height.
@@ -1021,11 +1013,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
 
   Widget _machineList(bool enabled) {
     if (_machines.isEmpty && widget.staged.isEmpty) {
-      return const Text(
-        'No machines on this part yet. Fill the sheet below and add one — a '
-        'part can run on as many as it needs.',
-        style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
-      );
+      return const SizedBox.shrink();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

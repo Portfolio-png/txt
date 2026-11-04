@@ -1844,7 +1844,6 @@ void _dieSectionTests() {
       // No gate: the whole part is filled in on one screen and written by one
       // press, rather than saved halfway through a thought.
       await tester.ensureVisible(find.textContaining(RegExp(r'^(Dies for |New die for |Die )')).first);
-      expect(find.textContaining('saved together with the part'), findsOneWidget);
       expect(addDie(), findsOneWidget);
       expect(
         find.descendant(of: addDie(), matching: find.text('Hold die')),
@@ -2373,10 +2372,6 @@ void _machineSectionTests() {
       await _pumpWizard(tester);
 
       await tester.ensureVisible(find.textContaining(RegExp(r'^(Machines for |New machine for |Machine )')).first);
-      expect(
-        find.textContaining('saved together with the part'),
-        findsWidgets,
-      );
       expect(addMachine(), findsOneWidget);
       expect(
         find.descendant(of: addMachine(), matching: find.text('Hold machine')),

@@ -770,20 +770,12 @@ class _PartDieSectionState extends State<PartDieSection> {
               style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             )
           else ...[
-            if (holding) ...[
-              const Text(
-                'Fill this in now — each die is saved together with the part.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 10),
+            if (_dies.isNotEmpty || widget.staged.isNotEmpty) ...[
+              // The dies on the part are opened with their Edit (clicked); Tab
+              // goes through the form below.
+              SheetStep.noTab(_dieList(enabled)),
+              const SizedBox(height: 12),
             ],
-            // The dies on the part are opened with their Edit (clicked); Tab
-            // goes through the form below.
-            SheetStep.noTab(_dieList(enabled)),
-            const SizedBox(height: 12),
             _formStep(Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1029,11 +1021,7 @@ class _PartDieSectionState extends State<PartDieSection> {
 
   Widget _dieList(bool enabled) {
     if (_dies.isEmpty && widget.staged.isEmpty) {
-      return const Text(
-        'No dies on this part yet. Fill the sheet below and add one — a part '
-        'can hold as many as it needs.',
-        style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
-      );
+      return const SizedBox.shrink();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
