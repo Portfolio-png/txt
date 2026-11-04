@@ -169,8 +169,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// What the die and machine forms are on ("New die for SADP48", "Die
   /// D-12"), shown in their sections' title bars.
-  String? _dieHeading;
-  String? _machineHeading;
+  ({String label, String? value})? _dieHeading;
+  ({String label, String? value})? _machineHeading;
 
   /// Whether the part's photos are in the right column (raw material rolled
   /// up) rather than big on the part's line.
@@ -2107,21 +2107,46 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   /// A die or machine form's heading, on the right of its section's title
-  /// bar — where the part line's own code and stamp sit in Item Master's.
-  Widget? _formHeading(String key, String? text) {
-    if (text == null || text.isEmpty) return null;
+  /// bar, drawn as Item Master's "Part code" chip is.
+  Widget? _formHeading(String key, ({String label, String? value})? heading) {
+    if (heading == null) return null;
     return Align(
       alignment: Alignment.centerRight,
-      child: Text(
-        text,
-        key: ValueKey<String>(key),
+      child: _codeChip(heading.label, heading.value, key: ValueKey<String>(key)),
+    );
+  }
+
+  /// "Part code: SADP48" — the words muted, the code bold in the accent; a
+  /// code not there yet reads "assigned on save", muted.
+  Widget _codeChip(String label, String? code, {Key? key}) {
+    final none = code == null || code.isEmpty;
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.sectionSurface,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: label,
+              style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+            ),
+            TextSpan(
+              text: none ? 'assigned on save' : code,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: none ? SoftErpTheme.textMuted : SoftErpTheme.accent,
+              ),
+            ),
+          ],
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-          color: SoftErpTheme.textPrimary,
-        ),
       ),
     );
   }

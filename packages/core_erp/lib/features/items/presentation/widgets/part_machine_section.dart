@@ -73,10 +73,12 @@ class PartMachineSection extends StatefulWidget {
   /// it — the item sheet's section card — so it is not a card inside a card.
   final bool framed;
 
-  /// Where the host shows the section's heading ("New machine for SADP48",
-  /// "Machine D-12") — the item sheet's title bar. Set, the section stops
-  /// drawing it itself and reports it here whenever it changes.
-  final ValueChanged<String>? onHeading;
+  /// Where the host shows the section's heading — the item sheet's title
+  /// bar, as a chip like the part's own code: [label] muted, [value] (a
+  /// code; null while there is none yet) bold. "New machine for part code:
+  /// SADP48", "Editing machine: D-12". Set, the section stops drawing it
+  /// itself and reports it here whenever it changes.
+  final ValueChanged<({String label, String? value})>? onHeading;
 
   /// The sheet line this is typed for. A different line is a different part
   /// — saved or not — so what was typed for the last one is cleared.
@@ -701,7 +703,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
             ),
             const SizedBox(height: 8),
           ] else
-            _reportHeading(_heading(editing)),
+            _reportHeading(_chipHeading(editing)),
           if (AppFlowHooks.createMachineFromSheet == null)
             const Text(
               'Machines cannot be added from here in this build.',
@@ -1011,11 +1013,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     );
   }
 
-  String? _reportedHeading;
+  ({String label, String? value})? _reportedHeading;
 
   /// Hands [heading] to [PartMachineSection.onHeading] once it has changed — after
   /// the frame, since the host's title bar is already built by then.
-  Widget _reportHeading(String heading) {
+  Widget _reportHeading(({String label, String? value}) heading) {
     final report = widget.onHeading;
     if (report != null && heading != _reportedHeading) {
       _reportedHeading = heading;
@@ -1024,6 +1026,17 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       });
     }
     return const SizedBox.shrink();
+  }
+
+  /// [_heading] for a title bar: the words, then the code they are about.
+  ({String label, String? value}) _chipHeading(String? editing) {
+    final partCode = widget.partCode.isEmpty ? null : widget.partCode;
+    if (widget.part == null) return (label: 'Machines for part code: ', value: partCode);
+    if (editing == null) return (label: 'New machine for part code: ', value: partCode);
+    final no = _noController.text.trim();
+    return no.isEmpty
+        ? (label: 'Machine for part code: ', value: partCode)
+        : (label: 'Editing machine: ', value: no);
   }
 
   String _heading(String? editing) {

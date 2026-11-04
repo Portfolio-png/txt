@@ -1537,13 +1537,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump();
       for (final (key, title, section, start) in [
-        ('die_heading', 'Die Process Master', 'die_master', 'New die for '),
-        ('machine_heading', 'Machines & Routing', 'machine_master', 'New machine for '),
+        ('die_heading', 'Die Process Master', 'die_master', 'New die for part code: '),
+        ('machine_heading', 'Machines & Routing', 'machine_master', 'New machine for part code: '),
       ]) {
         final heading = find.byKey(ValueKey<String>(key));
         expect(heading, findsOneWidget, reason: '$title shows its form\'s heading');
-        expect(tester.widget<Text>(heading).data, startsWith(start));
-        expect(find.textContaining(start), findsOneWidget, reason: 'drawn once, not also in the form');
+        final chip = tester.widget<Text>(find.descendant(of: heading, matching: find.byType(Text)));
+        expect(chip.textSpan!.toPlainText(), startsWith(start), reason: 'a chip, as the part code is');
+        expect(find.textContaining(start, findRichText: true), findsOneWidget,
+            reason: 'drawn once, not also in the form');
         // The section's own title bar: its fold button is in it.
         final bar = tester.getCenter(find.byKey(ValueKey<String>('section_toggle_$section')));
         expect(tester.getCenter(heading).dy, closeTo(bar.dy, 6), reason: 'in the $title title bar');
