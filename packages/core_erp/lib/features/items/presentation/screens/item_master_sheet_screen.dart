@@ -167,6 +167,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// own line instead.
   bool _rawRolled = false;
 
+  /// What the die and machine forms are on ("New die for SADP48", "Die
+  /// D-12"), shown in their sections' title bars.
+  String? _dieHeading;
+  String? _machineHeading;
+
   /// Whether the part's photos are in the right column (raw material rolled
   /// up) rather than big on the part's line.
   bool get _photosInColumn => _photosOn && _rawPanelShown && _rawRolled;
@@ -2077,6 +2082,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.precision_manufacturing_rounded,
           heading: 'Die Process Master',
           collapsed: collapsed,
+          trailing: _formHeading('die_heading', _dieHeading),
           child: _dieSheet(),
         );
       case 'machine_master':
@@ -2085,6 +2091,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.settings_suggest_rounded,
           heading: 'Machines & Routing',
           collapsed: collapsed,
+          trailing: _formHeading('machine_heading', _machineHeading),
           child: _machinesAndRouting(),
         );
       default:
@@ -2097,6 +2104,26 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           child: _groupItemSheet(),
         );
     }
+  }
+
+  /// A die or machine form's heading, on the right of its section's title
+  /// bar — where the part line's own code and stamp sit in Item Master's.
+  Widget? _formHeading(String key, String? text) {
+    if (text == null || text.isEmpty) return null;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Text(
+        text,
+        key: ValueKey<String>(key),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: SoftErpTheme.textPrimary,
+        ),
+      ),
+    );
   }
 
   /// The part, kept in view whichever section the rail is on.
@@ -2516,6 +2543,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // The section card is the frame here; the die list draws its own only
       // where it stands alone, in the quick-entry dialog.
       framed: false,
+      onHeading: (text) => setState(() => _dieHeading = text),
       lineKey: _cursorRowKey,
       flow: _flow,
       onDirtyChanged: (dirty) {
@@ -2545,6 +2573,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       children: [
         PartMachineSection(
           framed: false,
+          onHeading: (text) => setState(() => _machineHeading = text),
           lineKey: _cursorRowKey,
           flow: _flow,
           onDirtyChanged: (dirty) {

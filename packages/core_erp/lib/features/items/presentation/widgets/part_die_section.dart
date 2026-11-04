@@ -57,6 +57,7 @@ class PartDieSection extends StatefulWidget {
     required this.onUnstage,
     required this.onDiesChanged,
     this.framed = true,
+    this.onHeading,
     this.heldSaveBuilder,
     this.onDirtyChanged,
     this.flow,
@@ -80,6 +81,11 @@ class PartDieSection extends StatefulWidget {
   /// Whether the section draws its own card. Off where a host already frames
   /// it — the item sheet's section card — so it is not a card inside a card.
   final bool framed;
+
+  /// Where the host shows the section's heading ("New die for SADP48",
+  /// "Die D-12") — the item sheet's title bar. Set, the section stops
+  /// drawing it itself and reports it here whenever it changes.
+  final ValueChanged<String>? onHeading;
 
   /// The sheet line this is typed for. A different line is a different part
   /// — saved or not — so what was typed for the last one is cleared.
@@ -755,15 +761,18 @@ class _PartDieSectionState extends State<PartDieSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            _heading(editing),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: SoftErpTheme.textPrimary,
+          if (widget.onHeading == null) ...[
+            Text(
+              _heading(editing),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: SoftErpTheme.textPrimary,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+          ] else
+            _reportHeading(_heading(editing)),
           if (AppFlowHooks.createDieFromSheet == null)
             const Text(
               'Dies cannot be made from here in this build.',
@@ -1005,6 +1014,21 @@ class _PartDieSectionState extends State<PartDieSection> {
         ),
       ),
     );
+  }
+
+  String? _reportedHeading;
+
+  /// Hands [heading] to [PartDieSection.onHeading] once it has changed — after
+  /// the frame, since the host's title bar is already built by then.
+  Widget _reportHeading(String heading) {
+    final report = widget.onHeading;
+    if (report != null && heading != _reportedHeading) {
+      _reportedHeading = heading;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) report(heading);
+      });
+    }
+    return const SizedBox.shrink();
   }
 
   String _heading(String? editing) {
