@@ -85,6 +85,8 @@ class _HostState extends State<_Host> {
 _HostState _state(WidgetTester tester) => tester.state(find.byType(_Host));
 
 void main() {
+  _denseTests();
+
   testWidgets('pieces by default, spelt out once it reaches a dozen',
       (tester) async {
     await tester.pumpWidget(_Host(family: _count));
@@ -134,5 +136,56 @@ void main() {
     await tester.pump();
     expect(_state(tester).base, 40);
     expect(find.byKey(const ValueKey('qty_unit')), findsNothing);
+  });
+}
+
+// The dense cell, as the raw panel's Qty: one box like the Weight cell beside
+// it — the unit printed inside at its end, a click there picking another.
+void _denseTests() {
+  testWidgets('dense: one box, its unit inside, picked from there', (
+    tester,
+  ) async {
+    int? base = 24;
+    int? unitId = _piece.id;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 220,
+              child: QuantityField(
+                family: _count,
+                baseValue: base,
+                unitId: unitId,
+                dense: true,
+                fieldKey: const ValueKey<String>('qty'),
+                unitKey: const ValueKey<String>('qty-unit'),
+                onChanged: (b, u) => setState(() {
+                  base = b;
+                  unitId = u;
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final box = tester.getRect(find.byKey(const ValueKey<String>('qty')));
+    final unit = tester.getRect(find.byKey(const ValueKey<String>('qty-unit')));
+    expect(box.contains(unit.center), isTrue, reason: 'the unit inside the box');
+    expect(unit.right, lessThanOrEqualTo(box.right), reason: 'at its end');
+    expect(find.text('Pc'), findsOneWidget);
+    final field = tester.widget<TextField>(find.byKey(const ValueKey<String>('qty')));
+    expect(field.style?.fontWeight, FontWeight.w700, reason: 'bold, as the weight');
+    expect(field.decoration?.filled, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey<String>('qty-unit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('doz').last);
+    await tester.pumpAndSettle();
+    expect(unitId, _dozen.id);
+    expect(base, 24, reason: 'the same count, read in dozens');
+    expect(tester.widget<TextField>(find.byKey(const ValueKey<String>('qty'))).controller!.text, '2');
+    expect(tester.takeException(), isNull);
   });
 }

@@ -48,7 +48,9 @@ class QuantityField extends StatefulWidget {
   final Key? fieldKey;
   final Key? unitKey;
 
-  /// Tight, for a table cell.
+  /// Tight, for a table cell: drawn as the cells beside it are — a white
+  /// box, the figure bold, and the unit inside it at the end (a click there
+  /// picks another), the way a weight cell prints its "kg".
   final bool dense;
 
   @override
@@ -141,6 +143,101 @@ class _QuantityFieldState extends State<QuantityField> {
     }
   }
 
+  /// The unit inside a dense cell, muted like a cell's printed unit; a click
+  /// (or Enter on it) opens the family's units.
+  Widget _unitSuffix(UnitFamily family, Unit unit) {
+    return Builder(
+      builder: (context) => InkWell(
+        key: widget.unitKey,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+        onTap: !widget.enabled
+            ? null
+            : () async {
+                final picked = await showSearchableSelectDialog<int>(
+                  context: context,
+                  title: 'Unit',
+                  searchHintText: 'Search units',
+                  selectedValue: unit.id,
+                  options: [
+                    for (final u in family.units)
+                      SearchableSelectOption<int>(
+                        value: u.id,
+                        label: u.symbol,
+                        subtitle: u.label,
+                        searchText: '${u.label} ${u.symbol}',
+                      ),
+                  ],
+                );
+                if (picked == null || picked.value == unit.id) return;
+                widget.onChanged(widget.baseValue, picked.value);
+              },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                unit.symbol,
+                style: const TextStyle(
+                  color: SoftErpTheme.textMuted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (widget.enabled)
+                const Icon(
+                  Icons.expand_more_rounded,
+                  size: 16,
+                  color: SoftErpTheme.textMuted,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _denseCell(UnitFamily? family, Unit? unit) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+      borderSide: const BorderSide(color: SoftErpTheme.borderStrong),
+    );
+    return TextField(
+      key: widget.fieldKey,
+      controller: _text,
+      readOnly: !widget.enabled,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: _typed,
+      style: const TextStyle(
+        color: SoftErpTheme.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: '0',
+        errorText: _error,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        filled: true,
+        fillColor: widget.enabled
+            ? SoftErpTheme.cardSurface
+            : SoftErpTheme.sectionSurface,
+        border: border,
+        enabledBorder: border,
+        suffixText: family == null ? 'pcs' : null,
+        suffixStyle: const TextStyle(
+          color: SoftErpTheme.textMuted,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+        suffixIcon: family != null && unit != null
+            ? _unitSuffix(family, unit)
+            : null,
+        suffixIconConstraints: const BoxConstraints(minHeight: 0, minWidth: 0),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final family = widget.family;
@@ -171,6 +268,9 @@ class _QuantityFieldState extends State<QuantityField> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (widget.dense)
+          _denseCell(family, unit)
+        else
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

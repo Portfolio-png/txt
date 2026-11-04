@@ -704,7 +704,6 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               onChanged: _weightsChanged,
               perPiece: draft.outputKgPerPiece,
               perWhat: 'piece',
-              qtyFlex: 6,
               qtyField: QuantityField(
                 fieldKey: const ValueKey<String>('material-output-pieces'),
                 unitKey: const ValueKey<String>('material-output-unit'),
