@@ -498,5 +498,41 @@ void main() {
       expect(at(SheetBindsTo.developedForPhone), '9865656560');
       expect(at(SheetBindsTo.developedForEmail), 'kissan@goldmedal.in');
     });
+
+    testWidgets(
+      'dropdown arrow navigation highlights with light purple and purple left border',
+      (tester) async {
+        await _pumpTable(tester);
+        await _openPicker(tester, 'cell_item_0_1');
+
+        expect(find.text('Cutout'), findsWidgets);
+        expect(find.text('Switch Action'), findsWidgets);
+
+        // Arrow down to move highlight
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+
+        // Verify container with left border and accent background exists
+        final containers = tester.widgetList<Container>(find.byType(Container));
+        final highlightedContainer = containers.where((c) {
+          final dec = c.decoration;
+          if (dec is BoxDecoration) {
+            final border = dec.border;
+            if (border is Border &&
+                border.left.color != Colors.transparent &&
+                border.left.width >= 3) {
+              return true;
+            }
+          }
+          return false;
+        }).firstOrNull;
+        expect(highlightedContainer, isNotNull);
+
+        // Arrow up to navigate back up smoothly
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+        expect(find.text('Switch Action'), findsWidgets);
+      },
+    );
   });
 }

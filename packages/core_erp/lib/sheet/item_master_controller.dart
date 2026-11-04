@@ -79,7 +79,7 @@ class ItemMasterController extends ChangeNotifier {
   int? _savedItemId;
   String? _savedCreatedAt;
   String _statusBarMessage =
-      'Ready. Use Enter / Tab to traverse cells, Alt+↓ for dropdowns, Ctrl+S to save.';
+      'Ready. Use Enter / Tab to traverse cells, Hold Alt for shortcuts, Ctrl+S to save.';
 
   bool get isExternal => _isExternal;
   String get activeSection => _activeSection;

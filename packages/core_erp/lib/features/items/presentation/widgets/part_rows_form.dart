@@ -37,7 +37,11 @@ class PartRowsForm extends StatelessWidget {
     this.onRemoveRow,
     this.flow,
     this.lineActions,
+    this.showShortcuts = false,
   });
+
+  /// Whether to display Alt keytip badges for rapid keyboard navigation.
+  final bool showShortcuts;
 
   /// The keyboard's order of the screen's steps; each line is one.
   final SheetFlow? flow;
@@ -145,6 +149,7 @@ class PartRowsForm extends StatelessWidget {
                   status: statusBuilder?.call(row),
                   action: actionBuilder(row),
                   onRemove: onRemoveRow,
+                  showShortcuts: showShortcuts,
                 ),
               ),
               const SizedBox(height: 10),
@@ -176,22 +181,40 @@ class PartRowsForm extends StatelessWidget {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        TextButton.icon(
-          key: const ValueKey<String>('part_add_row'),
-          onPressed: onAddPart,
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('Add part', style: TextStyle(fontSize: 14)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton.icon(
+              key: const ValueKey<String>('part_add_row'),
+              onPressed: onAddPart,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Add part', style: TextStyle(fontSize: 14)),
+            ),
+            if (showShortcuts) ...[
+              const SizedBox(width: 2),
+              const KeyTipBadge(label: 'Alt+1'),
+            ],
+          ],
         ),
-        Tooltip(
-          message: onAddProperty == null
-              ? 'Properties cannot be added here'
-              : 'A new field on every part — Grade, Finish, …',
-          child: TextButton.icon(
-            key: const ValueKey<String>('mini_table_add_properties_item'),
-            onPressed: onAddProperty,
-            icon: const Icon(Icons.playlist_add_rounded, size: 18),
-            label: const Text('Add property', style: TextStyle(fontSize: 14)),
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: onAddProperty == null
+                  ? 'Properties cannot be added here'
+                  : 'A new field on every part — Grade, Finish, …',
+              child: TextButton.icon(
+                key: const ValueKey<String>('mini_table_add_properties_item'),
+                onPressed: onAddProperty,
+                icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                label: const Text('Add property', style: TextStyle(fontSize: 14)),
+              ),
+            ),
+            if (showShortcuts) ...[
+              const SizedBox(width: 2),
+              const KeyTipBadge(label: 'Alt+D'),
+            ],
+          ],
         ),
         Padding(
           padding: const EdgeInsets.only(left: 8),
@@ -216,11 +239,13 @@ class _PartLine extends StatelessWidget {
     required this.status,
     required this.action,
     this.onRemove,
+    this.showShortcuts = false,
   });
 
   final Future<void> Function(int row)? onRemove;
   final SheetController sheet;
   final int row;
+  final bool showShortcuts;
 
   /// The fields, row by row: see [PartRowsForm.lineGrid].
   final List<List<ColumnDef?>> grid;
@@ -256,18 +281,16 @@ class _PartLine extends StatelessWidget {
           ),
         ),
         // The fields sit in even columns; Save and × stay at the line's end
-        // whatever the width — the Save that wrapped off its part's line is
-        // what this replaced.
+        // whatever the width, with the part's photo showcased right above Save.
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (status != null) ...[
-              SizedBox(width: 28, child: status),
+              Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: SizedBox(width: 28, child: status),
+              ),
               const SizedBox(width: 6),
-            ],
-            // Clickable, but not where Tab goes: Tab is for what is typed.
-            if (photo != null) ...[
-              SheetStep.noTab(photo!),
-              const SizedBox(width: 10),
             ],
             Expanded(
               child: EvenGrid(
@@ -285,22 +308,41 @@ class _PartLine extends StatelessWidget {
                               sheet: sheet,
                               row: row,
                               column: column,
+                              showShortcuts: showShortcuts,
                             ),
                 ],
               ),
             ),
             const SizedBox(width: 10),
-            SheetStep.noTab(action),
-            SheetStep.noTab(Tooltip(
-              message: removeWhy ?? 'Remove this line',
-              child: IconButton(
-                key: ValueKey<String>('row_remove_$row'),
-                onPressed: removeWhy == null
-                    ? () => onRemove == null ? sheet.removeRow(row) : onRemove!(row)
-                    : null,
-                icon: const Icon(Icons.close, size: 18),
+            Padding(
+              padding: EdgeInsets.only(top: photo != null ? 2 : 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (photo != null) ...[
+                    SheetStep.noTab(photo!),
+                    const SizedBox(height: 8),
+                  ],
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SheetStep.noTab(action),
+                      SheetStep.noTab(Tooltip(
+                        message: removeWhy ?? 'Remove this line',
+                        child: IconButton(
+                          key: ValueKey<String>('row_remove_$row'),
+                          onPressed: removeWhy == null
+                              ? () => onRemove == null ? sheet.removeRow(row) : onRemove!(row)
+                              : null,
+                          icon: const Icon(Icons.close, size: 18),
+                        ),
+                      )),
+                    ],
+                  ),
+                ],
               ),
-            )),
+            ),
           ],
         ),
       ),
@@ -321,11 +363,13 @@ class _PartField extends StatefulWidget {
     required this.sheet,
     required this.row,
     required this.column,
+    this.showShortcuts = false,
   });
 
   final SheetController sheet;
   final int row;
   final ColumnDef column;
+  final bool showShortcuts;
 
   @override
   State<_PartField> createState() => _PartFieldState();
@@ -336,9 +380,26 @@ class _PartFieldState extends State<_PartField> {
   final FocusNode _focus = FocusNode();
   bool _hadFocus = false;
   bool _wasWanted = false;
+  bool _isPickerOpen = false;
+  bool _skipNextAutoOpen = false;
 
   ColumnDef get _column => widget.column;
   SheetController get _sheet => widget.sheet;
+
+  String? get _shortcutKey {
+    final binds = _column.bindsTo;
+    if (binds == SheetBindsTo.group) return 'G';
+    if (binds == SheetBindsTo.set) return 'T';
+    if (binds == SheetBindsTo.name) return 'N';
+    if (binds == SheetBindsTo.partCode) return 'C';
+    if (binds == SheetBindsTo.partNo) return 'P';
+    final label = _column.label.trim().toLowerCase();
+    if (label.contains('alloy')) return 'A';
+    if (label.contains('thick')) return 'K';
+    if (label.contains('grade')) return 'R';
+    if (label.contains('hard')) return 'H';
+    return _column.label.isNotEmpty ? _column.label[0].toUpperCase() : null;
+  }
 
   bool get _isList =>
       _column.kind == ColumnKind.list ||
@@ -405,7 +466,8 @@ class _PartFieldState extends State<_PartField> {
   }
 
   void _open(BuildContext anchor, {String initialQuery = ''}) {
-    if (_locked) return;
+    if (_locked || _isPickerOpen) return;
+    _isPickerOpen = true;
     _sheet.focusCell(_column.id, row: widget.row);
     showColumnOptionPicker(
       anchor,
@@ -414,8 +476,6 @@ class _PartFieldState extends State<_PartField> {
       controller: _sheet,
       row: widget.row,
       initialQuery: initialQuery,
-      // Enter picks and the box keeps focus; Tab moves on. It used to jump to
-      // the next field by itself, so Tab then skipped one.
       onDone: () {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _focus.requestFocus();
@@ -443,6 +503,8 @@ class _PartFieldState extends State<_PartField> {
         _column.kind == ColumnKind.money;
     return SheetStyle.labelled(
       label: _column.label,
+      shortcutKey: _shortcutKey,
+      showShortcut: widget.showShortcuts,
       child: TextField(
         controller: _text,
         focusNode: _focus,
@@ -467,7 +529,7 @@ class _PartFieldState extends State<_PartField> {
         ),
         onChanged: (value) =>
             _sheet.updateTextValue(_column.id, value, row: widget.row),
-        onSubmitted: (_) => _focus.nextFocus(),
+        onSubmitted: (_) => tabOutFrom(_focus, back: false),
       ),
     );
   }
@@ -539,6 +601,8 @@ class _PartFieldState extends State<_PartField> {
     final unit = _thicknessUnit;
     return SheetStyle.labelled(
       label: _column.label,
+      shortcutKey: _shortcutKey,
+      showShortcut: widget.showShortcuts,
       actions: [
         SheetStep.noTab(
           _PropertyActions(sheet: _sheet, column: _column, row: widget.row),
@@ -561,12 +625,12 @@ class _PartFieldState extends State<_PartField> {
               style: const TextStyle(fontSize: 14),
               decoration: SheetStyle.field(hint: unit == 'ga' ? 'Gauge' : unit),
               onChanged: (value) => _writeThickness(value, unit),
-              onSubmitted: (_) => _focus.nextFocus(),
+              onSubmitted: (_) => tabOutFrom(_focus, back: false),
             ),
           ),
           const SizedBox(width: 6),
           SizedBox(
-            width: 112,
+            width: 118,
             child: SearchableSelectField<String>(
               key: ValueKey<String>('thickness_unit_${widget.row}'),
               value: unit,
@@ -598,7 +662,8 @@ class _PartFieldState extends State<_PartField> {
 
   Widget _optionField() => SheetStyle.labelled(
         label: _column.label,
-        // A property's heading carries its Edit and Delete.
+        shortcutKey: _shortcutKey,
+        showShortcut: widget.showShortcuts,
         actions: _isProperty
             ? [
                 SheetStep.noTab(
@@ -780,14 +845,20 @@ class _PropertyActions extends StatelessWidget {
     }) =>
         Tooltip(
           message: tip,
-          child: IconButton(
-            key: ValueKey<String>(key),
-            onPressed: onPressed,
-            icon: Icon(icon, size: 18),
-            color: color ?? SoftErpTheme.accent,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+          child: Opacity(
+            opacity: stored ? 1.0 : 0.4,
+            child: IconButton(
+              key: ValueKey<String>(key),
+              onPressed: onPressed,
+              icon: Icon(icon, size: stored ? 16 : 14),
+              color: color ?? SoftErpTheme.textSecondary,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints.tightFor(
+                width: stored ? 24 : 20,
+                height: stored ? 24 : 20,
+              ),
+            ),
           ),
         );
 
@@ -804,7 +875,7 @@ class _PropertyActions extends StatelessWidget {
           key: 'property_delete_${column.id}_$row',
           icon: Icons.delete_outline_rounded,
           tip: deleteWhy ?? 'Delete ${column.label}',
-          color: SoftErpTheme.dangerText,
+          color: stored ? SoftErpTheme.dangerText : SoftErpTheme.textSecondary,
           // The sheet's own remove asks "Remove … from the sheet?" first.
           onPressed: deleteWhy == null
               ? () => sheet.requestRemoveColumn(column.id)

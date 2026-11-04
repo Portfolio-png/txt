@@ -983,10 +983,16 @@ class _SearchableSelectOptionTileState<T>
   @override
   void didUpdateWidget(covariant _SearchableSelectOptionTile<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Kept in view as ↑ ↓ move down a long list.
+    // Kept in view as ↑ ↓ move up and down a long list.
     if (widget.highlighted && !oldWidget.highlighted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Scrollable.ensureVisible(context, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+        if (mounted) {
+          Scrollable.ensureVisible(
+            context,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+            alignment: 0.5,
+          );
+        }
       });
     }
   }
@@ -1176,10 +1182,16 @@ class _SearchableSelectCreateTileState<T>
   @override
   void didUpdateWidget(covariant _SearchableSelectCreateTile<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Kept in view as ↑ ↓ move down a long list.
+    // Kept in view as ↑ ↓ move up and down a long list.
     if (widget.highlighted && !oldWidget.highlighted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Scrollable.ensureVisible(context, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+        if (mounted) {
+          Scrollable.ensureVisible(
+            context,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+            alignment: 0.5,
+          );
+        }
       });
     }
   }

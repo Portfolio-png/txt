@@ -23,6 +23,7 @@ void showColumnOptionPicker(
   VoidCallback? onDone,
   String initialQuery = '',
   ValueChanged<bool>? onTabOut,
+  VoidCallback? onClosed,
 }) {
   // Anchored under the cell, not a modal sheet.
   //
@@ -157,7 +158,7 @@ void showColumnOptionPicker(
             },
     ),
     ),
-  );
+  ).then((_) => onClosed?.call());
 }
 
 /// Places a picker under the cell that opened it, flipping above when there is
@@ -275,6 +276,9 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
   /// The highlighted row, kept in view as the arrows move it.
   final GlobalKey _highlightKey = GlobalKey();
 
+  /// Dedicated scroll controller ensuring two-way keyboard, wheel, and trackpad scrolling.
+  final ScrollController _scrollController = ScrollController();
+
   /// The header's ×, left out of Tab — Esc closes too.
   final FocusNode _closeFocus = FocusNode(skipTraversal: true);
 
@@ -318,7 +322,14 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       setState(() => _highlight = (from + step).clamp(0, rows.length - 1));
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final row = _highlightKey.currentContext;
-        if (row != null) Scrollable.ensureVisible(row, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+        if (row != null) {
+          Scrollable.ensureVisible(
+            row,
+            alignmentPolicy: key == LogicalKeyboardKey.arrowDown
+                ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+                : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+          );
+        }
       });
       return KeyEventResult.handled;
     }
@@ -360,6 +371,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     _closeFocus.dispose();
     super.dispose();
   }
@@ -536,6 +548,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           ),
           Flexible(
             child: ListView(
+              controller: _scrollController,
               shrinkWrap: true,
               children: [
                 for (final (index, row) in rows.indexed)
@@ -560,7 +573,7 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
     required List<Contact> filteredContacts,
     required List<ColumnOption> filteredOptions,
   }) {
-    ListTile tile({
+    Widget tile({
       required bool highlighted,
       required Widget title,
       Widget? subtitle,
@@ -569,16 +582,30 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       Key? key,
       required VoidCallback onTap,
     }) =>
-        ListTile(
-          key: key,
-          selected: highlighted,
-          selectedTileColor: SoftErpTheme.accentSoft,
-          selectedColor: SoftErpTheme.textPrimary,
-          title: title,
-          subtitle: subtitle,
-          leading: leading,
-          trailing: trailing,
-          onTap: onTap,
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          decoration: BoxDecoration(
+            color: highlighted
+                ? SoftErpTheme.accentSoft.withValues(alpha: 0.75)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+            border: Border(
+              left: BorderSide(
+                color: highlighted ? SoftErpTheme.accent : Colors.transparent,
+                width: 3.5,
+              ),
+            ),
+          ),
+          child: ListTile(
+            key: key,
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+            title: title,
+            subtitle: subtitle,
+            leading: leading,
+            trailing: trailing,
+            onTap: onTap,
+          ),
         );
 
     if (parties.isNotEmpty) {

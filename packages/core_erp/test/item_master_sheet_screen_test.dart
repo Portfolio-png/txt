@@ -1466,6 +1466,36 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('part code appears before time&date stamp, and camera photo sits above save',
+        (tester) async {
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      await _pumpScreen(
+        tester,
+        repository: _FakeItemRepository([]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      // 1. Part code chip is placed before the time & date stamp
+      final codeChip = tester.getRect(find.textContaining('Part code:'));
+      final stampChip = tester.getRect(find.byKey(const ValueKey('part_heading_stamp')));
+      expect(
+        codeChip.bottom <= stampChip.top || codeChip.right <= stampChip.left,
+        isTrue,
+        reason: 'Part code is ordered before time&date stamp',
+      );
+
+      // 2. Camera photo button sits above the Save part button
+      final photo = tester.getRect(find.byKey(const ValueKey('photo-item-none')));
+      final save = tester.getRect(find.byKey(const ValueKey('row_save_0')));
+      expect(photo.bottom, lessThan(save.top),
+          reason: 'Camera photo is positioned above save part');
+      expect(photo.left, lessThanOrEqualTo(save.left + 5),
+          reason: 'Camera photo aligns with save part');
+    });
+
     testWidgets('each die and machine on the part has its photo', (tester) async {
       // The lists show only where dies and machines can be made.
       AppFlowHooks.createDieFromSheet = (context, draft) async =>

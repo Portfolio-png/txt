@@ -231,9 +231,89 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// elsewhere is taken off, while Alloy and Thickness (not stored) never are.
   Set<String> _storedKeys = <String>{};
 
+  bool _altPressed = false;
+  bool _ctrlPressed = false;
+
+  bool _handleGlobalKey(KeyEvent event) {
+    if (!mounted) return false;
+    final keyboard = HardwareKeyboard.instance;
+    final alt = keyboard.isAltPressed;
+    final ctrl = keyboard.isControlPressed || keyboard.isMetaPressed;
+
+    if (_altPressed != alt || _ctrlPressed != ctrl) {
+      setState(() {
+        _altPressed = alt;
+        _ctrlPressed = ctrl;
+      });
+    }
+
+    if (event is KeyDownEvent && alt) {
+      return _handleAltShortcut(event.logicalKey);
+    }
+    return false;
+  }
+
+  bool _handleAltShortcut(LogicalKeyboardKey key) {
+    final sheet = _controller.groupItemController;
+    final def = sheet.sheetDef;
+    ColumnDef? col;
+
+    if (key == LogicalKeyboardKey.keyG) {
+      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.group).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyT) {
+      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.set).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyN) {
+      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.name).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyC) {
+      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.partCode).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyP) {
+      col = def.columns.where((c) => c.bindsTo == SheetBindsTo.partNo).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyA) {
+      col = def.columns.where((c) => c.label.toLowerCase().contains('alloy')).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyK) {
+      col = def.columns.where((c) => c.label.toLowerCase().contains('thick')).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyR) {
+      col = def.columns.where((c) => c.label.toLowerCase().contains('grade')).firstOrNull;
+    } else if (key == LogicalKeyboardKey.keyH) {
+      col = def.columns.where((c) => c.label.toLowerCase().contains('hard')).firstOrNull;
+    }
+
+    if (col != null) {
+      sheet.focusCell(col.id, row: sheet.row);
+      return true;
+    }
+
+    if (key == LogicalKeyboardKey.keyS) {
+      _handleSave();
+      return true;
+    } else if (key == LogicalKeyboardKey.digit1) {
+      sheet.addRow();
+      final first = PartRowsForm.lineColumns(sheet.sheetDef).firstOrNull;
+      if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
+      return true;
+    } else if (key == LogicalKeyboardKey.keyD) {
+      _addProperty();
+      return true;
+    } else if (key == LogicalKeyboardKey.keyX) {
+      final row = sheet.row;
+      final id = sheet.draftAt(row).entityId;
+      if (id != null) _archivePart(id);
+      return true;
+    } else if (key == LogicalKeyboardKey.keyM) {
+      setState(() => _rawPanelOpen = !_rawPanelShown);
+      return true;
+    } else if (key == LogicalKeyboardKey.keyE) {
+      _controller.setExternal(!_controller.isExternal);
+      return true;
+    }
+
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalKey);
     _sittingId = SittingScope.begin();
 
     _controller = ItemMasterController.live(binding: _buildBinding());
@@ -404,6 +484,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _exitListener.dispose();
     _controller.rowHoldsWork = null;
     _controller.groupItemController
@@ -919,26 +1000,48 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                     color: SoftErpTheme.textPrimary,
                   ),
                 ),
+                if (_altPressed) ...[
+                  const SizedBox(width: 4),
+                  const KeyTipBadge(label: 'Alt+E'),
+                ],
               ],
             ),
             const SizedBox(width: 16),
-            _archiveButton(),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _archiveButton(),
+                if (_altPressed) ...[
+                  const SizedBox(width: 4),
+                  const KeyTipBadge(label: 'Alt+X'),
+                ],
+              ],
+            ),
             const SizedBox(width: 8),
-            Tooltip(
-              message: 'Saves every row: the part, its deal and people, dies '
-                  'and machines waiting to be added, and the section layout. '
-                  'The raw sheet and the route have their own Save.',
-              child: AppButton(
-              key: const ValueKey('save_item_sheet_btn'),
-              label: _controller.isSavingNow
-                  ? 'Saving…'
-                  : (_controller.isSaved ? 'Save changes (Ctrl+S)' : 'Save part (Ctrl+S)'),
-              icon: _controller.isSaved
-                  ? Icons.check_circle_rounded
-                  : Icons.save_rounded,
-              isLoading: _controller.isSavingNow,
-              onPressed: _controller.isSavingNow ? null : _handleSave,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Tooltip(
+                  message: 'Saves every row: the part, its deal and people, dies '
+                      'and machines waiting to be added, and the section layout. '
+                      'The raw sheet and the route have their own Save.',
+                  child: AppButton(
+                    key: const ValueKey('save_item_sheet_btn'),
+                    label: _controller.isSavingNow
+                        ? 'Saving…'
+                        : (_controller.isSaved ? 'Save changes (Ctrl+S)' : 'Save part (Ctrl+S)'),
+                    icon: _controller.isSaved
+                        ? Icons.check_circle_rounded
+                        : Icons.save_rounded,
+                    isLoading: _controller.isSavingNow,
+                    onPressed: _controller.isSavingNow ? null : _handleSave,
+                  ),
+                ),
+                if (_altPressed || _ctrlPressed) ...[
+                  const SizedBox(width: 4),
+                  const KeyTipBadge(label: 'Alt+S'),
+                ],
+              ],
             ),
           ],
         ),
@@ -1088,6 +1191,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             onPressed: () => setState(() => _rawPanelOpen = true),
             icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
           ),
+          if (_altPressed) ...[
+            const SizedBox(height: 4),
+            const KeyTipBadge(label: 'Alt+M'),
+          ],
           const SizedBox(height: 8),
           const RotatedBox(
             quarterTurns: 1,
@@ -1155,6 +1262,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   onPressed: () => setState(() => _rawPanelOpen = false),
                   icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
                 ),
+                if (_altPressed) ...[
+                  const SizedBox(width: 4),
+                  const KeyTipBadge(label: 'Alt+M'),
+                ],
               ],
             ),
           ),
@@ -2354,12 +2465,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return saved == null ? (items.errorMessage ?? 'That did not save.') : null;
   }
 
-  /// The heading's right end: when the part was made, then its code.
+  /// The heading's right end: the part's code, then when the part was made.
   Widget _partHeading() => Wrap(
         alignment: WrapAlignment.end,
         spacing: 8,
         runSpacing: 6,
-        children: [_stampChip(), _identityChip()],
+        children: [_identityChip(), _stampChip()],
       );
 
   /// When the part under the cursor was saved — the Date and Time its line
@@ -2446,6 +2557,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       onRemoveRow: _removeLine,
       flow: _flow,
       lineActions: _lineActions,
+      showShortcuts: _altPressed,
     );
   }
 
@@ -2620,7 +2732,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return MiniPhoto(
       owner: PhotoOwner.item,
       id: id?.toString(),
-      size: 40,
+      size: 48,
       what: 'part photo',
       fallbackUrl: part?.photoUrl,
       disabledReason: 'Save the part to add its photos',

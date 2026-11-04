@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/soft_erp_theme.dart';
+import 'widgets/key_tip_badge.dart';
 
 /// The item sheet's fixed visual vocabulary: cards, headings, labels.
 ///
@@ -67,6 +68,16 @@ abstract final class SheetStyle {
     color: SoftErpTheme.textMuted,
   );
 
+  /// Converts a label to Title Case so custom properties (e.g. 'grade', 'hardness')
+  /// match built-in properties ('Group', 'Alloy', 'Thickness').
+  static String titleCase(String text) {
+    if (text.isEmpty) return text;
+    return text.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1);
+    }).join(' ');
+  }
+
   /// A field's name above its box — the one way a field on the sheet is
   /// labelled. Floating labels shrank to about 10 px on the border, and the
   /// die and machine forms named a field only while it was empty; a heading
@@ -78,6 +89,8 @@ abstract final class SheetStyle {
     required Widget child,
     List<Widget> actions = const [],
     Key? key,
+    String? shortcutKey,
+    bool showShortcut = false,
   }) =>
       Column(
         key: key,
@@ -91,12 +104,16 @@ abstract final class SheetStyle {
               children: [
                 Flexible(
                   child: Text(
-                    label,
+                    titleCase(label),
                     style: SheetStyle.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (showShortcut && shortcutKey != null) ...[
+                  const SizedBox(width: 4),
+                  KeyTipBadge(label: shortcutKey),
+                ],
                 if (actions.isNotEmpty) ...[const SizedBox(width: 4), ...actions],
               ],
             ),
