@@ -25,7 +25,7 @@ import '../../../../sheet/sheet_draft.dart';
 import '../../../../sheet/sheet_style.dart';
 import '../../../../sheet/widgets/sheet_step.dart';
 
-/// The Client / Vendor section as an ordinary form: the deal (company,
+/// The Client section as an ordinary form: the deal (company,
 /// quotation, when it was recorded) and the people at that company, each a
 /// line of normal text fields with a "dealt with" tick.
 ///

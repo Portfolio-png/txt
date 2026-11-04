@@ -50,7 +50,7 @@ import '../../../../core/utils/stamp_format.dart';
 /// [ItemSheetBinding].
 ///
 /// Four sections down one scroll, with a rail that jumps between them. The
-/// Client / Vendor section is only shown for a part developed for someone else
+/// Client section is only shown for a part developed for someone else
 /// — but its draft is kept either way, so unticking the box and changing your
 /// mind does not lose what was typed.
 class ItemMasterSheetScreen extends StatefulWidget {
@@ -200,7 +200,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     ),
     SheetSection(
       id: 'client_vendor',
-      title: 'Client / Vendor',
+      title: 'Client',
       subtitle: 'Party, contact & the development deal',
       icon: Icons.storefront_rounded,
     ),
@@ -367,7 +367,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       partySheet: SheetDef(
         id: 2,
         key: 'item_party',
-        title: 'Client / Vendor',
+        title: 'Client',
         columns: dealSheetColumns,
       ),
       // The deal is one record for the screen, and the binding reads it live
@@ -1376,7 +1376,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// buttons) and it is data: Die under Client links that client to these
   /// dies, Machine under Die links the machines to the dies, and so on.
   ///
-  /// Client / Vendor is left out for an in-house part; whatever was nested
+  /// Client is left out for an in-house part; whatever was nested
   /// under it shows under its parent, so the tree never has a gap.
   bool _visible(String id) => id != 'client_vendor' || _controller.isExternal;
 
@@ -1821,7 +1821,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         return _section(
           id: 'client_vendor',
           icon: Icons.storefront_rounded,
-          heading: 'Client / Vendor',
+          heading: 'Client',
           collapsed: collapsed,
           trailing: MarginHealthBadge(
             quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),

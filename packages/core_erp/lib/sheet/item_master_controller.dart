@@ -101,8 +101,8 @@ class ItemMasterController extends ChangeNotifier {
     // the next save. A part with none, or a new one, has nothing to clear.
     _dealCleared = !value && _storedDealOnScreen;
     _statusBarMessage = value
-        ? 'Client / Vendor section enabled for external party part.'
-        : 'Part set to Self. Client / Vendor draft preserved in memory.';
+        ? 'Client section enabled for external party part.'
+        : 'Part set to Self. Client draft preserved in memory.';
     notifyListeners();
   }
 
@@ -248,7 +248,7 @@ class ItemMasterController extends ChangeNotifier {
     );
 
     // -------------------------------------------------------------------------
-    // 2. Client / Vendor Sheet
+    // 2. Client Sheet
     // -------------------------------------------------------------------------
     // The live sheet splits the deal from the people; the prototype's single
     // one-person row survives only for the PM screen and the demo vectors.
@@ -347,7 +347,7 @@ class ItemMasterController extends ChangeNotifier {
       sheetDef: SheetDef(
         id: 2,
         key: 'item_party',
-        title: 'Client / Vendor',
+        title: 'Client',
         columns: partyCols,
       ),
       initialDraft: demoData ? partyInitialDraft : null,
@@ -443,7 +443,7 @@ class ItemMasterController extends ChangeNotifier {
     }
     if (!force && _dealDirty && dealRow != null) {
       _statusBarMessage =
-          'The Client / Vendor changes belong to row ${dealRow! + 1} — they '
+          'The Client changes belong to row ${dealRow! + 1} — they '
           'are written when that row saves.';
       return;
     }
@@ -1222,7 +1222,7 @@ class ItemMasterController extends ChangeNotifier {
         !clientVendorController.validateRow(0)) {
       _rowErrors[draft] =
           clientVendorController.firstErrorOn(0) ??
-          'The Client / Vendor section needs attention first.';
+          'The Client section needs attention first.';
       _statusBarMessage = _rowErrors[draft]!;
       notifyListeners();
       return false;
@@ -1389,7 +1389,7 @@ class ItemMasterController extends ChangeNotifier {
       final dealErrors = _isExternal ? clientVendorController.errorCount : 0;
       final where = <String>[
         if (partErrors > 0) '$partErrors in Item Master',
-        if (dealErrors > 0) '$dealErrors in Client / Vendor',
+        if (dealErrors > 0) '$dealErrors in Client',
       ];
       _statusBarMessage =
           '${partErrors + dealErrors} cells need attention before this item '

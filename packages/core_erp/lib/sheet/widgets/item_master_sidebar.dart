@@ -166,7 +166,7 @@ class ItemMasterSidebar extends StatelessWidget {
           if (controller.isExternal)
             _buildSectionNavTile(
               id: 'client_vendor',
-              title: 'Client / Vendor',
+              title: 'Client',
               subtitle: 'Party, contact & quotation',
               icon: Icons.storefront_rounded,
               isSelected: controller.activeSection == 'client_vendor',

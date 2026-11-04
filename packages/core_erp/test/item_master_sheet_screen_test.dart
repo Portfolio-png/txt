@@ -492,7 +492,7 @@ void main() {
 
       for (final section in [
         'Item Master',
-        'Client / Vendor',
+        'Client',
         'Die Process Master',
         'Machines & Routing',
       ]) {
@@ -1576,7 +1576,7 @@ void main() {
       // Hidden until a company is chosen would read as "this sheet has no
       // people" — drawn disabled, it says what it is waiting for.
       await _pumpScreen(tester);
-      await tester.tap(find.text('Client / Vendor').first);
+      await tester.tap(find.text('Client').first);
       await tester.pump();
 
       expect(find.text('People'), findsOneWidget);
@@ -1632,13 +1632,13 @@ void main() {
     testWidgets('unticking the external box hides the party section but keeps '
         'its draft', (tester) async {
       await _pumpScreen(tester);
-      expect(find.text('Client / Vendor'), findsWidgets);
+      expect(find.text('Client'), findsWidgets);
 
       await tester.tap(find.byType(Checkbox).first);
       await tester.pump();
 
       expect(
-        find.text('Client / Vendor'),
+        find.text('Client'),
         findsNothing,
         reason: 'an in-house part has no development deal to record',
       );
@@ -2336,7 +2336,7 @@ void main() {
 
         for (final section in [
           'Item Master',
-          'Client / Vendor',
+          'Client',
           'Die Process Master',
           'Machines & Routing',
         ]) {
