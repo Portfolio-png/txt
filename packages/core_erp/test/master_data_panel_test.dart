@@ -164,7 +164,7 @@ void main() {
     await tester.tap(find.text('Material data'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('WHAT IT PRODUCED'), findsOneWidget);
+    expect(find.text('Input Raw Material'), findsOneWidget);
 
     // The step bar scrolls in a side panel; Review sits past its edge.
     await tester.ensureVisible(find.text('Review'));
@@ -313,6 +313,41 @@ void main() {
     expect(saved!.bands, isNotEmpty);
   });
 
+  testWidgets('Material data: weight over qty; the three losses side by side', (
+    tester,
+  ) async {
+    await mount(tester, baseline: following);
+    await openStep(tester, 'Material data');
+
+    expect(find.text('Input Raw Material'), findsOneWidget);
+    expect(find.text('Output Product'), findsOneWidget);
+    expect(find.text('MATERIAL'), findsNothing, reason: 'the title says it');
+    expect(find.text('PART NAME'), findsOneWidget);
+
+    for (final (weight, qty) in [
+      ('material-input-kg', 'material-input-sheets'),
+      ('material-output-kg', 'material-output-pieces'),
+    ]) {
+      final w = tester.getRect(find.byKey(ValueKey<String>(weight)));
+      final q = tester.getRect(find.byKey(ValueKey<String>(qty)));
+      expect(q.top, greaterThan(w.bottom), reason: '$qty under $weight');
+      expect(q.left, closeTo(w.left, 1), reason: 'in one column');
+    }
+
+    final scrap = tester.getRect(find.text('Scrap'));
+    final rejection = tester.getRect(find.text('Rejection'));
+    final loss = tester.getRect(find.text('Weight loss'));
+    expect(rejection.top, closeTo(scrap.top, 1));
+    expect(loss.top, closeTo(scrap.top, 1));
+    expect(rejection.left, greaterThan(scrap.right));
+    expect(loss.left, greaterThan(rejection.right));
+    // Each box under its own name.
+    final scrapBox = tester.getRect(find.byKey(const ValueKey<String>('material-scrap-kg')));
+    expect(scrapBox.top, greaterThan(scrap.bottom));
+    expect(scrapBox.left, lessThan(rejection.left));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('typed pieces are saved; Refill brings the plan back', (
     tester,
   ) async {
@@ -368,7 +403,7 @@ void main() {
 
     await tester.tap(next);
     await tester.pumpAndSettle();
-    expect(find.text('WHAT IT PRODUCED'), findsOneWidget);
+    expect(find.text('Input Raw Material'), findsOneWidget);
 
     await tester.tap(next);
     await tester.pumpAndSettle();

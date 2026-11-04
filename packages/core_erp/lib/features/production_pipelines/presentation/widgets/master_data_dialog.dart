@@ -1444,8 +1444,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _dataHeading(),
-        const SizedBox(height: 8),
         Expanded(
           child: Container(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -1499,8 +1497,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _dataHeading(),
-        const SizedBox(height: 8),
         Expanded(child: _dataPanel()),
       ],
     );
@@ -2751,13 +2747,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _dataHeading() {
-    return const Text(
-      'WHAT IT PRODUCED',
-      style: SheetStyle.eyebrow,
     );
   }
 

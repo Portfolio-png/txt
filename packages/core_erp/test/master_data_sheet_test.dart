@@ -225,7 +225,7 @@ void main() {
       expect(find.text('Sheet planning'), findsOneWidget);
       await tester.tap(find.text('Material data'));
       await tester.pumpAndSettle();
-      expect(find.text('WHAT IT PRODUCED'), findsOneWidget);
+      expect(find.text('Input Raw Material'), findsOneWidget);
       await tester.tap(find.text('Sheet planning'));
       await tester.pumpAndSettle();
       expect(find.byType(SheetDimensionFigure), findsOneWidget);

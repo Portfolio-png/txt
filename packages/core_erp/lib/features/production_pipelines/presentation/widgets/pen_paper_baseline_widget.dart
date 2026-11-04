@@ -673,9 +673,10 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
           builder: (context, constraints) {
             final stacked = constraints.maxWidth < 720;
             final input = _MeasureColumn(
-              title: 'Input material',
+              title: 'Input Raw Material',
               accent: SoftErpTheme.infoText,
-              nameHeading: 'Material',
+              // The title says it is the material; the name is enough.
+              nameHeading: null,
               name: draft.inputName,
               nameKey: const ValueKey<String>('material-input-name'),
               weightController: _wholeInputCtrl,
@@ -695,9 +696,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               ),
             );
             final output = _MeasureColumn(
-              title: 'Output material',
+              title: 'Output Product',
               accent: SoftErpTheme.successText,
-              nameHeading: 'Part',
+              nameHeading: 'Part name',
               name: draft.outputName,
               nameKey: const ValueKey<String>('material-output-name'),
               weightController: _wholeOutputCtrl,
@@ -795,9 +796,12 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
   /// toggle rather than a separate strip of chips, so turning a loss on and
   /// entering it are the same gesture in the same place.
   Widget _buildLossRows() {
-    return Column(
+    // Three columns, each its tick and name over its box.
+    Widget column(Widget row) => Expanded(child: row);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _LossRow(
+        column(_LossRow(
           label: 'Scrap',
           unit: 'kg',
           enabled: _wholeRecordScrap,
@@ -830,8 +834,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             _weightsChanged();
           },
           onChanged: _scrapTyped,
-        ),
-        _LossRow(
+        )),
+        const SizedBox(width: 8),
+        column(_LossRow(
           label: 'Rejection',
           unit: '%',
           enabled: _wholeRecordRejection,
@@ -847,8 +852,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             _weightsChanged();
           },
           onChanged: _weightsChanged,
-        ),
-        _LossRow(
+        )),
+        const SizedBox(width: 8),
+        column(_LossRow(
           label: 'Weight loss',
           unit: 'kg',
           enabled: _wholeRecordWeightLoss,
@@ -859,7 +865,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             _weightsChanged();
           },
           onChanged: _weightsChanged,
-        ),
+        )),
       ],
     );
   }
@@ -1491,8 +1497,8 @@ class _MeasureColumn extends StatelessWidget {
   final String title;
   final Color accent;
 
-  /// What the row is: the sheet going in, the part coming out.
-  final String nameHeading;
+  /// What the name is ("Part name"); null when the title already says it.
+  final String? nameHeading;
   final String name;
   final Key? nameKey;
   final Key? weightKey;
@@ -1545,8 +1551,10 @@ class _MeasureColumn extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(nameHeading.toUpperCase(), style: _heading),
-                const SizedBox(height: 3),
+                if (nameHeading != null) ...[
+                  Text(nameHeading!.toUpperCase(), style: _heading),
+                  const SizedBox(height: 3),
+                ],
                 Text(
                   name.trim().isEmpty ? '—' : name,
                   key: nameKey,
@@ -1559,41 +1567,21 @@ class _MeasureColumn extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('WEIGHT', style: _heading),
-                          const SizedBox(height: 4),
-                          _CellField(
-                            key: weightKey,
-                            controller: weightController,
-                            suffix: 'kg',
-                            hint: '0.0',
-                            readOnly: readOnly,
-                            onChanged: onChanged,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('QTY', style: _heading),
-                          const SizedBox(height: 4),
-                          qtyField,
-                        ],
-                      ),
-                    ),
-                  ],
+                // Weight above Qty, each the column's width.
+                const Text('WEIGHT', style: _heading),
+                const SizedBox(height: 4),
+                _CellField(
+                  key: weightKey,
+                  controller: weightController,
+                  suffix: 'kg',
+                  hint: '0.0',
+                  readOnly: readOnly,
+                  onChanged: onChanged,
                 ),
+                const SizedBox(height: 10),
+                const Text('QTY', style: _heading),
+                const SizedBox(height: 4),
+                qtyField,
                 if (perPiece > 0) ...[
                   const SizedBox(height: 6),
                   Text(
@@ -1717,76 +1705,72 @@ class _LossRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-              onTap: readOnly ? null : onToggle,
-              child: Row(
-                children: [
-                  Icon(
-                    enabled
-                        ? Icons.check_circle_rounded
-                        : Icons.circle_outlined,
-                    size: 15,
-                    color: enabled
-                        ? SoftErpTheme.accent
-                        : SoftErpTheme.textMuted,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: enabled
-                            ? SoftErpTheme.textPrimary
-                            : SoftErpTheme.textMuted,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
+    final note = aside ??
+        (resolved == null
+            ? null
+            : Text(
+                resolved!,
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Its tick and name, over its box.
+        InkWell(
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+          onTap: readOnly ? null : onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(
+                  enabled ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  size: 15,
+                  color: enabled ? SoftErpTheme.accent : SoftErpTheme.textMuted,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: enabled
+                          ? SoftErpTheme.textPrimary
+                          : SoftErpTheme.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 4,
-            child: enabled
-                ? _CellField(
-                    key: fieldKey,
-                    controller: controller,
-                    suffix: unit,
-                    hint: '0',
-                    readOnly: readOnly,
-                    onChanged: onChanged,
-                  )
-                : const SizedBox(height: 36),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 4,
-            child:
-                aside ??
-                Text(
-                  resolved ?? '',
-                  textAlign: TextAlign.left,
-                  style: const TextStyle(
-                    color: SoftErpTheme.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+        ),
+        const SizedBox(height: 4),
+        // Not ticked: the room is kept, so the three boxes stay level.
+        enabled
+            ? _CellField(
+                key: fieldKey,
+                controller: controller,
+                suffix: unit,
+                hint: '0',
+                readOnly: readOnly,
+                onChanged: onChanged,
+              )
+            : const SizedBox(height: 36),
+        if (note != null) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(fit: BoxFit.scaleDown, child: note),
           ),
         ],
-      ),
+      ],
     );
   }
 }
