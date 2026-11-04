@@ -523,7 +523,7 @@ void main() {
 
       for (final section in [
         'Item Master',
-        'Client',
+        'Developed For',
         'Die Process Master',
         'Machines & Routing',
       ]) {
@@ -2282,7 +2282,7 @@ void main() {
         // Hidden until a company is chosen would read as "this sheet has no
         // people" — drawn disabled, it says what it is waiting for.
         await _pumpScreen(tester);
-        await tester.tap(find.text('Client').first);
+        await tester.tap(find.text('Developed For').first);
         await tester.pump();
 
         expect(find.text('People'), findsOneWidget);
@@ -2348,19 +2348,51 @@ void main() {
       },
     );
 
-    testWidgets('unticking the external box hides the party section but keeps '
-        'its draft', (tester) async {
-      await _pumpScreen(tester);
-      expect(find.text('Client'), findsWidgets);
+    testWidgets('Developed For: tick, company, quotation and recorded on one '
+        'line; people, then the papers, under it', (tester) async {
+      // Wide: the test font draws every letter a full em.
+      await _pumpScreen(tester, size: const Size(2600, 2000));
+      final tick = tester.getCenter(
+        find.byKey(const ValueKey('developed_for_external')),
+      );
+      final company = tester.getRect(find.byKey(const ValueKey('deal_company')));
+      final quotation = tester.getRect(find.byKey(const ValueKey('deal_quotation')));
+      final recorded = tester.getRect(find.textContaining('Recorded:'));
+      final papers = tester.getRect(find.byKey(const ValueKey('deal_documents')));
+      expect(tick.dy, closeTo(company.center.dy, 12), reason: 'the tick on the deal\'s line');
+      expect(tick.dx, lessThan(company.left));
+      expect(recorded.center.dy, closeTo(quotation.center.dy, 12),
+          reason: 'recorded beside the fields, not under them');
+      expect(recorded.left, greaterThan(quotation.right));
+      final people = tester.getRect(find.text('Add person'));
+      expect(people.top, greaterThan(quotation.bottom));
+      expect(papers.top, greaterThan(people.bottom),
+          reason: 'the papers under the people');
+      expect(tester.takeException(), isNull);
+    });
 
-      await tester.tap(find.byType(Checkbox).first);
+    testWidgets('the external tick is in the Developed For card; unticking '
+        'hides the deal, not the card', (tester) async {
+      await _pumpScreen(tester);
+      final tick = find.byKey(const ValueKey('developed_for_external'));
+      expect(tick, findsOneWidget);
+      // In the card, under its title bar — not up in the top bar.
+      final card = find.byKey(const ValueKey('section_toggle_client_vendor'));
+      expect(tester.getTopLeft(tick).dy, greaterThan(tester.getTopLeft(card).dy));
+      expect(find.text('People'), findsOneWidget);
+
+      await tester.tap(tick);
       await tester.pump();
 
-      expect(
-        find.text('Client'),
-        findsNothing,
-        reason: 'an in-house part has no development deal to record',
-      );
+      expect(find.text('Developed For'), findsWidgets,
+          reason: 'the card stays, so it can be ticked again');
+      expect(tick, findsOneWidget);
+      expect(find.text('People'), findsNothing,
+          reason: 'an in-house part has no development deal to record');
+
+      await tester.tap(tick);
+      await tester.pump();
+      expect(find.text('People'), findsOneWidget, reason: 'and back');
     });
 
     testWidgets('a sitting is open while the screen is, and closed after', (
@@ -3385,7 +3417,7 @@ void main() {
 
         for (final section in [
           'Item Master',
-          'Client',
+          'Developed For',
           'Die Process Master',
           'Machines & Routing',
         ]) {

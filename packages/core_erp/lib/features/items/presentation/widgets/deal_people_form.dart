@@ -46,9 +46,14 @@ class DealPeopleForm extends StatefulWidget {
     this.onSaveDeal,
     this.recordedAt,
     this.flow,
+    this.leading,
   });
 
   final ItemMasterController controller;
+
+  /// First on the deal's line, level with its boxes: the host's "Developed
+  /// for an external party" tick.
+  final Widget? leading;
 
   /// The sheet line (the part) the deal is shown for.
   final Object? lineKey;
@@ -170,19 +175,6 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _dealRow(),
-            const SizedBox(height: 14),
-            // The company's own papers — kept on the company, so every part for
-            // it shows the same ones, and its view lists them too.
-            // Documents are added with the mouse; Tab goes on to the people.
-            SheetStep.noTab(CompanyDocumentsBox(
-              owner: PhotoOwner.client,
-              id: widget.controller.dealPartyId?.toString(),
-              compact: true,
-              disabledReason: 'Pick the company first to keep its documents',
-              note: widget.controller.dealPartyName.trim().isEmpty
-                  ? null
-                  : 'for ${widget.controller.dealPartyName.trim()}',
-            )),
             const SizedBox(height: 18),
             Tooltip(
               message: hasCompany ? '' : 'Pick a company first',
@@ -197,6 +189,23 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                 ),
                 ),
               ),
+            ),
+            const SizedBox(height: 18),
+            // The company's own papers — kept on the company, so every part for
+            // it shows the same ones, and its view lists them too. Under the
+            // people. Added with the mouse; Tab goes on past them.
+            SizedBox(
+              key: const ValueKey<String>('deal_documents'),
+              width: double.infinity,
+              child: SheetStep.noTab(CompanyDocumentsBox(
+                owner: PhotoOwner.client,
+                id: widget.controller.dealPartyId?.toString(),
+                compact: true,
+                disabledReason: 'Pick the company first to keep its documents',
+                note: widget.controller.dealPartyName.trim().isEmpty
+                    ? null
+                    : 'for ${widget.controller.dealPartyName.trim()}',
+              )),
             ),
           ],
         );
@@ -235,12 +244,18 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     final at = widget.recordedAt;
     final recorded = at == null ? 'Set on save' : partStamp(at);
 
-    // The fields on one line; when it was recorded, its Edit and the way to
-    // the company on the next — they wrapped there anyway, and carried the
-    // fields' heading gap with them.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // One line: the host's tick, the fields, then when it was recorded, its
+    // Edit and the way to the company — level with the boxes.
+    return Wrap(
+      spacing: 16,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.start,
       children: [
+    if (widget.leading != null)
+      Padding(
+        padding: const EdgeInsets.only(top: _boxTop),
+        child: widget.leading,
+      ),
     _companyStep(dealLocked, Wrap(
       spacing: 12,
       runSpacing: 12,
@@ -346,8 +361,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         ),
       ],
     )),
-    const SizedBox(height: 10),
-    SheetStep.noTab(Wrap(
+    Padding(
+      padding: const EdgeInsets.only(top: _boxTop),
+      child: SheetStep.noTab(Wrap(
       spacing: 12,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -380,6 +396,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           ),
       ],
     )),
+    ),
       ],
     );
   }

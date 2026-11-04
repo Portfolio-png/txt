@@ -132,9 +132,29 @@ class SheetFlow {
   }
 
   /// The first step, as the screen opens.
-  void focusFirst() {
+  void focusFirst() =>
+      _focusFirst(_firstTries, FocusManager.instance.primaryFocus);
+
+  /// Frames [focusFirst] waits for the first step to be on screen with its
+  /// fields: a screen still loading draws it a frame or two late, and a single
+  /// try left the sheet open with the keyboard nowhere — now and then.
+  static const int _firstTries = 30;
+
+  void _focusFirst(int triesLeft, FocusNode? before) {
+    // Something took the keyboard meanwhile — a click: leave it there.
+    if (FocusManager.instance.primaryFocus != before) return;
     final first = order().firstOrNull;
-    if (first != null) focusStep(first.id);
+    if (first == null) return;
+    final step = _steps[first.id];
+    if (step != null && step._fields.isNotEmpty) {
+      focusStep(first.id);
+      return;
+    }
+    if (triesLeft <= 0) return;
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _focusFirst(triesLeft - 1, before),
+    );
   }
 }
 

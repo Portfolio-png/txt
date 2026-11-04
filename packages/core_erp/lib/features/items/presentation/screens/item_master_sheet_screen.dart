@@ -238,7 +238,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     ),
     SheetSection(
       id: 'client_vendor',
-      title: 'Client',
+      title: 'Developed For',
       subtitle: 'Party, contact & the development deal',
       icon: Icons.storefront_rounded,
     ),
@@ -501,7 +501,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       partySheet: SheetDef(
         id: 2,
         key: 'item_party',
-        title: 'Client',
+        title: 'Developed For',
         columns: dealSheetColumns,
       ),
       // The deal is one record for the screen, and the binding reads it live
@@ -933,10 +933,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                             SheetSidebar(
                               controller: _controller.groupItemController,
                               sections: [
-                                for (final section in _sections)
-                                  if (section.id != 'client_vendor' ||
-                                      _controller.isExternal)
-                                    section,
+                                ..._sections,
                               ],
                               activeSection: _controller.activeSection,
                               onSelectSection: _goTo,
@@ -1044,31 +1041,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Checkbox(
-                  value: _controller.isExternal,
-                  activeColor: SoftErpTheme.accent,
-                  onChanged: (val) {
-                    if (val != null) _controller.setExternal(val);
-                  },
-                ),
-                const Text(
-                  'Developed for an external party',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: SoftErpTheme.textPrimary,
-                  ),
-                ),
-                if (_altPressed) ...[
-                  const SizedBox(width: 4),
-                  const KeyTipBadge(label: 'Alt+E'),
-                ],
-              ],
-            ),
-            const SizedBox(width: 16),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1626,10 +1598,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// The rail folded to a strip of section icons: hover for the name, tap to
   /// go there, the chevron at the top opens it again.
   Widget _collapsedRail() {
-    final sections = [
-      for (final section in _sections)
-        if (section.id != 'client_vendor' || _controller.isExternal) section,
-    ];
+    final sections = _sections;
     return Container(
       key: const ValueKey<String>('rail_collapsed'),
       width: 56,
@@ -1695,9 +1664,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// buttons) and it is data: Die under Client links that client to these
   /// dies, Machine under Die links the machines to the dies, and so on.
   ///
-  /// Client is left out for an in-house part; whatever was nested
-  /// under it shows under its parent, so the tree never has a gap.
-  bool _visible(String id) => id != 'client_vendor' || _controller.isExternal;
+  /// Every section shows: Developed For too, for an in-house part — its tick
+  /// is in it. Kept as the one place a section could be left out; whatever
+  /// was nested under one shows under its parent, so the tree has no gap.
+  bool _visible(String id) => true;
 
   /// Where [id] shows: its parent, or the nearest visible ancestor.
   String _shownParentOf(String id) {
@@ -2024,6 +1994,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     switch (id) {
       case 'client_vendor':
+        if (!_controller.isExternal) return const [(null, 'Developed for: Self')];
         final company = _controller.dealPartyName;
         if (company.isEmpty) return const [(null, 'No company chosen yet')];
         add('Company', company);
@@ -2180,12 +2151,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         return _section(
           id: 'client_vendor',
           icon: Icons.storefront_rounded,
-          heading: 'Client',
+          heading: 'Developed For',
           collapsed: collapsed,
-          trailing: MarginHealthBadge(
-            quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
-            cost: _moneyBoundTo(SheetBindsTo.developedForCost),
-          ),
+          trailing: _controller.isExternal
+              ? MarginHealthBadge(
+                  quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
+                  cost: _moneyBoundTo(SheetBindsTo.developedForCost),
+                )
+              : null,
           child: _partySheet(),
         );
       case 'die_master':
@@ -3418,14 +3391,50 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// The deal and the people at that company, as ordinary text fields. The
   /// spreadsheet cells here ate keystrokes (each rebuild re-selected the cell,
   /// so 85000 became 0) and were cramped pills; see [DealPeopleForm].
-  Widget _partySheet() => DealPeopleForm(
-    controller: _controller,
-    lineKey: _cursorRowKey,
-    partSaved: _livePart != null,
-    recordedAt: _livePart?.developedFor.at,
-    flow: _flow,
-    onSaveDeal: _saveDeal,
-  );
+  /// Developed For: its tick — moved down here from the top bar — first on
+  /// the deal's line, the company, quotation and papers across from it.
+  Widget _partySheet() {
+    final tick = SheetStep.noTab(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Checkbox(
+            key: const ValueKey<String>('developed_for_external'),
+            value: _controller.isExternal,
+            activeColor: SoftErpTheme.accent,
+            onChanged: (val) {
+              if (val != null) _controller.setExternal(val);
+            },
+          ),
+          // Under the card's own title, "Developed For": the rest of the
+          // sentence.
+          const Text(
+            'External party',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          if (_altPressed) ...[
+            const SizedBox(width: 4),
+            const KeyTipBadge(label: 'Alt+E'),
+          ],
+        ],
+      ),
+    );
+    // In-house: the tick is all there is to say.
+    if (!_controller.isExternal) return Align(alignment: Alignment.centerLeft, child: tick);
+    return DealPeopleForm(
+      controller: _controller,
+      lineKey: _cursorRowKey,
+      partSaved: _livePart != null,
+      recordedAt: _livePart?.developedFor.at,
+      flow: _flow,
+      onSaveDeal: _saveDeal,
+      leading: tick,
+    );
+  }
 
   /// Cancel on the route panel. Stages laid out and not saved are asked
   /// about first — Cancel used to drop them without a word.

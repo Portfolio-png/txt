@@ -480,7 +480,7 @@ void main() {
     // The reopened part, section by section, as the app draws it.
     await snapshot(tester, 'sheet_item');
     for (final (section, name) in const [
-      ('Client', 'sheet_client'),
+      ('Developed For', 'sheet_client'),
       ('Die Process Master', 'sheet_die'),
       ('Machines & Routing', 'sheet_machine'),
     ]) {

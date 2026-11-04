@@ -27,7 +27,11 @@ void main() {
     // The party sheet's Company Name and Client Name are required columns, so
     // leaving "developed for an external party" ticked demands a client before
     // any part can be saved. This journey is a catalogue, not a deal.
-    await tester.tap(find.byType(Checkbox).first);
+    // The tick is in the Developed For card, below the part lines.
+    final external = find.byKey(const ValueKey<String>('developed_for_external'));
+    await Scrollable.ensureVisible(tester.element(external), alignment: 0.5);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(external);
     await tester.pump();
 
     for (var row = 0; row < _names.length; row += 1) {

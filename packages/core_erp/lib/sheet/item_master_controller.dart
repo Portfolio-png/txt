@@ -347,7 +347,7 @@ class ItemMasterController extends ChangeNotifier {
       sheetDef: SheetDef(
         id: 2,
         key: 'item_party',
-        title: 'Client',
+        title: 'Developed For',
         columns: partyCols,
       ),
       initialDraft: demoData ? partyInitialDraft : null,
