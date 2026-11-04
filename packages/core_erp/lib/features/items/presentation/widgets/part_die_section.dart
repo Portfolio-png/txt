@@ -859,19 +859,28 @@ class _PartDieSectionState extends State<PartDieSection> {
                   enabled: enabled,
                   numeric: true,
                 ),
-                _pick(
-                  slug: 'area',
-                  label: 'Store Area',
-                  controller: _storeAreaController,
-                  options: _suggestions.storeAreas,
-                  enabled: enabled,
-                ),
-                _pick(
-                  slug: 'rack',
-                  label: 'Rack No.',
-                  controller: _rackController,
-                  options: _suggestions.rackNos,
-                  enabled: enabled,
+                // Where the die is kept reads as one place — area, then
+                // rack — so the two never wrap apart.
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _pick(
+                      slug: 'area',
+                      label: 'Store Area',
+                      controller: _storeAreaController,
+                      options: _suggestions.storeAreas,
+                      enabled: enabled,
+                    ),
+                    const SizedBox(width: 10),
+                    _pick(
+                      slug: 'rack',
+                      label: 'Rack No.',
+                      controller: _rackController,
+                      options: _suggestions.rackNos,
+                      enabled: enabled,
+                    ),
+                  ],
                 ),
                 // The paper sheet calls these "PO-Date" and "Date in", which
                 // name the columns without saying what they are: the first is

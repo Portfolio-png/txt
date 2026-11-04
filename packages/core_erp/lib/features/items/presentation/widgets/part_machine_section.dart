@@ -802,21 +802,30 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   enabled: enabled,
                   numeric: true,
                 ),
-                _pick(
-                  slug: 'hours',
-                  label: 'Running Hrs',
-                  controller: _hoursController,
-                  options: _suggestions.runningHours,
-                  enabled: enabled,
-                  numeric: true,
-                ),
-                _pick(
-                  slug: 'strokes',
-                  label: 'Stroke / Min',
-                  controller: _strokesController,
-                  options: _suggestions.strokesPerMinute,
-                  enabled: enabled,
-                  numeric: true,
+                // How hard the machine runs reads as one figure pair, so the
+                // two never wrap apart.
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _pick(
+                      slug: 'hours',
+                      label: 'Running Hrs',
+                      controller: _hoursController,
+                      options: _suggestions.runningHours,
+                      enabled: enabled,
+                      numeric: true,
+                    ),
+                    const SizedBox(width: 10),
+                    _pick(
+                      slug: 'strokes',
+                      label: 'Stroke / Min',
+                      controller: _strokesController,
+                      options: _suggestions.strokesPerMinute,
+                      enabled: enabled,
+                      numeric: true,
+                    ),
+                  ],
                 ),
                 // A figure, a unit and a "free hand" tick: one compact block.
                 SheetStyle.labelled(
