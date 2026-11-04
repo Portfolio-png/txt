@@ -687,14 +687,17 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
               onChanged: _weightsChanged,
               perPiece: draft.inputKgPerPiece,
               perWhat: widget.stockNoun,
-              qtyField: _CellField(
-                key: const ValueKey<String>('material-input-sheets'),
-                controller: _wholeInputQtyCtrl,
-                suffix: '${widget.stockNoun}s',
-                hint: '1',
-                readOnly: widget.readOnly,
-                wholeOnly: true,
-                onChanged: () => _saveWholePipelineBaseline(countsTyped: true),
+              qtyField: _numberWidth(
+                _CellField(
+                  key: const ValueKey<String>('material-input-sheets'),
+                  controller: _wholeInputQtyCtrl,
+                  suffix: '${widget.stockNoun}s',
+                  hint: '1',
+                  readOnly: widget.readOnly,
+                  wholeOnly: true,
+                  onChanged: () =>
+                      _saveWholePipelineBaseline(countsTyped: true),
+                ),
               ),
             );
             final output = _MeasureColumn(
@@ -717,6 +720,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                 unitId: _outputUnitId,
                 enabled: !widget.readOnly,
                 dense: true,
+                boxWidth: _kNumberWidth,
                 onChanged: (pieces, unitId) {
                   setState(() {
                     _outputPieces = pieces;
@@ -732,15 +736,16 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                 children: [input, const SizedBox(height: 12), output],
               );
             }
-            return IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(child: input),
-                  const SizedBox(width: 12),
-                  Expanded(child: output),
-                ],
-              ),
+            // Each as tall as what it holds. Not IntrinsicHeight: that
+            // measured the Qty's breakdown at the column's width while it was
+            // laid out in the narrow box, and the card came up 19px short.
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: input),
+                const SizedBox(width: 12),
+                Expanded(child: output),
+              ],
             );
           },
         ),
@@ -1594,7 +1599,9 @@ class _MeasureColumn extends StatelessWidget {
                 const SizedBox(height: 10),
                 const Text('QTY', style: _heading),
                 const SizedBox(height: 4),
-                _numberWidth(qtyField),
+                // Its own width: the count's breakdown under its box takes
+                // the column's.
+                qtyField,
                 if (perPiece > 0) ...[
                   const SizedBox(height: 6),
                   Text(

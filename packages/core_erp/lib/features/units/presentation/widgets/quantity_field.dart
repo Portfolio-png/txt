@@ -29,6 +29,7 @@ class QuantityField extends StatefulWidget {
     this.fieldKey,
     this.unitKey,
     this.dense = false,
+    this.boxWidth,
   });
 
   /// The family offered (Count). Null falls back to whole pieces.
@@ -52,6 +53,10 @@ class QuantityField extends StatefulWidget {
   /// box, the figure bold, and the unit inside it at the end (a click there
   /// picks another), the way a weight cell prints its "kg".
   final bool dense;
+
+  /// A dense box's widest; the breakdown under it is not held to it, so
+  /// "= 848 gro · 9 doz · 2 Pc" stays on one line. Null fills the width.
+  final double? boxWidth;
 
   @override
   State<QuantityField> createState() => _QuantityFieldState();
@@ -269,7 +274,12 @@ class _QuantityFieldState extends State<QuantityField> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.dense)
-          _denseCell(family, unit)
+          widget.boxWidth == null
+              ? _denseCell(family, unit)
+              : ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: widget.boxWidth!),
+                  child: _denseCell(family, unit),
+                )
         else
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
