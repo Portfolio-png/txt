@@ -65,7 +65,7 @@ List<RawSheetReviewSection> rawSheetReviewSections({
       for (final entry in parts)
         (entry.label, '${entry.count} × ${entry.sizeLabel}'),
       if (baseline.edgeTrimMm > 0) ('Edge trim', mm(baseline.edgeTrimMm)),
-      ('Pieces per sheet', _pieces(baseline.pieceCount, countFamily)),
+      ('Pieces per sheet', piecesText(baseline.pieceCount, countFamily)),
       if (sheetAreaMm2 > 0) ('Yield', '${yieldPct.toStringAsFixed(1)}%'),
     ]),
   ];
@@ -80,7 +80,7 @@ List<RawSheetReviewSection> rawSheetReviewSections({
           '${row.sheetsIn} × ${row.inputName.isEmpty ? 'sheet' : row.inputName}',
         ),
         ('Weight in', kg(row.inputKg)),
-        ('Out', _pieces(row.piecesOut, countFamily)),
+        ('Out', piecesText(row.piecesOut, countFamily)),
         ('Weight out', kg(row.outputKg)),
         if (row.recordScrap) ('Scrap', kg(row.scrapKg)),
         if (row.recordRejection) ('Rejection', kg(row.rejectionKg)),
@@ -141,12 +141,24 @@ List<RawSheetReviewSection> rawSheetReviewSections({
 
 /// A count through the units module, spelt down the ladder once it reaches a
 /// dozen: "2900 Pc (20 gro · 1 doz · 8 Pc)".
-String _pieces(int count, UnitFamily? family) {
-  if (family == null) return '$count pcs';
-  final q = Quantity(count, family);
-  final shown = Units.format(q, display: const QtyDisplay.base());
-  return count.abs() >= 12 ? '$shown (${Units.formatBreakdown(q)})' : shown;
+String piecesText(int count, UnitFamily? family) {
+  final ladder = piecesLadder(count, family);
+  final shown = piecesCount(count, family);
+  return ladder == null ? shown : '$shown ($ladder)';
 }
+
+/// The count in pieces: "2900 Pc" — "2900 pcs" without the units master.
+String piecesCount(int count, UnitFamily? family) => family == null
+    ? '$count pcs'
+    : Units.format(Quantity(count, family), display: const QtyDisplay.base());
+
+/// The count down the gross–dozen–piece ladder, "20 gro · 1 doz · 8 Pc";
+/// null below a dozen (it would only repeat the count) or without the units
+/// master.
+String? piecesLadder(int count, UnitFamily? family) =>
+    family == null || count.abs() < 12
+        ? null
+        : Units.formatBreakdown(Quantity(count, family));
 
 String _kg(double value) {
   final text = value.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '');

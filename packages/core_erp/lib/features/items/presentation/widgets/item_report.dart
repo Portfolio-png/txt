@@ -24,6 +24,8 @@ import '../../../process_routes/data/process_route_service.dart';
 import '../../../process_routes/domain/part_route.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
 import '../../../production_pipelines/presentation/widgets/raw_sheet_review.dart';
+import '../../../units/data/unit_family_service.dart';
+import '../../../units/domain/unit_family.dart';
 import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/sheet_property.dart';
@@ -118,6 +120,7 @@ List<RawSheetReviewSection> itemReportSections({
   Map<String, String> propertyLabels = const {},
   List<PartRoute> routes = const [],
   List<String> documents = const [],
+  UnitFamily? countFamily,
 }) {
   String said(String? value, [String otherwise = 'Not recorded']) {
     final text = value?.trim() ?? '';
@@ -231,6 +234,7 @@ List<RawSheetReviewSection> itemReportSections({
       baseline: recorded,
       partName: name,
       sheetLabel: _sheetLabelOf(recorded),
+      countFamily: countFamily,
     );
     // Its own "Part" heading repeats the one above.
     sections.addAll(raw.where((section) => section.title != 'Part'));
@@ -307,6 +311,11 @@ class _ItemReportViewState extends State<ItemReportView> {
   String? _error;
   bool _loading = true;
 
+  /// Pc, doz, gro — so pieces read down the ladder ("20 gro · 1 doz · 8 Pc")
+  /// as they do in the raw panel's Review. Null without the units master:
+  /// plain pieces.
+  UnitFamily? _countFamily;
+
   @override
   void initState() {
     super.initState();
@@ -321,7 +330,23 @@ class _ItemReportViewState extends State<ItemReportView> {
       } on ProviderNotFoundException {
         // No property columns in this app: the report shows none.
       }
+      unawaited(_loadCountFamily());
     });
+  }
+
+  Future<void> _loadCountFamily() async {
+    UnitFamilyService service;
+    try {
+      service = context.read<UnitFamilyService>();
+    } on ProviderNotFoundException {
+      return;
+    }
+    try {
+      final family = await service.byCode('count');
+      if (mounted && family != null) setState(() => _countFamily = family);
+    } catch (_) {
+      // Plain pieces, as before.
+    }
   }
 
   @override
@@ -506,10 +531,13 @@ class _ItemReportViewState extends State<ItemReportView> {
                   icon: Icons.grid_on_rounded,
                   // Pieces the plan cuts from a sheet; with no plan laid
                   // out, the pieces recorded coming out.
-                  value: _rawFigure(raw),
+                  value: _rawFigure(raw, _countFamily),
                   label: raw == null
                       ? 'Raw sheet'
                       : (raw.pieceCount > 0 ? 'Per sheet' : 'Pieces out'),
+                  // Too narrow to spell the ladder out; the Raw sheet card
+                  // below does.
+                  hint: _rawLadder(raw, _countFamily),
                   onTap: () => _scrollTo(_rawKey),
                 ),
               ],
@@ -541,6 +569,7 @@ class _ItemReportViewState extends State<ItemReportView> {
                   raw.stageReconciliations.isEmpty &&
                   item.penPaperBaseline!.stageReconciliations.isNotEmpty,
               partName: item.displayName.trim().isEmpty ? item.name : item.displayName.trim(),
+              countFamily: _countFamily,
             ),
           ],
         );
@@ -549,12 +578,24 @@ class _ItemReportViewState extends State<ItemReportView> {
   }
 }
 
-String? _rawFigure(PenPaperBaseline? raw) {
+/// Pieces the plan cuts from a sheet; with no plan laid out, the pieces
+/// recorded coming out. Null when neither is known.
+int? _rawPieces(PenPaperBaseline? raw) {
   if (raw == null) return null;
-  if (raw.pieceCount > 0) return '${raw.pieceCount} pcs';
+  if (raw.pieceCount > 0) return raw.pieceCount;
   final row = raw.isGranular ? null : raw.stageReconciliations.firstOrNull;
-  if (row != null && row.piecesOut > 0) return '${row.piecesOut} pcs';
+  if (row != null && row.piecesOut > 0) return row.piecesOut;
   return null;
+}
+
+String? _rawFigure(PenPaperBaseline? raw, UnitFamily? family) {
+  final pieces = _rawPieces(raw);
+  return pieces == null ? null : piecesCount(pieces, family);
+}
+
+String? _rawLadder(PenPaperBaseline? raw, UnitFamily? family) {
+  final pieces = _rawPieces(raw);
+  return pieces == null ? null : piecesLadder(pieces, family);
 }
 
 String _count(int n, String one) => n == 0 ? '0 ${one}s' : '$n $one${n == 1 ? '' : 's'}';
@@ -830,9 +871,13 @@ class _FigureTile extends StatelessWidget {
     required this.value,
     required this.label,
     required this.onTap,
+    this.hint,
   });
 
   final IconData icon;
+
+  /// Said on hover — what the figure is, in more words than fit.
+  final String? hint;
 
   /// Null when nothing is recorded: drawn as a quiet dash, never as 0.
   final String? value;
@@ -841,7 +886,7 @@ class _FigureTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    final tile = Material(
       color: SoftErpTheme.cardSurface,
       borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
       child: InkWell(
@@ -894,6 +939,8 @@ class _FigureTile extends StatelessWidget {
         ),
       ),
     );
+    final hint = this.hint;
+    return hint == null ? tile : Tooltip(message: hint, child: tile);
   }
 }
 
@@ -1571,9 +1618,11 @@ class _RawSheetCard extends StatelessWidget {
     required this.baseline,
     required this.madeUp,
     required this.partName,
+    this.countFamily,
   });
 
   final PenPaperBaseline? baseline;
+  final UnitFamily? countFamily;
 
   /// The weights were the model's placeholders: shown as not recorded.
   final bool madeUp;
@@ -1594,6 +1643,7 @@ class _RawSheetCard extends StatelessWidget {
       baseline: baseline,
       partName: partName,
       sheetLabel: _sheetLabelOf(baseline),
+      countFamily: countFamily,
     );
     // What the tiles and facts above do not already say.
     final more = sections
@@ -1641,7 +1691,13 @@ class _RawSheetCard extends StatelessWidget {
               children: [
                 _StatTile(label: 'In', value: _kgText(row.inputKg)),
                 _StatTile(label: 'Out', value: _kgText(row.outputKg)),
-                if (row.piecesOut > 0) _StatTile(label: 'Pieces', value: '${row.piecesOut} pcs'),
+                if (row.piecesOut > 0)
+                  _StatTile(
+                    key: const ValueKey<String>('report_pieces_out'),
+                    label: 'Pieces',
+                    value: piecesCount(row.piecesOut, countFamily),
+                    detail: piecesLadder(row.piecesOut, countFamily),
+                  ),
                 if (row.recordScrap) _StatTile(label: 'Scrap', value: _kgText(row.scrapKg)),
                 if (row.recordRejection && row.rejectionKg > 0)
                   _StatTile(label: 'Rejection', value: _kgText(row.rejectionKg)),
@@ -1687,10 +1743,13 @@ class _RawSheetCard extends StatelessWidget {
 
 /// A figure in a box: the value large, its name small above it.
 class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value});
+  const _StatTile({super.key, required this.label, required this.value, this.detail});
 
   final String label;
   final String value;
+
+  /// A line under the value — a count down its ladder.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -1712,6 +1771,8 @@ class _StatTile extends StatelessWidget {
             value,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: SoftErpTheme.textPrimary),
           ),
+          if (detail != null)
+            Text(detail!, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
         ],
       ),
     );

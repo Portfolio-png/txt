@@ -18,6 +18,8 @@ import 'package:core_erp/features/items/domain/item_asset.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/widgets/item_detail_panel.dart';
 import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
+import 'package:core_erp/features/units/data/unit_family_service.dart';
+import 'package:core_erp/features/units/domain/unit_family.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:flutter/material.dart';
@@ -333,6 +335,30 @@ void main() {
     expect(lines.where((line) => line.contains('Recorded from sample')), isEmpty);
   });
 
+  test('the review spells pieces down the ladder once it has the units master', () async {
+    final baseline = PenPaperBaseline(
+      stageReconciliations: [
+        PenPaperStageReconciliation(
+          stageId: 'whole',
+          stageName: 'Whole pipeline',
+          inputKg: 24.5,
+          outputKg: 21.25,
+          outputPieces: 2900,
+        ),
+      ],
+    );
+    final count = (await UnitFamilyService(baseUrl: '', useMockResponses: true).byCode('count'))!;
+    List<String> lines(UnitFamily? family) => _lines(rawSheetReviewSections(
+          baseline: baseline,
+          partName: 'Patti',
+          sheetLabel: 'MS',
+          countFamily: family,
+        ));
+    expect(lines(count), contains('Material in and out | Out | 2900 Pc (20 gro · 1 doz · 8 Pc)'));
+    expect(lines(null), contains('Material in and out | Out | 2900 pcs'));
+    expect(piecesLadder(11, count), isNull, reason: 'below a dozen it only repeats the count');
+  });
+
   test('the model\'s sample note is not printed as somebody\'s note', () {
     final saved = PenPaperBaseline(
       sheetWidthInches: 48,
@@ -404,7 +430,12 @@ void main() {
   });
 
   group('the report, drawn', () {
-    Future<void> pumpReport(WidgetTester tester, ItemDefinition part, {Size size = const Size(1100, 2400)}) async {
+    Future<void> pumpReport(
+      WidgetTester tester,
+      ItemDefinition part, {
+      Size size = const Size(1100, 2400),
+      UnitFamilyService? units,
+    }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -416,6 +447,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<ItemsProvider>.value(value: items),
           ChangeNotifierProvider<GroupsProvider>.value(value: groups),
+          if (units != null) Provider<UnitFamilyService>.value(value: units),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -429,6 +461,43 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
       await tester.pump();
     }
+
+    testWidgets('pieces read down the gross-dozen-piece ladder', (tester) async {
+      final part = _part(
+        baseline: PenPaperBaseline(
+          sheetWidthInches: 48,
+          sheetHeightInches: 96,
+          stageReconciliations: [
+            PenPaperStageReconciliation(
+              stageId: 'whole',
+              stageName: 'Whole pipeline',
+              inputKg: 24.5,
+              outputKg: 21.25,
+              outputPieces: 2900,
+              notes: '',
+            ),
+          ],
+        ),
+      );
+      await pumpReport(
+        tester,
+        part,
+        units: UnitFamilyService(baseUrl: '', useMockResponses: true),
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      expect(find.text('2900 Pc'), findsNWidgets(2), reason: 'the figure tile and the Pieces tile');
+      expect(find.byTooltip('20 gro · 1 doz · 8 Pc'), findsOneWidget,
+          reason: 'the figure tile is too narrow to spell it out');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('report_pieces_out')),
+          matching: find.text('20 gro · 1 doz · 8 Pc'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('an empty part says so in each card, never 0', (tester) async {
       await pumpReport(tester, _part());
