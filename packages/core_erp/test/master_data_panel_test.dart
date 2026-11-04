@@ -313,7 +313,8 @@ void main() {
     expect(saved!.bands, isNotEmpty);
   });
 
-  testWidgets('Material data: weight over qty; the three losses side by side', (
+  testWidgets('Material data: input beside output, weight over qty, boxes a '
+      'number wide; the three losses under both', (
     tester,
   ) async {
     await mount(tester, baseline: following);
@@ -332,13 +333,22 @@ void main() {
       final q = tester.getRect(find.byKey(ValueKey<String>(qty)));
       expect(q.top, greaterThan(w.bottom), reason: '$qty under $weight');
       expect(q.left, closeTo(w.left, 1), reason: 'in one column');
+      expect(w.width, lessThanOrEqualTo(150.5), reason: 'a number\'s width');
+      expect(q.width, lessThanOrEqualTo(150.5));
     }
+    final inKg = tester.getRect(find.byKey(const ValueKey<String>('material-input-kg')));
+    final outKg = tester.getRect(find.byKey(const ValueKey<String>('material-output-kg')));
+    expect(outKg.left, greaterThan(inKg.right), reason: 'output beside input');
+    expect(outKg.top, closeTo(inKg.top, 30), reason: 'level with it');
+    final lastQty = tester.getRect(find.byKey(const ValueKey<String>('material-output-pieces')));
 
     final scrap = tester.getRect(find.text('Scrap'));
     final rejection = tester.getRect(find.text('Rejection'));
     final loss = tester.getRect(find.text('Weight loss'));
     expect(rejection.top, closeTo(scrap.top, 1));
     expect(loss.top, closeTo(scrap.top, 1));
+    expect(scrap.top, greaterThan(lastQty.bottom), reason: 'the losses under both');
+    expect(scrap.left, lessThan(outKg.left), reason: 'across the width, from the left');
     expect(rejection.left, greaterThan(scrap.right));
     expect(loss.left, greaterThan(rejection.right));
     // Each box under its own name.

@@ -671,7 +671,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
         // two halves only mean anything read against each other.
         LayoutBuilder(
           builder: (context, constraints) {
-            final stacked = constraints.maxWidth < 720;
+            // Side by side: the boxes are a number's width now, so even the
+            // sheet's side panel holds both.
+            final stacked = constraints.maxWidth < 380;
             final input = _MeasureColumn(
               title: 'Input Raw Material',
               accent: SoftErpTheme.infoText,
@@ -723,9 +725,6 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                   _saveWholePipelineBaseline(countsTyped: true);
                 },
               ),
-              // Everything that did not come out as good output is accounted
-              // for on the output side, one row each.
-              trailing: _buildLossRows(),
             );
             if (stacked) {
               return Column(
@@ -733,15 +732,29 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
                 children: [input, const SizedBox(height: 12), output],
               );
             }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: input),
-                const SizedBox(width: 12),
-                Expanded(child: output),
-              ],
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: input),
+                  const SizedBox(width: 12),
+                  Expanded(child: output),
+                ],
+              ),
             );
           },
+        ),
+        // Everything that did not come out as good output, under both: three
+        // columns, each its tick and name over its box.
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+            border: Border.all(color: SoftErpTheme.border),
+          ),
+          child: _buildLossRows(),
         ),
         const SizedBox(height: 14),
         _BalanceStrip(entry: draft),
@@ -1491,7 +1504,6 @@ class _MeasureColumn extends StatelessWidget {
     required this.perWhat,
     this.nameKey,
     this.weightKey,
-    this.trailing,
   });
 
   final String title;
@@ -1510,7 +1522,6 @@ class _MeasureColumn extends StatelessWidget {
 
   /// What the average is per: a sheet in, a piece out.
   final String perWhat;
-  final Widget? trailing;
 
   static const _heading = SheetStyle.eyebrow;
 
@@ -1567,21 +1578,23 @@ class _MeasureColumn extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // Weight above Qty, each the column's width.
+                // Weight above Qty, each a number's width — not the column's.
                 const Text('WEIGHT', style: _heading),
                 const SizedBox(height: 4),
-                _CellField(
-                  key: weightKey,
-                  controller: weightController,
-                  suffix: 'kg',
-                  hint: '0.0',
-                  readOnly: readOnly,
-                  onChanged: onChanged,
+                _numberWidth(
+                  _CellField(
+                    key: weightKey,
+                    controller: weightController,
+                    suffix: 'kg',
+                    hint: '0.0',
+                    readOnly: readOnly,
+                    onChanged: onChanged,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 const Text('QTY', style: _heading),
                 const SizedBox(height: 4),
-                qtyField,
+                _numberWidth(qtyField),
                 if (perPiece > 0) ...[
                   const SizedBox(height: 6),
                   Text(
@@ -1593,12 +1606,6 @@ class _MeasureColumn extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (trailing != null) ...[
-                  const SizedBox(height: 10),
-                  const Divider(height: 1, color: SoftErpTheme.border),
-                  const SizedBox(height: 8),
-                  trailing!,
-                ],
               ],
             ),
           ),
@@ -1607,6 +1614,18 @@ class _MeasureColumn extends StatelessWidget {
     );
   }
 }
+
+/// A number's box is a number's width: a few digits and a unit, not a line
+/// of text. Narrower where the column is.
+const double _kNumberWidth = 150;
+
+Widget _numberWidth(Widget field) => Align(
+  alignment: Alignment.centerLeft,
+  child: ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: _kNumberWidth),
+    child: field,
+  ),
+);
 
 /// A compact cell input with its unit printed inside, so the table reads as a
 /// grid rather than a stack of labelled form fields.
@@ -1754,13 +1773,15 @@ class _LossRow extends StatelessWidget {
         const SizedBox(height: 4),
         // Not ticked: the room is kept, so the three boxes stay level.
         enabled
-            ? _CellField(
-                key: fieldKey,
-                controller: controller,
-                suffix: unit,
-                hint: '0',
-                readOnly: readOnly,
-                onChanged: onChanged,
+            ? _numberWidth(
+                _CellField(
+                  key: fieldKey,
+                  controller: controller,
+                  suffix: unit,
+                  hint: '0',
+                  readOnly: readOnly,
+                  onChanged: onChanged,
+                ),
               )
             : const SizedBox(height: 36),
         if (note != null) ...[
