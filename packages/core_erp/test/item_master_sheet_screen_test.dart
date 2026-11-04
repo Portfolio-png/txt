@@ -1886,6 +1886,42 @@ void main() {
           reason: 'no photo, Auto pill, property icon, Save or × in between');
     }, variant: desktop);
 
+    testWidgets('the line is four even columns, and the heading says when the part was made',
+        (tester) async {
+      // Wide enough for four: a narrower line reads two at a time (EvenGrid).
+      await _pumpScreen(tester, repository: _FakeItemRepository([]), size: const Size(2400, 1600));
+      await tester.pump(const Duration(milliseconds: 50));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      final def = sheet.sheetDef;
+      Rect cell(String binds) => tester.getRect(find.byKey(ValueKey(
+            'cell_item_0_${def.columnBoundTo(binds)!.id}',
+          )));
+      final group = cell(SheetBindsTo.group);
+      final code = cell(SheetBindsTo.partCode);
+      final alloy = cell(SheetBindsTo.variation('Alloy'));
+      final number = cell(SheetBindsTo.partNo);
+      expect(cell(SheetBindsTo.set).bottom, group.bottom);
+      expect(cell(SheetBindsTo.name).bottom, group.bottom);
+      expect(code.bottom, group.bottom, reason: 'Part Code ends the first row');
+      expect(alloy.left, group.left, reason: 'Alloy is under Group');
+      expect(number.left, code.left, reason: 'Part No is under Part Code');
+      expect(number.bottom, alloy.bottom, reason: 'Part No ends the second row');
+      expect(alloy.width, group.width);
+      expect(code.width, group.width);
+
+      // Not saved yet: the heading shows the time now, for the save to stamp.
+      final stamp = find.byKey(const ValueKey('part_heading_stamp'));
+      expect(
+        find.descendant(of: stamp, matching: find.text(partStampDate(DateTime.now()))),
+        findsOneWidget,
+      );
+
+      sheet.markRowSaved(0, 42, createdDate: '15/05/2026', createdTime: '10.05 AM');
+      await tester.pump();
+      expect(find.descendant(of: stamp, matching: find.text('15/05/2026')), findsOneWidget);
+      expect(find.descendant(of: stamp, matching: find.text('10.05 AM')), findsOneWidget);
+    }, variant: desktop);
+
     testWidgets('a dropdown Tab lands on opens; Tab in it keeps the value and goes on',
         (tester) async {
       final sheet = await openNew(tester);

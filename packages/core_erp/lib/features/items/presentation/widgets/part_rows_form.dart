@@ -5,7 +5,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/utils/dropdown_intents.dart';
 import '../../../../core/utils/typed_character.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
-import '../../../../core/widgets/fit_to_text.dart';
+import '../../../../core/widgets/even_grid.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../production_pipelines/domain/thickness_label.dart';
 import '../../../units/domain/global_length_units.dart';
@@ -67,23 +67,69 @@ class PartRowsForm extends StatelessWidget {
   /// cells, or dies and machines waiting for the part. Null removes at once.
   final Future<void> Function(int row)? onRemoveRow;
 
-  /// The fields of a line, in the order the grid drew its columns. The stamp
-  /// columns (Date, Time) are left out: the save fills them, nobody types them.
+  /// The fields of a line, row by row as [lineGrid] draws them — which is
+  /// also the order Tab visits them in.
   static List<ColumnDef> lineColumns(SheetDef def) => [
-        for (final group in const [
-          TableGroup.groupItem,
-          TableGroup.properties,
-          TableGroup.primaryGroup,
-        ])
-          ...def.columns.where((c) => def.tableOf(c) == group && !c.isStamp),
+        for (final cells in lineGrid(def)) ...cells.whereType<ColumnDef>(),
       ];
+
+  /// A line's fields as four even columns, so every part reads the same:
+  ///
+  ///     Group | Type      | Part Name | Part Code
+  ///     Alloy | Thickness | Grade     | Part No
+  ///
+  /// A window too narrow for four reads two at a time, in the same order
+  /// ([EvenGrid]).
+  ///
+  /// The last column holds the part's two numbers; the properties fill the
+  /// three before it, a row at a time, however many have been added. A null
+  /// is an empty cell. The stamp columns (Date, Time) are left out: the save
+  /// fills them, nobody types them — the heading shows them.
+  static const int gridColumns = 4;
+
+  static List<List<ColumnDef?>> lineGrid(SheetDef def) {
+    final columns = [
+      for (final group in const [
+        TableGroup.groupItem,
+        TableGroup.properties,
+        TableGroup.primaryGroup,
+      ])
+        ...def.columns.where((c) => def.tableOf(c) == group && !c.isStamp),
+    ];
+    ColumnDef? bound(String binds) =>
+        columns.where((c) => c.bindsTo == binds).firstOrNull;
+    final identity = [
+      bound(SheetBindsTo.group),
+      bound(SheetBindsTo.set),
+      bound(SheetBindsTo.name),
+    ];
+    final code = bound(SheetBindsTo.partCode);
+    final number = bound(SheetBindsTo.partNo);
+    final placed = {
+      for (final column in [...identity, code, number])
+        if (column != null) column.id,
+    };
+    final rest = columns.where((c) => !placed.contains(c.id)).toList();
+    final rows = <List<ColumnDef?>>[
+      [...identity, code],
+      for (var i = 0; i == 0 || i < rest.length; i += 3)
+        [
+          for (var j = i; j < i + 3; j += 1) j < rest.length ? rest[j] : null,
+          i == 0 ? number : null,
+        ],
+    ];
+    return [
+      for (final cells in rows)
+        if (cells.any((c) => c != null)) cells,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: sheet,
       builder: (context, _) {
-        final columns = lineColumns(sheet.sheetDef);
+        final grid = lineGrid(sheet.sheetDef);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -94,7 +140,7 @@ class PartRowsForm extends StatelessWidget {
                   key: ValueKey<Object>(sheet.draftAt(row).rowKey),
                   sheet: sheet,
                   row: row,
-                  columns: columns,
+                  grid: grid,
                   photo: photoBuilder?.call(row),
                   status: statusBuilder?.call(row),
                   action: actionBuilder(row),
@@ -103,7 +149,7 @@ class PartRowsForm extends StatelessWidget {
               ),
               const SizedBox(height: 10),
             ],
-            SheetStep.noTab(_footer(columns)),
+            SheetStep.noTab(_footer()),
           ],
         );
       },
@@ -124,7 +170,7 @@ class PartRowsForm extends StatelessWidget {
     );
   }
 
-  Widget _footer(List<ColumnDef> columns) {
+  Widget _footer() {
     return Wrap(
       spacing: 6,
       runSpacing: 4,
@@ -165,7 +211,7 @@ class _PartLine extends StatelessWidget {
     super.key,
     required this.sheet,
     required this.row,
-    required this.columns,
+    required this.grid,
     required this.photo,
     required this.status,
     required this.action,
@@ -175,7 +221,9 @@ class _PartLine extends StatelessWidget {
   final Future<void> Function(int row)? onRemove;
   final SheetController sheet;
   final int row;
-  final List<ColumnDef> columns;
+
+  /// The fields, row by row: see [PartRowsForm.lineGrid].
+  final List<List<ColumnDef?>> grid;
   final Widget? photo;
   final Widget? status;
   final Widget action;
@@ -207,9 +255,9 @@ class _PartLine extends StatelessWidget {
             ),
           ),
         ),
-        // The fields wrap among themselves; Save and × stay at the line's
-        // end whatever the width — the Save that wrapped off its part's line
-        // is what this replaced.
+        // The fields sit in even columns; Save and × stay at the line's end
+        // whatever the width — the Save that wrapped off its part's line is
+        // what this replaced.
         child: Row(
           children: [
             if (status != null) ...[
@@ -222,20 +270,22 @@ class _PartLine extends StatelessWidget {
               const SizedBox(width: 10),
             ],
             Expanded(
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              child: EvenGrid(
+                columns: PartRowsForm.gridColumns,
+                minColumnWidth: 160,
                 children: [
-                  for (final column in columns)
-                    _PartField(
-                      key: ValueKey<String>(
-                        'cell_${sheet.sheetDef.key}_${row}_${column.id}',
-                      ),
-                      sheet: sheet,
-                      row: row,
-                      column: column,
-                    ),
+                  for (final cells in grid)
+                    for (final column in cells)
+                      column == null
+                          ? const SizedBox.shrink()
+                          : _PartField(
+                              key: ValueKey<String>(
+                                'cell_${sheet.sheetDef.key}_${row}_${column.id}',
+                              ),
+                              sheet: sheet,
+                              row: row,
+                              column: column,
+                            ),
                 ],
               ),
             ),
@@ -393,11 +443,6 @@ class _PartFieldState extends State<_PartField> {
         _column.kind == ColumnKind.money;
     return SheetStyle.labelled(
       label: _column.label,
-      child: FitToText(
-      controller: _text,
-      texts: [_column.label],
-      minWidth: numeric ? 120 : 150,
-      chrome: derived ? 64 : 24,
       child: TextField(
         controller: _text,
         focusNode: _focus,
@@ -423,7 +468,6 @@ class _PartFieldState extends State<_PartField> {
         onChanged: (value) =>
             _sheet.updateTextValue(_column.id, value, row: widget.row),
         onSubmitted: (_) => _focus.nextFocus(),
-      ),
       ),
     );
   }
@@ -501,13 +545,8 @@ class _PartFieldState extends State<_PartField> {
         ),
       ],
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          FitToText(
-            controller: _text,
-            texts: const ['000'],
-            minWidth: 90,
-            chrome: 24,
+          Expanded(
             child: TextField(
               controller: _text,
               focusNode: _focus,
@@ -577,12 +616,7 @@ class _PartFieldState extends State<_PartField> {
     // A property can be taken off the part: × empties the box, and the save
     // takes the value off. Group, Type and the name are not optional.
     final clearable = _isProperty && !_locked && label.isNotEmpty;
-    return FitToText(
-      controller: _text,
-      texts: [_column.label, 'Select…'],
-      minWidth: 150,
-      chrome: (isNew ? 96 : 56) + (clearable ? 32 : 0),
-      child: Builder(
+    return Builder(
         // Tab landing on the box (the sheet's keyboard flow) opens its list.
         builder: (anchor) => Actions(
           actions: {
@@ -708,7 +742,6 @@ class _PartFieldState extends State<_PartField> {
           ),
         ),
         ),
-      ),
     );
   }
 }

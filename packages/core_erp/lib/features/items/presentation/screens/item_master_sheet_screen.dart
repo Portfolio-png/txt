@@ -1851,7 +1851,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.category_rounded,
           heading: 'Item Master',
           collapsed: collapsed,
-          trailing: _identityChip(),
+          trailing: _partHeading(),
           child: _groupItemSheet(),
         );
     }
@@ -2352,6 +2352,31 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final items = context.read<ItemsProvider>();
     final saved = await items.setItemLinks(partId, machineIds: machineIds);
     return saved == null ? (items.errorMessage ?? 'That did not save.') : null;
+  }
+
+  /// The heading's right end: when the part was made, then its code.
+  Widget _partHeading() => Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 6,
+        children: [_stampChip(), _identityChip()],
+      );
+
+  /// When the part under the cursor was saved — the Date and Time its line
+  /// leaves out. A part not saved yet shows the time now, muted: its save is
+  /// what stamps it.
+  Widget _stampChip() {
+    final sheet = _controller.groupItemController.sheetDef;
+    final draft = _controller.groupItemController.draft;
+    String? stamped(String binds) {
+      final column = sheet.columnBoundTo(binds);
+      final text = column == null ? null : draft.get(column.id)?.textValue?.trim();
+      return (text == null || text.isEmpty) ? null : text;
+    }
+
+    final date = stamped(SheetBindsTo.createdDate);
+    if (date == null) return const _HeadingStamp.now();
+    return _HeadingStamp(date: date, time: stamped(SheetBindsTo.createdTime));
   }
 
   /// The identity chip. Shows only what the sheet holds — the prototype's read
@@ -3062,7 +3087,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               Expanded(child: Text(heading, style: SheetStyle.sectionTitle)),
               if (trailing != null) ...[
                 const SizedBox(width: 12),
-                trailing,
+                // Most of the room, so a narrow card wraps its chips rather
+                // than pushing the actions off the end.
+                Flexible(flex: 3, child: trailing),
               ],
               const SizedBox(width: 8),
               ..._sectionActions(id, heading),
@@ -3500,6 +3527,100 @@ class _KindTile extends StatelessWidget {
               color: selected ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The date and time in the Item Master heading. Given a [date], it is the
+/// part's stamp; without one it is the clock, moved on each minute, for a part
+/// the save has not stamped yet.
+class _HeadingStamp extends StatefulWidget {
+  const _HeadingStamp({required String this.date, this.time});
+  const _HeadingStamp.now()
+      : date = null,
+        time = null;
+
+  final String? date;
+  final String? time;
+
+  @override
+  State<_HeadingStamp> createState() => _HeadingStampState();
+}
+
+class _HeadingStampState extends State<_HeadingStamp> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_HeadingStamp old) {
+    super.didUpdateWidget(old);
+    _schedule();
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  /// Wakes at the next minute — only while it is showing the clock.
+  void _schedule() {
+    _tick?.cancel();
+    _tick = null;
+    if (widget.date != null) return;
+    final now = DateTime.now();
+    _tick = Timer(Duration(seconds: 60 - now.second), () {
+      if (!mounted) return;
+      setState(() {});
+      _schedule();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final saved = widget.date != null;
+    final now = DateTime.now();
+    final date = widget.date ?? partStampDate(now);
+    final time = saved ? widget.time : partStampTime(now);
+    final colour = saved ? SoftErpTheme.textPrimary : SoftErpTheme.textMuted;
+    return Tooltip(
+      message: saved
+          ? 'Saved on $date${time == null ? '' : ' at $time'}'
+          : 'Not saved yet — saving stamps the date and time',
+      child: Container(
+        key: const ValueKey<String>('part_heading_stamp'),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.sectionSurface,
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_rounded, size: 16, color: colour),
+            const SizedBox(width: 6),
+            Text(
+              date,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+            ),
+            if (time != null) ...[
+              const SizedBox(width: 10),
+              Icon(Icons.schedule_rounded, size: 16, color: colour),
+              const SizedBox(width: 6),
+              Text(
+                time,
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+              ),
+            ],
+          ],
         ),
       ),
     );
