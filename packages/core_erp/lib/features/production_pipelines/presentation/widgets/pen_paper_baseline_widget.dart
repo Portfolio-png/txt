@@ -661,7 +661,9 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.followsSheetPlan) ...[
+        // Said only once the counts are typed over — with the way back to
+        // the plan's. Following the plan goes without saying.
+        if (widget.followsSheetPlan && !_followsPlan) ...[
           _buildPlanStrip(),
           const SizedBox(height: 10),
         ],
@@ -752,25 +754,20 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
     );
   }
 
-  /// Where the figures came from: the sheet plan, or typed. Typed over, it
-  /// offers the plan's back rather than leaving no way to undo it.
+  /// The counts were typed over the sheet plan's: says so, and offers the
+  /// plan's back rather than leaving no way to undo it.
   Widget _buildPlanStrip() {
-    final following = _followsPlan;
-    final text = following
-        ? 'From the sheet plan: 1 sheet in, the planned pieces out. Type the '
-              'weights; scrap fills from the balance.'
-        : 'Counts typed over the sheet plan.';
     return Row(
       children: [
-        Icon(
-          following ? Icons.grid_on_rounded : Icons.edit_note_rounded,
+        const Icon(
+          Icons.edit_note_rounded,
           size: 16,
           color: SoftErpTheme.textSecondary,
         ),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
-            text,
+            'Counts typed over the sheet plan.',
             key: const ValueKey<String>('material-plan-note'),
             style: const TextStyle(
               color: SoftErpTheme.textSecondary,
@@ -780,7 +777,7 @@ class _PenPaperBaselineWidgetState extends State<PenPaperBaselineWidget> {
             ),
           ),
         ),
-        if (!following && !widget.readOnly)
+        if (!widget.readOnly)
           TextButton.icon(
             key: const ValueKey<String>('material-refill'),
             onPressed: _refillFromPlan,
@@ -1488,7 +1485,6 @@ class _MeasureColumn extends StatelessWidget {
     required this.perWhat,
     this.nameKey,
     this.weightKey,
-    this.qtyFlex = 4,
     this.trailing,
   });
 
@@ -1502,7 +1498,6 @@ class _MeasureColumn extends StatelessWidget {
   final Key? weightKey;
   final TextEditingController weightController;
   final Widget qtyField;
-  final int qtyFlex;
   final bool readOnly;
   final VoidCallback onChanged;
   final double perPiece;
@@ -1587,7 +1582,7 @@ class _MeasureColumn extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      flex: qtyFlex,
+                      flex: 4,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
