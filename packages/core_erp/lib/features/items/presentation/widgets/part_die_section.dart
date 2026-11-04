@@ -1047,7 +1047,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   ({String label, String? value}) _chipHeading(String? editing) {
     final partCode = widget.partCode.isEmpty ? null : widget.partCode;
     if (widget.part == null)
-      return (label: 'Dies for part code: ', value: partCode);
+      return (label: 'Item part code: ', value: partCode);
     if (editing == null)
       return (label: 'New die for part code: ', value: partCode);
     final code = _codeController.text.trim();

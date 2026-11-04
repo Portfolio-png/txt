@@ -1031,7 +1031,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// [_heading] for a title bar: the words, then the code they are about.
   ({String label, String? value}) _chipHeading(String? editing) {
     final partCode = widget.partCode.isEmpty ? null : widget.partCode;
-    if (widget.part == null) return (label: 'Machines for part code: ', value: partCode);
+    if (widget.part == null) return (label: 'Item part code: ', value: partCode);
     if (editing == null) return (label: 'New machine for part code: ', value: partCode);
     final no = _noController.text.trim();
     return no.isEmpty

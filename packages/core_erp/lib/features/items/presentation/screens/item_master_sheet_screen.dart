@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
@@ -170,9 +171,17 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   ({String label, String? value})? _dieHeading;
   ({String label, String? value})? _machineHeading;
 
-  /// Item Master's "Part code" chip: the die and machine chips line up under
-  /// its right edge.
+  /// Item Master's "Part code" chip: the die and machine chips start where
+  /// it starts.
   final GlobalKey _partCodeChipKey = GlobalKey(debugLabel: 'part_code_chip');
+
+  /// Each section's title text, so a chip lined up in its bar never sits on
+  /// it.
+  final Map<String, GlobalKey> _titleKeys = {};
+  GlobalKey _titleKey(String section) => _titleKeys.putIfAbsent(
+    section,
+    () => GlobalKey(debugLabel: 'section_title_$section'),
+  );
 
   /// Whether the part's photos are in the right column (raw material rolled
   /// up) rather than big on the part's line.
@@ -2185,7 +2194,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.precision_manufacturing_rounded,
           heading: 'Die Process Master',
           collapsed: collapsed,
-          trailing: _formHeading('die_heading', _dieHeading),
+          trailing: _formHeading('die_heading', 'die_master', _dieHeading),
           child: _dieSheet(),
         );
       case 'machine_master':
@@ -2194,7 +2203,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.settings_suggest_rounded,
           heading: 'Machines & Routing',
           collapsed: collapsed,
-          trailing: _formHeading('machine_heading', _machineHeading),
+          trailing: _formHeading(
+            'machine_heading',
+            'machine_master',
+            _machineHeading,
+          ),
           child: _machinesAndRouting(),
         );
       default:
@@ -2210,13 +2223,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   /// A die or machine form's heading, on the right of its section's title
-  /// bar, drawn as Item Master's "Part code" chip is and lined up under it:
-  /// the bars end differently (the date beside the part code, the section
-  /// buttons beside these), so right-aligning alone left them ragged.
-  Widget? _formHeading(String key, ({String label, String? value})? heading) {
+  /// bar, drawn as Item Master's "Part code" chip is and starting where it
+  /// starts: the bars end differently (the date beside the part code, the
+  /// section buttons beside these), so right-aligning left them ragged.
+  Widget? _formHeading(
+    String key,
+    String section,
+    ({String label, String? value})? heading,
+  ) {
     if (heading == null) return null;
-    return _AlignRightTo(
+    return _LineUpUnder(
       anchor: _partCodeChipKey,
+      after: _titleKey(section),
       child: _codeChip(
         heading.label,
         heading.value,
@@ -2257,8 +2275,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             ),
           ],
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -3605,7 +3621,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 const SizedBox(width: 4),
                 SheetStyle.iconTile(icon),
                 const SizedBox(width: 10),
-                Expanded(child: Text(heading, style: SheetStyle.sectionTitle)),
+                Expanded(
+                  child: Text(
+                    heading,
+                    key: _titleKey(id),
+                    style: SheetStyle.sectionTitle,
+                  ),
+                ),
                 if (trailing != null) ...[
                   const SizedBox(width: 12),
                   // Most of the room, so a narrow card wraps its chips rather
@@ -4071,22 +4093,29 @@ class _KindTile extends StatelessWidget {
 /// The date and time in the Item Master heading. Given a [date], it is the
 /// part's stamp; without one it is the clock, moved on each minute, for a part
 /// the save has not stamped yet.
-/// [child] at the right of the room it is given, moved left as far as it
-/// takes for its right edge to sit under [anchor]'s. Never moved right: past
-/// the room's end are the section's own buttons. While the anchor is not on
-/// screen (scrolled away) it keeps where it last lined up.
-class _AlignRightTo extends StatefulWidget {
-  const _AlignRightTo({required this.anchor, required this.child});
+/// [child] at the start of the room it is given, moved so it starts where
+/// [anchor] starts: right as far as it still fits whole (lining up must not
+/// cut the code off), left into the bar's empty space as far as the end of
+/// the [after] text (the section's title) — never over it. While the anchor
+/// is not on screen (scrolled away) it keeps where it last lined up.
+class _LineUpUnder extends StatefulWidget {
+  const _LineUpUnder({
+    required this.anchor,
+    required this.after,
+    required this.child,
+  });
 
   final GlobalKey anchor;
+  final GlobalKey after;
   final Widget child;
 
   @override
-  State<_AlignRightTo> createState() => _AlignRightToState();
+  State<_LineUpUnder> createState() => _LineUpUnderState();
 }
 
-class _AlignRightToState extends State<_AlignRightTo> {
+class _LineUpUnderState extends State<_LineUpUnder> {
   double _inset = 0;
+  final GlobalKey _childKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -4096,10 +4125,12 @@ class _AlignRightToState extends State<_AlignRightTo> {
       builder: (context, constraints) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
         return Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: EdgeInsets.only(right: _inset),
-            child: widget.child,
+          alignment: Alignment.centerLeft,
+          // Moved as painted, not as laid out: left of the room is the
+          // title's, which only lends its empty end.
+          child: Transform.translate(
+            offset: Offset(_inset, 0),
+            child: KeyedSubtree(key: _childKey, child: widget.child),
           ),
         );
       },
@@ -4112,9 +4143,27 @@ class _AlignRightToState extends State<_AlignRightTo> {
     final anchor = widget.anchor.currentContext?.findRenderObject();
     if (mine is! RenderBox || !mine.hasSize) return;
     if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
-    final myRight = mine.localToGlobal(Offset(mine.size.width, 0)).dx;
-    final anchorRight = anchor.localToGlobal(Offset(anchor.size.width, 0)).dx;
-    final inset = (myRight - anchorRight).clamp(0.0, mine.size.width);
+    final myLeft = mine.localToGlobal(Offset.zero).dx;
+    final anchorLeft = anchor.localToGlobal(Offset.zero).dx;
+    // The room the child needs at its full width; whatever is left over is
+    // all the lining up may take.
+    final child = _childKey.currentContext?.findRenderObject();
+    final natural = child is RenderBox
+        ? child.getMaxIntrinsicWidth(double.infinity)
+        : 0.0;
+    final spare = math.max(0.0, mine.size.width - natural);
+    // How far left there is empty bar: up to the title's text, and a gap.
+    var lend = 0.0;
+    final title = widget.after.currentContext?.findRenderObject();
+    if (title is RenderBox && title.hasSize) {
+      final text = math.min(
+        title.size.width,
+        title.getMaxIntrinsicWidth(double.infinity),
+      );
+      final titleEnd = title.localToGlobal(Offset.zero).dx + text;
+      lend = math.max(0.0, myLeft - (titleEnd + 12));
+    }
+    final inset = (anchorLeft - myLeft).clamp(-lend, spare);
     if ((inset - _inset).abs() > 0.5) setState(() => _inset = inset);
   }
 }

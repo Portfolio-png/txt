@@ -1944,7 +1944,9 @@ void main() {
           tester,
           initialItems: [patti],
           repository: _FakeItemRepository([patti]),
-          size: const Size(1700, 3200),
+          // Wide: the test font draws every letter a full em, so a title
+          // fills its share at 1700 and there is no empty bar to line up in.
+          size: const Size(2600, 3200),
         );
         await tester.pump(const Duration(milliseconds: 50));
         await tester.pump();
@@ -1991,8 +1993,8 @@ void main() {
             reason: 'in the $title title bar',
           );
           expect(tester.getCenter(heading).dx, greaterThan(bar.dx));
-          // Lined up under Item Master's "Part code" chip, right edge on
-          // right edge — not ragged against each bar's own buttons.
+          // Lined up under Item Master's "Part code" chip, starting where it
+          // starts — not ragged against each bar's own buttons.
           final partCode = find
               .ancestor(
                 of: find.text('Part code: '),
@@ -2000,10 +2002,43 @@ void main() {
               )
               .first;
           expect(
-            tester.getTopRight(heading).dx,
-            closeTo(tester.getTopRight(partCode).dx, 1),
-            reason: '$title under the part code',
+            tester.getTopLeft(heading).dx,
+            closeTo(tester.getTopLeft(partCode).dx, 1),
+            reason: '$title starts under the part code',
           );
+        }
+
+        // Lining up never squeezes the chip: it is laid out whole, on one
+        // line, its code to the end — it was cut to "New die for part
+        // code: …", the code itself gone.
+        for (final key in ['die_heading', 'machine_heading']) {
+          final text = tester.renderObject<RenderBox>(
+            find.descendant(
+              of: find.byKey(ValueKey<String>(key)),
+              matching: find.byType(RichText),
+            ),
+          );
+          expect(
+            text.size.width,
+            closeTo(text.getMaxIntrinsicWidth(double.infinity), 1),
+            reason: '$key shows its whole text',
+          );
+        }
+
+        // A narrow window: lining up gives way, then the chip wraps — it
+        // never overflows, and never cuts the code off.
+        tester.view.physicalSize = const Size(1000, 3200);
+        await tester.pump();
+        await tester.pump();
+        for (final key in ['die_heading', 'machine_heading']) {
+          final text = tester.widget<RichText>(
+            find.descendant(
+              of: find.byKey(ValueKey<String>(key)),
+              matching: find.byType(RichText),
+            ),
+          );
+          expect(text.overflow, isNot(TextOverflow.ellipsis));
+          expect(text.maxLines, isNull, reason: '$key may wrap, never cut');
         }
         expect(tester.takeException(), isNull);
       },
