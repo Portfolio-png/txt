@@ -1467,7 +1467,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('the part\'s photo is big on its line; the right column is raw material\'s alone',
+    testWidgets('raw material open: the photo is big on the line; rolled up: the photos fill the right column',
         (tester) async {
       final photos = EntityPhotosProvider(
         repository: _GalleryRepository(const [
@@ -1500,17 +1500,28 @@ void main() {
       expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsOneWidget);
       expect(lineSide(), greaterThan(120));
       expect(find.byType(MasterDataPanel), findsOneWidget);
-      expect(find.byKey(const ValueKey('photos_roll')), findsNothing,
-          reason: 'no photos in the right column');
+      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing,
+          reason: 'never both in the right column');
 
-      // Raw material's chevron rolls it up and down.
+      // Raw material rolled up: the photos fill the right column, the line
+      // keeps a small one.
       await tester.tap(find.byKey(const ValueKey('raw_roll')));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       expect(find.byType(MasterDataPanel), findsNothing);
-      expect(find.byType(MasterDataPanel, skipOffstage: false), findsOneWidget);
+      expect(find.byType(MasterDataPanel, skipOffstage: false), findsOneWidget,
+          reason: 'kept, not drawn');
+      expect(find.byKey(const ValueKey('part_photos_section')), findsOneWidget);
+      expect(find.byKey(const ValueKey('part_photos_thumb_1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsNothing);
+      expect(lineSide(), 48);
+
+      // Down again: the photos go back to the line, big.
       await tester.tap(find.byKey(const ValueKey('raw_roll')));
       await tester.pump();
       expect(find.byType(MasterDataPanel), findsOneWidget);
+      expect(find.byKey(const ValueKey('part_photos_section')), findsNothing);
+      expect(find.byKey(const ValueKey('part_showcase_photo_0')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
