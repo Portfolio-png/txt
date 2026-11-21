@@ -565,11 +565,11 @@ class ItemMasterController extends ChangeNotifier {
   }
 
   /// "Make a new part": the row stops being the opened part and becomes a new
-  /// one with the same name and what was typed — the opened part stays on
-  /// file exactly as it was. Its part number, code and stamps are the old
-  /// part's, so they go: the new part is numbered and stamped as it is made
-  /// (numbers count per name, so it is the next Patti). The row keeps its
-  /// place and its key, so dies or machines held for it go with it.
+  /// one with the same name and the cells typed on it — the opened part stays
+  /// on file exactly as it was. Nothing else of the opened part comes along:
+  /// not its part number, code or stamps (the new one is numbered and stamped
+  /// as it is made — numbers count per name, so it is the next Patti), and
+  /// not its Developed For. The row keeps its place and its key.
   SheetDraft? _asNewPart(SheetDraft draft) {
     final at = groupItemController.indexOfDraft(draft);
     if (at < 0) return null;
@@ -594,6 +594,16 @@ class ItemMasterController extends ChangeNotifier {
     final placed = groupItemController.draftAt(at)..markDirty();
     // The opened part is still on file: matching it is a duplicate again.
     if (stored != null) groupItemController.takeIdentityOf(stored);
+    // A whole new part: nothing of the opened one comes with it. Its Developed
+    // For (client, quotation, people) is the opened part's — the row keeps its
+    // key, and the deal follows the key, so without this the new part was
+    // saved with the old one's client and quotation. It starts as any new row
+    // does: empty, ready for its own.
+    if (identical(_dealRowKey, placed.rowKey)) {
+      _claimDeal(placed);
+      _isExternal = true;
+      _resetDeal();
+    }
     final nameColumn = _columnBoundTo(SheetBindsTo.name);
     final name = nameColumn == null ? 'part' : SheetEngine.cellLabel(placed, nameColumn.id);
     _statusBarMessage = 'Making a new $name on row ${at + 1} — the one on file is unchanged.';

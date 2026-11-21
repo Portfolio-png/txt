@@ -1499,8 +1499,9 @@ void main() {
     );
 
     testWidgets(
-      'another thickness on an opened Patti, "Make a new part": a second Patti '
-      'is made and the first is not touched',
+      'another thickness on an opened Patti, "Make a new part": a whole new '
+      'Patti — not the old one\'s Developed For, not its raw plan — and the '
+      'old one untouched',
       (tester) async {
         ItemVariationNodeDefinition node(
           int id,
@@ -1526,6 +1527,13 @@ void main() {
           id: 500,
           name: 'Patti',
           groupId: 11,
+          // The opened part was developed for a client.
+          developedFor: DevelopedFor(
+            kind: DevelopedForKind.client,
+            clientId: 5,
+            companyName: 'Gold Medal',
+            at: DateTime.utc(2026, 11, 3, 9, 15),
+          ),
           variationTree: [
             node(10, 'Thickness', children: [
               node(11, '18 Gauge', kind: ItemVariationNodeKind.value, parent: 10),
@@ -1565,9 +1573,14 @@ void main() {
           reason: 'the 18 Gauge Patti on file is not touched — not its '
               'thickness, and not the raw plan typed for the new one',
         );
-        final plans = repo.updated.where((u) => u.penPaperBaseline != null).toList();
-        expect(plans, hasLength(1), reason: 'the raw plan was saved once');
-        expect(plans.single.id, isNot(500), reason: 'on the new Patti, the row it was typed on');
+        final kind = made.developedFor?.kind;
+        expect(made.developedFor?.clientId, isNull, reason: 'Gold Medal was the old Patti\'s client');
+        expect(kind == null || kind == DevelopedForKind.none, isTrue,
+            reason: 'a whole new Patti starts with no Developed For (was $kind)');
+        expect(repo.updated, isEmpty,
+            reason: 'no raw plan saved anywhere: the one shown was the old Patti\'s, '
+                'and the old Patti itself is not touched');
+        expect(find.textContaining('Its raw sheet starts empty'), findsWidgets);
       },
     );
     testWidgets(

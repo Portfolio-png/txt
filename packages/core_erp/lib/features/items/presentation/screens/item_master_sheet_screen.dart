@@ -1581,7 +1581,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   Future<void> _saveRawSheet(PenPaperBaseline baseline) async {
-    if (_livePart == null) return;
+    final opened = _livePart;
+    if (opened == null) return;
     if (_rawSaving) return;
     final items = context.read<ItemsProvider>();
     setState(() => _rawSaving = true);
@@ -1604,11 +1605,23 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         return;
       }
     }
-    // Read AFTER the row saved: a row made into a new part is that part now,
-    // and the plan typed on it is its plan, not the old part's.
+    // Read AFTER the row saved: a row made into a new part is that part now.
     final part = _livePart;
     if (part == null) {
       setState(() => _rawSaving = false);
+      return;
+    }
+    if (part.id != opened.id) {
+      // "Make a new part": a whole new part. The plan on the panel was the
+      // opened part's, so it is not saved onto the new one — it starts with
+      // an empty raw sheet, to be filled for itself.
+      setState(() {
+        _rawSaving = false;
+        _rawEditing = false;
+        _rawDirty = false;
+      });
+      _toast('Made a new ${part.name}. Its raw sheet starts empty — the one '
+          'shown was ${opened.name}\'s and stays with it.');
       return;
     }
     final saved = await items.setItemPenPaperBaseline(part.id, baseline);

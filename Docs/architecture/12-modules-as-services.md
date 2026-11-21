@@ -801,3 +801,4 @@ items are verified before anything is done about them.
 | 2026-11-21 | B59: PIN guessing tarpitted (1 s per wrong PIN) and windowed (15 a minute per address, then 429 for a minute), never locked per address. Backend 502. (Mind map change 89.) |
 | 2026-11-21 | B60 guard (8dac643f): ask before an opened part's Alloy or Thickness is saved. (Mind map change 90.) |
 | 2026-11-21 | B60 → B: a part is name + alloy + thickness on the server and the sheet; "Make a new part" in the guard; B61, B62 fixed. Backend 506, core_erp 1276, root CI 163. (Mind map change 91.) |
+| 2026-11-21 | "Make a new part" is a whole new part (user): it starts with no Developed For — an edited deal used to stay on the row and either ride onto the new part or block its save — and its raw sheet starts empty (the plan on the panel was the old part's). "Change this part" keeps both. core_erp 1278. (Mind map change 92.) |

@@ -34,16 +34,38 @@ class _Binding extends SheetBinding<Object?> {
   }
 
   @override
-  Future<Object?> saveRow(SheetDraft row) async {
-    written.add(row);
-    return _Record(5);
-  }
-
-  @override
   List<SheetDraft> toDrafts(List<Object?> entities) => const [];
 
   @override
   SheetDraft? draftForId(int id) => id == 5 ? stored : null;
+
+  /// Part #5 was developed for a client, Gold Medal (id 77).
+  @override
+  Object? entityById(int id) => id == 5 ? 'part-5' : null;
+
+  @override
+  ({SheetDraft deal, Set<int> ticked})? dealOf(Object? entity) {
+    if (entity != 'part-5') return null;
+    final party = dealSheetColumns.firstWhere((c) => c.bindsTo == SheetBindsTo.developedForParty).id;
+    return (
+      deal: SheetDraft(sheetKey: 'item_party', values: {
+        party: CellValue(columnId: party, refId: 77, optionLabel: 'Gold Medal', textValue: 'Gold Medal'),
+      }),
+      ticked: const <int>{},
+    );
+  }
+
+  /// What the controller would send as the deal, read at the moment of a row
+  /// save — as the real binding reads it.
+  SheetDraft? Function()? dealAtSave;
+  final List<SheetDraft?> dealsSent = [];
+
+  @override
+  Future<Object?> saveRow(SheetDraft row) async {
+    dealsSent.add(dealAtSave?.call());
+    written.add(row);
+    return _Record(5);
+  }
 }
 
 /// A sheet whose row 0 is part #5, opened and edited. [storedAlloy] /
@@ -230,5 +252,37 @@ void main() {
       expect(sheet.errorsForRow(0)[name.id]?.code, 'duplicate_item',
           reason: 'the edit repeats the sibling; withdrawing the edited key used to hide that');
     });
+  });
+
+  test('"Make a new part" does not carry the opened part\'s Developed For: it is a whole new part', () async {
+    final s = _opened(storedAlloy: 'Titanium Gr 9');
+    addTearDown(s.ctrl.dispose);
+    final party = dealSheetColumns.firstWhere((c) => c.bindsTo == SheetBindsTo.developedForParty).id;
+    expect(s.ctrl.clientVendorController.draft.get(party)?.refId, 77, reason: 'opened with its deal on screen');
+    // And the deal edited before the choice: an unsaved edit stays with its
+    // row, so this is the case where the old part's deal would ride along.
+    final quote = dealSheetColumns.firstWhere((c) => c.bindsTo == SheetBindsTo.developedForQuotation).id;
+    s.ctrl.clientVendorController.updateValue(quote, CellValue(columnId: quote, textValue: '5000', intValue: 5000));
+    s.writer.dealAtSave = s.ctrl.dealDraftForSave;
+    s.ctrl.confirmIdentityChange = (_) async => IdentityChangeChoice.makeNewPart;
+
+    // Without the reset the edited deal stayed on the row: the save either
+    // carried the old part's client and quotation onto the new part, or (as
+    // here, the deal being incomplete) was refused over it.
+    expect(await s.ctrl.commitRow(0), isTrue);
+    expect(s.writer.written.single.entityId, isNull);
+    final dealSent = s.writer.dealsSent.single;
+    expect(dealSent?.get(party)?.refId, isNull, reason: 'Gold Medal was the old part\'s client, not the new one\'s');
+    expect(dealSent?.get(quote)?.textValue ?? '', isEmpty, reason: 'nor its quotation, edited or not');
+  });
+
+  test('"Change this part" keeps the opened part\'s Developed For', () async {
+    final s = _opened(storedAlloy: 'Titanium Gr 9');
+    addTearDown(s.ctrl.dispose);
+    final party = dealSheetColumns.firstWhere((c) => c.bindsTo == SheetBindsTo.developedForParty).id;
+    s.writer.dealAtSave = s.ctrl.dealDraftForSave;
+    s.ctrl.confirmIdentityChange = (_) async => IdentityChangeChoice.changeThisPart;
+    expect(await s.ctrl.commitRow(0), isTrue);
+    expect(s.writer.dealsSent.single?.get(party)?.refId, 77);
   });
 }

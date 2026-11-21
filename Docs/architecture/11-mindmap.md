@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c91["⟳ Change 91: a part is its name AND its alloy and thickness — another of either is another part, and the sheet asks before changing one"]
+      c92["⟳ Change 92: Make a new part is a whole new part — no Developed For, no raw plan from the one it was opened from"]
     Wire
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -115,10 +115,10 @@ mindmap
         k4c["two ledgers: _migrations and schema_migrations"]
     Masters ⟳
       Part identity
-        pid1["⟳ a part is group + unit + name + Alloy + Thickness (B): two Pattis with different alloys are two parts, each its own number (numbers count per name)"]
-        pid2["⟳ server: findItemDuplicate compares identityOfTree; refusal names the alloy and thickness; 1.20 is 1.2"]
-        pid3["⟳ sheet: ColumnDef.identity, SheetEngine.identityKey shared by engine, controller and binding; Part Name options show code · alloy · thickness"]
-        pid4["⟳ guard: an opened part's alloy or thickness changed → Make a new part / Change this part / Cancel; both save paths; raw plan follows the row"]
+        pid1["a part is group + unit + name + Alloy + Thickness (B): two Pattis with different alloys are two parts, each its own number (numbers count per name)"]
+        pid2["server: findItemDuplicate compares identityOfTree; refusal names the alloy and thickness; 1.20 is 1.2"]
+        pid3["sheet: ColumnDef.identity, SheetEngine.identityKey shared by engine, controller and binding; Part Name options show code · alloy · thickness"]
+        pid4["⟳ guard: an opened part's alloy or thickness changed → Make a new part / Change this part / Cancel; both save paths; a new part takes no Developed For and no raw plan from the old one"]
       Vendors evacuated
         vOps["operations.js: list, get, purchaseHistory, create, update, delete; internal rows.get for challans"]
         vBiz["Business rules"]
@@ -769,3 +769,4 @@ mindmap
 | 89 | B59. `kernel/pin-throttle.js` (`createPinThrottle`: `begin` / `succeeded` / `failed`, bounded map swept every 256 calls); `modules/accounts/routes.js` PIN branch: 429 + Retry-After when blocked, one `login_pin_throttled` event per block, right PIN releases its slot, wrong PIN awaits the tarpit before 401; `server.js` passes it in with `PAPER_PIN_TARPIT_MS`. Test: `pin-throttle.test.js`. | Accounts, Kernel, Tests |
 | 90 | B60 guard. `ColumnDef.identity` (Alloy, Thickness), `SheetEngine.identityValue/cellLabel`, `ItemMasterController.confirmIdentityChange` + `identityChangesOf`, asked in `commitRow` and `saveItem`; screen dialog. Test: `sheet_identity_guard_test.dart`. | Sheet, Tests |
 | 91 | B60 → B. Backend `part-identity.js` (`IDENTITY_PROPERTIES`, `identityValue`, `identityOfTree`, `sameIdentity`, `describeIdentity`), `reads.js` `findItemDuplicate({identity})` + `storedIdentity`, `save.js` passes it and names it in the 409. Sheet: `SheetEngine.identityKey/identityKeyOf` in the duplicate rule, `SheetController._forgetOwnIdentities` from captured identities (B61) + `takeIdentityOf`, binding `existingPaths` by identity and Part Name option detail; guard gains Make a new part (`_asNewPart`); `_saveRawSheet` saves the row first and reads the part after (B62). Tests: `part-identity-alloy-thickness.test.js` (4), guard test +4, two screen tests. | Masters, Sheet, Tests |
+| 92 | `ItemMasterController._asNewPart` claims and resets the deal for the row; `_saveRawSheet` saves no plan when the row became another part (toast says its raw sheet starts empty). Tests: guard test +2 (edited deal not carried; Change this part keeps it), screen test now expects no plan. | Sheet, Tests |
