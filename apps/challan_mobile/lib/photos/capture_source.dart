@@ -16,6 +16,12 @@ abstract class CaptureSource {
   /// One photo, or null when none was taken.
   Future<XFile?> take();
 
+  /// How far the camera zooms, or null when it cannot. 1.0 is no zoom.
+  Future<({double min, double max})?> zoomRange();
+
+  /// Zooms to [level], inside [zoomRange].
+  Future<void> setZoom(double level);
+
   Future<void> close();
 }
 
@@ -74,6 +80,30 @@ class CameraCaptureSource implements CaptureSource {
     final controller = _controller;
     if (controller == null || controller.value.isTakingPicture) return null;
     return controller.takePicture();
+  }
+
+  @override
+  Future<({double min, double max})?> zoomRange() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return null;
+    try {
+      final min = await controller.getMinZoomLevel();
+      final max = await controller.getMaxZoomLevel();
+      return max > min ? (min: min, max: max) : null;
+    } on CameraException {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> setZoom(double level) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      await controller.setZoomLevel(level);
+    } on CameraException {
+      // A zoom the lens refused leaves it where it was.
+    }
   }
 
   @override

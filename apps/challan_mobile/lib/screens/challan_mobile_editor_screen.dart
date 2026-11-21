@@ -1,3 +1,4 @@
+import '../photos/shoot_photo.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui';
@@ -88,9 +89,10 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
-    
+    // The app's camera: zoom before the shot, crop after it.
+    final pickedFile = await shootPhoto(context);
+    if (!mounted) return;
+
     if (pickedFile != null) {
       setState(() {
         _attachedImages.add(pickedFile);
@@ -646,8 +648,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       try {
         for (final img in _attachedImages) {
           final bytes = await img.readAsBytes();
-          final fileExt = img.name.split('.').last;
-          final contentType = 'image/$fileExt';
+          final contentType = photoContentType(img);
           
           final intent = await assetService.createUploadIntent(
             GenericAssetUploadIntentInput(

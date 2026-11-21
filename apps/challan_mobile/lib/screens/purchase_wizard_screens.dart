@@ -1,3 +1,4 @@
+import '../photos/shoot_photo.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -131,10 +132,8 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
   // ---------------------------------------------------------------- photo
 
   Future<void> _capturePhoto() async {
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-      imageQuality: 70,
-    );
+    // The app's camera: zoom before the shot, crop after it.
+    final picked = await shootPhoto(context);
     if (picked == null || !mounted) return;
     setState(() {
       _photos.add(picked);
@@ -152,7 +151,7 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
     try {
       for (final photo in _photos) {
         final bytes = await photo.readAsBytes();
-        final contentType = 'image/${photo.name.split('.').last}';
+        final contentType = photoContentType(photo);
         final intent = await assetService.createUploadIntent(
           GenericAssetUploadIntentInput(
             fileName: photo.name,

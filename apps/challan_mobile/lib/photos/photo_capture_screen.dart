@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart' show XFile;
+import 'package:core_erp/core/media/photo_crop_screen.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/photo_requests.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -8,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'capture_source.dart';
+import 'shoot_photo.dart' show photoFromCrop;
+import 'zoom_preview.dart';
 
 /// The phone's camera for the photos the desktop asked for, one after another.
 ///
@@ -84,6 +87,21 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
         _shotFor = null;
         _error = null;
       });
+
+  /// Crops the shot before it is used; what is uploaded is the cropped photo.
+  Future<void> _crop() async {
+    final shot = _shot;
+    final bytes = _shotBytes;
+    if (shot == null || bytes == null) return;
+    final kept = await PhotoCropScreen.open(context, bytes, useLabel: 'Done', backLabel: 'Cancel');
+    if (kept == null || identical(kept, bytes) || !mounted) return;
+    final cropped = await photoFromCrop(shot, bytes, kept);
+    if (!mounted) return;
+    setState(() {
+      _shot = cropped;
+      _shotBytes = kept;
+    });
+  }
 
   Future<void> _use(PhotoRequest request) async {
     final shot = _shot;
@@ -172,7 +190,8 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
                 else if (_cameraError != null)
                   _CameraProblem(message: _cameraError!)
                 else
-                  _source.preview(context),
+                  // Pinch or tap 1× / 2× to zoom before the shot.
+                  ZoomablePreview(source: _source),
                 SafeArea(
                   child: Align(
                     alignment: Alignment.topCenter,
@@ -204,6 +223,7 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
                             : _ReviewBar(
                                 busy: _working,
                                 onRetake: _retake,
+                                onCrop: _crop,
                                 onUse: () => _use(request),
                               ),
                       ],
@@ -375,10 +395,11 @@ class _ShootBar extends StatelessWidget {
 }
 
 class _ReviewBar extends StatelessWidget {
-  const _ReviewBar({required this.busy, required this.onRetake, required this.onUse});
+  const _ReviewBar({required this.busy, required this.onRetake, required this.onCrop, required this.onUse});
 
   final bool busy;
   final VoidCallback onRetake;
+  final VoidCallback onCrop;
   final VoidCallback onUse;
 
   @override
@@ -399,7 +420,19 @@ class _ReviewBar extends StatelessWidget {
               child: const Text('Retake', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            key: const ValueKey<String>('photo-crop'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Colors.white70),
+              minimumSize: const Size(0, 52),
+            ),
+            onPressed: busy ? null : onCrop,
+            icon: const Icon(Icons.crop_rounded),
+            label: const Text('Crop', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: FilledButton(
               key: const ValueKey<String>('photo-use'),

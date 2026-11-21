@@ -5,6 +5,7 @@ import 'package:challan_mobile/photos/capture_source.dart';
 import 'package:challan_mobile/photos/photo_capture_screen.dart';
 import 'package:challan_mobile/photos/photo_queue_gate.dart';
 import 'package:challan_mobile/services/socket_service.dart';
+import 'package:core_erp/core/media/photo_crop_screen.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/photo_requests.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +36,12 @@ class _Camera implements CaptureSource {
     shots += 1;
     return XFile.fromData(_png, name: 'shot$shots.png', mimeType: 'image/png');
   }
+
+  @override
+  Future<({double min, double max})?> zoomRange() async => null;
+
+  @override
+  Future<void> setZoom(double level) async {}
 
   @override
   Future<void> close() async {}
@@ -156,6 +163,27 @@ void main() {
 
     expect(camera.shots, 3);
     expect(find.text('All done — 2 photos sent'), findsOneWidget);
+  });
+
+  testWidgets('a shot can be cropped before it is used; Cancel keeps it as taken', (tester) async {
+    await requests.refresh();
+    await tester.pumpWidget(host(PhotoCaptureScreen(source: _Camera())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('photo-shutter')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('photo-crop')), findsOneWidget, reason: 'Retake, Crop, Use photo');
+    await tester.tap(find.byKey(const ValueKey<String>('photo-crop')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PhotoCropScreen), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('crop-back')));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PhotoCropScreen), findsNothing);
+    expect(find.byKey(const ValueKey<String>('photo-use')), findsOneWidget, reason: 'back to the shot, as taken');
   });
 
   testWidgets('a document is filed under its name, and the logo is left alone', (tester) async {
