@@ -421,6 +421,7 @@ class ItemMasterController extends ChangeNotifier {
   }
 
   void _onRowsChanged() {
+    _openMatchingPart();
     _syncDealToCursor();
     notifyListeners();
   }
@@ -631,10 +632,83 @@ class ItemMasterController extends ChangeNotifier {
     if (entity == null) return false;
     final sheet = groupItemController;
     if (row < 0 || row >= sheet.rowCount) return false;
-    if (sheet.draftAt(row).entityId == option.id) return false;
+    final current = sheet.draftAt(row);
+    if (current.entityId == option.id) return false;
+
+    // B: a name no longer says which part — two Pattis differ in alloy or
+    // thickness. On a row being entered, the pick is the NAME, and the part
+    // is opened only when the row's alloy and thickness are that part's too
+    // (or neither has any). Opening it on the name alone took the row away
+    // from someone entering a second Patti — or, with that Patti on another
+    // row, moved the cursor there and left this row without a name ("Part
+    // Name is required"). A row holding a saved part still switches parts.
+    if (current.entityId == null) {
+      final stored = writer.draftForId(option.id);
+      if (stored == null || !_identityCellsMatch(current, stored)) return false;
+    }
+    return _openPart(row, option.id, entity);
+  }
+
+  /// The row's alloy and thickness are [stored]'s, compared as the duplicate
+  /// rule compares them ("1.20" is "1.2").
+  bool _identityCellsMatch(SheetDraft row, SheetDraft stored) {
+    for (final column in groupItemController.sheetDef.columns) {
+      if (!column.identity) continue;
+      if (SheetEngine.identityValue(SheetEngine.cellLabel(row, column.id)) !=
+          SheetEngine.identityValue(SheetEngine.cellLabel(stored, column.id))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// A row being entered whose group, name, alloy and thickness now ARE a part
+  /// on file gets that part — the rule the sheet started with ("the same
+  /// group, type and name loads it"), with alloy and thickness in it. Checked
+  /// as cells change, so it happens when the last of them is filled in.
+  bool _matching = false;
+
+  void _openMatchingPart() {
+    if (_matching) return;
+    final writer = binding;
+    final sheet = groupItemController;
+    if (writer == null || sheet.rowCount == 0) return;
+    final row = sheet.row;
+    if (row < 0 || row >= sheet.rowCount) return;
+    final draft = sheet.draftAt(row);
+    if (draft.entityId != null) return;
+    final nameColumn = _columnBoundTo(SheetBindsTo.name);
+    if (nameColumn == null) return;
+    final name = SheetEngine.cellLabel(draft, nameColumn.id);
+    if (name.isEmpty) return;
+    final key = SheetEngine.identityKeyOf(sheet.sheetDef, draft, nameColumn.id);
+    final wanted = SheetEngine.identityValue(name);
+    for (final option in sheet.options) {
+      if (option.columnId != nameColumn.id || option.isNew) continue;
+      if (SheetEngine.identityValue(option.label) != wanted) continue;
+      final stored = writer.draftForId(option.id);
+      if (stored == null) continue;
+      if (SheetEngine.identityKeyOf(sheet.sheetDef, stored, nameColumn.id) != key) continue;
+      final entity = writer.entityById(option.id);
+      if (entity == null) continue;
+      _matching = true;
+      try {
+        _openPart(row, option.id, entity);
+      } finally {
+        _matching = false;
+      }
+      return;
+    }
+  }
+
+  /// Loads the part [id] into [row] — or, already on another row, takes the
+  /// cursor there instead of putting the part on the sheet twice.
+  bool _openPart(int row, int id, Object entity) {
+    final writer = binding!;
+    final sheet = groupItemController;
 
     for (var other = 0; other < sheet.rowCount; other += 1) {
-      if (other == row || sheet.draftAt(other).entityId != option.id) continue;
+      if (other == row || sheet.draftAt(other).entityId != id) continue;
       // Leave nothing half-typed behind: a row that only held the pick goes.
       final picked = sheet.draftAt(row);
       sheet.selectRow(other);
@@ -650,7 +724,7 @@ class ItemMasterController extends ChangeNotifier {
       return true;
     }
 
-    final loaded = writer.draftForId(option.id);
+    final loaded = writer.draftForId(id);
     if (loaded == null) return false;
     sheet.replaceRowAt(row, loaded);
     sheet.setRowLocked(row, false);
