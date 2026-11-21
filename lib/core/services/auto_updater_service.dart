@@ -48,7 +48,7 @@ class AutoUpdaterService {
   }
 
   Future<void> _performSilentUpdate(String url) async {
-    if (_isUpdating || !Platform.isWindows) return;
+    if (kIsWeb || _isUpdating || !Platform.isWindows) return;
     _isUpdating = true;
 
     try {

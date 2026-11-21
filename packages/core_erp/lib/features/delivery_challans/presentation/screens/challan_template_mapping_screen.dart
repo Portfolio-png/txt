@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -1898,7 +1899,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       mappingsOverride: mappingsOverride,
       fallbackFileName: 'challan-template-test-$itemCount-items.pdf',
     );
-    if (!handled && !Platform.isWindows && !Platform.isMacOS) {
+    if (!handled && (kIsWeb || (!Platform.isWindows && !Platform.isMacOS))) {
       final uri = provider.repository.templateTestPrintUri(
         templateId: templateId,
         mode: 'digital',
@@ -1967,7 +1968,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       final file = File('${tempDir.path}/$fallbackFileName');
       await file.writeAsBytes(bytes, flush: true);
 
-      if (Platform.isWindows) {
+      if (kIsWeb || Platform.isWindows) {
         await Printing.layoutPdf(
           name: fallbackFileName,
           onLayout: (_) async => bytes,
@@ -1975,7 +1976,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         return true;
       }
 
-      if (Platform.isMacOS) {
+      if (!kIsWeb && Platform.isMacOS) {
         final printed =
             await _nativePrintingChannel.invokeMethod<bool>('printPdfFile', {
               'filePath': file.path,

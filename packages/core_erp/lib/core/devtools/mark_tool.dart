@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -87,6 +88,7 @@ class Mark {
 String get markFilePath {
   const override = String.fromEnvironment('PAPER_MARKS_PATH');
   if (override.isNotEmpty) return override;
+  if (kIsWeb) return 'web://marks.jsonl';
   final home =
       Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
   return '$home/.paper/marks.jsonl';
@@ -161,6 +163,7 @@ class MarkSink {
   }
 
   bool _writeLocally(String line) {
+    if (kIsWeb) return false;
     try {
       final file = File(path);
       file.parent.createSync(recursive: true);
@@ -654,6 +657,7 @@ class _MarkBar extends StatelessWidget {
 /// The marks file with $HOME folded back to ~, so the bar says where it is
 /// without spending half the window on it. The terminal prints it in full.
 String _short(String path) {
+  if (kIsWeb) return path;
   final home = Platform.environment['HOME'];
   if (home == null || home.isEmpty || !path.startsWith(home)) return path;
   return '~${path.substring(home.length)}';
