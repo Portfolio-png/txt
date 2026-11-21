@@ -1389,6 +1389,14 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 50));
         });
         await tester.pump();
+        // Alloy is part of what makes Patti this part: taking it off is asked.
+        expect(find.byKey(const Key('identity_change_dialog')), findsOneWidget);
+        expect(find.text('Alloy: Brass  →  —'), findsOneWidget);
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('identity_change_this_part')));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pump();
         expect(
           repo.updated.last.variationTree,
           isEmpty,
@@ -1465,6 +1473,14 @@ void main() {
 
         await tester.runAsync(() async {
           await tester.tap(find.byKey(const ValueKey('master-data-save')));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pump();
+        // Another thickness is usually another part: asked before it is saved
+        // over this one.
+        expect(find.text('Thickness: 18 Gauge  →  20 Gauge'), findsOneWidget);
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('identity_change_this_part')));
           await Future<void>.delayed(const Duration(milliseconds: 50));
         });
         await tester.pump();

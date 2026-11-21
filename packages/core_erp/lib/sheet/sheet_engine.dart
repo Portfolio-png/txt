@@ -131,6 +131,26 @@ abstract final class SheetEngine {
   }
 
   /// Calculates the group path string leading up to this column
+  /// An identity cell's value as compared: trimmed, inner spaces collapsed,
+  /// lower-cased, and a plain number written without trailing zeros, so
+  /// "1.20" and "1.2" are one thickness. The backend's twin is
+  /// `identityValue` in backend/modules/items/part-identity.js — keep them
+  /// alike, or the sheet and the server disagree on what is a duplicate.
+  static String identityValue(String? raw) {
+    final text = (raw ?? '').trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    if (RegExp(r'^\d+(\.\d+)?$').hasMatch(text)) {
+      final trimmed = text.contains('.') ? text.replaceFirst(RegExp(r'\.?0+$'), '') : text;
+      return trimmed.isEmpty ? '0' : trimmed;
+    }
+    return text;
+  }
+
+  /// A cell's shown text: its option's label, or what was typed.
+  static String cellLabel(SheetDraft draft, int columnId) {
+    final value = draft.get(columnId);
+    return (value?.optionLabel ?? value?.textValue ?? '').trim();
+  }
+
   static String groupPathString(
     SheetDef sheet,
     SheetDraft draft,

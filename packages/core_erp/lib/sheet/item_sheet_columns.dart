@@ -60,6 +60,8 @@ const List<ColumnDef> itemSheetColumns = [
     kind: ColumnKind.material,
     position: 4,
     bindsTo: '${SheetBindsTo.variationPrefix}Alloy',
+    // Same group and name, another alloy: another part.
+    identity: true,
   ),
   ColumnDef(
     id: 7,
@@ -68,6 +70,7 @@ const List<ColumnDef> itemSheetColumns = [
     kind: ColumnKind.gauge,
     position: 5,
     bindsTo: '${SheetBindsTo.variationPrefix}Thickness',
+    identity: true,
   ),
   // Last, always — the code is built FROM the properties beside it, so it
   // belongs at the end of the run it summarises. A property added with the +

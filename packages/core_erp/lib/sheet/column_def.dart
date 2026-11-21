@@ -79,6 +79,7 @@ class ColumnDef {
     this.entryUnitId,
     this.archivedAt,
     this.bindsTo,
+    this.identity = false,
   });
 
   final int id;
@@ -100,6 +101,12 @@ class ColumnDef {
   /// to key off and every binding ends up as a table of literal ids. Null means
   /// the column is for reading only and nothing is written from it.
   final String? bindsTo;
+
+  /// Part of what makes a record THIS record, beside its name: two parts may
+  /// share a group and a name and differ in Alloy or Thickness (and then each
+  /// has its own part number). Changing one of these on a saved record is
+  /// asked about, because it turns the record into a different part.
+  final bool identity;
 
   bool get isDefault => role != null;
   bool get isGroup => role == ColumnRole.group;
@@ -139,6 +146,7 @@ class ColumnDef {
     int? entryUnitId,
     String? archivedAt,
     String? bindsTo,
+    bool? identity,
   }) {
     return ColumnDef(
       id: id ?? this.id,
@@ -153,6 +161,7 @@ class ColumnDef {
       entryUnitId: entryUnitId ?? this.entryUnitId,
       archivedAt: archivedAt ?? this.archivedAt,
       bindsTo: bindsTo ?? this.bindsTo,
+      identity: identity ?? this.identity,
     );
   }
 
@@ -171,7 +180,8 @@ class ColumnDef {
           source == other.source &&
           familyId == other.familyId &&
           entryUnitId == other.entryUnitId &&
-          archivedAt == other.archivedAt;
+          archivedAt == other.archivedAt &&
+          identity == other.identity;
 
   @override
   int get hashCode => Object.hash(
@@ -186,5 +196,6 @@ class ColumnDef {
         familyId,
         entryUnitId,
         archivedAt,
+        identity,
       );
 }

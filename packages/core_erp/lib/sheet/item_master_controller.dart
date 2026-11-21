@@ -6,6 +6,42 @@ import 'sheet_draft.dart';
 import 'sheet_binding.dart';
 import 'item_sheet_columns.dart';
 import 'sheet_controller.dart';
+import 'sheet_engine.dart';
+
+/// One identity cell (Alloy, Thickness) a saved part had and the row now says.
+@immutable
+class IdentityCellChange {
+  const IdentityCellChange({required this.label, required this.from, required this.to});
+
+  final String label;
+  final String from;
+  final String to;
+}
+
+/// What is being asked about when a saved part's Alloy or Thickness changes:
+/// that turns it into a different part (same group and name, its own part
+/// number), so it is not saved over the old one without asking.
+@immutable
+class IdentityChange {
+  const IdentityChange({required this.row, required this.partName, required this.partCode, required this.cells});
+
+  final int row;
+  final String partName;
+  final String partCode;
+  final List<IdentityCellChange> cells;
+}
+
+/// The answer.
+enum IdentityChangeChoice {
+  /// Save it onto the opened part: it becomes the new alloy / thickness.
+  changeThisPart,
+
+  /// Leave the opened part as it is and make a new part with the same name.
+  makeNewPart,
+
+  /// Neither: nothing is saved and the row keeps what was typed.
+  cancel,
+}
 
 class ItemMasterController extends ChangeNotifier {
   ItemMasterController({this.binding, this.demoData = false}) {
@@ -470,6 +506,78 @@ class ItemMasterController extends ChangeNotifier {
   /// the host holds work for it (dies or machines waiting for its part), and
   /// the row then stays.
   bool Function(Object rowKey)? rowHoldsWork;
+
+  /// Asked before a saved part's Alloy or Thickness is changed (the guard).
+  /// Unset — a headless use of the controller — the save goes ahead as it
+  /// always did.
+  Future<IdentityChangeChoice> Function(IdentityChange change)? confirmIdentityChange;
+
+  /// The identity cells of [draft] that differ from the part it was opened
+  /// from, or empty. Only a saved part can change its identity; a new row
+  /// has none yet.
+  List<IdentityCellChange> identityChangesOf(SheetDraft draft) {
+    final id = draft.entityId;
+    final writer = binding;
+    if (id == null || writer == null) return const [];
+    final stored = writer.draftForId(id);
+    if (stored == null) return const [];
+    final out = <IdentityCellChange>[];
+    for (final column in groupItemController.sheetDef.columns) {
+      if (!column.identity) continue;
+      final from = SheetEngine.cellLabel(stored, column.id);
+      final to = SheetEngine.cellLabel(draft, column.id);
+      if (SheetEngine.identityValue(from) != SheetEngine.identityValue(to)) {
+        out.add(IdentityCellChange(label: column.label, from: from, to: to));
+      }
+    }
+    return out;
+  }
+
+  bool _needsIdentityQuestion(SheetDraft draft) =>
+      confirmIdentityChange != null && identityChangesOf(draft).isNotEmpty;
+
+  /// Runs the guard for [draft]. True to go on saving it as it stands.
+  Future<bool> _passesIdentityGuard(SheetDraft draft) async {
+    final ask = confirmIdentityChange;
+    if (ask == null) return true;
+    final cells = identityChangesOf(draft);
+    if (cells.isEmpty) return true;
+    final nameColumn = _columnBoundTo(SheetBindsTo.name);
+    final codeColumn = _columnBoundTo(SheetBindsTo.partCode);
+    final choice = await ask(IdentityChange(
+      row: groupItemController.indexOfDraft(draft),
+      partName: nameColumn == null ? '' : SheetEngine.cellLabel(draft, nameColumn.id),
+      partCode: codeColumn == null ? '' : SheetEngine.cellLabel(_storedDraftOf(draft) ?? draft, codeColumn.id),
+      cells: cells,
+    ));
+    switch (choice) {
+      case IdentityChangeChoice.changeThisPart:
+        return true;
+      case IdentityChangeChoice.makeNewPart:
+        // B: arrives with "same name, another alloy" being allowed.
+        _statusBarMessage = 'Not saved — making a new part from it is not available yet.';
+        notifyListeners();
+        return false;
+      case IdentityChangeChoice.cancel:
+        _statusBarMessage = 'Not saved — ${cells.map((c) => c.label).join(' and ')} kept as typed; '
+            'the part on file is unchanged.';
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// The stored version of [draft]'s part, for its code as filed.
+  SheetDraft? _storedDraftOf(SheetDraft draft) {
+    final id = draft.entityId;
+    return id == null ? null : binding?.draftForId(id);
+  }
+
+  ColumnDef? _columnBoundTo(String bindsTo) {
+    for (final column in groupItemController.sheetDef.columns) {
+      if (column.bindsTo == bindsTo) return column;
+    }
+    return null;
+  }
 
   bool _pickExisting(int row, ColumnDef column, ColumnOption option) {
     final writer = binding;
@@ -1216,6 +1324,18 @@ class ItemMasterController extends ChangeNotifier {
 
     // The deal rides on its part, so a bad quotation must stop the part
     // rather than be read as "no quotation" and clear the stored one.
+    // The guard: a saved part's Alloy or Thickness changed is a different
+    // part, so it is asked about before anything is written. Awaited only
+    // when there is something to ask — a needless await here opened the door
+    // to a second save starting in the gap.
+    if (_needsIdentityQuestion(draft)) {
+      if (!await _passesIdentityGuard(draft)) {
+        _rowErrors.remove(draft);
+        return false;
+      }
+      if (groupItemController.indexOfDraft(draft) < 0) return false;
+    }
+
     if (ownsDeal &&
         _isExternal &&
         clientVendorController.draft.isDirtySinceSave &&
@@ -1396,6 +1516,22 @@ class ItemMasterController extends ChangeNotifier {
           'can be saved — ${where.join(', ')}.';
       notifyListeners();
       return false;
+    }
+
+    final asking = [
+      for (final draft in groupItemController.drafts)
+        if (draft.isDirtySinceSave && _needsIdentityQuestion(draft)) draft,
+    ];
+    if (asking.isNotEmpty) {
+      // Held as saving while asked, so a second Save cannot start meanwhile.
+      _isSavingNow = true;
+      try {
+        for (final draft in asking) {
+          if (!await _passesIdentityGuard(draft)) return false;
+        }
+      } finally {
+        _isSavingNow = false;
+      }
     }
 
     final writer = binding;

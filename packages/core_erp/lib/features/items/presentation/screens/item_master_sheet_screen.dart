@@ -389,6 +389,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     _controller.rowHoldsWork = (rowKey) =>
         (_heldDies[rowKey]?.isNotEmpty ?? false) ||
         (_heldMachines[rowKey]?.isNotEmpty ?? false);
+    // A saved part's Alloy or Thickness changed makes it a different part:
+    // asked, never saved over the old one silently.
+    _controller.confirmIdentityChange = _askIdentityChange;
     // Quitting the app — Cmd+Q, or the window's close button, which the
     // window turns into a quit — asks the same question as Back.
     _exitListener = AppLifecycleListener(onExitRequested: _onExitRequested);
@@ -548,11 +551,66 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (mounted) setState(() {});
   }
 
+  /// The guard's question. Same group and name with another alloy or
+  /// thickness is a different part, with its own part number; saving the
+  /// change over the opened part rewrites its code and what its stock and
+  /// orders refer to.
+  Future<IdentityChangeChoice> _askIdentityChange(IdentityChange change) async {
+    if (!mounted) return IdentityChangeChoice.cancel;
+    final named = change.partCode.isEmpty ? change.partName : '${change.partName} (${change.partCode})';
+    final choice = await showDialog<IdentityChangeChoice>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('identity_change_dialog'),
+        title: Text('Change $named?', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final cell in change.cells)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '${cell.label}: ${cell.from.isEmpty ? '—' : cell.from}  →  ${cell.to.isEmpty ? '—' : cell.to}',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              const Text(
+                'Another alloy or thickness is usually another part. Saving it here '
+                'changes this part on file — its code, and what its stock and orders '
+                'refer to.',
+                style: TextStyle(fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            key: const Key('identity_change_cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.cancel),
+            child: const Text('Cancel', style: TextStyle(fontSize: 14)),
+          ),
+          FilledButton(
+            key: const Key('identity_change_this_part'),
+            onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.changeThisPart),
+            child: const Text('Change this part', style: TextStyle(fontSize: 14)),
+          ),
+        ],
+      ),
+    );
+    return choice ?? IdentityChangeChoice.cancel;
+  }
+
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _exitListener.dispose();
     _controller.rowHoldsWork = null;
+    _controller.confirmIdentityChange = null;
     _controller.groupItemController
       ..onRowLeft = null
       ..onOptionAdded = null
