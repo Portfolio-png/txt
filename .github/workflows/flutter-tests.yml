@@ -43,6 +43,12 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: the version the app is built and tested with locally.
+          # Unpinned, CI took the newest stable, which requires Gradle 9.3.1
+          # and failed the APK build against this project's Gradle 8.14.
+          # Upgrade deliberately (Gradle wrapper + Android Gradle plugin
+          # together), then move this.
+          flutter-version: '3.41.0'
           cache: true
 
       - name: Flutter pub get
@@ -64,6 +70,12 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: the version the app is built and tested with locally.
+          # Unpinned, CI took the newest stable, which requires Gradle 9.3.1
+          # and failed the APK build against this project's Gradle 8.14.
+          # Upgrade deliberately (Gradle wrapper + Android Gradle plugin
+          # together), then move this.
+          flutter-version: '3.41.0'
           cache: true
 
       - name: Flutter pub get
