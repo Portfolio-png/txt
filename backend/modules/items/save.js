@@ -9,7 +9,8 @@
 // which these reach the sibling files; both are read at call time.
 
 const { normalizeUnitValue } = require('../units/master');
-const { buildVariantPartCode, groupLineage, nextPartNo, propertyCodeFor } = require('./part-identity');
+const partIdentity = require('./part-identity');
+const { buildVariantPartCode, groupLineage, nextPartNo, propertyCodeFor } = partIdentity;
 const { mergeItemPropertySchema, normalizePropertyKey } = require('./property-keys');
 const sectionTree = require('./section-tree');
 
@@ -381,21 +382,25 @@ function createSave(deps, api) {
     // leaves the rest of the edit sitting in the form.
     const normalizedDevelopedFor = await normalizeDevelopedFor(developedFor);
 
+    // Another Alloy or Thickness under the same name is another part (B):
+    // the duplicate is the same name AND the same alloy and thickness.
     const duplicate = await findItemDuplicate({
       name: trimmedName,
       groupId: normalizedGroupId,
       unitId: normalizedUnitId,
       excludeId: id,
+      identity: partIdentity.identityOfTree(variationTree),
     });
     if (duplicate) {
       // Named rather than generic, because the rule surprises people: the key is
-      // name + group + unit, and the SET is not in it. Someone filing "Patti"
-      // under Dolly and again under Chakri reads the type as the thing that tells
-      // them apart, and it is not.
+      // name + group + unit + alloy + thickness, and the SET is not in it.
+      // Someone filing "Patti" under Dolly and again under Chakri reads the type
+      // as the thing that tells them apart, and it is not.
+      const described = partIdentity.describeIdentity(variationTree);
       const error = new Error(
-        `"${trimmedName}" already exists in this group. A part name has to be ` +
-          'unique within its group, even across types — rename it, or pick the ' +
-          'existing part from the list.',
+        `"${trimmedName}"${described ? ` with ${described}` : ''} already exists in this group. ` +
+          'A part with the same name needs another alloy or thickness, even across types — ' +
+          'change one, or pick the existing part from the list.',
       );
       error.statusCode = 409;
       error.code = 'item_name_duplicate';

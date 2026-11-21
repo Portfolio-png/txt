@@ -1,5 +1,7 @@
 'use strict';
 
+const partIdentity = require('./part-identity');
+
 // Items and groups as read: by id, with usage, with their sets; and the
 // cleaning of a variation tree before it is saved.
 //
@@ -292,21 +294,42 @@ function createReads(deps, api) {
     });
   }
 
-  async function findItemDuplicate({ name, groupId, unitId, excludeId = null }) {
+  /// The part a save would duplicate, or null.
+  ///
+  /// Same group, unit and name — and, when [identity] is given, the same
+  /// Alloy and Thickness (part-identity.js: another alloy or thickness is
+  /// another part, with its own number). Without [identity] the name alone
+  /// decides, as it always did.
+  async function findItemDuplicate({ name, groupId, unitId, excludeId = null, identity = null }) {
     const rows = await all('SELECT id, name, group_id, unit_id FROM items');
     const normalizedName = normalizeUnitValue(name);
     const normalizedGroupId = Number(groupId || 0);
     const normalizedUnitId = Number(unitId || 0);
 
-    for (const row of rows) {
-      if (excludeId != null && row.id === excludeId) {
-        continue;
-      }
-      if (normalizeUnitValue(row.name) === normalizedName && Number(row.group_id || 0) === normalizedGroupId && Number(row.unit_id || 0) === normalizedUnitId) {
-        return row;
-      }
+    const sameName = rows.filter((row) =>
+      !(excludeId != null && row.id === excludeId) &&
+      normalizeUnitValue(row.name) === normalizedName &&
+      Number(row.group_id || 0) === normalizedGroupId &&
+      Number(row.unit_id || 0) === normalizedUnitId);
+    if (!sameName.length || !identity) return sameName[0] || null;
+
+    for (const row of sameName) {
+      if (partIdentity.sameIdentity(await storedIdentity(row.id), identity)) return row;
     }
     return null;
+  }
+
+  /// A saved part's Alloy and Thickness, read from its variation nodes.
+  async function storedIdentity(itemId) {
+    const nodes = await all(
+      `SELECT id, parent_node_id, kind, name, is_archived FROM item_variation_nodes
+        WHERE item_id = ? AND is_archived = 0`,
+      [itemId],
+    );
+    const top = nodes
+      .filter((node) => node.parent_node_id == null)
+      .map((node) => ({ ...node, children: nodes.filter((child) => child.parent_node_id === node.id) }));
+    return partIdentity.identityOfTree(top);
   }
 
   async function getGroupsWithUsage() {

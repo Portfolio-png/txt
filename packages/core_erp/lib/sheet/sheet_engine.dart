@@ -145,6 +145,33 @@ abstract final class SheetEngine {
     return text;
   }
 
+  /// The key that says "this part": its group path and name, then its
+  /// identity cells (Alloy, Thickness) in column order — lower-cased, and
+  /// each value as [identityValue] compares it. With no identity value at all
+  /// it is the path and name alone, so a part without an alloy or thickness
+  /// is keyed exactly as before.
+  ///
+  /// The sheet's taken set (the binding's `existingPaths`) is built from the
+  /// same function, and the server applies the same rule — so a row the sheet
+  /// accepts is one the server accepts.
+  static String identityKey(String fullPath, List<String> identityValues) {
+    final values = identityValues.map(identityValue).toList();
+    final base = fullPath.trim().toLowerCase();
+    if (values.every((v) => v.isEmpty)) return base;
+    return '$base ⟨${values.join('|')}⟩';
+  }
+
+  /// [identityKey] for a row, from its own cells.
+  static String identityKeyOf(SheetDef sheet, SheetDraft draft, int nameColumnId) {
+    final path = groupPathString(sheet, draft, nameColumnId);
+    final name = cellLabel(draft, nameColumnId);
+    final full = path.isNotEmpty ? '$path › $name' : name;
+    return identityKey(full, [
+      for (final column in sheet.columns)
+        if (column.identity) cellLabel(draft, column.id),
+    ]);
+  }
+
   /// A cell's shown text: its option's label, or what was typed.
   static String cellLabel(SheetDraft draft, int columnId) {
     final value = draft.get(columnId);
@@ -406,12 +433,20 @@ abstract final class SheetEngine {
       if (col.isItem) {
         final path = groupPathString(sheet, draft, col.id);
         final itemLabel = val.optionLabel ?? val.textValue ?? '';
-        final fullPath = path.isNotEmpty ? '$path › $itemLabel' : itemLabel;
-        if (existingPaths.contains(fullPath.toLowerCase())) {
+        // Name AND alloy and thickness: another of either is another part.
+        if (existingPaths.contains(identityKeyOf(sheet, draft, col.id))) {
+          final identity = [
+            for (final column in sheet.columns)
+              if (column.identity && cellLabel(draft, column.id).isNotEmpty)
+                '${column.label} ${cellLabel(draft, column.id)}',
+          ];
           errors[col.id] = ValidationError(
             columnId: col.id,
             code: 'duplicate_item',
-            message: '$itemLabel already exists under $path.',
+            message: identity.isEmpty
+                ? '$itemLabel already exists under $path.'
+                : '$itemLabel with ${identity.join(', ')} already exists under $path. '
+                      'Change the alloy or thickness, or pick that part from the list.',
           );
           continue;
         }

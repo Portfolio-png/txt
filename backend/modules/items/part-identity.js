@@ -270,7 +270,76 @@ async function nextPartNo({ groupId, setId, setPending, itemName }, { get, all }
   return maxNo + 1;
 }
 
+// ---------------------------------------------------------------------------
+// What makes a part THIS part, beside its group, unit and name.
+//
+// Two parts may share a group and a name and differ in Alloy or Thickness —
+// another alloy or thickness is another part, with its own part number (the
+// number already counts per name: nextPartNo). So the duplicate rule is name
+// + these, not name alone.
+//
+// The sheet's twin is SheetEngine.identityValue and the columns marked
+// `identity` (packages/core_erp/lib/sheet) — keep the normalisation alike, or
+// the sheet and the server disagree on what is a duplicate.
+// ---------------------------------------------------------------------------
+
+const IDENTITY_PROPERTIES = Object.freeze(['Alloy', 'Thickness']);
+
+/// A value as compared: trimmed, inner spaces collapsed, lower-cased, and a
+/// plain number without trailing zeros ("1.20" is "1.2").
+function identityValue(raw) {
+  const text = String(raw ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const trimmed = text.includes('.') ? text.replace(/\.?0+$/, '') : text;
+    return trimmed || '0';
+  }
+  return text;
+}
+
+/// { alloy: 'ms', thickness: '1.2' } from top-level property nodes and their
+/// values — an incoming tree ({kind, name, children}) or stored rows grouped
+/// the same way. Several values under one property are sorted and joined, so
+/// the order they were entered in does not make a different part.
+function identityOfTree(nodes) {
+  const out = {};
+  for (const property of IDENTITY_PROPERTIES) out[property.toLowerCase()] = '';
+  for (const node of nodes || []) {
+    if (String(node.kind || '') !== 'property') continue;
+    const key = identityValue(node.name);
+    const property = IDENTITY_PROPERTIES.find((p) => p.toLowerCase() === key);
+    if (!property) continue;
+    const values = (node.children || [])
+      .filter((child) => String(child.kind || 'value') === 'value' && !Number(child.is_archived || child.isArchived || 0))
+      .map((child) => identityValue(child.name))
+      .filter(Boolean)
+      .sort();
+    out[property.toLowerCase()] = values.join('|');
+  }
+  return out;
+}
+
+function sameIdentity(a, b) {
+  return IDENTITY_PROPERTIES.every((p) => (a?.[p.toLowerCase()] || '') === (b?.[p.toLowerCase()] || ''));
+}
+
+/// "Alloy MS, Thickness 1.2" from a tree, in the words it was typed in — for
+/// a refusal a person reads.
+function describeIdentity(nodes) {
+  const parts = [];
+  for (const property of IDENTITY_PROPERTIES) {
+    const node = (nodes || []).find((n) => String(n.kind || '') === 'property' && identityValue(n.name) === property.toLowerCase());
+    const values = (node?.children || []).map((c) => String(c.name || '').trim()).filter(Boolean);
+    if (values.length) parts.push(`${property} ${values.join(' / ')}`);
+  }
+  return parts.join(', ');
+}
+
 module.exports = {
+  IDENTITY_PROPERTIES,
+  identityValue,
+  identityOfTree,
+  sameIdentity,
+  describeIdentity,
   buildPartCode,
   buildVariantPartCode,
   variantCodeFromPartCode,

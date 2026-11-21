@@ -457,11 +457,39 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       },
       // Lower-cased: the engine looks a path up lower-cased, so a stored
       // "Dolly › Patti" never matched and the duplicate check never fired.
+      // Keyed by name AND alloy and thickness (SheetEngine.identityKey): two
+      // Pattis with different alloys are two parts, and a new row is refused
+      // only when it matches one on all three.
       existingPaths: {
         for (final item in live)
-          '${_pathOf(item.groupId)} › ${item.name}'.toLowerCase(),
+          SheetEngine.identityKey(
+            '${_pathOf(item.groupId)} › ${item.name}',
+            _identityValuesOf(item),
+          ),
       },
     );
+  }
+
+  /// The part's values for the sheet's identity columns, in column order —
+  /// the top-level property of that name and its value(s).
+  List<String> _identityValuesOf(ItemDefinition item) => [
+        for (final column in _sheet.columns)
+          if (column.identity && SheetBindsTo.isVariation(column.bindsTo))
+            _propertyValueOf(item, SheetBindsTo.variationProperty(column.bindsTo!)),
+      ];
+
+  String _propertyValueOf(ItemDefinition item, String property) {
+    final wanted = _normalize(property);
+    for (final node in item.variationTree) {
+      if (node.kind != ItemVariationNodeKind.property || node.isArchived) continue;
+      if (_normalize(node.name) != wanted) continue;
+      final values = [
+        for (final child in node.children)
+          if (!child.isArchived && child.name.trim().isNotEmpty) child.name.trim(),
+      ]..sort();
+      return values.join(' / ');
+    }
+    return '';
   }
 
   /// One option per real record, keyed to the column that offers it.
@@ -510,15 +538,22 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
           // part into the row. A name can repeat — in another group, set or
           // unit — so they are told apart by code rather than folded into one
           // option that could only ever load the first of them.
+          // Its alloy and thickness ride on the detail too: two Pattis in one
+          // group differ in exactly those (B), and a code alone does not say
+          // which is which.
           for (final item in live) {
             final code = item.partCode.trim();
+            final identity = _identityValuesOf(item).where((v) => v.isNotEmpty);
             out.add(
               ColumnOption(
                 id: item.id,
                 columnId: column.id,
                 parentOptionId: item.groupId,
                 label: item.name,
-                detail: code.isEmpty ? 'Part #${item.id}' : code,
+                detail: [
+                  code.isEmpty ? 'Part #${item.id}' : code,
+                  ...identity,
+                ].join(' · '),
               ),
             );
           }

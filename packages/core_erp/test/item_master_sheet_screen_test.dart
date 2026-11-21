@@ -1498,6 +1498,138 @@ void main() {
       },
     );
 
+    testWidgets(
+      'another thickness on an opened Patti, "Make a new part": a second Patti '
+      'is made and the first is not touched',
+      (tester) async {
+        ItemVariationNodeDefinition node(
+          int id,
+          String name, {
+          ItemVariationNodeKind kind = ItemVariationNodeKind.property,
+          int? parent,
+          List<ItemVariationNodeDefinition> children = const [],
+        }) => ItemVariationNodeDefinition(
+          id: id,
+          itemId: 500,
+          parentNodeId: parent,
+          kind: kind,
+          name: name,
+          displayName: name,
+          position: 0,
+          isArchived: false,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          children: children,
+          inputType: kind == ItemVariationNodeKind.property ? 'Gauge' : 'Text',
+        );
+        final patti = _item(
+          id: 500,
+          name: 'Patti',
+          groupId: 11,
+          variationTree: [
+            node(10, 'Thickness', children: [
+              node(11, '18 Gauge', kind: ItemVariationNodeKind.value, parent: 10),
+            ]),
+          ],
+        );
+        final repo = _FakeItemRepository([patti]);
+        await _pumpScreen(tester, initialItems: [patti], repository: repo, size: const Size(1700, 3200));
+        MasterDataPanel panel() => tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+
+        await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+        await tester.pump();
+        panel().onThicknessChanged!('20 Gauge');
+        await tester.pump();
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const ValueKey('master-data-save')));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pump();
+        expect(find.byKey(const Key('identity_make_new_part')), findsOneWidget);
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('identity_make_new_part')));
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        });
+        await tester.pump();
+
+        expect(repo.created, hasLength(1), reason: 'a second Patti');
+        final made = repo.created.single;
+        expect(made.name, 'Patti');
+        expect(
+          made.variationTree.firstWhere((n) => n.name == 'Thickness').children.single.name,
+          '20 Gauge',
+        );
+        expect(
+          repo.updated.where((u) => u.id == 500),
+          isEmpty,
+          reason: 'the 18 Gauge Patti on file is not touched — not its '
+              'thickness, and not the raw plan typed for the new one',
+        );
+        final plans = repo.updated.where((u) => u.penPaperBaseline != null).toList();
+        expect(plans, hasLength(1), reason: 'the raw plan was saved once');
+        expect(plans.single.id, isNot(500), reason: 'on the new Patti, the row it was typed on');
+      },
+    );
+    testWidgets(
+      'another thickness on an opened Patti, Cancel: nothing is saved, the raw '
+      'plan included',
+      (tester) async {
+        ItemVariationNodeDefinition node(
+          int id,
+          String name, {
+          ItemVariationNodeKind kind = ItemVariationNodeKind.property,
+          int? parent,
+          List<ItemVariationNodeDefinition> children = const [],
+        }) => ItemVariationNodeDefinition(
+          id: id,
+          itemId: 500,
+          parentNodeId: parent,
+          kind: kind,
+          name: name,
+          displayName: name,
+          position: 0,
+          isArchived: false,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          children: children,
+          inputType: kind == ItemVariationNodeKind.property ? 'Gauge' : 'Text',
+        );
+        final patti = _item(
+          id: 500,
+          name: 'Patti',
+          groupId: 11,
+          variationTree: [
+            node(10, 'Thickness', children: [
+              node(11, '18 Gauge', kind: ItemVariationNodeKind.value, parent: 10),
+            ]),
+          ],
+        );
+        final repo = _FakeItemRepository([patti]);
+        await _pumpScreen(tester, initialItems: [patti], repository: repo, size: const Size(1700, 3200));
+        MasterDataPanel panel() => tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+
+        await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+        await tester.pump();
+        panel().onThicknessChanged!('20 Gauge');
+        await tester.pump();
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const ValueKey('master-data-save')));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pump();
+        expect(find.byKey(const Key('identity_change_cancel')), findsOneWidget);
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('identity_change_cancel')));
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        });
+        await tester.pump();
+
+        expect(repo.created, isEmpty);
+        expect(repo.updated, isEmpty, reason: 'not the part, and not its raw plan');
+        expect(find.byType(MasterDataPanel), findsOneWidget);
+      },
+    );
+
     testWidgets('selecting a saved row moves the sections onto its part', (
       tester,
     ) async {

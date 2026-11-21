@@ -621,35 +621,52 @@ class SheetController extends ChangeNotifier {
 
   /// Drops the loaded rows' own codes and paths from the taken sets.
   void _forgetOwnIdentities() {
-    final codeColumn = _sheetDef.columnBoundTo(SheetBindsTo.partCode);
-    final nameColumn =
-        _sheetDef.columnBoundTo(SheetBindsTo.name) ?? _sheetDef.itemColumn;
-
     for (final draft in _drafts) {
       // Only a SAVED row is the record its own code belongs to. An unsaved row
       // withdrawing its typed code erased a genuine collision with a stored
       // part — and reference data reloads constantly, so it erased it often.
       if (draft.entityId == null) continue;
-      if (codeColumn != null) {
-        final code = draft.get(codeColumn.id)?.textValue?.trim();
-        if (code != null && code.isNotEmpty) {
-          _existingCodes.remove(code.toUpperCase());
-          _existingCodes.remove(code);
-        }
+      // What the record is ON FILE, captured the first time the row is seen
+      // placed (loaded, opened, saved — each a new draft). Computed from the
+      // row's current cells instead, an opened Patti edited to SS 1.5 withdrew
+      // "Patti ⟨ss|1.5⟩" on the next reload — another Patti's key, so the
+      // sheet stopped seeing that the edit duplicated it.
+      final own = _ownIdentity[draft] ??= _identityOf(draft);
+      if (own.code != null) {
+        _existingCodes.remove(own.code!.toUpperCase());
+        _existingCodes.remove(own.code);
       }
-      if (nameColumn != null) {
-        final value = draft.get(nameColumn.id);
-        final label = value?.optionLabel ?? value?.textValue;
-        if (label == null || label.trim().isEmpty) continue;
-        final path = SheetEngine.groupPathString(
-          _sheetDef,
-          draft,
-          nameColumn.id,
-        );
-        final full = path.isEmpty ? label : '$path › $label';
-        _existingPaths.remove(full.toLowerCase());
+      if (own.key != null) _existingPaths.remove(own.key);
+    }
+  }
+
+  final Expando<({String? code, String? key})> _ownIdentity = Expando('ownIdentity');
+
+  ({String? code, String? key}) _identityOf(SheetDraft draft) {
+    final codeColumn = _sheetDef.columnBoundTo(SheetBindsTo.partCode);
+    final nameColumn =
+        _sheetDef.columnBoundTo(SheetBindsTo.name) ?? _sheetDef.itemColumn;
+    final code = codeColumn == null ? null : draft.get(codeColumn.id)?.textValue?.trim();
+    String? key;
+    if (nameColumn != null) {
+      final value = draft.get(nameColumn.id);
+      final label = value?.optionLabel ?? value?.textValue;
+      if (label != null && label.trim().isNotEmpty) {
+        key = SheetEngine.identityKeyOf(_sheetDef, draft, nameColumn.id);
       }
     }
+    return (code: code == null || code.isEmpty ? null : code, key: key);
+  }
+
+  /// A record that left the sheet while staying on file — its row became a
+  /// new part ("Make a new part") — has its code and identity taken again, so
+  /// a row matching it is a duplicate once more.
+  void takeIdentityOf(SheetDraft stored) {
+    final own = _identityOf(stored);
+    if (own.code != null) _existingCodes.add(own.code!);
+    if (own.key != null) _existingPaths.add(own.key!);
+    _deriveAndValidate();
+    notifyListeners();
   }
 
   /// Which row a write lands on: the one named, or the cursor's.

@@ -580,9 +580,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 ),
               const SizedBox(height: 8),
               const Text(
-                'Another alloy or thickness is usually another part. Saving it here '
-                'changes this part on file — its code, and what its stock and orders '
-                'refer to.',
+                'Another alloy or thickness is usually another part, with its own '
+                'part number. Make a new part to keep this one as it is; change '
+                'this part only to correct it — that rewrites its code, and what '
+                'its stock and orders refer to.',
                 style: TextStyle(fontSize: 14),
               ),
             ],
@@ -594,10 +595,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.cancel),
             child: const Text('Cancel', style: TextStyle(fontSize: 14)),
           ),
-          FilledButton(
+          OutlinedButton(
             key: const Key('identity_change_this_part'),
             onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.changeThisPart),
             child: const Text('Change this part', style: TextStyle(fontSize: 14)),
+          ),
+          FilledButton(
+            key: const Key('identity_make_new_part'),
+            onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.makeNewPart),
+            child: const Text('Make a new part', style: TextStyle(fontSize: 14)),
           ),
         ],
       ),
@@ -1575,18 +1581,35 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   Future<void> _saveRawSheet(PenPaperBaseline baseline) async {
-    final part = _livePart;
-    if (part == null) return;
+    if (_livePart == null) return;
     if (_rawSaving) return;
     final items = context.read<ItemsProvider>();
     setState(() => _rawSaving = true);
     // A thickness typed in the panel went into the part's row; it is saved
     // with the plan rather than waiting for the cursor to leave the row.
-    // commitRow turns an edited saved row into an update of its part.
+    // commitRow turns an edited saved row into an update of its part — or,
+    // when its alloy or thickness changed and the answer was "Make a new
+    // part", into a new part.
     final sheet = _controller.groupItemController;
     if (sheet.draft.isDirtySinceSave) {
       await _controller.commitRow(sheet.row);
       if (!mounted) return;
+      if (sheet.draft.isDirtySinceSave) {
+        // The row did not save — refused, or the question answered Cancel.
+        // The plan belongs to that row's part, so it waits with it.
+        setState(() => _rawSaving = false);
+        _toast(_controller.statusBarMessage.isEmpty
+            ? 'The part did not save, so its raw sheet waits.'
+            : _controller.statusBarMessage, isError: true);
+        return;
+      }
+    }
+    // Read AFTER the row saved: a row made into a new part is that part now,
+    // and the plan typed on it is its plan, not the old part's.
+    final part = _livePart;
+    if (part == null) {
+      setState(() => _rawSaving = false);
+      return;
     }
     final saved = await items.setItemPenPaperBaseline(part.id, baseline);
     if (!mounted) return;

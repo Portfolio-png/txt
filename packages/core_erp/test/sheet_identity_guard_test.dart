@@ -65,9 +65,15 @@ class _Binding extends SheetBinding<Object?> {
   final writer = _Binding(stored);
   final ctrl = ItemMasterController(binding: writer, demoData: true);
   ctrl.setExternal(false);
-  ctrl.groupItemController.replaceRowAt(0, SheetDraft(sheetKey: 'item', entityId: 5, values: seed.values));
-  // Opening a part places it clean; the edit is what makes it dirty.
-  ctrl.groupItemController.draftAt(0).markDirty();
+  // Opened as it is on file, then edited back to the fixture's values — the
+  // order a worker does it in, so what the row "was" is the stored part.
+  final sheet = ctrl.groupItemController;
+  sheet.replaceRowAt(0, SheetDraft(sheetKey: 'item', entityId: 5, values: stored.values));
+  for (final column in const [_alloy, _thickness]) {
+    final typed = seed.get(column);
+    if (typed != null) sheet.updateValue(column, typed, row: 0);
+  }
+  sheet.draftAt(0).markDirty();
   return (ctrl: ctrl, writer: writer, rowAlloy: rowAlloy, rowThickness: rowThickness);
 }
 
@@ -146,5 +152,83 @@ void main() {
     s.ctrl.confirmIdentityChange = (_) async => IdentityChangeChoice.cancel;
     expect(await s.ctrl.saveItem(), isFalse);
     expect(s.writer.savedAll, isEmpty);
+  });
+
+  group('B: same group and name, another alloy or thickness, is another part', () {
+    test('"Make a new part" leaves the opened part alone and saves a new one from the row', () async {
+      final s = _opened(storedAlloy: 'Titanium Gr 9');
+      addTearDown(s.ctrl.dispose);
+      final sheet = s.ctrl.groupItemController;
+      final rowKey = sheet.draftAt(0).rowKey;
+      s.ctrl.confirmIdentityChange = (_) async => IdentityChangeChoice.makeNewPart;
+
+      expect(await s.ctrl.commitRow(0), isTrue);
+      final sent = s.writer.written.single;
+      expect(sent.entityId, isNull, reason: 'a new part, not an update of #5');
+      expect(SheetEngine.cellLabel(sent, _alloy), s.rowAlloy, reason: 'with the alloy typed');
+      // The old part's stamps are not the new part's. (Its number and code
+      // cells are re-derived as a preview; the server numbers it per name.)
+      for (final column in sheet.sheetDef.columns.where((c) => c.isStamp)) {
+        expect(SheetEngine.cellLabel(sent, column.id), isEmpty, reason: '${column.label} is set when it is made');
+      }
+      expect(identical(sent.rowKey, rowKey), isTrue, reason: 'same row: held dies and machines go with it');
+    });
+
+    test('an edit that repeats a part already on file is refused on the sheet, before anything is asked', () async {
+      final s = _opened(storedAlloy: 'Titanium Gr 9');
+      addTearDown(s.ctrl.dispose);
+      final sheet = s.ctrl.groupItemController;
+      final name = sheet.sheetDef.columnBoundTo(SheetBindsTo.name)!;
+      // A sibling on file with exactly the alloy and thickness the row now has.
+      final siblingKey = SheetEngine.identityKeyOf(sheet.sheetDef, sheet.draftAt(0), name.id);
+      sheet.applyReferenceData(SheetReferenceData(options: sheet.options, existingPaths: {siblingKey}));
+      var asked = 0;
+      s.ctrl.confirmIdentityChange = (_) async {
+        asked += 1;
+        return IdentityChangeChoice.makeNewPart;
+      };
+
+      expect(await s.ctrl.commitRow(0), isFalse);
+      expect(s.writer.written, isEmpty);
+      expect(asked, 0, reason: 'a duplicate is refused outright; there is nothing to choose');
+      expect(sheet.firstErrorOn(0), contains('already exists'));
+      expect(sheet.firstErrorOn(0), contains('Alloy'));
+    });
+
+    test('two rows, one name, different alloys: neither is a duplicate; same alloy and thickness is', () {
+      final probe = ItemMasterController(binding: null, demoData: true);
+      addTearDown(probe.dispose);
+      final sheet = probe.groupItemController.sheetDef;
+      final row = probe.groupItemController.draftAt(0);
+      final name = sheet.columnBoundTo(SheetBindsTo.name)!;
+      final key = SheetEngine.identityKeyOf(sheet, row, name.id);
+      final other = SheetDraft(sheetKey: 'item', values: row.values)
+        ..set(_alloy, const CellValue(columnId: _alloy, textValue: 'Titanium Gr 9'));
+      final otherKey = SheetEngine.identityKeyOf(sheet, other, name.id);
+      expect(otherKey, isNot(key));
+
+      Map<int, ValidationError> errorsWith(Set<String> taken, SheetDraft draft) =>
+          SheetEngine.validate(sheet, draft, allOptions: probe.groupItemController.options, existingPaths: taken);
+      expect(errorsWith({key}, other)[name.id]?.code, isNot('duplicate_item'));
+      expect(errorsWith({key}, row)[name.id]?.code, 'duplicate_item');
+      expect(errorsWith({key}, row)[name.id]?.message, contains('Alloy'));
+      expect(SheetEngine.identityKey('A › Washer', ['', '']), 'a › washer', reason: 'no alloy or thickness: keyed as before');
+    });
+
+    test('a reload while an opened part is being edited does not erase a sibling\'s key', () {
+      final s = _opened();
+      addTearDown(s.ctrl.dispose);
+      final sheet = s.ctrl.groupItemController;
+      final name = sheet.sheetDef.columnBoundTo(SheetBindsTo.name)!;
+      final asOpened = SheetEngine.identityKeyOf(sheet.sheetDef, sheet.draftAt(0), name.id);
+      // Edited to a sibling's alloy...
+      sheet.updateValue(_alloy, const CellValue(columnId: _alloy, textValue: 'Titanium Gr 9'), row: 0);
+      final sibling = SheetEngine.identityKeyOf(sheet.sheetDef, sheet.draftAt(0), name.id);
+      // ...and the reference data reloads: the sibling's key is taken, as is
+      // the opened part's own (which is withdrawn for its own row).
+      sheet.applyReferenceData(SheetReferenceData(options: sheet.options, existingPaths: {asOpened, sibling}));
+      expect(sheet.errorsForRow(0)[name.id]?.code, 'duplicate_item',
+          reason: 'the edit repeats the sibling; withdrawing the edited key used to hide that');
+    });
   });
 }

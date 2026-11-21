@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c89["⟳ Change 89: PIN guessing slowed per address — a second per wrong PIN, 15 a minute — without locking a factory floor out"]
+      c91["⟳ Change 91: a part is its name AND its alloy and thickness — another of either is another part, and the sheet asks before changing one"]
     Wire
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -86,13 +86,13 @@ mindmap
         w25b["B54: a typed host:port got :18080 appended and was remembered; fixed. B55 open: phone Settings needs PreferencesProvider"]
       w26["B55: the phone's gear opens its own sheet (Sync health, server, Sign out that forgets the offline unlock, version)"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
-    Kernel ⟳
+    Kernel
       k20["idempotency.js: X-Idempotency-Key per user for a day; replay, 422 reused, 409 in progress / applied / unknown"]
         k20b["telemetry.js: per-route p50/95/99, bytes on the wire, status classes; write lock wait = elapsed − profiled exec (ms resolution, upper bound); timed PASSIVE checkpoint; file sizes"]
         k20c["system-routes.js: /api/system/status for anyone signed in; /api/system/metrics for admins or PAPER_METRICS_TOKEN, JSON or Prometheus"]
         k20d["backup.js: VACUUM INTO on its own connection, .part then rename, integrity_check, keep 14; scheduled + /api/system/backups; B56/B57 scripts fixed"]
         k20e["pin-hash.js: HMAC under PAPER_PIN_KEY (key outside the db), same column + unique index, plain PINs hashed in initDb; shown once; New phone PIN; B59 online guessing open"]
-        k20f["⟳ pin-throttle.js: 1 s tarpit per wrong PIN; 15 wrong-or-pending per address per rolling minute, counted on arrival, then 429 for a minute; right PINs give their place back"]
+        k20f["pin-throttle.js: 1 s tarpit per wrong PIN; 15 wrong-or-pending per address per rolling minute, counted on arrival, then 429 for a minute; right PINs give their place back"]
         k20a["run() calls beforeCommit() on every COMMIT: the key is marked inside the write's own transaction, all 61 transaction sites, none changed"]
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
       k2["territory.js: meters routes and tables per module"]
@@ -113,7 +113,12 @@ mindmap
         k4a["startServer: runMigrations in migrate.js, then initDb"]
         k4b["initDb: inline CREATE TABLEs, then runPendingMigrations in modules/kernel/migration-runner.js"]
         k4c["two ledgers: _migrations and schema_migrations"]
-    Masters
+    Masters ⟳
+      Part identity
+        pid1["⟳ a part is group + unit + name + Alloy + Thickness (B): two Pattis with different alloys are two parts, each its own number (numbers count per name)"]
+        pid2["⟳ server: findItemDuplicate compares identityOfTree; refusal names the alloy and thickness; 1.20 is 1.2"]
+        pid3["⟳ sheet: ColumnDef.identity, SheetEngine.identityKey shared by engine, controller and binding; Part Name options show code · alloy · thickness"]
+        pid4["⟳ guard: an opened part's alloy or thickness changed → Make a new part / Change this part / Cancel; both save paths; raw plan follows the row"]
       Vendors evacuated
         vOps["operations.js: list, get, purchaseHistory, create, update, delete; internal rows.get for challans"]
         vBiz["Business rules"]
@@ -762,3 +767,5 @@ mindmap
 | 87 | Stage 2f Track 3. Backend: `kernel/telemetry.js` (`createTelemetry`: middleware before compression, `timedWrite` in `rawRun`/`runOnDelete`, `watchConnection`/`unwatchConnection` for the profile hook, `checkpoint`/`startCheckpoints`, `snapshot`, `prometheus`), `kernel/system-routes.js`, `server.js` (`serverTelemetry`, `startServerTelemetry`/`stopServerTelemetry` in the boot path, `systemBeforeLoginRouter`), registry: `system` excluded from the module gate. Client: `core/sync/sync_health.dart`, `features/sync_health/sync_health_screen.dart`, `OutboxSyncEngine.flushNow`, `ReplicaSession.cursor`; phone app-bar button + `Provider<SyncHealthProbe>` after AuthProvider + `package_info_plus`; desktop Settings pane + sidebar button. B54 `serverUrlFrom`. Tests: `system-telemetry.test.js`, `sync_health_test.dart`, `sync_health_sidebar_test.dart`, `sync_health_entry_test.dart`, `server_url_test.dart`. | Kernel, Sync, Mobile, Desktop shell, Tests |
 | 88 | Stage 2f Track 4. Backend: `kernel/backup.js` (`createBackups`: backup, verify, list, prune, schedule), `kernel/pin-hash.js` (`createPinHasher`, `resolvePinKey`, `migrate`), `server.js` (`serverBackups` + schedule in the boot path, `pinHasher` in every PIN read/write, `initDb` converts plain PINs, DTO `hasMobilePin` / one-time `mobilePin`), `kernel/system-routes.js` (`/api/system/backups`), accounts (`POST /api/users/:id/mobile-pin`, login hashes the typed PIN, `setMobilePin` hashes), people (`hasLoginCode`), `scripts/backup-sqlite.js` + `restore-sqlite.js` rewritten on the kernel, `scripts/backup-db.sh`. Client: `AuthUser.hasMobilePin`, `EmployeeLogin.hasLoginCode`, `AuthApi/AuthProvider.issueMobilePin`, employee panel New phone PIN, My Account "Phone PIN set"; phone `widgets/phone_settings_sheet.dart` (`PhoneSession`, `signOutPhone`). Tests: `backup-restore.test.js`, `mobile-pin-hash.test.js`, `phone_settings_sheet_test.dart`; `people-api` and `my_account_dialog` tests updated. | Kernel, Accounts, People, Scripts, Mobile, Tests |
 | 89 | B59. `kernel/pin-throttle.js` (`createPinThrottle`: `begin` / `succeeded` / `failed`, bounded map swept every 256 calls); `modules/accounts/routes.js` PIN branch: 429 + Retry-After when blocked, one `login_pin_throttled` event per block, right PIN releases its slot, wrong PIN awaits the tarpit before 401; `server.js` passes it in with `PAPER_PIN_TARPIT_MS`. Test: `pin-throttle.test.js`. | Accounts, Kernel, Tests |
+| 90 | B60 guard. `ColumnDef.identity` (Alloy, Thickness), `SheetEngine.identityValue/cellLabel`, `ItemMasterController.confirmIdentityChange` + `identityChangesOf`, asked in `commitRow` and `saveItem`; screen dialog. Test: `sheet_identity_guard_test.dart`. | Sheet, Tests |
+| 91 | B60 → B. Backend `part-identity.js` (`IDENTITY_PROPERTIES`, `identityValue`, `identityOfTree`, `sameIdentity`, `describeIdentity`), `reads.js` `findItemDuplicate({identity})` + `storedIdentity`, `save.js` passes it and names it in the 409. Sheet: `SheetEngine.identityKey/identityKeyOf` in the duplicate rule, `SheetController._forgetOwnIdentities` from captured identities (B61) + `takeIdentityOf`, binding `existingPaths` by identity and Part Name option detail; guard gains Make a new part (`_asNewPart`); `_saveRawSheet` saves the row first and reads the part after (B62). Tests: `part-identity-alloy-thickness.test.js` (4), guard test +4, two screen tests. | Masters, Sheet, Tests |

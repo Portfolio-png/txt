@@ -933,7 +933,9 @@ void main() {
     test('a stored path is matched whatever its case', () async {
       final o = await open(stored());
       final data = await o.binding.referenceData();
-      expect(data.existingPaths, contains('switch action › patti'));
+      // Keyed by name AND alloy and thickness (B): this Patti has two alloys
+      // and no thickness, all lower-cased like the path.
+      expect(data.existingPaths, contains('switch action › patti ⟨brass / copper|⟩'));
     });
   });
 }

@@ -536,12 +536,13 @@ class ItemMasterController extends ChangeNotifier {
   bool _needsIdentityQuestion(SheetDraft draft) =>
       confirmIdentityChange != null && identityChangesOf(draft).isNotEmpty;
 
-  /// Runs the guard for [draft]. True to go on saving it as it stands.
-  Future<bool> _passesIdentityGuard(SheetDraft draft) async {
+  /// Runs the guard for [draft]: the draft to save — the same one, or the
+  /// row turned into a new part — or null to save nothing.
+  Future<SheetDraft?> _resolveIdentity(SheetDraft draft) async {
     final ask = confirmIdentityChange;
-    if (ask == null) return true;
+    if (ask == null) return draft;
     final cells = identityChangesOf(draft);
-    if (cells.isEmpty) return true;
+    if (cells.isEmpty) return draft;
     final nameColumn = _columnBoundTo(SheetBindsTo.name);
     final codeColumn = _columnBoundTo(SheetBindsTo.partCode);
     final choice = await ask(IdentityChange(
@@ -552,18 +553,52 @@ class ItemMasterController extends ChangeNotifier {
     ));
     switch (choice) {
       case IdentityChangeChoice.changeThisPart:
-        return true;
+        return draft;
       case IdentityChangeChoice.makeNewPart:
-        // B: arrives with "same name, another alloy" being allowed.
-        _statusBarMessage = 'Not saved — making a new part from it is not available yet.';
-        notifyListeners();
-        return false;
+        return _asNewPart(draft);
       case IdentityChangeChoice.cancel:
         _statusBarMessage = 'Not saved — ${cells.map((c) => c.label).join(' and ')} kept as typed; '
             'the part on file is unchanged.';
         notifyListeners();
-        return false;
+        return null;
     }
+  }
+
+  /// "Make a new part": the row stops being the opened part and becomes a new
+  /// one with the same name and what was typed — the opened part stays on
+  /// file exactly as it was. Its part number, code and stamps are the old
+  /// part's, so they go: the new part is numbered and stamped as it is made
+  /// (numbers count per name, so it is the next Patti). The row keeps its
+  /// place and its key, so dies or machines held for it go with it.
+  SheetDraft? _asNewPart(SheetDraft draft) {
+    final at = groupItemController.indexOfDraft(draft);
+    if (at < 0) return null;
+    final stored = _storedDraftOf(draft);
+    final dropped = <int>{
+      for (final column in groupItemController.sheetDef.columns)
+        if (column.bindsTo == SheetBindsTo.partNo ||
+            column.bindsTo == SheetBindsTo.partCode ||
+            column.isStamp)
+          column.id,
+    };
+    final fresh = SheetDraft(
+      sheetKey: draft.sheetKey,
+      values: {
+        for (final entry in draft.values.entries)
+          if (!dropped.contains(entry.key)) entry.key: entry.value,
+      },
+      newOptions: draft.newOptions,
+      rowKey: draft.rowKey,
+    );
+    groupItemController.replaceRowAt(at, fresh);
+    final placed = groupItemController.draftAt(at)..markDirty();
+    // The opened part is still on file: matching it is a duplicate again.
+    if (stored != null) groupItemController.takeIdentityOf(stored);
+    final nameColumn = _columnBoundTo(SheetBindsTo.name);
+    final name = nameColumn == null ? 'part' : SheetEngine.cellLabel(placed, nameColumn.id);
+    _statusBarMessage = 'Making a new $name on row ${at + 1} — the one on file is unchanged.';
+    notifyListeners();
+    return placed;
   }
 
   /// The stored version of [draft]'s part, for its code as filed.
@@ -1289,7 +1324,7 @@ class ItemMasterController extends ChangeNotifier {
     if (writer == null) return false;
     if (row < 0 || row >= groupItemController.rowCount) return false;
 
-    final draft = groupItemController.draftAt(row);
+    var draft = groupItemController.draftAt(row);
     if (groupItemController.isRowBlank(row)) {
       _rowErrors.remove(draft);
       return false;
@@ -1329,11 +1364,23 @@ class ItemMasterController extends ChangeNotifier {
     // when there is something to ask — a needless await here opened the door
     // to a second save starting in the gap.
     if (_needsIdentityQuestion(draft)) {
-      if (!await _passesIdentityGuard(draft)) {
+      final resolved = await _resolveIdentity(draft);
+      if (resolved == null) {
         _rowErrors.remove(draft);
         return false;
       }
-      if (groupItemController.indexOfDraft(draft) < 0) return false;
+      draft = resolved;
+      final at = groupItemController.indexOfDraft(draft);
+      if (at < 0) return false;
+      // A new part is checked as one: its alloy and thickness may be taken.
+      if (!groupItemController.validateRow(at)) {
+        _rowErrors[draft] =
+            groupItemController.firstErrorOn(at) ??
+            'This row needs attention before it can be saved.';
+        _statusBarMessage = _rowErrors[draft]!;
+        notifyListeners();
+        return false;
+      }
     }
 
     if (ownsDeal &&
@@ -1527,7 +1574,13 @@ class ItemMasterController extends ChangeNotifier {
       _isSavingNow = true;
       try {
         for (final draft in asking) {
-          if (!await _passesIdentityGuard(draft)) return false;
+          if (await _resolveIdentity(draft) == null) return false;
+        }
+        // A row made into a new part may now be a duplicate of another.
+        if (!groupItemController.validateAll()) {
+          _statusBarMessage = 'A new part repeats one already on file — change its alloy or thickness.';
+          notifyListeners();
+          return false;
         }
       } finally {
         _isSavingNow = false;
