@@ -446,7 +446,7 @@ abstract final class SheetEngine {
             message: identity.isEmpty
                 ? '$itemLabel already exists under $path.'
                 : '$itemLabel with ${identity.join(', ')} already exists under $path. '
-                      'Change the alloy or thickness, or pick that part from the list.',
+                      'Change one of its properties, or pick that part from the list.',
           );
           continue;
         }

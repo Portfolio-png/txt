@@ -681,6 +681,14 @@ class ItemMasterController extends ChangeNotifier {
     if (nameColumn == null) return;
     final name = SheetEngine.cellLabel(draft, nameColumn.id);
     if (name.isEmpty) return;
+    // Not while a property is still to be filled in. A saved part with no
+    // Hardness equals a row whose Hardness has not been typed YET, and
+    // opening it then turned a part being entered into the saved one, one
+    // cell before the end. Such a row stays new; if it is saved still equal
+    // to a part on file, the duplicate rule says so and offers that part.
+    for (final column in sheet.sheetDef.columns) {
+      if (column.identity && SheetEngine.cellLabel(draft, column.id).isEmpty) return;
+    }
     final key = SheetEngine.identityKeyOf(sheet.sheetDef, draft, nameColumn.id);
     final wanted = SheetEngine.identityValue(name);
     for (final option in sheet.options) {
@@ -1662,7 +1670,7 @@ class ItemMasterController extends ChangeNotifier {
         }
         // A row made into a new part may now be a duplicate of another.
         if (!groupItemController.validateAll()) {
-          _statusBarMessage = 'A new part repeats one already on file — change its alloy or thickness.';
+          _statusBarMessage = 'A new part repeats one already on file — change one of its properties.';
           notifyListeners();
           return false;
         }

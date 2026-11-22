@@ -582,7 +582,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 ),
               const SizedBox(height: 8),
               const Text(
-                'Another alloy or thickness is usually another part, with its own '
+                'A part with another property value is usually another part, with its own '
                 'part number. Make a new part to keep this one as it is; change '
                 'this part only to correct it — that rewrites its code, and what '
                 'its stock and orders refer to.',

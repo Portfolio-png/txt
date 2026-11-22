@@ -86,3 +86,25 @@ test('changing a part onto a sibling\'s alloy and thickness is refused; its own 
   const clash = await refusal(save('Bracket', tree('MS', '1.2'), { id: ss.id }));
   assert.equal(clash.statusCode, 409, 'it would become the MS 1.2 Bracket that already exists');
 });
+
+// Every property counts (user, 2026-11-23): all must match to be the same part.
+test('any other property tells two parts apart too; all the same is refused; an empty one is the same as none', async () => {
+  const { save } = await boot();
+  const withMore = (alloy, thickness, extra) => [
+    ...tree(alloy, thickness),
+    ...Object.entries(extra).map(([name, value]) => ({
+      kind: 'property', name, children: value == null ? [] : [{ kind: 'value', name: value }],
+    })),
+  ];
+  const soft = await save('Clip', withMore('MS', '1.2', { Grade: '2nd', Hardness: 'Soft' }));
+  const hard = await save('Clip', withMore('MS', '1.2', { Grade: '2nd', Hardness: 'Hard' }));
+  assert.notEqual(soft.id, hard.id, 'another hardness is another part');
+  const none = await save('Clip', withMore('MS', '1.2', { Grade: '2nd' }));
+  assert.ok(none.id, 'so is one with no hardness at all');
+
+  const again = await refusal(save('Clip', withMore('ms', '1.20', { grade: '2ND', hardness: 'soft' })));
+  assert.equal(again.statusCode, 409);
+  assert.match(again.message, /hardness soft/);
+  const empty = await refusal(save('Clip', withMore('MS', '1.2', { Grade: '2nd', Hardness: null })));
+  assert.equal(empty.statusCode, 409, 'a property left empty is the same as one not there');
+});

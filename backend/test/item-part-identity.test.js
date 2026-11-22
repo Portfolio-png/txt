@@ -708,12 +708,26 @@ test('a part number has to be a whole number above zero', async () => {
     }
 
     // The name duplicate is the more fundamental refusal and fires first.
+    // A part with no properties, repeated exactly: every property counts
+    // now, so the seeded sample (which has some) would not be a duplicate of
+    // a bare name.
+    const plain = await fetch(`${ctx.baseUrl}/api/items`, {
+      method: 'POST',
+      headers: ctx.headers,
+      body: JSON.stringify({
+        name: 'Plain Washer',
+        displayName: 'Plain Washer',
+        groupId: sample.groupId,
+        unitId: sample.unitId,
+      }),
+    });
+    assert.equal(plain.status, 201);
     const dupName = await fetch(`${ctx.baseUrl}/api/items`, {
       method: 'POST',
       headers: ctx.headers,
       body: JSON.stringify({
-        name: sample.name,
-        displayName: sample.name,
+        name: 'Plain Washer',
+        displayName: 'Plain Washer',
         groupId: sample.groupId,
         unitId: sample.unitId,
         partNo: 999,

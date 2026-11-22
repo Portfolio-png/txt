@@ -138,4 +138,42 @@ void main() {
     sheet.updateValue(_thickness, const CellValue(columnId: _thickness, textValue: '2.0'), row: 0);
     expect(sheet.draftAt(0).entityId, isNull);
   });
+
+  // Every property counts, and a part is opened only once all of them are in
+  // (user, 2026-11-23). The report: a part on file with no Hardness took over
+  // a row being entered as soon as its second-last property was picked.
+  group('every property is part of what a part is', () {
+    int addProperty(SheetController sheet, String name) {
+      sheet.addPropertyColumn(name, kind: ColumnKind.text);
+      return sheet.sheetDef.columnBoundTo(SheetBindsTo.variation(name))!.id;
+    }
+
+    test('a property added with + is an identity column', () {
+      final s = _sheet();
+      addTearDown(s.ctrl.dispose);
+      final sheet = s.ctrl.groupItemController;
+      final hardness = addProperty(sheet, 'Hardness');
+      expect(sheet.sheetDef.getColumn(hardness)!.identity, isTrue);
+    });
+
+    test('a row is not turned into the saved part while a property is still empty', () {
+      final s = _sheet();
+      addTearDown(s.ctrl.dispose);
+      final sheet = s.ctrl.groupItemController;
+      final hardness = addProperty(sheet, 'Hardness');
+      // The part on file is MS 1.2 with no hardness.
+      sheet.replaceRowAt(0, _newRow(s.seed, s.nameColumn, '', ''));
+      sheet.updateValue(
+        s.nameColumn,
+        CellValue(columnId: s.nameColumn, textValue: s.nameOption.label),
+        row: 0,
+      );
+      sheet.updateValue(_alloy, const CellValue(columnId: _alloy, textValue: 'MS'), row: 0);
+      sheet.updateValue(_thickness, const CellValue(columnId: _thickness, textValue: '1.2'), row: 0);
+      expect(sheet.draftAt(0).entityId, isNull, reason: 'hardness is still to come');
+
+      sheet.updateValue(hardness, CellValue(columnId: hardness, textValue: 'Hard'), row: 0);
+      expect(sheet.draftAt(0).entityId, isNull, reason: 'another hardness: another part');
+    });
+  });
 }

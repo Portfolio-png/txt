@@ -305,31 +305,37 @@ function identityOfTree(nodes) {
   for (const property of IDENTITY_PROPERTIES) out[property.toLowerCase()] = '';
   for (const node of nodes || []) {
     if (String(node.kind || '') !== 'property') continue;
+    if (Number(node.is_archived || node.isArchived || 0)) continue;
     const key = identityValue(node.name);
-    const property = IDENTITY_PROPERTIES.find((p) => p.toLowerCase() === key);
-    if (!property) continue;
+    if (!key) continue;
     const values = (node.children || [])
       .filter((child) => String(child.kind || 'value') === 'value' && !Number(child.is_archived || child.isArchived || 0))
       .map((child) => identityValue(child.name))
       .filter(Boolean)
       .sort();
-    out[property.toLowerCase()] = values.join('|');
+    out[key] = values.join('|');
   }
   return out;
 }
 
+/// EVERY property counts (user, 2026-11-23): two parts are the same only when
+/// all their properties match. One left empty is the same as one not there.
 function sameIdentity(a, b) {
-  return IDENTITY_PROPERTIES.every((p) => (a?.[p.toLowerCase()] || '') === (b?.[p.toLowerCase()] || ''));
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  for (const key of keys) {
+    if ((a?.[key] || '') !== (b?.[key] || '')) return false;
+  }
+  return true;
 }
 
-/// "Alloy MS, Thickness 1.2" from a tree, in the words it was typed in — for
-/// a refusal a person reads.
+/// "Alloy MS, Thickness 1.2, Hardness H2" from a tree, in the words it was
+/// typed in — for a refusal a person reads.
 function describeIdentity(nodes) {
   const parts = [];
-  for (const property of IDENTITY_PROPERTIES) {
-    const node = (nodes || []).find((n) => String(n.kind || '') === 'property' && identityValue(n.name) === property.toLowerCase());
-    const values = (node?.children || []).map((c) => String(c.name || '').trim()).filter(Boolean);
-    if (values.length) parts.push(`${property} ${values.join(' / ')}`);
+  for (const node of nodes || []) {
+    if (String(node.kind || '') !== 'property') continue;
+    const values = (node.children || []).map((c) => String(c.name || '').trim()).filter(Boolean);
+    if (values.length) parts.push(`${String(node.name || '').trim()} ${values.join(' / ')}`);
   }
   return parts.join(', ');
 }

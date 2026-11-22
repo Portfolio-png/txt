@@ -268,6 +268,9 @@ class SheetDef {
         source: source,
         familyId: familyId,
         bindsTo: bindsTo,
+        // Every property is part of what a part IS: all must match for two
+        // rows to be the same part (user, 2026-11-23).
+        identity: SheetBindsTo.isVariation(bindsTo),
       ),
     );
 

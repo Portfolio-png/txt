@@ -399,7 +399,7 @@ function createSave(deps, api) {
       const described = partIdentity.describeIdentity(variationTree);
       const error = new Error(
         `"${trimmedName}"${described ? ` with ${described}` : ''} already exists in this group. ` +
-          'A part with the same name needs another alloy or thickness, even across types — ' +
+          'A part with the same name needs at least one property that differs (alloy, thickness or any other), even across types — ' +
           'change one, or pick the existing part from the list.',
       );
       error.statusCode = 409;
