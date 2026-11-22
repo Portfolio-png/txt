@@ -54,14 +54,15 @@ class PartTabColors {
 }
 
 /// The colour's line, and the white coat inside it.
-const double _ring = 3;
-const double _coat = 2;
+const double _ring = 2.4;
+const double _coat = 0.8;
 
 /// The frame's corners, the open tab's top corners, and the curve where the
 /// tab's sides run out into the frame's top edge.
 const double _frameRadius = 16;
 const double _tabRadius = 14;
-const double _flare = 10;
+const double _flare = 16;
+const double _taper = 3;
 
 /// The frame's margin from the screen at the sides and the bottom.
 const double _margin = 8;
@@ -180,10 +181,7 @@ class _PartTabsState extends State<PartTabs> {
             key: _paintKey,
             children: [
               SheetStep.noTab(
-                SizedBox(
-                  height: _tabHeight + 8,
-                  child: _strip(drafts),
-                ),
+                SizedBox(height: _tabHeight + 8, child: _strip(drafts)),
               ),
               Expanded(
                 child: Padding(
@@ -226,6 +224,13 @@ class _PartTabsState extends State<PartTabs> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          if (drafts.length >= 2) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _tabsOverviewMenu(drafts),
+            ),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: LayoutBuilder(
               key: _viewportKey,
@@ -265,10 +270,13 @@ class _PartTabsState extends State<PartTabs> {
                     onPressed: widget.onAddPart,
                     style: IconButton.styleFrom(
                       backgroundColor: SoftErpTheme.cardSurface,
-                      side: const BorderSide(color: SoftErpTheme.borderStrong),
+                      side: BorderSide(
+                        color: SoftErpTheme.border.withValues(alpha: 0.8),
+                      ),
                       shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(6),
                     ),
-                    icon: const Icon(Icons.add_rounded, size: 22),
+                    icon: const Icon(Icons.add_rounded, size: 20),
                   ),
                 ),
                 if (widget.showShortcuts) ...[
@@ -280,6 +288,163 @@ class _PartTabsState extends State<PartTabs> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _tabsOverviewMenu(List<SheetDraft> drafts) {
+    final sheet = widget.sheet;
+    return Tooltip(
+      message: 'All open parts (${drafts.length})',
+      child: PopupMenuButton<int>(
+        tooltip: '',
+        offset: const Offset(0, 38),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: SoftErpTheme.border),
+        ),
+        color: SoftErpTheme.cardSurface,
+        elevation: 8,
+        onSelected: (row) {
+          sheet.selectRow(row);
+        },
+        itemBuilder: (context) => [
+          PopupMenuItem<int>(
+            enabled: false,
+            height: 32,
+            child: Text(
+              'OPEN PARTS (${drafts.length})',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: SoftErpTheme.textMuted,
+              ),
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+          for (var i = 0; i < drafts.length; i += 1)
+            PopupMenuItem<int>(
+              key: ValueKey<String>('parts_menu_item_$i'),
+              value: i,
+              height: 42,
+              child: _menuItemRow(i, drafts[i]),
+            ),
+        ],
+        child: Container(
+          key: const ValueKey<String>('parts_overflow_menu'),
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: SoftErpTheme.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.more_vert_rounded,
+                size: 18,
+                color: SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${drafts.length}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuItemRow(int row, SheetDraft draft) {
+    final sheet = widget.sheet;
+    final selected = sheet.row == row;
+    final saved = draft.entityId != null;
+    final gradient = widget.colors.of(draft.rowKey);
+    final title = PartTabs.titleOf(sheet, draft);
+    final code = PartTabs.codeOf(sheet, draft);
+
+    return Row(
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: gradient,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Part ${row + 1}',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected
+                  ? SoftErpTheme.textPrimary
+                  : SoftErpTheme.textSecondary,
+            ),
+          ),
+        ),
+        if (code.isNotEmpty) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: SoftErpTheme.cardSurfaceAlt,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              code,
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(width: 8),
+        Icon(
+          saved ? Icons.check_circle_rounded : Icons.edit_note_rounded,
+          size: 15,
+          color: saved ? SoftErpTheme.successText : SoftErpTheme.textMuted,
+        ),
+        if (selected) ...[
+          const SizedBox(width: 6),
+          const Icon(
+            Icons.check_rounded,
+            size: 16,
+            color: SoftErpTheme.accent,
+          ),
+        ],
+      ],
     );
   }
 
@@ -300,11 +465,18 @@ class _PartTabsState extends State<PartTabs> {
         if (!selected) ...[
           Container(
             key: ValueKey<String>('part_tab_swatch_$row'),
-            width: 14,
-            height: 14,
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: gradient,
+              boxShadow: [
+                BoxShadow(
+                  color: gradient.colors.first.withValues(alpha: 0.5),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 8),
@@ -313,8 +485,10 @@ class _PartTabsState extends State<PartTabs> {
           message: saved ? 'Saved' : 'Not saved yet',
           child: Icon(
             saved ? Icons.check_circle_rounded : Icons.edit_rounded,
-            size: 16,
-            color: saved ? SoftErpTheme.successText : SoftErpTheme.textMuted,
+            size: 15,
+            color: saved
+                ? SoftErpTheme.successText
+                : SoftErpTheme.textMuted.withValues(alpha: 0.7),
           ),
         ),
         const SizedBox(width: 6),
@@ -328,8 +502,8 @@ class _PartTabsState extends State<PartTabs> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color: selected
                         ? SoftErpTheme.textPrimary
                         : SoftErpTheme.textSecondary,
@@ -338,13 +512,27 @@ class _PartTabsState extends State<PartTabs> {
               ),
               if (code.isNotEmpty) ...[
                 const SizedBox(width: 6),
-                Text(
-                  code,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: SoftErpTheme.textSecondary,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? SoftErpTheme.accentSoft.withValues(alpha: 0.5)
+                        : SoftErpTheme.cardSurfaceAlt.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    code,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: selected
+                          ? SoftErpTheme.accent
+                          : SoftErpTheme.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -355,15 +543,17 @@ class _PartTabsState extends State<PartTabs> {
           message: closeWhy ?? 'Close this part',
           child: InkResponse(
             key: ValueKey<String>('part_tab_close_$row'),
-            radius: 16,
+            radius: 14,
             onTap: closeWhy == null ? () => widget.onClose(row) : null,
             child: Padding(
               padding: const EdgeInsets.all(4),
               child: Icon(
                 Icons.close_rounded,
-                size: 16,
+                size: 15,
                 color: closeWhy == null
-                    ? SoftErpTheme.textSecondary
+                    ? (selected
+                          ? SoftErpTheme.textSecondary
+                          : SoftErpTheme.textMuted)
                     : SoftErpTheme.border,
               ),
             ),
@@ -385,7 +575,7 @@ class _PartTabsState extends State<PartTabs> {
             ? Container(
                 key: _openTabKey,
                 height: _tabHeight,
-                padding: const EdgeInsets.fromLTRB(14, 2, 8, 0),
+                padding: const EdgeInsets.fromLTRB(16, 2, 10, 0),
                 child: KeyedSubtree(
                   key: const ValueKey<String>('part_tab_selected'),
                   child: inside,
@@ -394,11 +584,20 @@ class _PartTabsState extends State<PartTabs> {
             : Container(
                 height: _tabHeight - 8,
                 margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.fromLTRB(12, 0, 6, 0),
+                padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
                 decoration: BoxDecoration(
-                  color: SoftErpTheme.cardSurfaceAlt,
-                  borderRadius: BorderRadius.circular((_tabHeight - 8) / 2),
-                  border: Border.all(color: SoftErpTheme.borderStrong),
+                  color: SoftErpTheme.cardSurface.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: SoftErpTheme.border.withValues(alpha: 0.55),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
                 child: inside,
               ),
@@ -446,7 +645,11 @@ class PartFramePainter extends CustomPainter {
     if (context == null || !context.mounted) return null;
     try {
       final box = context.findRenderObject();
-      if (box is! RenderBox || !box.hasSize || !box.attached || !within.attached) return null;
+      if (box is! RenderBox ||
+          !box.hasSize ||
+          !box.attached ||
+          !within.attached)
+        return null;
       return box.localToGlobal(Offset.zero, ancestor: within) & box.size;
     } catch (_) {
       return null;
@@ -463,21 +666,40 @@ class PartFramePainter extends CustomPainter {
       final frameBox = _rectOf(frameKey, within);
       if (frameBox == null) return;
       // The line's centre: half its width in from the frame's edge.
-      final frame = frameBox.deflate(_ring / 2);
+      final frame = frameBox.deflate((_ring + _coat) / 2);
       final path = outline(
         frame: frame,
         tab: _rectOf(tabKey, within),
         viewport: _rectOf(viewportKey, within),
       );
-      canvas.drawPath(path, Paint()..color = Colors.white);
+      final bounds = path.getBounds();
+      final shader = gradient.createShader(bounds);
+
+      // Layer 1: Ambient chromatic glow (neon atmospheric halo, like modern AI UIs)
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5.5
+          ..strokeJoin = StrokeJoin.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5)
+          ..color = gradient.colors.first.withValues(alpha: 0.32),
+      );
+
+      // Layer 2: Solid crisp card surface fill inside the tab and container
+      canvas.drawPath(path, Paint()..color = SoftErpTheme.cardSurface);
+
+      // Layer 3: Vibrant chromatic gradient core outline
       canvas.drawPath(
         path,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = _ring + _coat
           ..strokeJoin = StrokeJoin.round
-          ..shader = gradient.createShader(path.getBounds()),
+          ..shader = shader,
       );
+
+      // Layer 4: Ultra-crisp thin white coating core line down the center
       canvas.drawPath(
         path,
         Paint()
@@ -511,27 +733,41 @@ class PartFramePainter extends CustomPainter {
       if (right - left >= 2 * _tabRadius + 24 && frame.top - top > _tabRadius) {
         path
           ..lineTo(left - _flare, frame.top)
-          // Out of the frame's edge and up the tab's side.
-          ..arcToPoint(
-            Offset(left, frame.top - _flare),
-            radius: const Radius.circular(_flare),
-            clockwise: false,
+          // Smooth bell-curve shoulder: leaves frame.top horizontally and meets tab.left with soft taper
+          ..cubicTo(
+            left - _flare * 0.45,
+            frame.top,
+            left,
+            frame.top - _flare * 0.45,
+            left + _taper * 0.25,
+            frame.top - _flare,
           )
-          ..lineTo(left, top + _tabRadius)
-          ..arcToPoint(
-            Offset(left + _tabRadius, top),
-            radius: const Radius.circular(_tabRadius),
+          ..lineTo(left + _taper, top + _tabRadius)
+          ..cubicTo(
+            left + _taper,
+            top + _tabRadius * 0.45,
+            left + _taper + _tabRadius * 0.45,
+            top,
+            left + _taper + _tabRadius,
+            top,
           )
-          ..lineTo(right - _tabRadius, top)
-          ..arcToPoint(
-            Offset(right, top + _tabRadius),
-            radius: const Radius.circular(_tabRadius),
+          ..lineTo(right - _taper - _tabRadius, top)
+          ..cubicTo(
+            right - _taper - _tabRadius * 0.45,
+            top,
+            right - _taper,
+            top + _tabRadius * 0.45,
+            right - _taper,
+            top + _tabRadius,
           )
-          ..lineTo(right, frame.top - _flare)
-          ..arcToPoint(
-            Offset(right + _flare, frame.top),
-            radius: const Radius.circular(_flare),
-            clockwise: false,
+          ..lineTo(right - _taper * 0.25, frame.top - _flare)
+          ..cubicTo(
+            right,
+            frame.top - _flare * 0.45,
+            right + _flare * 0.45,
+            frame.top,
+            right + _flare,
+            frame.top,
           );
       }
     }

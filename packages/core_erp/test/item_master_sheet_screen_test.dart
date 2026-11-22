@@ -3071,8 +3071,8 @@ void main() {
           alloy.bottom,
           reason: 'Part No ends the second row',
         );
-        expect(alloy.width, group.width);
-        expect(code.width, group.width);
+        expect(alloy.width, closeTo(group.width, 0.01));
+        expect(code.width, closeTo(group.width, 0.01));
 
         // Not saved yet: the heading shows the time now, for the save to stamp.
         final stamp = find.byKey(const ValueKey('part_heading_stamp'));
@@ -3913,6 +3913,30 @@ void main() {
       },
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
     );
+
+    testWidgets('3-dot menu opens on the left when multiple parts exist and allows navigating', (tester) async {
+      await _pumpScreen(tester, size: const Size(1700, 1200));
+      final sheet = sheetOf(tester);
+      // With 1 part, 3-dot overflow menu is not shown
+      expect(find.byKey(const ValueKey('parts_overflow_menu')), findsNothing);
+
+      // Add a part -> 2 parts -> 3-dot menu appears on the left
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.row, 1);
+      expect(find.byKey(const ValueKey('parts_overflow_menu')), findsOneWidget);
+
+      // Open the 3-dot menu
+      await tester.tap(find.byKey(const ValueKey('parts_overflow_menu')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('OPEN PARTS (2)'), findsOneWidget);
+
+      // Tap on Part 1 in the menu
+      await tester.tap(find.byKey(const ValueKey('parts_menu_item_0')));
+      await tester.pumpAndSettle();
+      expect(sheet.row, 0);
+    });
   });
 
   group('it fits the windows it is opened in', () {
