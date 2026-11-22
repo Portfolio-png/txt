@@ -38,6 +38,8 @@ import '../widgets/deal_people_form.dart';
 import '../widgets/item_report.dart';
 import '../widgets/part_rows_form.dart';
 import '../widgets/part_photo_gallery.dart';
+import '../widgets/existing_part_conflict_dialog.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/utils/stamp_format.dart';
@@ -651,6 +653,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       _toast('Still saving — one moment.');
       return;
     }
+    final sheet = _controller.groupItemController;
+    final row = sheet.row;
+    final errors = sheet.errorsForRow(row);
+    if (errors.isNotEmpty) {
+      final handled = await _handleConflictIfAny(row);
+      if (handled) return;
+    }
     final written = await _controller.commitAllRows();
     if (!mounted) return;
     for (final id in _controller.savedItemIds) {
@@ -1107,6 +1116,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// chosen. The prototype's sidebar read
   /// `draft.get(20)?.optionLabel ?? 'Gold Medal'`, so a part developed for
   /// nobody claimed a real company.
+  // ignore: unused_element
   String? _developedForLine() {
     if (!_controller.isExternal) return 'Developed for: Self';
     final sheet = _controller.clientVendorController.sheetDef;
@@ -3362,7 +3372,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// The Save part button: the row's own, and the one a held die's row shows,
   /// since a held die is written only with its part. Enabled once the row's
-  /// required cells are filled; disabled, it names the first one missing.
+  /// required cells are filled. Clicking when there is a collision or duplicate
+  /// shows the Existing Part Conflict Card instead of failing silently.
   Widget _savePartButton(
     int row, {
     required String key,
@@ -3385,6 +3396,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
     // The same button as a person's Save contact, so the Saves on this page
     // look alike.
+    final hasIncompleteErrors = errors.values.any((e) =>
+        e.code == 'required' ||
+        e.code == 'edit_empty' ||
+        e.code == 'parent_first' ||
+        e.code == 'not_in_list' ||
+        e.code == 'not_number');
     return Tooltip(
       message: tip,
       child: AppButton(
@@ -3394,11 +3411,329 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         variant: AppButtonVariant.secondary,
         dense: true,
         isLoading: savingThis,
-        onPressed: !blank && errors.isEmpty && !busy
-            ? () => _saveRow(row)
+        onPressed: !blank && !busy && !hasIncompleteErrors
+            ? () => _onSavePartClicked(row)
             : null,
       ),
     );
+  }
+
+  Future<void> _onSavePartClicked(int row) async {
+    final sheet = _controller.groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return;
+    if (sheet.isRowBlank(row)) {
+      _toast('Type a part name first', isError: true);
+      return;
+    }
+
+    final errors = sheet.errorsForRow(row);
+    // 1. Check if there is an existing conflict or duplicate
+    final handled = await _handleConflictIfAny(row);
+    if (handled) return;
+
+    // 2. If there are other validation errors that couldn't be resolved as conflicts:
+    if (errors.isNotEmpty) {
+      _toast(errors.values.first.message, isError: true);
+      return;
+    }
+
+    // 3. Save row cleanly
+    await _saveRow(row);
+  }
+
+  /// Checks if the part on [row] is already open in another tab or exists in
+  /// the database. If so, presents the [ExistingPartConflictDialog] and handles
+  /// the chosen action. Returns true if handled.
+  Future<bool> _handleConflictIfAny(int row) async {
+    final sheet = _controller.groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return false;
+    final draft = sheet.draftAt(row);
+    final errors = sheet.errorsForRow(row);
+
+    final otherTabRow = _findOtherOpenTabFor(row);
+    final conflictError = errors.values
+        .where((e) =>
+            e.code == 'seq_used' ||
+            e.code == 'duplicate_item' ||
+            e.code == 'code_used')
+        .firstOrNull;
+
+    if (otherTabRow == null && conflictError == null) {
+      return false;
+    }
+
+    // Look up matching existing part in database / memory
+    var existingPart = _findExistingPartInDatabase(row);
+
+    // If not found in cache, refresh from server to resolve any sync lag
+    if (existingPart == null) {
+      try {
+        await context.read<ItemsProvider>().refresh();
+        await _controller.loadReferenceData();
+        if (mounted) {
+          existingPart = _findExistingPartInDatabase(row);
+        }
+      } catch (_) {}
+    }
+
+    // Determine next available Part No if there is a sequence conflict
+    int? nextPartNo;
+    if (conflictError != null && conflictError.code == 'seq_used') {
+      final match = RegExp(r'The last one is (\d+)').firstMatch(conflictError.message);
+      if (match != null) {
+        final last = int.tryParse(match.group(1) ?? '');
+        if (last != null) nextPartNo = last + 1;
+      }
+    }
+    final existNo = existingPart?.partNo;
+    if (nextPartNo == null && existNo != null) {
+      final seqCol = sheet.sheetDef.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
+      if (seqCol != null) {
+        final scope = SheetEngine.groupPathString(sheet.sheetDef, draft, seqCol.id);
+        final last = sheet.counters[scope] ?? existNo;
+        nextPartNo = (last >= existNo ? last : existNo) + 1;
+      }
+    }
+
+    // Fetch creator from entity activity log
+    String? creatorName;
+    String? creatorRole;
+    if (existingPart != null) {
+      try {
+        final auth = _maybeRead<AuthProvider>();
+        if (auth != null) {
+          final track = await auth.getEntityTrack('items', '${existingPart.id}');
+          final createEvent = track.where((e) => e.action == 'created').firstOrNull ?? track.firstOrNull;
+          if (createEvent != null) {
+            creatorName = createEvent.actorName;
+            creatorRole = createEvent.actorRole;
+          }
+        }
+      } catch (_) {}
+      if (creatorName == null || creatorName.isEmpty) {
+        final auth = _maybeRead<AuthProvider>();
+        creatorName = auth?.user?.name ?? 'Operator';
+        creatorRole = auth?.user?.role;
+      }
+    }
+
+    if (!mounted) return true;
+
+    final groupCol = sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ?? sheet.sheetDef.itemColumn;
+    final groupPath = groupCol != null ? SheetEngine.groupPathString(sheet.sheetDef, draft, groupCol.id) : null;
+
+    final action = await showDialog<ExistingPartConflictAction>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => ExistingPartConflictDialog(
+        part: existingPart,
+        draft: draft,
+        sheet: sheet,
+        openInTabRow: otherTabRow,
+        nextPartNo: nextPartNo,
+        creatorName: creatorName,
+        creatorRole: creatorRole,
+        conflictMessage: conflictError?.message,
+        groupPath: groupPath,
+      ),
+    );
+
+    if (!mounted || action == null || action == ExistingPartConflictAction.cancel) {
+      return true;
+    }
+
+    switch (action) {
+      case ExistingPartConflictAction.switchToTab:
+        if (otherTabRow != null) {
+          sheet.selectRow(otherTabRow);
+        }
+        return true;
+
+      case ExistingPartConflictAction.useNextPartNo:
+        if (nextPartNo != null) {
+          final seqCol = sheet.sheetDef.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
+          if (seqCol != null) {
+            sheet.updateValue(
+              seqCol.id,
+              CellValue(
+                columnId: seqCol.id,
+                intValue: nextPartNo,
+                textValue: '$nextPartNo',
+                mode: ValueMode.auto,
+              ),
+              row: row,
+            );
+          }
+          final codeCol = sheet.sheetDef.columnBoundTo(SheetBindsTo.partCode);
+          if (codeCol != null) {
+            final currentVal = draft.get(codeCol.id);
+            if (currentVal != null && currentVal.mode == ValueMode.edit) {
+              sheet.updateValue(
+                codeCol.id,
+                currentVal.copyWith(mode: ValueMode.auto),
+                row: row,
+              );
+            }
+          }
+          await _saveRow(row);
+        }
+        return true;
+
+      case ExistingPartConflictAction.openExistingPart:
+        if (otherTabRow != null) {
+          sheet.selectRow(otherTabRow);
+        } else if (existingPart != null) {
+          _controller.loadItems([existingPart]);
+        }
+        return true;
+
+      case ExistingPartConflictAction.cancel:
+        return true;
+    }
+  }
+
+  /// Checks if another draft tab in [sheet.drafts] already holds the same part.
+  int? _findOtherOpenTabFor(int currentRow) {
+    final sheet = _controller.groupItemController;
+    if (currentRow < 0 || currentRow >= sheet.rowCount) return null;
+    final currentDraft = sheet.draftAt(currentRow);
+
+    final currentTitle = PartTabs.titleOf(sheet, currentDraft).trim();
+    final currentCode = PartTabs.codeOf(sheet, currentDraft).trim();
+    final currentEntityId = currentDraft.entityId;
+
+    if (currentTitle.isEmpty || currentTitle == 'New part') {
+      return null;
+    }
+
+    final def = sheet.sheetDef;
+    final itemCol = def.columnBoundTo(SheetBindsTo.name) ?? def.itemColumn;
+    final currentPath = itemCol == null ? '' : SheetEngine.groupPathString(def, currentDraft, itemCol.id);
+    final currentIdentity = itemCol == null ? '' : SheetEngine.identityKeyOf(def, currentDraft, itemCol.id);
+
+    for (int i = 0; i < sheet.rowCount; i++) {
+      if (i == currentRow) continue;
+      final otherDraft = sheet.draftAt(i);
+
+      if (currentEntityId != null && otherDraft.entityId == currentEntityId) {
+        return i;
+      }
+
+      final otherCode = PartTabs.codeOf(sheet, otherDraft).trim();
+      if (currentCode.isNotEmpty &&
+          otherCode.isNotEmpty &&
+          currentCode.toLowerCase() == otherCode.toLowerCase()) {
+        return i;
+      }
+
+      final otherTitle = PartTabs.titleOf(sheet, otherDraft).trim();
+      if (otherTitle.isNotEmpty &&
+          otherTitle != 'New part' &&
+          otherTitle.toLowerCase() == currentTitle.toLowerCase()) {
+        if (itemCol != null) {
+          final otherPath = SheetEngine.groupPathString(def, otherDraft, itemCol.id);
+          final otherIdentity = SheetEngine.identityKeyOf(def, otherDraft, itemCol.id);
+          if (currentPath.isNotEmpty &&
+              currentPath.toLowerCase() == otherPath.toLowerCase() &&
+              currentIdentity.toLowerCase() == otherIdentity.toLowerCase()) {
+            return i;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  ItemDefinition? _findExistingPartInDatabase(int row) {
+    final sheet = _controller.groupItemController;
+    if (row < 0 || row >= sheet.rowCount) return null;
+    final draft = sheet.draftAt(row);
+    final items = context.read<ItemsProvider>().items;
+
+    final currentTitle = PartTabs.titleOf(sheet, draft).trim();
+    final currentCode = PartTabs.codeOf(sheet, draft).trim();
+    final seqCol = sheet.sheetDef.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
+    final currentPartNo = seqCol != null ? draft.get(seqCol.id)?.intValue : null;
+
+    final def = sheet.sheetDef;
+    final itemCol = def.columnBoundTo(SheetBindsTo.name) ?? def.itemColumn;
+    final currentIdentity = itemCol == null ? '' : SheetEngine.identityKeyOf(def, draft, itemCol.id);
+
+    if (currentCode.isNotEmpty) {
+      for (final item in items) {
+        if (item.partCode.trim().isNotEmpty &&
+            item.partCode.trim().toLowerCase() == currentCode.toLowerCase()) {
+          return item;
+        }
+      }
+    }
+
+    if (currentPartNo != null && currentTitle.isNotEmpty && currentTitle != 'New part') {
+      for (final item in items) {
+        if (item.partNo == currentPartNo &&
+            item.name.trim().toLowerCase() == currentTitle.toLowerCase()) {
+          return item;
+        }
+      }
+    }
+
+    if (currentIdentity.isNotEmpty && currentTitle.isNotEmpty && currentTitle != 'New part') {
+      for (final item in items) {
+        if (item.name.trim().toLowerCase() == currentTitle.toLowerCase()) {
+          final itemIdent = SheetEngine.identityKey(
+            '${_groupPathFor(item.groupId)} › ${item.name}',
+            _identityValuesOfItem(item),
+          );
+          if (itemIdent.toLowerCase() == currentIdentity.toLowerCase()) {
+            return item;
+          }
+        }
+      }
+    }
+
+    if (currentTitle.isNotEmpty && currentTitle != 'New part') {
+      for (final item in items) {
+        if (item.name.trim().toLowerCase() == currentTitle.toLowerCase()) {
+          return item;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String _groupPathFor(int groupId) {
+    final groups = _maybeRead<GroupsProvider>();
+    if (groups == null) return '';
+    final group = groups.findById(groupId);
+    if (group == null) return '';
+    if (group.parentGroupId == null) return group.name;
+    final parent = groups.findById(group.parentGroupId);
+    return parent == null ? group.name : '${parent.name} › ${group.name}';
+  }
+
+  List<String> _identityValuesOfItem(ItemDefinition item) {
+    final sheetDef = _controller.groupItemController.sheetDef;
+    return [
+      for (final column in sheetDef.columns)
+        if (column.identity && SheetBindsTo.isVariation(column.bindsTo))
+          _propertyValueOfItem(item, SheetBindsTo.variationProperty(column.bindsTo!)),
+    ];
+  }
+
+  String _propertyValueOfItem(ItemDefinition item, String property) {
+    final wanted = property.trim().toLowerCase();
+    for (final node in item.variationTree) {
+      if (node.kind != ItemVariationNodeKind.property || node.isArchived) continue;
+      if (node.name.trim().toLowerCase() != wanted) continue;
+      final values = [
+        for (final child in node.children)
+          if (!child.isArchived && child.name.trim().isNotEmpty) child.name.trim(),
+      ]..sort();
+      return values.join(' / ');
+    }
+    return '';
   }
 
   /// "Saved as item #500 on 03 Nov 2026, 10:05" — the stamps the save wrote,
@@ -3633,8 +3968,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         pendingPartName: rowPartId == null ? _pinnedPartName() : null,
         madeHereItemIds: _madeHere,
         onDirtyChanged: (dirty) {
-          if (mounted && dirty != _routeDirty)
+          if (mounted && dirty != _routeDirty) {
             setState(() => _routeDirty = dirty);
+          }
         },
         onSaved: (record) {
           setState(() {
@@ -3681,6 +4017,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _notYetWired(String heading, String detail) {
     return Container(
       width: double.infinity,

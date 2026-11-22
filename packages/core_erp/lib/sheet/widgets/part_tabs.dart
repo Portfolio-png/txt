@@ -383,10 +383,7 @@ class _PartTabsState extends State<PartTabs> {
         Container(
           width: 9,
           height: 9,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: gradient,
-          ),
+          decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient),
         ),
         const SizedBox(width: 8),
         Text(
@@ -438,11 +435,7 @@ class _PartTabsState extends State<PartTabs> {
         ),
         if (selected) ...[
           const SizedBox(width: 6),
-          const Icon(
-            Icons.check_rounded,
-            size: 16,
-            color: SoftErpTheme.accent,
-          ),
+          const Icon(Icons.check_rounded, size: 16, color: SoftErpTheme.accent),
         ],
       ],
     );

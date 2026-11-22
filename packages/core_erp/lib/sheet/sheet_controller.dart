@@ -55,6 +55,10 @@ class SheetController extends ChangeNotifier {
   final Set<String> _existingCodes;
   final Set<String> _existingPaths;
 
+  Map<String, int> get counters => Map.unmodifiable(_counters);
+  Set<String> get existingCodes => Set.unmodifiable(_existingCodes);
+  Set<String> get existingPaths => Set.unmodifiable(_existingPaths);
+
   /// The cursor: which row and which column a write lands on.
   ///
   /// These were two half-cursors that could never be set together — the column

@@ -502,7 +502,10 @@ class ItemDieLink {
   /// Where it is kept, as one line — `F206 · Rack 23-4`.
   String get whereKept => <String>[
     if (storeArea.trim().isNotEmpty) storeArea.trim(),
-    if (rackNo.trim().isNotEmpty) 'Rack ${rackNo.trim()}',
+    if (rackNo.trim().isNotEmpty)
+      rackNo.trim().toLowerCase().startsWith('rack')
+          ? rackNo.trim()
+          : 'Rack ${rackNo.trim()}',
   ].join(' · ');
 }
 
