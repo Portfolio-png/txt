@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c94["⟳ Change 94: photos on the phone can be zoomed before the shot and cropped after it"]
+      c95["⟳ Change 95: the parts on the item sheet are tabs, each ringed in its own colour"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -117,6 +117,11 @@ mindmap
         k4b["initDb: inline CREATE TABLEs, then runPendingMigrations in modules/kernel/migration-runner.js"]
         k4c["two ledgers: _migrations and schema_migrations"]
     Masters
+      Part tabs ⟳
+        pt1["PartTabs: one pill tab per row of the sheet, + adds a part (key part_add_row), × follows the line's rule; Ctrl+Tab steps"]
+        pt2["PartTabColors: colour by rowKey, kept until the tab closes; a row replaced in one step keeps its colour; five gradients in SoftErpTheme.partTabGradients, then round again"]
+        pt3["PartFrame: colour ring, white coat, then the open part's sections and raw material; fades on a tab change"]
+        pt4["PartRowsForm.currentRowOnly: only the open part's line is drawn; the keyboard flow holds that one line"]
       Part identity
         pid1["a part is group + unit + name + Alloy + Thickness (B): two Pattis with different alloys are two parts, each its own number (numbers count per name)"]
         pid2["server: findItemDuplicate compares identityOfTree; refusal names the alloy and thickness; 1.20 is 1.2"]
@@ -776,3 +781,4 @@ mindmap
 | 92 | `ItemMasterController._asNewPart` claims and resets the deal for the row; `_saveRawSheet` saves no plan when the row became another part (toast says its raw sheet starts empty). Tests: guard test +2 (edited deal not carried; Change this part keeps it), screen test now expects no plan. | Sheet, Tests |
 | 93 | B63. `ItemMasterController._pickExisting` opens a part from a new row only on matching alloy and thickness (`_identityCellsMatch`); `_openMatchingPart` (from `_onRowsChanged`) opens a part once a new row's full identity matches one; the loading body is `_openPart`. Test: `sheet_pick_identity_test.dart`. | Sheet, Tests |
 | 94 | Phone photos. core_erp `core/media/photo_crop.dart` (`cropPhoto`, `kWholePhoto`) + `photo_crop_screen.dart`; phone `photos/zoom_preview.dart`, `photos/shoot_photo.dart` (`shootPhoto`, `photoFromCrop`, `photoContentType`), `CaptureSource.zoomRange/setZoom`, `PhotoCaptureScreen` Crop button + zoomable preview, purchase wizard and editor use `shootPhoto`. B65. Tests: `photo_crop_test.dart` (7), `photo_zoom_crop_test.dart` (8), capture test +1. | Mobile, Media, Tests |
+| 95 | Part tabs on the item sheet. core_erp `sheet/widgets/part_tabs.dart` (`PartTabs`, `PartTabColors`, `PartFrame`), `SoftErpTheme.partTabGradients`, `PartRowsForm.currentRowOnly`, screen `_partArea` / `_stepPart`; `SheetStep` lets Ctrl+Tab through. Drawing only: rows, saves and guards unchanged. Tests: 6 in `item_master_sheet_screen_test.dart` ("the parts are tabs"), 2 updated. | Sheet, Theme, Tests |

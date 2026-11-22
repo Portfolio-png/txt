@@ -43,7 +43,13 @@ class PartRowsForm extends StatelessWidget {
     this.showShortcuts = false,
     this.showcaseRow,
     this.showcasePhotoBuilder,
+    this.currentRowOnly = false,
   });
+
+  /// Draws the part the cursor is on and no other: the host shows the parts
+  /// as tabs ([PartTabs]), and its + adds one. Every part is still a row of
+  /// [sheet]; what was typed on the others waits there.
+  final bool currentRowOnly;
 
   /// The line whose photo is shown big, beside its fields — as tall as they
   /// are — with Save and × under it. Null shows every line's small photo.
@@ -153,26 +159,27 @@ class PartRowsForm extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var row = 0; row < sheet.rowCount; row += 1) ...[
-              _step(
-                row,
-                _PartLine(
-                  key: ValueKey<Object>(sheet.draftAt(row).rowKey),
-                  sheet: sheet,
-                  row: row,
-                  grid: grid,
-                  photo: photoBuilder?.call(row),
-                  status: statusBuilder?.call(row),
-                  action: actionBuilder(row),
-                  onRemove: onRemoveRow,
-                  showShortcuts: showShortcuts,
-                  showcasePhoto: row == showcaseRow
-                      ? showcasePhotoBuilder
-                      : null,
+            for (var row = 0; row < sheet.rowCount; row += 1)
+              if (!currentRowOnly || row == sheet.row) ...[
+                _step(
+                  row,
+                  _PartLine(
+                    key: ValueKey<Object>(sheet.draftAt(row).rowKey),
+                    sheet: sheet,
+                    row: row,
+                    grid: grid,
+                    photo: photoBuilder?.call(row),
+                    status: statusBuilder?.call(row),
+                    action: actionBuilder(row),
+                    onRemove: onRemoveRow,
+                    showShortcuts: showShortcuts,
+                    showcasePhoto: row == showcaseRow
+                        ? showcasePhotoBuilder
+                        : null,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-            ],
+                const SizedBox(height: 10),
+              ],
             SheetStep.noTab(_footer()),
           ],
         );
@@ -200,21 +207,22 @@ class PartRowsForm extends StatelessWidget {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton.icon(
-              key: const ValueKey<String>('part_add_row'),
-              onPressed: onAddPart,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Add part', style: TextStyle(fontSize: 14)),
-            ),
-            if (showShortcuts) ...[
-              const SizedBox(width: 2),
-              const KeyTipBadge(label: 'Alt+1'),
+        if (!currentRowOnly)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton.icon(
+                key: const ValueKey<String>('part_add_row'),
+                onPressed: onAddPart,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Add part', style: TextStyle(fontSize: 14)),
+              ),
+              if (showShortcuts) ...[
+                const SizedBox(width: 2),
+                const KeyTipBadge(label: 'Alt+1'),
+              ],
             ],
-          ],
-        ),
+          ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [

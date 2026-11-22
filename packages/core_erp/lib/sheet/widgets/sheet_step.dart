@@ -297,6 +297,10 @@ class SheetStepState extends State<SheetStep> {
       widget.actions.unlock?.call();
       return KeyEventResult.handled;
     }
+    // Ctrl+Tab is the screen's: the next part's tab.
+    if (key == LogicalKeyboardKey.tab && keyboard.isControlPressed) {
+      return KeyEventResult.ignored;
+    }
     if (key == LogicalKeyboardKey.tab) {
       // The step moves focus itself, field to field in its own order. The
       // platform's "next focus" did not leave a text box in the running app

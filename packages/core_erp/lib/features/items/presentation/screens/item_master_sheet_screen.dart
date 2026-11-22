@@ -989,6 +989,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               _handleSave,
           const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
               _handleSave,
+          const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
+              _stepPart(1),
+          const SingleActivator(
+            LogicalKeyboardKey.tab,
+            control: true,
+            shift: true,
+          ): () => _stepPart(-1),
         },
         child: Focus(
           autofocus: true,
@@ -1034,10 +1041,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                           ],
                         ),
                       ),
-                    Expanded(child: _body()),
-                    // Raw material is a keyboard step of its own (_rawStep); its
-                    // fold strip and headings are clicked.
-                    _rawSheetPanel(),
+                    Expanded(child: _partArea()),
                   ],
                 ),
               ),
@@ -1052,6 +1056,62 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Each part's colour: its tab's, and the frame's while it is the one open.
+  final PartTabColors _partColors = PartTabColors();
+
+  void _addPart() {
+    final sheet = _controller.groupItemController;
+    sheet.addRow();
+    final first = PartRowsForm.lineColumns(sheet.sheetDef).firstOrNull;
+    if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
+  }
+
+  /// Ctrl+Tab and Ctrl+Shift+Tab: the next part's tab, round and round.
+  void _stepPart(int by) {
+    final sheet = _controller.groupItemController;
+    if (sheet.rowCount < 2) return;
+    sheet.selectRow((sheet.row + by) % sheet.rowCount);
+  }
+
+  /// The parts as tabs, and under them the open part's sheet — its sections
+  /// and its raw material — ringed in that part's colour.
+  Widget _partArea() {
+    final sheet = _controller.groupItemController;
+    return Column(
+      children: [
+        SheetStep.noTab(
+          PartTabs(
+            sheet: sheet,
+            colors: _partColors,
+            onAddPart: _addPart,
+            onClose: _removeLine,
+            showShortcuts: _altPressed,
+          ),
+        ),
+        Expanded(
+          child: ListenableBuilder(
+            listenable: sheet,
+            builder: (context, child) {
+              _partColors.sync(sheet.drafts.map((draft) => draft.rowKey));
+              return PartFrame(
+                gradient: _partColors.of(sheet.draft.rowKey),
+                child: child!,
+              );
+            },
+            child: Row(
+              children: [
+                Expanded(child: _body()),
+                // Raw material is a keyboard step of its own (_rawStep); its
+                // fold strip and headings are clicked.
+                _rawSheetPanel(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -3005,11 +3065,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       showcasePhotoBuilder: (row, side) => _rowPhoto(row, size: side),
       statusBuilder: _rowStatus,
       actionBuilder: (row) => _rowEndAction(row) ?? const SizedBox.shrink(),
-      onAddPart: () {
-        sheet.addRow();
-        final first = PartRowsForm.lineColumns(sheet.sheetDef).firstOrNull;
-        if (first != null) sheet.focusCell(first.id, row: sheet.rowCount - 1);
-      },
+      currentRowOnly: true,
+      onAddPart: _addPart,
       onAddProperty: _addProperty,
       onRemoveRow: _removeLine,
       flow: _flow,
@@ -3050,9 +3107,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       switch (id) {
         case 'group_item':
           final sheet = _controller.groupItemController;
-          for (final draft in sheet.drafts) {
-            out.add((id: PartRowsForm.stepId(draft.rowKey), section: id));
-          }
+          // Only the open tab's line is on screen; Tab goes on from it to
+          // that part's sections, not to another part.
+          out.add((id: PartRowsForm.stepId(sheet.draft.rowKey), section: id));
         case 'client_vendor':
           if (_controller.isExternal) {
             out.add((id: DealPeopleForm.companyStep, section: id));

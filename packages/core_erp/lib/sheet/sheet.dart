@@ -22,3 +22,4 @@ export 'widgets/item_master_sidebar.dart';
 export 'widgets/sheet_sidebar.dart';
 export 'widgets/sheet_step.dart';
 export 'widgets/key_tip_badge.dart';
+export 'widgets/part_tabs.dart';

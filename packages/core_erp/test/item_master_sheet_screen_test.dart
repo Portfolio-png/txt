@@ -10,6 +10,7 @@ import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
 import 'package:core_erp/core/app_flow_hooks.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_die_section.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_machine_section.dart';
@@ -1698,7 +1699,7 @@ void main() {
       PartDieSection dies() =>
           tester.widget<PartDieSection>(find.byType(PartDieSection));
 
-      await tester.tap(find.text('Add part').first);
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
       await tester.pump();
       expect(dies().part, isNull, reason: 'a new row is a new part');
       dies().onStage(const DieSheetDraft(toolCode: 'D1', dieType: 'cutting'));
@@ -1710,7 +1711,10 @@ void main() {
       expect(dies().part?.id, 500);
       expect(dies().staged, isEmpty, reason: 'held for the other row');
 
-      await tester.tap(find.byKey(const ValueKey('cell_item_1_3')));
+      // Back to the new part by its tab: its line is not drawn while
+      // another part's tab is open.
+      expect(find.byKey(const ValueKey('cell_item_1_3')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('part_tab_1')));
       await tester.pump();
       expect(dies().staged.single.toolCode, 'D1');
     });
@@ -1918,7 +1922,7 @@ void main() {
             .sheet;
 
         // A blank second line: removed without a question.
-        await tester.tap(find.text('Add part').first);
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
         await tester.pump();
         expect(sheet.rowCount, 2);
         await tester.tap(find.byKey(const ValueKey('row_remove_1')));
@@ -1927,7 +1931,7 @@ void main() {
         expect(sheet.rowCount, 1);
 
         // A second line holding a die: asked first.
-        await tester.tap(find.text('Add part').first);
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
         await tester.pump();
         PartDieSection dies() =>
             tester.widget<PartDieSection>(find.byType(PartDieSection));
@@ -1972,7 +1976,7 @@ void main() {
         final sheet = tester
             .widget<PartRowsForm>(find.byType(PartRowsForm))
             .sheet;
-        await tester.tap(find.text('Add part').first);
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
         await tester.pump();
         tester
             .widget<PartDieSection>(find.byType(PartDieSection))
@@ -2141,7 +2145,7 @@ void main() {
           findsNothing,
         );
 
-        await tester.tap(find.text('Add part').first);
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
         await tester.pump();
         expect(
           find.byTooltip('Save the part to add its photos'),
@@ -3631,9 +3635,10 @@ void main() {
         find.byKey(const ValueKey('row_remove_0')),
       );
       expect(remove.onPressed, isNull);
+      // Said by the line's × and by the tab's.
       expect(
         find.byTooltip('Saved parts stay in the catalogue — use Archive part'),
-        findsOneWidget,
+        findsNWidgets(2),
       );
     });
 
@@ -3665,7 +3670,7 @@ void main() {
             )
             .controller;
 
-        await tester.tap(find.text('Add part').first);
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
         await tester.pump();
         expect(dies().part, isNull);
         sets().text = '4';
@@ -3715,6 +3720,178 @@ void main() {
       expect(decorators.every((d) => d.decoration.errorText == null), isTrue);
       await tester.pump(const Duration(seconds: 4));
     });
+  });
+
+  group('the parts are tabs, each in its own colour', () {
+    Gradient? frameColour(WidgetTester tester) =>
+        (tester
+                    .widget<AnimatedContainer>(
+                      find.byKey(const ValueKey('part_frame')),
+                    )
+                    .decoration
+                as BoxDecoration)
+            .gradient;
+    Gradient? swatch(WidgetTester tester, int row) =>
+        (tester
+                    .widget<Container>(
+                      find.byKey(ValueKey('part_tab_swatch_$row')),
+                    )
+                    .decoration
+                as BoxDecoration)
+            .gradient;
+    SheetController sheetOf(WidgetTester tester) =>
+        tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+    final colours = SoftErpTheme.partTabGradients;
+
+    testWidgets('+ opens another part in the next colour, and only it is drawn', (
+      tester,
+    ) async {
+      await _pumpScreen(tester, size: const Size(1700, 1200));
+      expect(find.byKey(const ValueKey('part_tab_0')), findsOneWidget);
+      expect(frameColour(tester), colours[0]);
+
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheetOf(tester).rowCount, 2);
+      expect(find.byKey(const ValueKey('part_tab_1')), findsOneWidget);
+      expect(frameColour(tester), colours[1], reason: 'the new part is open');
+      expect(swatch(tester, 0), colours[0], reason: 'the first keeps its own');
+      expect(find.byKey(const ValueKey('part_line_1')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('part_line_0')),
+        findsNothing,
+        reason: 'one part on screen at a time',
+      );
+
+      // A click on the other tab: the frame goes back to that part's colour.
+      await tester.tap(find.byKey(const ValueKey('part_tab_0')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheetOf(tester).row, 0);
+      expect(frameColour(tester), colours[0]);
+      expect(find.byKey(const ValueKey('part_line_0')), findsOneWidget);
+    });
+
+    testWidgets('what was typed on a part waits behind its tab', (tester) async {
+      await _pumpScreen(tester, size: const Size(1700, 1200));
+      final sheet = sheetOf(tester);
+      final name = sheet.sheetDef.itemColumn!;
+      sheet.updateTextValue(name.id, 'Patti', row: 0);
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('part_tab_1')),
+          matching: find.text('New part'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('part_tab_0')),
+          matching: find.text('Patti'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('part_tab_0')));
+      await tester.pump();
+      final cell = sheet.draftAt(0).get(name.id);
+      expect(cell?.textValue ?? cell?.optionLabel, 'Patti');
+    });
+
+    testWidgets('closing a tab recolours no other, and the last one stays', (
+      tester,
+    ) async {
+      await _pumpScreen(tester, size: const Size(1700, 1200));
+      final sheet = sheetOf(tester);
+      for (var i = 0; i < 2; i += 1) {
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
+        await tester.pump();
+      }
+      expect(sheet.rowCount, 3);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(frameColour(tester), colours[2]);
+
+      // The middle tab goes (blank, so no question): the third part moves up
+      // a place and is still the third colour.
+      await tester.tap(find.byKey(const ValueKey('part_tab_close_1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(sheet.rowCount, 2);
+      sheet.selectRow(1);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(frameColour(tester), colours[2]);
+      expect(swatch(tester, 0), colours[0]);
+
+      // A part opened now takes the fourth colour, not the freed second.
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(frameColour(tester), colours[3]);
+
+      await tester.tap(find.byKey(const ValueKey('part_tab_close_2')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('part_tab_close_1')));
+      await tester.pump();
+      expect(sheet.rowCount, 1);
+      await tester.tap(find.byKey(const ValueKey('part_tab_close_0')));
+      await tester.pump();
+      expect(sheet.rowCount, 1, reason: 'a sheet always keeps one part');
+      expect(find.byTooltip('A sheet always keeps one part'), findsWidgets);
+    });
+
+    testWidgets('a saved part opened on the sheet is the first colour', (
+      tester,
+    ) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 1200),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      // The blank row the sheet starts with gave way to the part: one tab,
+      // and it did not use a colour up.
+      expect(frameColour(tester), colours[0]);
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(frameColour(tester), colours[1]);
+    });
+
+    testWidgets('the sixth part takes the first colour again', (tester) async {
+      final all = PartTabColors();
+      final keys = [for (var i = 0; i < 6; i += 1) Object()];
+      all.sync(keys);
+      expect([for (final k in keys) all.indexOf(k)], [0, 1, 2, 3, 4, 0]);
+    });
+
+    testWidgets(
+      'Ctrl+Tab goes to the next part and round again',
+      (tester) async {
+        await _pumpScreen(tester, size: const Size(1700, 1200));
+        final sheet = sheetOf(tester);
+        await tester.tap(find.byKey(const ValueKey('part_add_row')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(sheet.row, 1);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(sheet.row, 0);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(sheet.row, 1);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pump();
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
   });
 
   group('it fits the windows it is opened in', () {

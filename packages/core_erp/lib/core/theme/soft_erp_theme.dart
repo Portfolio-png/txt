@@ -63,6 +63,24 @@ class SoftErpTheme {
     end: Alignment.bottomCenter,
   );
 
+  // --- Part tabs -----------------------------------------------------------
+  // One per part open on the item sheet, taken in turn: the tab and the frame
+  // round the sheet are drawn in the part's colour, so landing on another
+  // part by mistake shows at once. Ordered so neighbours differ most (forest,
+  // burnt orange, sky, sand, steel) — sand sits beside orange and steel beside
+  // sky in the picture they were sampled from.
+  static const List<LinearGradient> partTabGradients = <LinearGradient>[
+    LinearGradient(colors: [Color(0xFF41634E), Color(0xFF2C4D2C)]),
+    LinearGradient(colors: [Color(0xFFBD6339), Color(0xFFD69E77)]),
+    LinearGradient(colors: [Color(0xFF73C5EB), Color(0xFFB895E7)]),
+    LinearGradient(
+      colors: [Color(0xFFE9BE64), Color(0xFFD4D0CC), Color(0xFFDBB8B3)],
+    ),
+    LinearGradient(
+      colors: [Color(0xFF427493), Color(0xFFC5BA99), Color(0xFF9BB1BE)],
+    ),
+  ];
+
   // Clean, neutral elevation system: soft surfaces without glow haze.
   static const List<BoxShadow> insetShadow = <BoxShadow>[
     BoxShadow(color: Color(0x0C000000), blurRadius: 6, offset: Offset(0, 2)),
