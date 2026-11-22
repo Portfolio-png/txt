@@ -1079,39 +1079,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// The parts as tabs, and under them the open part's sheet — its sections
   /// and its raw material — ringed in that part's colour.
   Widget _partArea() {
-    final sheet = _controller.groupItemController;
-    return Column(
-      children: [
-        SheetStep.noTab(
-          PartTabs(
-            sheet: sheet,
-            colors: _partColors,
-            onAddPart: _addPart,
-            onClose: _removeLine,
-            showShortcuts: _altPressed,
-          ),
-        ),
-        Expanded(
-          child: ListenableBuilder(
-            listenable: sheet,
-            builder: (context, child) {
-              _partColors.sync(sheet.drafts.map((draft) => draft.rowKey));
-              return PartFrame(
-                gradient: _partColors.of(sheet.draft.rowKey),
-                child: child!,
-              );
-            },
-            child: Row(
-              children: [
-                Expanded(child: _body()),
-                // Raw material is a keyboard step of its own (_rawStep); its
-                // fold strip and headings are clicked.
-                _rawSheetPanel(),
-              ],
-            ),
-          ),
-        ),
-      ],
+    return PartTabs(
+      sheet: _controller.groupItemController,
+      colors: _partColors,
+      onAddPart: _addPart,
+      onClose: _removeLine,
+      showShortcuts: _altPressed,
+      child: Row(
+        children: [
+          Expanded(child: _body()),
+          // Raw material is a keyboard step of its own (_rawStep); its
+          // fold strip and headings are clicked.
+          _rawSheetPanel(),
+        ],
+      ),
     );
   }
 

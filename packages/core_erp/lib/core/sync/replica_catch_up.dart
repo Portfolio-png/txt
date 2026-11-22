@@ -100,6 +100,14 @@ class ReplicaCatchUp {
         await _hydrate();
         return (replayed: replayed, hydrated: true);
       }
+      // A cursor past the server's last change was not made on this log: the
+      // database was restored from a backup, or rebuilt. Nothing would ever
+      // replay, and the copy would stay the other log's for good.
+      if (page.head > 0 && since > page.head) {
+        await _cursor.reset();
+        await _hydrate();
+        return (replayed: replayed, hydrated: true);
+      }
       if (page.changes.isEmpty) break;
       final inScope = _inScope;
       final mine = inScope == null

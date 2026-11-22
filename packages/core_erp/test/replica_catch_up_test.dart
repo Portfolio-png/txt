@@ -196,6 +196,20 @@ void main() {
     expect(await cursor.lastChangelogId(), 900);
   });
 
+  test('a cursor past the end of the server\'s log takes a fresh copy', () async {
+    // The copy was made on another log: a server restored from a backup, or
+    // another server altogether. Its cursor is ahead, so nothing ever replays.
+    await catchUp().run();
+    await cursor.setLastChangelogId(8989);
+    server.lists['items'] = <Map<String, dynamic>>[_item(4, 'Primary')];
+    server.calls.clear();
+
+    final result = await catchUp().run();
+    expect(result.hydrated, isTrue);
+    expect(server.calls, <String>['changes 8989', 'bootstrap']);
+    expect(await cursor.lastChangelogId(), server.head);
+  });
+
   test('a replica of some tables skips the rest, and still moves past them', () async {
     await catchUp().run();
     server.records['vendors/7'] = <String, dynamic>{'id': 7, 'name': 'Steel Co'};

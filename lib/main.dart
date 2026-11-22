@@ -16,6 +16,7 @@ import 'package:core_erp/core/database/local_database_helper.dart';
 import 'package:core_erp/core/sync/replica_sync_service.dart';
 import 'package:core_erp/core/sync/outbox_session.dart';
 import 'package:core_erp/core/sync/sync_health.dart';
+import 'package:core_erp/core/sync/workspace_namespace.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:core_erp/core/sync/replica_session.dart';
 import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
@@ -1147,7 +1148,12 @@ class _AuthGateState extends State<_AuthGate> {
     // is worth having.
     final auth = context.read<AuthProvider>();
     final identity = auth.user;
-    _httpCache.namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
+    // This server's and this user's: a user id alone is shared by every server.
+    final namespace = workspaceNamespace(
+      baseUrl: _apiBaseUrl,
+      user: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+    );
+    _httpCache.namespace = namespace;
     // Opened before the providers load, so a warm replica answers their first
     // read instead of the network.
     if (!widget.isDemoMode) {
@@ -1155,7 +1161,7 @@ class _AuthGateState extends State<_AuthGate> {
       unawaited(OutboxSession.instance.start(
         client: AuthenticatedHttpClient(tokenResolver: () => auth.token, inner: _httpCache),
         baseUrl: _apiBaseUrl,
-        namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+        namespace: namespace,
       ));
     }
     final replica = widget.isDemoMode
@@ -1165,7 +1171,7 @@ class _AuthGateState extends State<_AuthGate> {
               tokenResolver: () => auth.token,
               inner: _httpCache,
             ),
-            namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+            namespace: namespace,
           );
     // The update feed is behind the login, so it is asked now (Windows only).
     unawaited(AutoUpdaterService.instance.checkWithServer(

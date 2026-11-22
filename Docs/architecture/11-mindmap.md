@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c95["⟳ Change 95: the parts on the item sheet are tabs, each ringed in its own colour"]
+      c96["⟳ Change 96: local data is kept per server and user (B64); the open tab joins the sheet's frame as one outline"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -120,8 +120,9 @@ mindmap
       Part tabs ⟳
         pt1["PartTabs: one pill tab per row of the sheet, + adds a part (key part_add_row), × follows the line's rule; Ctrl+Tab steps"]
         pt2["PartTabColors: colour by rowKey, kept until the tab closes; a row replaced in one step keeps its colour; five gradients in SoftErpTheme.partTabGradients, then round again"]
-        pt3["PartFrame: colour ring, white coat, then the open part's sections and raw material; fades on a tab change"]
+        pt3["⟳ PartFramePainter: one line up round the open tab and on round the sheet, white coat inside, nothing filled; positions read at paint time; fades on a tab change"]
         pt4["PartRowsForm.currentRowOnly: only the open part's line is drawn; the keyboard flow holds that one line"]
+        pt5["⟳ workspaceNamespace(baseUrl, user): the replica, cache and outbox folder on desktop and phone (B64); a cursor past the server's head takes a fresh copy"]
       Part identity
         pid1["a part is group + unit + name + Alloy + Thickness (B): two Pattis with different alloys are two parts, each its own number (numbers count per name)"]
         pid2["server: findItemDuplicate compares identityOfTree; refusal names the alloy and thickness; 1.20 is 1.2"]
@@ -782,3 +783,4 @@ mindmap
 | 93 | B63. `ItemMasterController._pickExisting` opens a part from a new row only on matching alloy and thickness (`_identityCellsMatch`); `_openMatchingPart` (from `_onRowsChanged`) opens a part once a new row's full identity matches one; the loading body is `_openPart`. Test: `sheet_pick_identity_test.dart`. | Sheet, Tests |
 | 94 | Phone photos. core_erp `core/media/photo_crop.dart` (`cropPhoto`, `kWholePhoto`) + `photo_crop_screen.dart`; phone `photos/zoom_preview.dart`, `photos/shoot_photo.dart` (`shootPhoto`, `photoFromCrop`, `photoContentType`), `CaptureSource.zoomRange/setZoom`, `PhotoCaptureScreen` Crop button + zoomable preview, purchase wizard and editor use `shootPhoto`. B65. Tests: `photo_crop_test.dart` (7), `photo_zoom_crop_test.dart` (8), capture test +1. | Mobile, Media, Tests |
 | 95 | Part tabs on the item sheet. core_erp `sheet/widgets/part_tabs.dart` (`PartTabs`, `PartTabColors`, `PartFrame`), `SoftErpTheme.partTabGradients`, `PartRowsForm.currentRowOnly`, screen `_partArea` / `_stepPart`; `SheetStep` lets Ctrl+Tab through. Drawing only: rows, saves and guards unchanged. Tests: 6 in `item_master_sheet_screen_test.dart` ("the parts are tabs"), 2 updated. | Sheet, Theme, Tests |
+| 96 | B64. core_erp `core/sync/workspace_namespace.dart`; `lib/main.dart` and the phone's `main.dart` use it for cache, replica and outbox; `ReplicaCatchUp.run` resets when the cursor is past `head`. Part tabs: `PartFrame` replaced by `PartFramePainter` (joined outline), `PartTabs` takes the sheet as `child`. Tests: `workspace_namespace_test.dart` (4), catch-up +1, outline +1; `app_boot_test.dart` assertion. | Sync, Mobile, Sheet, Tests |

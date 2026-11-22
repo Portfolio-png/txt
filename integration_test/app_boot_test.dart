@@ -32,6 +32,7 @@ void main() {
     );
 
     await openItemSheet(tester);
-    expect(find.text('Item Master'), findsOneWidget);
+    // Named by the rail, by the section's own heading and by the status bar.
+    expect(find.text('Item Master'), findsWidgets);
   });
 }

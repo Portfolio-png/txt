@@ -3725,11 +3725,11 @@ void main() {
   group('the parts are tabs, each in its own colour', () {
     Gradient? frameColour(WidgetTester tester) =>
         (tester
-                    .widget<AnimatedContainer>(
+                    .widget<CustomPaint>(
                       find.byKey(const ValueKey('part_frame')),
                     )
-                    .decoration
-                as BoxDecoration)
+                    .painter
+                as PartFramePainter)
             .gradient;
     Gradient? swatch(WidgetTester tester, int row) =>
         (tester
@@ -3861,6 +3861,27 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(frameColour(tester), colours[1]);
+    });
+
+    testWidgets('the open tab and the frame are one outline', (tester) async {
+      const frame = Rect.fromLTRB(10, 60, 900, 600);
+      final plain = PartFramePainter.outline(frame: frame);
+      expect(plain.getBounds().top, closeTo(60, 0.01), reason: 'no tab, no bump');
+
+      const tab = Rect.fromLTRB(300, 14, 520, 60);
+      final joined = PartFramePainter.outline(frame: frame, tab: tab);
+      expect(joined.getBounds().top, lessThan(20), reason: 'up round the tab');
+      expect(joined.contains(const Offset(410, 40)), isTrue, reason: 'in the tab');
+      expect(joined.contains(const Offset(200, 40)), isFalse, reason: 'beside it');
+      expect(joined.contains(const Offset(410, 300)), isTrue, reason: 'the sheet');
+
+      // Scrolled out of the strip: the frame is left plain, not half a tab.
+      final gone = PartFramePainter.outline(
+        frame: frame,
+        tab: tab,
+        viewport: const Rect.fromLTRB(500, 14, 800, 60),
+      );
+      expect(gone.getBounds().top, closeTo(60, 0.01));
     });
 
     testWidgets('the sixth part takes the first colour again', (tester) async {

@@ -61,6 +61,7 @@ import 'package:core_erp/core/services/photo_requests.dart';
 
 import 'photos/photo_queue_gate.dart';
 import 'package:core_erp/core/sync/sync_health.dart';
+import 'package:core_erp/core/sync/workspace_namespace.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'widgets/offline_banner.dart';
 import 'widgets/phone_settings_sheet.dart';
@@ -927,7 +928,12 @@ class _AuthGateState extends State<_AuthGate> {
     // here would empty the cache at the one moment it is worth having.
     final auth = context.read<AuthProvider>();
     final identity = auth.user;
-    final namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
+    // This server's and this user's: after Change server the same user id
+    // opened the old server's copy, and its unsent writes (B64).
+    final namespace = workspaceNamespace(
+      baseUrl: widget.apiUrl,
+      user: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+    );
     widget.cache.namespace = namespace;
     // The phone's own copy of what its screens read, kept current from the
     // change stream; screens read it, and the network when it is behind or

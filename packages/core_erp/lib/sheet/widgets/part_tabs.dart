@@ -7,6 +7,7 @@ import '../sheet_binding.dart';
 import '../sheet_controller.dart';
 import '../sheet_draft.dart';
 import 'key_tip_badge.dart';
+import 'sheet_step.dart';
 
 /// Which colour each part on the sheet is drawn in.
 ///
@@ -52,13 +53,27 @@ class PartTabColors {
   }
 }
 
-/// The colour's ring and the white coat inside it — the tab's and the frame's.
+/// The colour's line, and the white coat inside it.
 const double _ring = 3;
 const double _coat = 2;
 
-/// The parts on the sheet as tabs, a browser's way: one per part, + for
-/// another. The chosen tab is ringed in its part's colour; the others carry a
-/// swatch of theirs.
+/// The frame's corners, the open tab's top corners, and the curve where the
+/// tab's sides run out into the frame's top edge.
+const double _frameRadius = 16;
+const double _tabRadius = 14;
+const double _flare = 10;
+
+/// The frame's margin from the screen at the sides and the bottom.
+const double _margin = 8;
+
+/// The parts on the sheet as tabs, a browser's way, and under them the open
+/// part's sheet: one per part, + for another.
+///
+/// The open tab and the sheet are one outline in the part's colour — the line
+/// runs up round the tab and back down into the frame, with a white coat
+/// inside it, and nothing filled. The other tabs are grey pills carrying a
+/// swatch of their own colour. The line fades to the next part's colour when
+/// the tab changes, so a change of part is seen.
 class PartTabs extends StatefulWidget {
   const PartTabs({
     super.key,
@@ -66,6 +81,7 @@ class PartTabs extends StatefulWidget {
     required this.colors,
     required this.onAddPart,
     required this.onClose,
+    required this.child,
     this.showShortcuts = false,
   });
 
@@ -75,6 +91,9 @@ class PartTabs extends StatefulWidget {
 
   /// Closes the tab at a row. The host asks first when the part holds work.
   final Future<void> Function(int row) onClose;
+
+  /// The open part's sheet, drawn inside the frame.
+  final Widget child;
   final bool showShortcuts;
 
   /// What a tab calls its part: the name, or "New part" until it has one.
@@ -97,7 +116,12 @@ class PartTabs extends StatefulWidget {
 
 class _PartTabsState extends State<PartTabs> {
   final ScrollController _scroll = ScrollController();
+  final GlobalKey _paintKey = GlobalKey();
+  final GlobalKey _frameKey = GlobalKey();
+  final GlobalKey _openTabKey = GlobalKey();
+  final GlobalKey _viewportKey = GlobalKey();
   static const double _gap = 6;
+  static const double _tabHeight = 44;
   int _shownRow = -1;
 
   @override
@@ -136,59 +160,121 @@ class _PartTabsState extends State<PartTabs> {
       builder: (context, _) {
         final drafts = sheet.drafts;
         widget.colors.sync(drafts.map((d) => d.rowKey));
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-          child: Row(
+        final gradient = widget.colors.of(sheet.draft.rowKey);
+        return TweenAnimationBuilder<LinearGradient>(
+          tween: _GradientTween(end: gradient),
+          duration: const Duration(milliseconds: 220),
+          builder: (context, shown, child) => CustomPaint(
+            key: const ValueKey<String>('part_frame'),
+            painter: PartFramePainter(
+              gradient: shown,
+              paintKey: _paintKey,
+              frameKey: _frameKey,
+              tabKey: _openTabKey,
+              viewportKey: _viewportKey,
+              repaint: _scroll,
+            ),
+            child: child,
+          ),
+          child: Column(
+            key: _paintKey,
             children: [
+              SheetStep.noTab(_strip(drafts)),
               Expanded(
-                child: LayoutBuilder(
-                  builder: (context, box) {
-                    final count = drafts.length;
-                    // Tabs share the strip until they are too narrow to read,
-                    // then the strip scrolls.
-                    final width = ((box.maxWidth - _gap * (count - 1)) / count)
-                        .clamp(150.0, 260.0);
-                    _reveal(sheet.row, width);
-                    return SingleChildScrollView(
-                      controller: _scroll,
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          for (var row = 0; row < count; row += 1) ...[
-                            if (row > 0) const SizedBox(width: _gap),
-                            SizedBox(
-                              width: width,
-                              child: _tab(row, drafts[row]),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'Add a part',
-                child: IconButton(
-                  key: const ValueKey<String>('part_add_row'),
-                  onPressed: widget.onAddPart,
-                  style: IconButton.styleFrom(
-                    backgroundColor: SoftErpTheme.cardSurface,
-                    side: const BorderSide(color: SoftErpTheme.borderStrong),
-                    shape: const CircleBorder(),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    _margin,
+                    0,
+                    _margin,
+                    _margin,
                   ),
-                  icon: const Icon(Icons.add_rounded, size: 22),
+                  child: Padding(
+                    key: _frameKey,
+                    padding: const EdgeInsets.all(_ring + _coat),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        math.max(0, _frameRadius - _ring - _coat),
+                      ),
+                      child: widget.child,
+                    ),
+                  ),
                 ),
               ),
-              if (widget.showShortcuts) ...[
-                const SizedBox(width: 4),
-                const KeyTipBadge(label: 'Alt+1'),
-              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _strip(List<SheetDraft> drafts) {
+    final sheet = widget.sheet;
+    return Padding(
+      // The first tab starts clear of the frame's corner, with room for the
+      // curve that runs out of its side.
+      padding: const EdgeInsets.fromLTRB(
+        _margin + _frameRadius + _flare,
+        8,
+        12,
+        0,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              key: _viewportKey,
+              builder: (context, box) {
+                final count = drafts.length;
+                // Tabs share the strip until they are too narrow to read,
+                // then the strip scrolls.
+                final width = ((box.maxWidth - _gap * (count - 1)) / count)
+                    .clamp(150.0, 260.0);
+                _reveal(sheet.row, width);
+                return SingleChildScrollView(
+                  controller: _scroll,
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (var row = 0; row < count; row += 1) ...[
+                        if (row > 0) const SizedBox(width: _gap),
+                        SizedBox(width: width, child: _tab(row, drafts[row])),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: _flare + 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Tooltip(
+                  message: 'Add a part',
+                  child: IconButton(
+                    key: const ValueKey<String>('part_add_row'),
+                    onPressed: widget.onAddPart,
+                    style: IconButton.styleFrom(
+                      backgroundColor: SoftErpTheme.cardSurface,
+                      side: const BorderSide(color: SoftErpTheme.borderStrong),
+                      shape: const CircleBorder(),
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 22),
+                  ),
+                ),
+                if (widget.showShortcuts) ...[
+                  const SizedBox(width: 4),
+                  const KeyTipBadge(label: 'Alt+1'),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -281,7 +367,6 @@ class _PartTabsState extends State<PartTabs> {
       ],
     );
 
-    const height = 42.0;
     return Semantics(
       selected: selected,
       button: true,
@@ -291,29 +376,23 @@ class _PartTabsState extends State<PartTabs> {
         behavior: HitTestBehavior.opaque,
         onTap: () => sheet.selectRow(row),
         child: selected
+            // No box of its own: the frame's line is drawn round it.
             ? Container(
-                key: const ValueKey<String>('part_tab_selected'),
-                height: height,
-                padding: const EdgeInsets.all(_ring),
-                decoration: BoxDecoration(
-                  gradient: gradient,
-                  borderRadius: BorderRadius.circular(height / 2),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 6, 0),
-                  decoration: BoxDecoration(
-                    color: SoftErpTheme.cardSurface,
-                    borderRadius: BorderRadius.circular(height / 2),
-                  ),
+                key: _openTabKey,
+                height: _tabHeight,
+                padding: const EdgeInsets.fromLTRB(14, 2, 8, 0),
+                child: KeyedSubtree(
+                  key: const ValueKey<String>('part_tab_selected'),
                   child: inside,
                 ),
               )
             : Container(
-                height: height,
+                height: _tabHeight - 8,
+                margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.fromLTRB(12, 0, 6, 0),
                 decoration: BoxDecoration(
                   color: SoftErpTheme.cardSurfaceAlt,
-                  borderRadius: BorderRadius.circular(height / 2),
+                  borderRadius: BorderRadius.circular((_tabHeight - 8) / 2),
                   border: Border.all(color: SoftErpTheme.borderStrong),
                 ),
                 child: inside,
@@ -323,42 +402,140 @@ class _PartTabsState extends State<PartTabs> {
   }
 }
 
-/// The sheet's working area, ringed in the chosen part's colour: the colour
-/// outside, a white coat inside it, then the sheet. The ring fades to the
-/// next part's colour when the tab changes, so a change of part is seen.
-class PartFrame extends StatelessWidget {
-  const PartFrame({super.key, required this.gradient, required this.child});
-
-  final LinearGradient gradient;
-  final Widget child;
+class _GradientTween extends Tween<LinearGradient> {
+  _GradientTween({required LinearGradient end}) : super(end: end);
 
   @override
-  Widget build(BuildContext context) {
-    const radius = SoftErpTheme.radiusMd;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: AnimatedContainer(
-        key: const ValueKey<String>('part_frame'),
-        duration: const Duration(milliseconds: 220),
-        padding: const EdgeInsets.all(_ring),
-        decoration: BoxDecoration(
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(_coat),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(radius - _ring),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(
-              math.max(0, radius - _ring - _coat),
-            ),
-            child: child,
-          ),
-        ),
-      ),
+  LinearGradient lerp(double t) {
+    final from = begin ?? end!;
+    if (t >= 1) return end!;
+    if (t <= 0) return from;
+    return LinearGradient.lerp(from, end, t) ?? end!;
+  }
+}
+
+/// The frame and the open tab as one line: up the tab's side, over its top,
+/// down the other side and on round the sheet.
+///
+/// Where the tab and the frame are is read at paint time from the laid-out
+/// boxes, so the line follows the tab as the strip scrolls with no frame of
+/// lag.
+class PartFramePainter extends CustomPainter {
+  PartFramePainter({
+    required this.gradient,
+    required this.paintKey,
+    required this.frameKey,
+    required this.tabKey,
+    required this.viewportKey,
+    super.repaint,
+  });
+
+  final LinearGradient gradient;
+  final GlobalKey paintKey;
+  final GlobalKey frameKey;
+  final GlobalKey tabKey;
+  final GlobalKey viewportKey;
+
+  Rect? _rectOf(GlobalKey key, RenderBox within) {
+    final box = key.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || !box.attached) return null;
+    return box.localToGlobal(Offset.zero, ancestor: within) & box.size;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final within = paintKey.currentContext?.findRenderObject();
+    if (within is! RenderBox || !within.hasSize) return;
+    final frameBox = _rectOf(frameKey, within);
+    if (frameBox == null) return;
+    // The line's centre: half its width in from the frame's edge.
+    final frame = frameBox.deflate(_ring / 2);
+    final path = outline(
+      frame: frame,
+      tab: _rectOf(tabKey, within),
+      viewport: _rectOf(viewportKey, within),
+    );
+    canvas.drawPath(path, Paint()..color = Colors.white);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _ring
+        ..strokeJoin = StrokeJoin.round
+        ..shader = gradient.createShader(path.getBounds()),
     );
   }
+
+  /// The outline of [frame] with [tab] standing on its top edge. A tab that
+  /// is scrolled out of [viewport], or too narrow to draw, leaves the frame
+  /// plain.
+  static Path outline({required Rect frame, Rect? tab, Rect? viewport}) {
+    const r = _frameRadius - _ring / 2;
+    final path = Path()..moveTo(frame.left + r, frame.top);
+
+    if (tab != null) {
+      var left = tab.left;
+      var right = tab.right;
+      if (viewport != null) {
+        left = math.max(left, viewport.left);
+        right = math.min(right, viewport.right);
+      }
+      left = math.max(left, frame.left + r + _flare);
+      right = math.min(right, frame.right - r - _flare);
+      final top = tab.top + _ring / 2;
+      if (right - left >= 2 * _tabRadius + 24 && frame.top - top > _tabRadius) {
+        path
+          ..lineTo(left - _flare, frame.top)
+          // Out of the frame's edge and up the tab's side.
+          ..arcToPoint(
+            Offset(left, frame.top - _flare),
+            radius: const Radius.circular(_flare),
+            clockwise: false,
+          )
+          ..lineTo(left, top + _tabRadius)
+          ..arcToPoint(
+            Offset(left + _tabRadius, top),
+            radius: const Radius.circular(_tabRadius),
+          )
+          ..lineTo(right - _tabRadius, top)
+          ..arcToPoint(
+            Offset(right, top + _tabRadius),
+            radius: const Radius.circular(_tabRadius),
+          )
+          ..lineTo(right, frame.top - _flare)
+          ..arcToPoint(
+            Offset(right + _flare, frame.top),
+            radius: const Radius.circular(_flare),
+            clockwise: false,
+          );
+      }
+    }
+
+    path
+      ..lineTo(frame.right - r, frame.top)
+      ..arcToPoint(
+        Offset(frame.right, frame.top + r),
+        radius: const Radius.circular(r),
+      )
+      ..lineTo(frame.right, frame.bottom - r)
+      ..arcToPoint(
+        Offset(frame.right - r, frame.bottom),
+        radius: const Radius.circular(r),
+      )
+      ..lineTo(frame.left + r, frame.bottom)
+      ..arcToPoint(
+        Offset(frame.left, frame.bottom - r),
+        radius: const Radius.circular(r),
+      )
+      ..lineTo(frame.left, frame.top + r)
+      ..arcToPoint(
+        Offset(frame.left + r, frame.top),
+        radius: const Radius.circular(r),
+      )
+      ..close();
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(PartFramePainter old) => true;
 }
