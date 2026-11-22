@@ -293,24 +293,25 @@ class _PartTabsState extends State<PartTabs> {
 
   Widget _tabsOverviewMenu(List<SheetDraft> drafts) {
     final sheet = widget.sheet;
-    return Tooltip(
-      message: 'All open parts (${drafts.length})',
-      child: PopupMenuButton<int>(
-        tooltip: '',
-        offset: const Offset(0, 38),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: SoftErpTheme.border),
-        ),
-        color: SoftErpTheme.cardSurface,
-        elevation: 8,
-        onSelected: (row) {
-          sheet.selectRow(row);
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem<int>(
-            enabled: false,
-            height: 32,
+    return PopupMenuButton<int>(
+      tooltip: 'All open parts (${drafts.length})',
+      offset: const Offset(0, 38),
+      constraints: const BoxConstraints(minWidth: 260, maxWidth: 320),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: SoftErpTheme.border),
+      ),
+      color: SoftErpTheme.cardSurface,
+      elevation: 8,
+      onSelected: (row) {
+        sheet.selectRow(row);
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<int>(
+          enabled: false,
+          height: 32,
+          child: SizedBox(
+            width: 260,
             child: Text(
               'OPEN PARTS (${drafts.length})',
               style: const TextStyle(
@@ -321,50 +322,50 @@ class _PartTabsState extends State<PartTabs> {
               ),
             ),
           ),
-          const PopupMenuDivider(height: 1),
-          for (var i = 0; i < drafts.length; i += 1)
-            PopupMenuItem<int>(
-              key: ValueKey<String>('parts_menu_item_$i'),
-              value: i,
-              height: 42,
-              child: _menuItemRow(i, drafts[i]),
-            ),
-        ],
-        child: Container(
-          key: const ValueKey<String>('parts_overflow_menu'),
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: SoftErpTheme.cardSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: SoftErpTheme.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
+        ),
+        const PopupMenuDivider(height: 1),
+        for (var i = 0; i < drafts.length; i += 1)
+          PopupMenuItem<int>(
+            key: ValueKey<String>('parts_menu_item_$i'),
+            value: i,
+            height: 42,
+            child: _menuItemRow(i, drafts[i]),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.more_vert_rounded,
-                size: 18,
+      ],
+      child: Container(
+        key: const ValueKey<String>('parts_overflow_menu'),
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.cardSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: SoftErpTheme.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.more_vert_rounded,
+              size: 18,
+              color: SoftErpTheme.textSecondary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${drafts.length}',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
                 color: SoftErpTheme.textSecondary,
               ),
-              const SizedBox(width: 4),
-              Text(
-                '${drafts.length}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -378,66 +379,69 @@ class _PartTabsState extends State<PartTabs> {
     final title = PartTabs.titleOf(sheet, draft);
     final code = PartTabs.codeOf(sheet, draft);
 
-    return Row(
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          'Part ${row + 1}',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-            color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected
-                  ? SoftErpTheme.textPrimary
-                  : SoftErpTheme.textSecondary,
-            ),
-          ),
-        ),
-        if (code.isNotEmpty) ...[
-          const SizedBox(width: 6),
+    return SizedBox(
+      width: 260,
+      child: Row(
+        children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-              color: SoftErpTheme.cardSurfaceAlt,
-              borderRadius: BorderRadius.circular(4),
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Part ${row + 1}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
             ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
             child: Text(
-              code,
-              style: const TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: SoftErpTheme.textSecondary,
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected
+                    ? SoftErpTheme.textPrimary
+                    : SoftErpTheme.textSecondary,
               ),
             ),
           ),
+          if (code.isNotEmpty) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: SoftErpTheme.cardSurfaceAlt,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                code,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: 8),
+          Icon(
+            saved ? Icons.check_circle_rounded : Icons.edit_note_rounded,
+            size: 15,
+            color: saved ? SoftErpTheme.successText : SoftErpTheme.textMuted,
+          ),
+          if (selected) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.check_rounded, size: 16, color: SoftErpTheme.accent),
+          ],
         ],
-        const SizedBox(width: 8),
-        Icon(
-          saved ? Icons.check_circle_rounded : Icons.edit_note_rounded,
-          size: 15,
-          color: saved ? SoftErpTheme.successText : SoftErpTheme.textMuted,
-        ),
-        if (selected) ...[
-          const SizedBox(width: 6),
-          const Icon(Icons.check_rounded, size: 16, color: SoftErpTheme.accent),
-        ],
-      ],
+      ),
     );
   }
 
@@ -641,8 +645,9 @@ class PartFramePainter extends CustomPainter {
       if (box is! RenderBox ||
           !box.hasSize ||
           !box.attached ||
-          !within.attached)
+          !within.attached) {
         return null;
+      }
       return box.localToGlobal(Offset.zero, ancestor: within) & box.size;
     } catch (_) {
       return null;
