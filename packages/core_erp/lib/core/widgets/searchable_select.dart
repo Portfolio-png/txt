@@ -119,17 +119,26 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   String initialQuery = '',
   ValueChanged<bool>? onTabOut,
 }) {
+  if (!context.mounted) return Future.value(null);
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
-  final overlayBox = overlayContext.findRenderObject() as RenderBox?;
-  final anchorBox = context.findRenderObject() as RenderBox?;
+  RenderBox? overlayBox;
+  RenderBox? anchorBox;
+  try {
+    overlayBox = overlayContext.mounted ? overlayContext.findRenderObject() as RenderBox? : null;
+    anchorBox = context.mounted ? context.findRenderObject() as RenderBox? : null;
+  } catch (_) {}
   final isTablet = MediaQuery.of(context).size.width >= 600;
   if (anchorRect == null &&
       overlayBox != null &&
       anchorBox != null &&
+      overlayBox.attached &&
+      anchorBox.attached &&
       isTablet) {
-    final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlayBox);
-    anchorRect = topLeft & anchorBox.size;
+    try {
+      final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+      anchorRect = topLeft & anchorBox.size;
+    } catch (_) {}
   }
 
   return showGeneralDialog<SearchableSelectOption<T>>(

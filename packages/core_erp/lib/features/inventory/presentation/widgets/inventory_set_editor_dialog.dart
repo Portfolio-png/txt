@@ -364,9 +364,17 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
           !_isLineComplete(line)) {
         continue;
       }
-      final rowBox =
-          line.rowKey.currentContext?.findRenderObject() as RenderBox?;
-      if (rowBox == null || !rowBox.hasSize) {
+      final rowContext = line.rowKey.currentContext;
+      if (rowContext == null || !rowContext.mounted) {
+        continue;
+      }
+      RenderBox? rowBox;
+      try {
+        rowBox = rowContext.findRenderObject() as RenderBox?;
+      } catch (_) {
+        continue;
+      }
+      if (rowBox == null || !rowBox.hasSize || !rowBox.attached || !viewportBox.attached) {
         continue;
       }
       final top = rowBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
@@ -474,12 +482,29 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     final viewportBox =
         _compositionViewportKey.currentContext?.findRenderObject()
             as RenderBox?;
-    final rowBox = line.rowKey.currentContext?.findRenderObject() as RenderBox?;
+    final rowContext = line.rowKey.currentContext;
+    if (rowContext == null || !rowContext.mounted) {
+      return 0;
+    }
+    RenderBox? rowBox;
+    try {
+      rowBox = rowContext.findRenderObject() as RenderBox?;
+    } catch (_) {
+      return 0;
+    }
     if (viewportBox == null ||
         rowBox == null ||
         !viewportBox.hasSize ||
         !rowBox.hasSize ||
-        rowBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy >= 0) {
+        !viewportBox.attached ||
+        !rowBox.attached) {
+      return 0;
+    }
+    try {
+      if (rowBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy >= 0) {
+        return 0;
+      }
+    } catch (_) {
       return 0;
     }
     return rowBox.size.height + 12;

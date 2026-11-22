@@ -4311,32 +4311,41 @@ class _LineUpUnderState extends State<_LineUpUnder> {
 
   void _measure() {
     if (!mounted) return;
-    final mine = context.findRenderObject();
-    final anchor = widget.anchor.currentContext?.findRenderObject();
-    if (mine is! RenderBox || !mine.hasSize) return;
-    if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
-    final myLeft = mine.localToGlobal(Offset.zero).dx;
-    final anchorLeft = anchor.localToGlobal(Offset.zero).dx;
-    // The room the child needs at its full width; whatever is left over is
-    // all the lining up may take.
-    final child = _childKey.currentContext?.findRenderObject();
-    final natural = child is RenderBox
-        ? child.getMaxIntrinsicWidth(double.infinity)
-        : 0.0;
-    final spare = math.max(0.0, mine.size.width - natural);
-    // How far left there is empty bar: up to the title's text, and a gap.
-    var lend = 0.0;
-    final title = widget.after.currentContext?.findRenderObject();
-    if (title is RenderBox && title.hasSize) {
-      final text = math.min(
-        title.size.width,
-        title.getMaxIntrinsicWidth(double.infinity),
-      );
-      final titleEnd = title.localToGlobal(Offset.zero).dx + text;
-      lend = math.max(0.0, myLeft - (titleEnd + 12));
-    }
-    final inset = (anchorLeft - myLeft).clamp(-lend, spare);
-    if ((inset - _inset).abs() > 0.5) setState(() => _inset = inset);
+    try {
+      final mine = context.findRenderObject();
+      final anchorContext = widget.anchor.currentContext;
+      if (anchorContext == null || !anchorContext.mounted) return;
+      final anchor = anchorContext.findRenderObject();
+      if (mine is! RenderBox || !mine.hasSize || !mine.attached) return;
+      if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
+      final myLeft = mine.localToGlobal(Offset.zero).dx;
+      final anchorLeft = anchor.localToGlobal(Offset.zero).dx;
+      // The room the child needs at its full width; whatever is left over is
+      // all the lining up may take.
+      final childContext = _childKey.currentContext;
+      if (childContext == null || !childContext.mounted) return;
+      final child = childContext.findRenderObject();
+      final natural = child is RenderBox && child.attached
+          ? child.getMaxIntrinsicWidth(double.infinity)
+          : 0.0;
+      final spare = math.max(0.0, mine.size.width - natural);
+      // How far left there is empty bar: up to the title's text, and a gap.
+      var lend = 0.0;
+      final titleContext = widget.after.currentContext;
+      if (titleContext != null && titleContext.mounted) {
+        final title = titleContext.findRenderObject();
+        if (title is RenderBox && title.hasSize && title.attached) {
+          final text = math.min(
+            title.size.width,
+            title.getMaxIntrinsicWidth(double.infinity),
+          );
+          final titleEnd = title.localToGlobal(Offset.zero).dx + text;
+          lend = math.max(0.0, myLeft - (titleEnd + 12));
+        }
+      }
+      final inset = (anchorLeft - myLeft).clamp(-lend, spare);
+      if ((inset - _inset).abs() > 0.5 && mounted) setState(() => _inset = inset);
+    } catch (_) {}
   }
 }
 

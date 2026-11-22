@@ -32,12 +32,25 @@ void showColumnOptionPicker(
   // a panel opened at the bottom-centre, covering the rows underneath and
   // saying nothing about which cell it belonged to. A cell picker has to drop
   // from its cell — that is the whole affordance.
-  final box = context.findRenderObject() as RenderBox?;
-  final overlayBox =
-      Overlay.of(context).context.findRenderObject() as RenderBox?;
-  if (box == null || overlayBox == null || !box.hasSize) return;
-  final anchor =
-      box.localToGlobal(Offset.zero, ancestor: overlayBox) & box.size;
+  if (!context.mounted) return;
+  RenderBox? box;
+  RenderBox? overlayBox;
+  try {
+    box = context.findRenderObject() as RenderBox?;
+    final overlay = Overlay.maybeOf(context);
+    if (overlay != null && overlay.context.mounted) {
+      overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    }
+  } catch (_) {
+    return;
+  }
+  if (box == null || overlayBox == null || !box.hasSize || !box.attached || !overlayBox.attached) return;
+  Rect anchor;
+  try {
+    anchor = box.localToGlobal(Offset.zero, ancestor: overlayBox) & box.size;
+  } catch (_) {
+    return;
+  }
   CellValue? current() => controller.draftAt(row).get(column.id);
 
   showDialog<void>(
@@ -52,7 +65,7 @@ void showColumnOptionPicker(
     // opens before the masters have finished loading.
     builder: (ctx) => _AnchoredPicker(
       anchor: anchor,
-      overlaySize: overlayBox.size,
+      overlaySize: overlayBox!.size,
       child: _OptionsPickerSheet(
       column: column,
       sheetDef: sheetDef,

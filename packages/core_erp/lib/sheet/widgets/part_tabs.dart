@@ -437,33 +437,45 @@ class PartFramePainter extends CustomPainter {
   final GlobalKey viewportKey;
 
   Rect? _rectOf(GlobalKey key, RenderBox within) {
-    final box = key.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.hasSize || !box.attached) return null;
-    return box.localToGlobal(Offset.zero, ancestor: within) & box.size;
+    final context = key.currentContext;
+    if (context == null || !context.mounted) return null;
+    try {
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize || !box.attached || !within.attached) return null;
+      return box.localToGlobal(Offset.zero, ancestor: within) & box.size;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final within = paintKey.currentContext?.findRenderObject();
-    if (within is! RenderBox || !within.hasSize) return;
-    final frameBox = _rectOf(frameKey, within);
-    if (frameBox == null) return;
-    // The line's centre: half its width in from the frame's edge.
-    final frame = frameBox.deflate(_ring / 2);
-    final path = outline(
-      frame: frame,
-      tab: _rectOf(tabKey, within),
-      viewport: _rectOf(viewportKey, within),
-    );
-    canvas.drawPath(path, Paint()..color = Colors.white);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _ring
-        ..strokeJoin = StrokeJoin.round
-        ..shader = gradient.createShader(path.getBounds()),
-    );
+    final context = paintKey.currentContext;
+    if (context == null || !context.mounted) return;
+    try {
+      final within = context.findRenderObject();
+      if (within is! RenderBox || !within.hasSize || !within.attached) return;
+      final frameBox = _rectOf(frameKey, within);
+      if (frameBox == null) return;
+      // The line's centre: half its width in from the frame's edge.
+      final frame = frameBox.deflate(_ring / 2);
+      final path = outline(
+        frame: frame,
+        tab: _rectOf(tabKey, within),
+        viewport: _rectOf(viewportKey, within),
+      );
+      canvas.drawPath(path, Paint()..color = Colors.white);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _ring
+          ..strokeJoin = StrokeJoin.round
+          ..shader = gradient.createShader(path.getBounds()),
+      );
+    } catch (_) {
+      // Guard against layout/paint race conditions during element deactivation
+    }
   }
 
   /// The outline of [frame] with [tab] standing on its top edge. A tab that
