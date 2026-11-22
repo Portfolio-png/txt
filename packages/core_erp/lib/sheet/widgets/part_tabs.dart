@@ -179,7 +179,12 @@ class _PartTabsState extends State<PartTabs> {
           child: Column(
             key: _paintKey,
             children: [
-              SheetStep.noTab(_strip(drafts)),
+              SheetStep.noTab(
+                SizedBox(
+                  height: _tabHeight + 8,
+                  child: _strip(drafts),
+                ),
+              ),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -469,9 +474,17 @@ class PartFramePainter extends CustomPainter {
         path,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = _ring
+          ..strokeWidth = _ring + _coat
           ..strokeJoin = StrokeJoin.round
           ..shader = gradient.createShader(path.getBounds()),
+      );
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _coat
+          ..strokeJoin = StrokeJoin.round
+          ..color = Colors.white.withValues(alpha: 0.85),
       );
     } catch (_) {
       // Guard against layout/paint race conditions during element deactivation
