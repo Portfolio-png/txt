@@ -3743,6 +3743,34 @@ void main() {
         tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
     final colours = SoftErpTheme.partTabGradients;
 
+    // The real crash (an overlay re-attached mid-layout) does not show in a
+    // widget test, so the shape that caused it is ruled out instead: nothing
+    // under a GlobalKey inside a tab may hold a Tooltip, because that key
+    // moves its subtree when another tab opens.
+    testWidgets('no tooltip rides on a key that moves between tabs', (
+      tester,
+    ) async {
+      await _pumpScreen(tester, size: const Size(1700, 1200));
+      await tester.tap(find.byKey(const ValueKey('part_add_row')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      for (final row in [0, 1]) {
+        final moving = find.descendant(
+          of: find.byKey(ValueKey('part_tab_$row')),
+          matching: find.byWidgetPredicate((w) => w.key is GlobalKey),
+        );
+        expect(
+          find.descendant(of: moving, matching: find.byType(Tooltip)),
+          findsNothing,
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('part_tab_0')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull);
+      expect(sheetOf(tester).row, 0);
+    });
+
     testWidgets('+ opens another part in the next colour, and only it is drawn', (
       tester,
     ) async {

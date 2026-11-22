@@ -569,14 +569,26 @@ class _PartTabsState extends State<PartTabs> {
         onTap: () => sheet.selectRow(row),
         child: selected
             // No box of its own: the frame's line is drawn round it.
-            ? Container(
-                key: _openTabKey,
-                height: _tabHeight,
-                padding: const EdgeInsets.fromLTRB(16, 2, 10, 0),
-                child: KeyedSubtree(
-                  key: const ValueKey<String>('part_tab_selected'),
-                  child: inside,
-                ),
+            // The frame painter finds the open tab through [_openTabKey]. The
+            // key sits on an empty box beside the content, never round it: a
+            // GlobalKey moves its whole subtree when another tab opens, and
+            // that move happens inside the strip's LayoutBuilder, mid-layout.
+            // Tooltips re-attach their overlay when moved, which the overlay
+            // refuses during layout and the screen breaks.
+            ? Stack(
+                children: [
+                  Container(
+                    height: _tabHeight,
+                    padding: const EdgeInsets.fromLTRB(16, 2, 10, 0),
+                    child: KeyedSubtree(
+                      key: const ValueKey<String>('part_tab_selected'),
+                      child: inside,
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(child: SizedBox(key: _openTabKey)),
+                  ),
+                ],
               )
             : Container(
                 height: _tabHeight - 8,
