@@ -182,6 +182,15 @@ void main() {
     await tester.tap(find.text('Open Dialog'));
     await tester.pumpAndSettle();
 
+    // Both actions are drawn whole: neither is clipped by the bar.
+    final bar = tester.getRect(find.byType(ExistingPartConflictDialog));
+    final open = find.byKey(const ValueKey('conflict_open_part_btn'));
+    final next = find.byKey(const ValueKey('conflict_use_next_no_btn'));
+    expect(find.descendant(of: open, matching: find.text('Open in Sheet')), findsOneWidget);
+    expect(tester.getRect(open).left, greaterThan(tester.getRect(find.byKey(const ValueKey('conflict_cancel_btn'))).right));
+    expect(tester.getRect(next).right, lessThanOrEqualTo(bar.right));
+    expect(find.ancestor(of: open, matching: find.byType(SingleChildScrollView)).evaluate().where((e) => (e.widget as SingleChildScrollView).scrollDirection == Axis.horizontal), isEmpty, reason: 'a scroller here hid half a button');
+
     // Verify Header & Conflict message
     expect(find.text('PART ALREADY EXISTS'), findsOneWidget);
     expect(find.text('Part already exists in Item Master'), findsOneWidget);

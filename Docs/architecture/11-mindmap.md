@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c97["⟳ Change 97: clicking another part's tab no longer breaks the sheet (B66: the painter's key moved tooltips mid-layout)"]
+      c98["⟳ Change 98: the Part already exists dialog shows its buttons whole (Open in Sheet was cut off)"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]

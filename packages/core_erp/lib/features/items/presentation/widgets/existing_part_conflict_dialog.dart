@@ -576,13 +576,13 @@ class ExistingPartConflictDialog extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(ExistingPartConflictAction.cancel),
                   ),
                   const SizedBox(width: 12),
-                  const Spacer(),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      reverse: true,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                  // All the room left of Cancel, buttons to the right; they
+                  // fold onto a second line in a narrow window, never clipped.
+                  // (A Spacer beside a Flexible gave them only half the room.)
+                  Expanded(
+                    child: Wrap(
+                        alignment: WrapAlignment.end,
+                        runSpacing: 8,
                         children: [
                           if (part != null && !hasTabOpen) ...[
                             AppButton(
@@ -621,7 +621,6 @@ class ExistingPartConflictDialog extends StatelessWidget {
                             ),
                           ],
                         ],
-                      ),
                     ),
                   ),
                 ],
