@@ -145,7 +145,9 @@ class ConditionalCacheClient extends http.BaseClient {
     // fresh stream rather than the consumed one.
     final bytes = await response.stream.toBytes();
     _remember(key, _CachedResponse(etag: etag, body: bytes, headers: response.headers));
-    unawaited(_persist(key));
+    // Not awaited — the caller has its data — but tracked, so [clear] and
+    // [flush] can wait for it.
+    _track(_persist(key));
 
     return http.StreamedResponse(
       Stream<List<int>>.value(bytes),
@@ -163,6 +165,9 @@ class ConditionalCacheClient extends http.BaseClient {
     _memory.clear();
     hits = 0;
     misses = 0;
+    // A write still in flight would otherwise land after the delete and leave
+    // the previous user's copy on disk.
+    await flush();
     final directory = await _directory();
     if (directory != null && directory.existsSync()) {
       try {
@@ -170,6 +175,20 @@ class ConditionalCacheClient extends http.BaseClient {
       } catch (_) {
         // A cache that cannot be deleted is not worth failing a sign-out over.
       }
+    }
+  }
+
+  final Set<Future<void>> _writes = <Future<void>>{};
+
+  void _track(Future<void> write) {
+    _writes.add(write);
+    write.whenComplete(() => _writes.remove(write));
+  }
+
+  /// Waits for every copy still being written to disk.
+  Future<void> flush() async {
+    while (_writes.isNotEmpty) {
+      await Future.wait(_writes.toList());
     }
   }
 

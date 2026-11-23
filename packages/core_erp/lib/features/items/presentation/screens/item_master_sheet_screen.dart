@@ -61,7 +61,20 @@ class ItemMasterSheetScreen extends StatefulWidget {
     super.key,
     this.initialItems = const [],
     this.title = 'New part',
+    this.foldedOnOpen = defaultFoldedOnOpen,
   });
+
+  /// The masters nested under the part open folded (user, 2026-11-23): their
+  /// headings say what they hold, and Tab, the rail or a click opens one.
+  static const Set<String> defaultFoldedOnOpen = {
+    'client_vendor',
+    'die_master',
+    'machine_master',
+    'routing',
+  };
+
+  /// The sections folded when the sheet opens.
+  final Set<String> foldedOnOpen;
 
   /// Parts to open for editing. Empty means a new part.
   final List<ItemDefinition> initialItems;
@@ -113,7 +126,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// Sections folded shut. Folding one hides everything nested under it, the
   /// way a closed folder hides its subfolders.
-  final Set<String> _collapsed = <String>{};
+  /// Starts as [ItemMasterSheetScreen.foldedOnOpen].
+  late final Set<String> _collapsed = <String>{...widget.foldedOnOpen};
 
   /// How this part's sections are nested: section → parent. Data, not layout —
   /// saving it re-links the part's client, dies and machines (migration 057).
@@ -672,7 +686,19 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // The nesting rides along with a save once there is a part to save it on.
     if (_treeDirty && _livePart != null) await _saveTree();
     if (!mounted) return;
+    _openRefusingSections();
     _toast(_controller.statusBarMessage, isError: written == 0);
+  }
+
+  /// A save refused over a cell in a folded section opens that section, so
+  /// what has to be filled in is on screen and not behind a fold.
+  void _openRefusingSections() {
+    final dealRefuses =
+        _controller.isExternal &&
+        _controller.clientVendorController.errorCount > 0;
+    if (dealRefuses && _collapsed.contains('client_vendor')) {
+      setState(() => _collapsed.remove('client_vendor'));
+    }
   }
 
   /// Commits [row] as the cursor leaves it.
@@ -3852,6 +3878,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         }
       }
     });
+    if (error != null) _openRefusingSections();
     _toast(error ?? _controller.statusBarMessage, isError: error != null);
   }
 

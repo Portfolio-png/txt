@@ -233,6 +233,24 @@ Future<void> openItemSheet(WidgetTester tester) async {
   );
 }
 
+/// Unticks "developed for an external party", for a journey about parts
+/// rather than a deal. The Developed For section opens folded, so it is opened
+/// first through its own fold toggle.
+Future<void> untickExternalParty(WidgetTester tester) async {
+  final external = find.byKey(const ValueKey<String>('developed_for_external'));
+  if (external.evaluate().isEmpty) {
+    final toggle = find.byKey(const ValueKey<String>('section_toggle_client_vendor'));
+    await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(toggle);
+    await pumpUntil(tester, external, reason: 'Developed For should open');
+  }
+  await Scrollable.ensureVisible(tester.element(external), alignment: 0.5);
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.tap(external);
+  await tester.pump();
+}
+
 /// Call once per test file.
 IntegrationTestWidgetsFlutterBinding ensureBinding() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();

@@ -76,11 +76,7 @@ void main() {
     // A part, not a development deal: the deal's required columns would
     // otherwise hold the save.
     // The tick is in the Developed For card, below the part lines.
-    final external = find.byKey(const ValueKey<String>('developed_for_external'));
-    await Scrollable.ensureVisible(tester.element(external), alignment: 0.5);
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(external);
-    await tester.pump();
+    await untickExternalParty(tester);
     await pickInCell(tester, column: 1, label: _seededGroup);
     await typeNewInCell(tester, column: 3, value: _newPart);
     await tester.tap(find.byKey(const ValueKey<String>('save_item_sheet_btn')));

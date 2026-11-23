@@ -95,8 +95,9 @@ void main() {
 
   test('a fresh start with the server gone still has the copy from disk', () async {
     final url = '${origin.url}/api/items';
-    await clientOn(temp).get(Uri.parse(url));
-    await Future<void>.delayed(const Duration(milliseconds: 100)); // the write is not awaited
+    final first = clientOn(temp);
+    await first.get(Uri.parse(url));
+    await first.flush(); // the write is not awaited by the request
     await origin.stop();
 
     final relaunched = clientOn(temp);
@@ -157,6 +158,7 @@ void main() {
     // the moment the app downloads everything.
     final first = clientOn(temp);
     await first.get(Uri.parse('${origin.url}/api/items'));
+    await first.flush();
     first.close();
 
     final relaunched = clientOn(temp);
@@ -203,12 +205,16 @@ void main() {
   test('signing out leaves nothing behind', () async {
     final client = clientOn(temp);
     await client.get(Uri.parse('${origin.url}/api/items'));
+    // The copy is written behind the response; wait for it rather than race
+    // it (this test failed about one run in three).
+    await client.flush();
     // Written under the namespace, so one user's copies stay separable from
     // another's on a shared machine.
     expect(temp.listSync(recursive: true).whereType<File>(), isNotEmpty);
 
     await client.clear();
     expect(client.hits, 0);
+    expect(temp.listSync(recursive: true).whereType<File>(), isEmpty);
 
     // And a later request genuinely refetches rather than replaying.
     final fresh = clientOn(temp);
@@ -254,6 +260,7 @@ void main() {
   test('an unreadable entry costs one refetch, not the whole cache', () async {
     final client = clientOn(temp);
     await client.get(Uri.parse('${origin.url}/api/items'));
+    await client.flush();
     client.close();
 
     for (final file in temp.listSync(recursive: true).whereType<File>()) {

@@ -42,11 +42,7 @@ void main() {
     // it on demands a client before any part can be saved. This journey is a
     // part and its route, not a development deal.
     // The tick is in the Developed For card, below the part lines.
-    final external = find.byKey(const ValueKey<String>('developed_for_external'));
-    await Scrollable.ensureVisible(tester.element(external), alignment: 0.5);
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(external);
-    await tester.pump();
+    await untickExternalParty(tester);
 
     // Column ids are the item sheet's own: 1 Group, 3 Part Name. Named here
     // rather than threaded through the helper because this test is about this

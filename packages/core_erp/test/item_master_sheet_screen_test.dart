@@ -194,6 +194,7 @@ Future<void> _pumpScreen(
   bool live = false,
   ProcessRouteService? routes,
   EntityPhotosProvider? photos,
+  Set<String> foldedOnOpen = const {},
 }) async {
   final groups = GroupsProvider(
     repository: _FakeGroupRepository([
@@ -231,7 +232,12 @@ Future<void> _pumpScreen(
           ChangeNotifierProvider<EntityPhotosProvider>.value(value: photos),
       ],
       child: MaterialApp(
-        home: ItemMasterSheetScreen(initialItems: initialItems),
+        home: ItemMasterSheetScreen(
+          initialItems: initialItems,
+          // These tests reach into every section; the app opens the masters
+          // folded (tested on its own below).
+          foldedOnOpen: foldedOnOpen,
+        ),
       ),
     ),
   );
@@ -577,6 +583,70 @@ void main() {
       // The Item Master grid is on screen; the others are not built at all.
       expect(find.byKey(const ValueKey('mini_table_add_properties_item')), findsOneWidget);
       expect(find.text('The deal'), findsNothing);
+    });
+
+    testWidgets('the masters under the part open folded; the part does not', (
+      tester,
+    ) async {
+      await _pumpScreen(
+        tester,
+        foldedOnOpen: ItemMasterSheetScreen.defaultFoldedOnOpen,
+      );
+      // The part's own fields are there to type into.
+      expect(find.byKey(const ValueKey('part_line_0')), findsOneWidget);
+      // Each master shows its heading and one line of what it holds, nothing more.
+      expect(find.text('No dies yet'), findsOneWidget);
+      expect(find.text('No machines yet'), findsOneWidget);
+      expect(find.text('No route yet'), findsOneWidget);
+      expect(find.text('Quotation (₹)'), findsNothing, reason: 'Developed For folded');
+
+      await tester.tap(find.byKey(const ValueKey('section_toggle_client_vendor')));
+      await tester.pump();
+      expect(find.text('Quotation (₹)'), findsOneWidget, reason: 'one click opens it');
+    });
+
+    testWidgets('a part saves with Developed For folded and nobody chosen', (
+      tester,
+    ) async {
+      final repo = _FakeItemRepository([]);
+      await _pumpScreen(
+        tester,
+        repository: repo,
+        size: const Size(1700, 3200),
+        foldedOnOpen: ItemMasterSheetScreen.defaultFoldedOnOpen,
+      );
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      final def = sheet.sheetDef;
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+      sheet.updateValue(
+        group.id,
+        CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label),
+      );
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final kind = sheet.options.firstWhere(
+        (o) => o.columnId == type.id && o.parentOptionId == trunk.id,
+      );
+      sheet.updateValue(
+        type.id,
+        CellValue(columnId: type.id, optionId: kind.id, optionLabel: kind.label),
+      );
+      final name = def.itemColumn!;
+      sheet.updateValue(
+        name.id,
+        CellValue(columnId: name.id, optionLabel: 'Folded Patti', isNew: true),
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+      expect(
+        repo.created.map((c) => c.name),
+        contains('Folded Patti'),
+        reason: 'nothing hidden behind the fold may block the save',
+      );
     });
 
     testWidgets('every section is on one page, nested like a file tree', (
