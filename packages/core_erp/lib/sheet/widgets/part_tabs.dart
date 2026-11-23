@@ -115,18 +115,82 @@ class PartTabs extends StatefulWidget {
   State<PartTabs> createState() => _PartTabsState();
 }
 
-class _PartTabsState extends State<PartTabs> {
+class _PartTabsState extends State<PartTabs>
+    with SingleTickerProviderStateMixin {
   final ScrollController _scroll = ScrollController();
   final GlobalKey _paintKey = GlobalKey();
   final GlobalKey _frameKey = GlobalKey();
-  final GlobalKey _openTabKey = GlobalKey();
   final GlobalKey _viewportKey = GlobalKey();
+  final Map<int, GlobalKey> _tabKeys = {};
+
+  GlobalKey _tabKeyFor(int row) =>
+      _tabKeys.putIfAbsent(row, () => GlobalKey(debugLabel: 'part_tab_key_$row'));
+
   static const double _gap = 6;
   static const double _tabHeight = 44;
   int _shownRow = -1;
+  int _activeRow = 0;
+  int? _previousRow;
+
+  late final AnimationController _shiftController;
+  late final Animation<double> _shiftAnimation;
+  late final Animation<double> _focusOpacity;
+  late final Animation<Offset> _focusSlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeRow = widget.sheet.row;
+    _shiftController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _shiftAnimation = CurvedAnimation(
+      parent: _shiftController,
+      curve: Curves.easeInOutCubic,
+    );
+    _focusOpacity = Tween<double>(begin: 0.70, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _shiftController,
+        curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+    _focusSlide = Tween<Offset>(
+      begin: const Offset(0, 0.008),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _shiftController,
+        curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+    _shiftController.value = 1.0;
+    widget.sheet.addListener(_onSheetChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant PartTabs oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sheet != widget.sheet) {
+      oldWidget.sheet.removeListener(_onSheetChanged);
+      widget.sheet.addListener(_onSheetChanged);
+      _activeRow = widget.sheet.row;
+    }
+  }
+
+  void _onSheetChanged() {
+    final currentRow = widget.sheet.row;
+    if (currentRow != _activeRow) {
+      _previousRow = _activeRow;
+      _activeRow = currentRow;
+      _shiftController.forward(from: 0.0);
+    }
+  }
 
   @override
   void dispose() {
+    widget.sheet.removeListener(_onSheetChanged);
+    _shiftController.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -148,7 +212,11 @@ class _PartTabsState extends State<PartTabs> {
         to = end - position.viewportDimension;
       }
       if (to != null) {
-        _scroll.jumpTo(to.clamp(0.0, position.maxScrollExtent));
+        _scroll.animateTo(
+          to.clamp(0.0, position.maxScrollExtent),
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeInOutCubic,
+        );
       }
     });
   }
@@ -164,18 +232,25 @@ class _PartTabsState extends State<PartTabs> {
         final gradient = widget.colors.of(sheet.draft.rowKey);
         return TweenAnimationBuilder<LinearGradient>(
           tween: _GradientTween(end: gradient),
-          duration: const Duration(milliseconds: 220),
-          builder: (context, shown, child) => CustomPaint(
-            key: const ValueKey<String>('part_frame'),
-            painter: PartFramePainter(
-              gradient: shown,
-              paintKey: _paintKey,
-              frameKey: _frameKey,
-              tabKey: _openTabKey,
-              viewportKey: _viewportKey,
-              repaint: _scroll,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeInOutCubic,
+          builder: (context, shown, child) => AnimatedBuilder(
+            animation: _shiftAnimation,
+            builder: (context, _) => CustomPaint(
+              key: const ValueKey<String>('part_frame'),
+              painter: PartFramePainter(
+                gradient: shown,
+                paintKey: _paintKey,
+                frameKey: _frameKey,
+                tabKey: _tabKeyFor(_activeRow),
+                previousTabKey:
+                    _previousRow != null ? _tabKeyFor(_previousRow!) : null,
+                shiftProgress: _shiftAnimation.value,
+                viewportKey: _viewportKey,
+                repaint: _scroll,
+              ),
+              child: child,
             ),
-            child: child,
           ),
           child: Column(
             key: _paintKey,
@@ -198,7 +273,13 @@ class _PartTabsState extends State<PartTabs> {
                       borderRadius: BorderRadius.circular(
                         math.max(0, _frameRadius - _ring - _coat),
                       ),
-                      child: widget.child,
+                      child: FadeTransition(
+                        opacity: _focusOpacity,
+                        child: SlideTransition(
+                          position: _focusSlide,
+                          child: widget.child,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -559,6 +640,42 @@ class _PartTabsState extends State<PartTabs> {
       ],
     );
 
+    final tabPill = AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      height: selected ? _tabHeight : _tabHeight - 7,
+      margin: selected ? EdgeInsets.zero : const EdgeInsets.only(bottom: 6),
+      padding: selected
+          ? const EdgeInsets.fromLTRB(16, 2, 10, 0)
+          : const EdgeInsets.fromLTRB(12, 0, 8, 0),
+      decoration: BoxDecoration(
+        color: selected
+            ? Colors.transparent
+            : SoftErpTheme.cardSurface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: selected
+              ? Colors.transparent
+              : SoftErpTheme.border.withValues(alpha: 0.55),
+        ),
+        boxShadow: selected
+            ? const []
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+      ),
+      child: selected
+          ? KeyedSubtree(
+              key: const ValueKey<String>('part_tab_selected'),
+              child: inside,
+            )
+          : inside,
+    );
+
     return Semantics(
       selected: selected,
       button: true,
@@ -567,49 +684,17 @@ class _PartTabsState extends State<PartTabs> {
         key: ValueKey<String>('part_tab_$row'),
         behavior: HitTestBehavior.opaque,
         onTap: () => sheet.selectRow(row),
-        child: selected
-            // No box of its own: the frame's line is drawn round it.
-            // The frame painter finds the open tab through [_openTabKey]. The
-            // key sits on an empty box beside the content, never round it: a
-            // GlobalKey moves its whole subtree when another tab opens, and
-            // that move happens inside the strip's LayoutBuilder, mid-layout.
-            // Tooltips re-attach their overlay when moved, which the overlay
-            // refuses during layout and the screen breaks.
-            ? Stack(
-                children: [
-                  Container(
-                    height: _tabHeight,
-                    padding: const EdgeInsets.fromLTRB(16, 2, 10, 0),
-                    child: KeyedSubtree(
-                      key: const ValueKey<String>('part_tab_selected'),
-                      child: inside,
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: IgnorePointer(child: SizedBox(key: _openTabKey)),
-                  ),
-                ],
-              )
-            : Container(
-                height: _tabHeight - 8,
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.cardSurface.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: SoftErpTheme.border.withValues(alpha: 0.55),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: inside,
+        child: Stack(
+          alignment: Alignment.bottomCenter,
+          children: [
+            tabPill,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: SizedBox(key: _tabKeyFor(row)),
               ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -639,6 +724,8 @@ class PartFramePainter extends CustomPainter {
     required this.paintKey,
     required this.frameKey,
     required this.tabKey,
+    this.previousTabKey,
+    this.shiftProgress = 1.0,
     required this.viewportKey,
     super.repaint,
   });
@@ -647,7 +734,11 @@ class PartFramePainter extends CustomPainter {
   final GlobalKey paintKey;
   final GlobalKey frameKey;
   final GlobalKey tabKey;
+  final GlobalKey? previousTabKey;
+  final double shiftProgress;
   final GlobalKey viewportKey;
+
+  static Rect? _lastRenderedTab;
 
   Rect? _rectOf(GlobalKey key, RenderBox within) {
     final context = key.currentContext;
@@ -677,9 +768,24 @@ class PartFramePainter extends CustomPainter {
       if (frameBox == null) return;
       // The line's centre: half its width in from the frame's edge.
       final frame = frameBox.deflate((_ring + _coat) / 2);
+
+      final currentTabBox = _rectOf(tabKey, within);
+      final prevTabBox =
+          previousTabKey != null ? _rectOf(previousTabKey!, within) : null;
+      final Rect? effectiveTab;
+      if (currentTabBox != null && shiftProgress < 1.0) {
+        final from = prevTabBox ?? _lastRenderedTab ?? currentTabBox;
+        effectiveTab = Rect.lerp(from, currentTabBox, shiftProgress);
+      } else {
+        effectiveTab = currentTabBox;
+      }
+      if (effectiveTab != null) {
+        _lastRenderedTab = effectiveTab;
+      }
+
       final path = outline(
         frame: frame,
-        tab: _rectOf(tabKey, within),
+        tab: effectiveTab,
         viewport: _rectOf(viewportKey, within),
       );
       final bounds = path.getBounds();
