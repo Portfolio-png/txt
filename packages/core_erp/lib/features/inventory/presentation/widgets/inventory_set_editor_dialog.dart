@@ -24,6 +24,7 @@ import '../../../items/presentation/widgets/item_expression_field.dart';
 import '../../../items/presentation/utils/naming_format_helper.dart';
 import '../../../groups/presentation/group_picker_field.dart';
 import '../../domain/inventory_set_definition.dart';
+import '../../domain/set_name_builder.dart';
 import '../providers/inventory_provider.dart';
 
 /// The shelf handoff runs in two visible legs: the composition row drifts left
@@ -129,6 +130,27 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   /// the lot away, so it is only done silently while this is false.
   bool _touched = false;
 
+  /// Whether the Set Name was typed rather than built from the items. Like an
+  /// item's name: built from its parts until someone types one, and a typed
+  /// name is never written over.
+  bool _nameTyped = false;
+
+  /// The name the items in Composition give, right now.
+  String get _builtName => buildSetName(
+    _lines.where((line) => line.itemId != null).map((line) => line.itemLabel),
+  );
+
+  /// Puts the built name in the box while the name is not a typed one.
+  void _followItems() {
+    if (_nameTyped) return;
+    final built = _builtName;
+    if (_nameController.text == built) return;
+    _nameController.value = TextEditingValue(
+      text: built,
+      selection: TextSelection.collapsed(offset: built.length),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -193,6 +215,11 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     for (final line in _lines) {
       line.quantityController.addListener(_handleQuantityChanged);
     }
+    // A saved set keeps its name unless that name IS the built one, in which
+    // case it goes on following its items.
+    final stored = (set?.name ?? '').trim();
+    _nameTyped = stored.isNotEmpty && stored != _builtName;
+    _followItems();
     // An existing set opens with its older rows already shelved — no flight.
     // Reversed so the shelf starts out newest-first like every later arrival.
     _shelfOrder.addAll(_positionalDepartures().reversed);
@@ -651,8 +678,14 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextFormField(
+            key: const ValueKey<String>('set-editor-name-field'),
             controller: _nameController,
-            onChanged: (_) => _touched = true,
+            onChanged: (value) => setState(() {
+              _touched = true;
+              // Emptied by hand: back to following the items.
+              _nameTyped = value.trim().isNotEmpty;
+              if (!_nameTyped) _followItems();
+            }),
             style: _inventoryInterStyle(
               color: const Color(0xFF0F172A),
               size: 14,
@@ -660,8 +693,10 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
             ),
             decoration: _editorFieldDecoration(
               label: 'Set Name',
-              helper:
-                  'Use a clear operational name like Starter Pack or Marketing Kit.',
+              helper: _nameHelper(),
+            ).copyWith(
+              helperMaxLines: 2,
+              suffixIcon: _useBuiltNameButton(),
             ),
             validator: (value) =>
                 value == null || value.trim().isEmpty ? 'Required' : null,
@@ -1150,7 +1185,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     _awaitingScrollSettle.remove(line);
     line.quantityController.removeListener(_handleQuantityChanged);
     line.dispose();
-    setState(() {});
+    setState(_followItems);
   }
 
   /// Opens the ordinary item editor with the typed name prefilled, then hands
@@ -1239,6 +1274,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
         line.variationPathLabel = '';
         line.variationPathNodeIds = const <int>[];
         line.selectionKey = null;
+        _followItems();
       });
       return;
     }
@@ -1261,6 +1297,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       line.itemLabel = reference.itemLabel;
       line.variationPathLabel = reference.variationPathLabel;
       line.variationPathNodeIds = reference.variationPathNodeIds;
+      _followItems();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -1523,6 +1560,41 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     } else if (saved != null) {
       onSaved(saved);
     }
+  }
+
+  String _nameHelper() {
+    if (_nameTyped) {
+      return _builtName.isEmpty
+          ? 'Your own name. Add items below and ↻ offers one built from them.'
+          : 'Your own name. ↻ puts back the one built from the items.';
+    }
+    return _builtName.isEmpty
+        ? 'Fills in from the items you add below — or type your own.'
+        : 'Built from the items below — type to change it.';
+  }
+
+  /// Drawn always; disabled, with the reason, when it has nothing to do.
+  Widget _useBuiltNameButton() {
+    final built = _builtName;
+    final String? why = built.isEmpty
+        ? 'Add items below to build a name from them'
+        : (_nameController.text.trim() == built
+              ? 'The name is already built from the items'
+              : null);
+    return Tooltip(
+      message: why ?? 'Use the name built from the items: $built',
+      child: IconButton(
+        key: const ValueKey<String>('set-editor-use-built-name'),
+        icon: const Icon(Icons.autorenew_rounded, size: 20),
+        onPressed: why != null
+            ? null
+            : () => setState(() {
+                _touched = true;
+                _nameTyped = false;
+                _followItems();
+              }),
+      ),
+    );
   }
 
   InputDecoration _editorFieldDecoration({

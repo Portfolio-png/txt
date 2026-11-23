@@ -7,6 +7,7 @@ import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart'
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/domain/variation_stock_record.dart';
 import 'package:core_erp/features/inventory/domain/inventory_set_definition.dart';
+import 'package:core_erp/features/inventory/domain/set_name_builder.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/inventory/presentation/widgets/inventory_set_editor_dialog.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
@@ -387,5 +388,57 @@ void main() {
       find.widgetWithText(TextFormField, "Someone Else's Kit"),
       findsOneWidget,
     );
+  });
+
+  // The set's name is built from its items, the way an item's is built from
+  // its parts, until someone types one (user, 2026-11-23).
+  group('the set name comes from its items', () {
+    test('each item once, in row order; past three the rest are counted', () {
+      expect(buildSetName(['Ash Tray', ' Lid ', 'ash tray', '']), 'Ash Tray + Lid');
+      expect(buildSetName(['A', 'B', 'C', 'D', 'E']), 'A + B + C + 2 more');
+      expect(buildSetName(const []), '');
+    });
+
+    String nameField(WidgetTester tester) => tester
+        .widget<TextFormField>(find.byKey(const ValueKey('set-editor-name-field')))
+        .controller!
+        .text;
+    IconButton useBuilt(WidgetTester tester) => tester.widget<IconButton>(
+      find.byKey(const ValueKey('set-editor-use-built-name')),
+    );
+
+    testWidgets('a typed name is kept; ↻ puts back the built one; emptied, it follows again', (
+      tester,
+    ) async {
+      await _pumpEditor(tester, set: _filedSet);
+      expect(nameField(tester), 'Bathroom Kit', reason: 'a saved, typed name is never written over');
+      expect(useBuilt(tester).onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const ValueKey('set-editor-use-built-name')));
+      await tester.pump();
+      expect(nameField(tester), 'Ash Tray');
+      expect(useBuilt(tester).onPressed, isNull, reason: 'drawn, but nothing to do');
+
+      await tester.enterText(find.byKey(const ValueKey('set-editor-name-field')), 'Tray Pack');
+      await tester.pump();
+      expect(nameField(tester), 'Tray Pack');
+      await tester.enterText(find.byKey(const ValueKey('set-editor-name-field')), '');
+      await tester.pump();
+      expect(nameField(tester), 'Ash Tray', reason: 'emptied by hand: built from the items again');
+    });
+
+    testWidgets('a saved name that IS the built one keeps following its items', (tester) async {
+      final set = InventorySetDefinition(
+        id: 8,
+        name: 'Ash Tray + Lid',
+        totalItemCount: 2,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        lines: [..._filedSet.lines, ..._newerCopy.lines],
+      );
+      await _pumpEditor(tester, set: set);
+      expect(nameField(tester), 'Ash Tray + Lid');
+      expect(find.text('Built from the items below — type to change it.'), findsOneWidget);
+    });
   });
 }
