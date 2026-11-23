@@ -77,17 +77,17 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
 
   /// The stages of the route the part has saved — what [_steps] is compared
   /// with to say whether there is anything unsaved.
-  List<int> _savedStageIds = const [];
+  List<RouteStep> _savedSteps = const [];
 
   /// What the host was last told.
   bool _reportedDirty = false;
 
   /// Whether the stages on screen differ from the part's saved route.
   bool get isDirty {
-    final now = [for (final step in _steps) step.stageId];
-    if (now.length != _savedStageIds.length) return true;
-    for (var i = 0; i < now.length; i += 1) {
-      if (now[i] != _savedStageIds[i]) return true;
+    if (_steps.length != _savedSteps.length) return true;
+    for (var i = 0; i < _steps.length; i += 1) {
+      if (_steps[i].stageId != _savedSteps[i].stageId) return true;
+      if (_steps[i].notes.trim() != _savedSteps[i].notes.trim()) return true;
     }
     return false;
   }
@@ -267,9 +267,7 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
       setState(() {
         _active = active;
         if (active != null) _steps = active.steps;
-        _savedStageIds = [
-          for (final step in active?.steps ?? const <RouteStep>[]) step.stageId,
-        ];
+        _savedSteps = active?.steps ?? const <RouteStep>[];
         _loadingRoute = false;
       });
     } catch (error) {
@@ -394,7 +392,7 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
         _saving = false;
         _active = saved;
         _pendingVersionOf = null;
-        _savedStageIds = [for (final step in _steps) step.stageId];
+        _savedSteps = [..._steps];
       });
     } on RouteActiveException catch (error) {
       // Somebody else activated a route for this part while this panel was

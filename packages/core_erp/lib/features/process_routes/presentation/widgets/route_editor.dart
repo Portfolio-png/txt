@@ -127,6 +127,7 @@ class _RouteEditorState extends State<RouteEditor> {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i += 1) {
       if (a[i].stageId != b[i].stageId) return false;
+      if (a[i].notes != b[i].notes) return false;
     }
     return true;
   }
@@ -304,6 +305,12 @@ class _ClassicLens extends StatelessWidget {
               );
               onEmit(next);
             },
+            onCustomNameChanged: (customName) {
+              if (steps[i].notes == customName) return;
+              final next = [...steps];
+              next[i] = steps[i].copyWith(notes: customName);
+              onEmit(next);
+            },
             onRemove: () => onEmit([...steps]..removeAt(i)),
           ),
           const Icon(
@@ -348,8 +355,8 @@ final ButtonStyle _boxButtonStyle = OutlinedButton.styleFrom(
   ),
 );
 
-/// One step: its number, its stage, and a way to take it out.
-class _StepBox extends StatelessWidget {
+/// One step: its number, its stage type, custom stage name capsule, and remove button.
+class _StepBox extends StatefulWidget {
   const _StepBox({
     super.key,
     required this.index,
@@ -361,10 +368,11 @@ class _StepBox extends StatelessWidget {
     required this.inRoute,
     required this.editable,
     required this.onPick,
+    required this.onCustomNameChanged,
     required this.onRemove,
   });
 
-  static const double width = 184;
+  static const double width = 252;
   static const double height = 52;
 
   final int index;
@@ -376,100 +384,209 @@ class _StepBox extends StatelessWidget {
   final Set<int> inRoute;
   final bool editable;
   final ValueChanged<ProcessStage> onPick;
+  final ValueChanged<String> onCustomNameChanged;
   final VoidCallback onRemove;
 
   @override
+  State<_StepBox> createState() => _StepBoxState();
+}
+
+class _StepBoxState extends State<_StepBox> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.step.notes);
+    _focusNode = FocusNode()..addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted && _isFocused != _focusNode.hasFocus) {
+      setState(() => _isFocused = _focusNode.hasFocus);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_StepBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((oldWidget.step.notes != widget.step.notes ||
+            oldWidget.step.stageId != widget.step.stageId) &&
+        widget.step.notes != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: widget.step.notes,
+        selection: TextSelection.collapsed(offset: widget.step.notes.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final name =
-        step.stageName.isEmpty ? 'Stage #${step.stageId}' : step.stageName;
+    final name = widget.step.stageName.isEmpty
+        ? 'Stage #${widget.step.stageId}'
+        : widget.step.stageName;
 
     return Container(
-      width: width,
-      height: height,
-      padding: const EdgeInsets.only(left: 8),
+      width: _StepBox.width,
+      height: _StepBox.height,
+      padding: const EdgeInsets.only(left: 8, right: 4),
       decoration: BoxDecoration(
         color: SoftErpTheme.sectionSurface,
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-        border: Border.all(color: SoftErpTheme.border),
+        border: Border.all(
+          color: _isFocused
+              ? SoftErpTheme.accent.withValues(alpha: 0.6)
+              : SoftErpTheme.border,
+        ),
       ),
       child: Row(
         children: [
           Container(
-            width: 26,
-            height: 26,
+            width: 24,
+            height: 24,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: SoftErpTheme.accent.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Text(
-              '${index + 1}',
+              '${widget.index + 1}',
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: SoftErpTheme.accent,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            // A Builder so the picker anchors to this box, not to the editor.
-            child: Builder(
-              builder: (anchor) => InkWell(
-                key: ValueKey<String>('route_step_dropdown_$index'),
-                borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-                onTap: editable
-                    ? () async {
-                        final stage = await _pickStage(
-                          anchor,
-                          options: options,
-                          allStages: allStages,
-                          onCreate: onCreate,
-                          onDelete: onDelete,
-                          inRoute: inRoute,
-                          selectedId: step.stageId,
-                        );
-                        if (stage != null) onPick(stage);
-                      }
-                    : null,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: editable
-                              ? SoftErpTheme.textPrimary
-                              : SoftErpTheme.textSecondary,
+          const SizedBox(width: 6),
+          // Stage type picker (Die, Assembly, Shearing...)
+          Builder(
+            builder: (anchor) => InkWell(
+              key: ValueKey<String>('route_step_dropdown_${widget.index}'),
+              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+              onTap: widget.editable
+                  ? () async {
+                      final stage = await _pickStage(
+                        anchor,
+                        options: widget.options,
+                        allStages: widget.allStages,
+                        onCreate: widget.onCreate,
+                        onDelete: widget.onDelete,
+                        inRoute: widget.inRoute,
+                        selectedId: widget.step.stageId,
+                      );
+                      if (stage != null) widget.onPick(stage);
+                    }
+                  : null,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 82),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: widget.editable
+                                ? SoftErpTheme.textPrimary
+                                : SoftErpTheme.textSecondary,
+                          ),
                         ),
                       ),
-                    ),
-                    Icon(
-                      Icons.arrow_drop_down,
-                      size: 22,
-                      color: editable
-                          ? SoftErpTheme.textPrimary
-                          : SoftErpTheme.textSecondary,
-                    ),
-                  ],
+                      Icon(
+                        Icons.arrow_drop_down,
+                        size: 18,
+                        color: widget.editable
+                            ? SoftErpTheme.textPrimary
+                            : SoftErpTheme.textSecondary,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
+          const SizedBox(width: 4),
+          // Scratch block style custom stage name capsule input
+          Expanded(
+            child: Tooltip(
+              message: 'Custom stage name (e.g. Front Panel Riveting, Spot Welding)',
+              child: Container(
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _isFocused
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.border.withValues(alpha: 0.8),
+                    width: _isFocused ? 1.2 : 1.0,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x08000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: TextField(
+                    key: ValueKey<String>('route_step_name_${widget.index}'),
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    enabled: widget.editable,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: SoftErpTheme.textPrimary,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      hintText: 'Custom name...',
+                      hintStyle: TextStyle(
+                        fontSize: 12,
+                        color: SoftErpTheme.textSecondary.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    onChanged: widget.onCustomNameChanged,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 2),
           // Drawn disabled rather than hidden: a control that vanishes when
           // its precondition fails costs more to explain than one that is
           // visibly unavailable.
           IconButton(
-            key: ValueKey<String>('route_step_remove_$index'),
-            tooltip: editable
+            key: ValueKey<String>('route_step_remove_${widget.index}'),
+            tooltip: widget.editable
                 ? 'Remove this step'
                 : 'This route is active — declare a new version to change it',
             visualDensity: VisualDensity.compact,
-            onPressed: editable ? onRemove : null,
-            icon: const Icon(Icons.close, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            onPressed: widget.editable ? widget.onRemove : null,
+            icon: const Icon(Icons.close, size: 16),
           ),
         ],
       ),
@@ -683,15 +800,38 @@ class _ListLens extends StatelessWidget {
                       color: SoftErpTheme.textSecondary,
                     ),
                   ),
-                  title: Text(
-                    steps[i].labelWith(
-                      [for (final stage in palette) stage],
-                    ),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: SoftErpTheme.textPrimary,
-                    ),
+                  title: Row(
+                    children: [
+                      Text(
+                        steps[i].labelWith(
+                          [for (final stage in palette) stage],
+                        ),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                      if (steps[i].notes.trim().isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: SoftErpTheme.border),
+                          ),
+                          child: Text(
+                            steps[i].notes.trim(),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: SoftErpTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   trailing: IconButton(
                     key: ValueKey<String>('route_tile_remove_$i'),

@@ -93,6 +93,9 @@ class RouteStep {
         if (dieId != null) 'dieId': dieId,
       };
 
+  /// The user-defined custom stage name (stored in notes).
+  String get customName => notes.trim();
+
   /// What to call this step when the stage master was not loaded alongside it.
   String labelWith(List<ProcessStage> stages) {
     if (stageName.trim().isNotEmpty) return stageName.trim();
@@ -100,6 +103,15 @@ class RouteStep {
       if (stage.id == stageId) return stage.name;
     }
     return 'Stage $stageId';
+  }
+
+  /// Both stage type and custom name when present (e.g. "Assembly (Riveting)").
+  String fullLabelWith(List<ProcessStage> stages) {
+    final typeName = labelWith(stages);
+    if (customName.isNotEmpty) {
+      return '$typeName ($customName)';
+    }
+    return typeName;
   }
 }
 

@@ -51,6 +51,7 @@ class _SpyRouteService extends ProcessRouteService {
   final bool throwActive;
 
   final List<(String, int, List<int>)> calls = [];
+  final List<List<RouteStep>> savedSteps = [];
 
   @override
   Future<PartRoute?> activeRoute(int partId) async =>
@@ -64,6 +65,7 @@ class _SpyRouteService extends ProcessRouteService {
     String note = '',
   }) async {
     calls.add(('save', partId, [for (final s in steps) s.stageId]));
+    savedSteps.add(steps);
     if (throwActive) {
       throw RouteActiveException('already active', routeId: 9, version: 3);
     }
@@ -85,6 +87,7 @@ class _SpyRouteService extends ProcessRouteService {
     String note = '',
   }) async {
     calls.add(('declareVersion', partId, [for (final s in steps) s.stageId]));
+    savedSteps.add(steps);
     return [
       PartRoute(
         id: 12,
@@ -436,6 +439,54 @@ void main() {
       await tester.pumpAndSettle();
       expect(key.currentState!.isDirty, isFalse);
       expect(reports.last, isFalse);
+    });
+
+    testWidgets('editing custom stage name marks panel dirty and saves notes', (tester) async {
+      final service = _SpyRouteService();
+      final reports = <bool>[];
+      final key = GlobalKey<RouteCreationPanelState>();
+      await _pump(
+        tester,
+        items: [_item(1, 'Patti')],
+        service: service,
+        initialPartId: 1,
+        onDirtyChanged: reports.add,
+        panelKey: key,
+      );
+      await _addStep(tester);
+      expect(key.currentState!.isDirty, isTrue);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('route_step_name_0')),
+        'Riveting Step A',
+      );
+      await tester.pumpAndSettle();
+      expect(key.currentState!.isDirty, isTrue);
+
+      await tester.runAsync(() async {
+        expect(await key.currentState!.save(), isTrue);
+      });
+      await tester.pumpAndSettle();
+      expect(key.currentState!.isDirty, isFalse);
+      expect(service.savedSteps.last.first.notes, 'Riveting Step A');
+
+      // Now unlock to version it, and change the custom stage name
+      await tester.tap(find.text('New version'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('route_step_name_0')),
+        'Riveting Step B',
+      );
+      await tester.pumpAndSettle();
+      expect(key.currentState!.isDirty, isTrue);
+
+      await tester.runAsync(() async {
+        expect(await key.currentState!.save(), isTrue);
+      });
+      await tester.pumpAndSettle();
+      expect(key.currentState!.isDirty, isFalse);
+      expect(service.savedSteps.last.first.notes, 'Riveting Step B');
     });
 
     testWidgets('Cancel hands back to the host rather than popping', (tester) async {

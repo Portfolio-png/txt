@@ -517,5 +517,49 @@ void main() {
       )));
       expect(find.text('Delivery'), findsOneWidget);
     });
+
+    testWidgets('renders both stage type and custom stage name capsule when present', (tester) async {
+      await tester.pumpWidget(_host(const RouteRibbon(
+        route: PartRoute(
+          id: 1,
+          partId: 48,
+          version: 1,
+          status: RouteStatus.active,
+          steps: [
+            RouteStep(stageId: 1, seq: 1, stageName: 'Die', notes: 'Upper Punch'),
+            RouteStep(stageId: 2, seq: 2, stageName: 'Shearing', notes: 'Trim 12mm'),
+          ],
+        ),
+      )));
+      expect(find.text('Die'), findsOneWidget);
+      expect(find.text('Upper Punch'), findsOneWidget);
+      expect(find.text('Shearing'), findsOneWidget);
+      expect(find.text('Trim 12mm'), findsOneWidget);
+    });
+  });
+
+  group('RouteEditor custom stage names', () {
+    testWidgets('a step box accepts a custom stage name and emits it in the step notes', (tester) async {
+      List<RouteStep> emitted = const [];
+      await tester.pumpWidget(_host(RouteEditor(
+        stages: _stages,
+        steps: const [
+          RouteStep(stageId: 1, seq: 1, stageName: 'Die'),
+        ],
+        lens: RouteLens.classic,
+        onChanged: (steps) => emitted = steps,
+      )));
+
+      expect(find.byKey(const ValueKey('route_step_name_0')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('route_step_name_0')),
+        'Upper Punch Riveting',
+      );
+      await tester.pumpAndSettle();
+
+      expect(emitted.length, 1);
+      expect(emitted.first.stageId, 1);
+      expect(emitted.first.notes, 'Upper Punch Riveting');
+    });
   });
 }

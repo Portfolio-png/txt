@@ -69,6 +69,7 @@ class RouteRibbon extends StatelessWidget {
               _StagePill(
                 seq: current.steps[i].seq,
                 label: current.steps[i].labelWith(stages),
+                customName: current.steps[i].notes.trim(),
               ),
             ],
           ],
@@ -105,10 +106,15 @@ class _VersionPill extends StatelessWidget {
 }
 
 class _StagePill extends StatelessWidget {
-  const _StagePill({required this.seq, required this.label});
+  const _StagePill({
+    required this.seq,
+    required this.label,
+    this.customName = '',
+  });
 
   final int seq;
   final String label;
+  final String customName;
 
   @override
   Widget build(BuildContext context) {
@@ -139,6 +145,25 @@ class _StagePill extends StatelessWidget {
               color: SoftErpTheme.textPrimary,
             ),
           ),
+          if (customName.isNotEmpty) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: SoftErpTheme.border),
+              ),
+              child: Text(
+                customName,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: SoftErpTheme.textPrimary,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
