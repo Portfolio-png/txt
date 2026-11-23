@@ -244,6 +244,15 @@ class SearchableSelectField<T> extends FormField<T> {
                    HardwareKeyboard.instance.isMetaPressed) {
                  return KeyEventResult.ignored;
                }
+               // Enter again, straight after the one that picked: next
+               // field, as Tab — not the list again (user, 2026-11-24). Only
+               // inside a keyboard flow (the item sheet); elsewhere Enter
+               // opens the list as it always did.
+               if (EnterTwice.isSecond(event) &&
+                   Actions.maybeFind<TabOutIntent>(node.context!) != null) {
+                 tabOutFrom(field.focusNode, back: false);
+                 return KeyEventResult.handled;
+               }
                if (key == LogicalKeyboardKey.enter ||
                    key == LogicalKeyboardKey.numpadEnter ||
                    key == LogicalKeyboardKey.space ||

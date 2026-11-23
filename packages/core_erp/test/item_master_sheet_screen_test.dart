@@ -3092,6 +3092,70 @@ void main() {
         'cell_item_${row}_${column.id}',
     ];
 
+    // Enter twice means next, as Tab does (user, 2026-11-24).
+    testWidgets(
+      'a dropdown: Enter opens, Enter picks, Enter again goes on — not the list again',
+      (tester) async {
+        final sheet = await openNew(tester);
+        final keys = lineKeys(sheet);
+        expect(focusedField(), keys[0], reason: 'the sheet opens on Group');
+        Future<void> settle() async {
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+
+        // Typing opens the list on what matches; Enter there picks it.
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyS, character: 's');
+        await settle();
+        expect(listOpen(), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await settle();
+        expect(listOpen(), isFalse, reason: 'Enter in the list picks');
+        expect(sheet.draftAt(0).get(1)?.optionLabel, 'Switch Action');
+        expect(focusedField(), keys[0]);
+
+        // Enter again, straight after: on to Type — not this list again.
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await settle();
+        expect(focusedField() == keys[1] || listOpen(), isTrue, reason: 'on, as Tab');
+        expect(focusedField(), isNot(keys[0]), reason: 'not the list again');
+      },
+      variant: desktop,
+    );
+
+    testWidgets(
+      'a text box: one Enter stays put, a second goes on; another key between starts over',
+      (tester) async {
+        final sheet = await openNew(tester);
+        fillLine(sheet);
+        await tester.pump();
+        final keys = lineKeys(sheet);
+        final code = sheet.sheetDef.columnBoundTo(SheetBindsTo.partCode)!;
+        final at = keys.indexOf('cell_item_0_${code.id}');
+        final field = find.descendant(
+          of: find.byKey(ValueKey<String>(keys[at])),
+          matching: find.byType(TextField),
+        );
+        await tester.tap(field);
+        await tester.pump();
+        expect(focusedField(), keys[at]);
+
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(focusedField(), keys[at], reason: 'the first Enter keeps the place');
+        await press(tester, LogicalKeyboardKey.keyA);
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(focusedField(), keys[at], reason: 'a key between: this Enter is a first again');
+        await press(tester, LogicalKeyboardKey.enter);
+        await tester.pump(const Duration(milliseconds: 300));
+        // On, as Tab: onto Alloy, a dropdown, which opens its list as Tab
+        // landing there does.
+        expect(focusedField(), isNot(keys[at]), reason: 'the second goes on');
+        expect(find.text('Select Alloy'), findsOneWidget,
+            reason: 'onto Alloy, whose list opens as when Tab lands there');
+      },
+      variant: desktop,
+    );
+
     testWidgets(
       'the sheet opens on Group, and Tab visits the line\'s fields only',
       (tester) async {

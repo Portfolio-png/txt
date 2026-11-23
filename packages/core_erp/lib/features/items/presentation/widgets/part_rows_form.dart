@@ -924,6 +924,12 @@ class _PartFieldState extends State<_PartField> {
             }
             final key = event.logicalKey;
             final alt = HardwareKeyboard.instance.isAltPressed;
+            // Enter again, straight after the one that picked: next field,
+            // as Tab — not the list again (user, 2026-11-24).
+            if (EnterTwice.isSecond(event)) {
+              tabOutFrom(_focus, back: false);
+              return KeyEventResult.handled;
+            }
             if ((alt && key == LogicalKeyboardKey.arrowDown) ||
                 key == LogicalKeyboardKey.enter ||
                 key == LogicalKeyboardKey.numpadEnter ||

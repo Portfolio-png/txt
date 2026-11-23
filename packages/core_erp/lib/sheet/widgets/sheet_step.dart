@@ -198,6 +198,7 @@ class SheetStepState extends State<SheetStep> {
   @override
   void initState() {
     super.initState();
+    EnterTwice.ensureInstalled();
     widget.flow?._register(widget.id, this);
   }
 
@@ -275,6 +276,15 @@ class SheetStepState extends State<SheetStep> {
     return true;
   }
 
+  static bool _inOneLineText(FocusNode? node) {
+    final context = node?.context;
+    if (context == null) return false;
+    final text = context.widget is EditableText
+        ? context.widget as EditableText
+        : context.findAncestorWidgetOfExactType<EditableText>();
+    return text != null && text.maxLines == 1;
+  }
+
   bool _isLast(FocusNode? node) {
     final fields = _fields;
     return node != null && fields.isNotEmpty && identical(fields.last, node);
@@ -295,6 +305,16 @@ class SheetStepState extends State<SheetStep> {
     }
     if (enter && widget.actions.isLocked?.call() == true) {
       widget.actions.unlock?.call();
+      return KeyEventResult.handled;
+    }
+    // Enter in a one-line text box: the first keeps the place (it no longer
+    // drops the cursor or jumps), a second straight after moves on, as Tab
+    // does (user, 2026-11-24). A dropdown handles its own Enter the same way.
+    if (enter && !keyboard.isShiftPressed && !keyboard.isAltPressed && _inOneLineText(primary)) {
+      if (EnterTwice.isSecond(event)) {
+        _tabFrom(primary, back: false);
+        EnterTwice.reset();
+      }
       return KeyEventResult.handled;
     }
     // Ctrl+Tab is the screen's: the next part's tab.
