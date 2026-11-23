@@ -25,6 +25,7 @@ class EvenGrid extends MultiChildRenderObjectWidget {
     required this.minColumnWidth,
     this.spacing = 10,
     this.runSpacing = 8,
+    this.responsive = false,
     super.children,
   });
 
@@ -32,6 +33,7 @@ class EvenGrid extends MultiChildRenderObjectWidget {
   final double minColumnWidth;
   final double spacing;
   final double runSpacing;
+  final bool responsive;
 
   @override
   RenderEvenGrid createRenderObject(BuildContext context) => RenderEvenGrid(
@@ -39,6 +41,7 @@ class EvenGrid extends MultiChildRenderObjectWidget {
         minColumnWidth: minColumnWidth,
         spacing: spacing,
         runSpacing: runSpacing,
+        responsive: responsive,
       );
 
   @override
@@ -47,7 +50,8 @@ class EvenGrid extends MultiChildRenderObjectWidget {
       ..columns = columns
       ..minColumnWidth = minColumnWidth
       ..spacing = spacing
-      ..runSpacing = runSpacing;
+      ..runSpacing = runSpacing
+      ..responsive = responsive;
   }
 }
 
@@ -62,10 +66,20 @@ class RenderEvenGrid extends RenderBox
     required double minColumnWidth,
     required double spacing,
     required double runSpacing,
+    bool responsive = true,
   })  : _columns = columns,
         _minColumnWidth = minColumnWidth,
         _spacing = spacing,
-        _runSpacing = runSpacing;
+        _runSpacing = runSpacing,
+        _responsive = responsive;
+
+  bool _responsive;
+  bool get responsive => _responsive;
+  set responsive(bool value) {
+    if (value == _responsive) return;
+    _responsive = value;
+    markNeedsLayout();
+  }
 
   int _columns;
   set columns(int value) {
@@ -129,21 +143,60 @@ class RenderEvenGrid extends RenderBox
         row.add(child);
         child = childAfter(child);
       }
+
+      final widths = <double>[];
+      if (_responsive && row.length > 1) {
+        final desired = [
+          for (final box in row)
+            box
+                .getDryLayout(BoxConstraints(maxWidth: width))
+                .width
+                .clamp(_minColumnWidth, width),
+        ];
+        final isUniform = desired.every((d) => (d - desired.first).abs() < 1.0);
+        if (isUniform) {
+          for (var i = 0; i < row.length; i += 1) {
+            widths.add(cell);
+          }
+        } else {
+          final available = width - _spacing * (row.length - 1);
+          final totalDesired = desired.fold(0.0, (sum, w) => sum + w);
+          if (totalDesired <= available) {
+            final extra = available - totalDesired;
+            final perChildExtra = extra / row.length;
+            for (final d in desired) {
+              widths.add(d + perChildExtra);
+            }
+          } else {
+            for (final d in desired) {
+              final scaled = (d / totalDesired) * available;
+              widths.add(math.max(_minColumnWidth, scaled));
+            }
+          }
+        }
+      } else {
+        for (var i = 0; i < row.length; i += 1) {
+          widths.add(cell);
+        }
+      }
+
       final sizes = [
-        for (final box in row)
+        for (var i = 0; i < row.length; i += 1)
           if (dry)
-            box.getDryLayout(cellConstraints)
+            row[i].getDryLayout(BoxConstraints.tightFor(width: widths[i]))
           else
-            (box..layout(cellConstraints, parentUsesSize: true)).size,
+            (row[i]..layout(BoxConstraints.tightFor(width: widths[i]), parentUsesSize: true)).size,
       ];
       final height = sizes.fold(0.0, (tallest, s) => math.max(tallest, s.height));
       if (height > 0 && top > 0) top += _runSpacing;
       if (!dry) {
+        var x = 0.0;
         for (var i = 0; i < row.length; i += 1) {
           (row[i].parentData! as EvenGridParentData).offset = Offset(
-            i * (cell + _spacing),
+            x,
             top + height - sizes[i].height,
           );
+          x += widths[i] + _spacing;
         }
       }
       top += height;

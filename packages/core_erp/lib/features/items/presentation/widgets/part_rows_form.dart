@@ -620,6 +620,10 @@ class _PartFieldState extends State<_PartField> {
   Widget build(BuildContext context) {
     if (_isThickness) return _thicknessField();
     if (_isList) return _optionField();
+    return _textField();
+  }
+
+  Widget _textField() {
     final derived = _isDerived;
     final mode = _value?.mode ?? ValueMode.auto;
     final numeric =

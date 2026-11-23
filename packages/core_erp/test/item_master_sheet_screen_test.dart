@@ -738,7 +738,8 @@ void main() {
           reason: 'a saved part used to read "New part"',
         );
         expect(find.text('New part'), findsNothing);
-        expect(find.textContaining(partStamp(at)), findsWidgets);
+        expect(find.textContaining(partStampDate(at)), findsWidgets);
+        expect(find.textContaining(partStampTime(at)), findsWidgets);
         expect(
           find.textContaining('Set on save'),
           findsNothing,
@@ -2561,6 +2562,14 @@ void main() {
         size: const Size(1700, 3200),
         photos: photos,
       );
+      // A die's photo is in its tab's form: open each one's tab.
+      for (final tab in ['die_tab_31', 'machine_tab_41']) {
+        await tester.ensureVisible(find.byKey(ValueKey<String>(tab)));
+        await tester.pump();
+        await tester.tap(find.byKey(ValueKey<String>(tab)));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+      }
       expect(
         find.byKey(const ValueKey<String>('photo-die-31')),
         findsOneWidget,
@@ -2581,20 +2590,9 @@ void main() {
           reason: '$key should be labelled',
         );
       }
-      // Edited as a part line and a person are: an Edit said in words.
-      for (final row in [
-        'quick-entry-die-row-31',
-        'quick-entry-machine-row-41',
-      ]) {
-        expect(
-          find.descendant(
-            of: find.byKey(ValueKey<String>(row)),
-            matching: find.widgetWithText(OutlinedButton, 'Edit'),
-          ),
-          findsOneWidget,
-          reason: '$row should carry the same Edit as a part line',
-        );
-      }
+      // Opened by its tab, as a part is.
+      expect(find.byKey(const ValueKey<String>('die_tab_selected')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('machine_tab_selected')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -2732,8 +2730,8 @@ void main() {
       },
     );
 
-    testWidgets('Developed For: tick, company, quotation and recorded on one '
-        'line; people, then the papers, under it', (tester) async {
+    testWidgets('Developed For: tick and recorded in heading; '
+        'company, quotation, people, then papers under it', (tester) async {
       // Wide: the test font draws every letter a full em.
       await _pumpScreen(tester, size: const Size(2600, 2000));
       final tick = tester.getCenter(
@@ -2741,13 +2739,11 @@ void main() {
       );
       final company = tester.getRect(find.byKey(const ValueKey('deal_company')));
       final quotation = tester.getRect(find.byKey(const ValueKey('deal_quotation')));
-      final recorded = tester.getRect(find.textContaining('Recorded:'));
+      final recorded = tester.getRect(find.byKey(const ValueKey('deal_heading_stamp')));
       final papers = tester.getRect(find.byKey(const ValueKey('deal_documents')));
-      expect(tick.dy, closeTo(company.center.dy, 12), reason: 'the tick on the deal\'s line');
-      expect(tick.dx, lessThan(company.left));
-      expect(recorded.center.dy, closeTo(quotation.center.dy, 12),
-          reason: 'recorded beside the fields, not under them');
-      expect(recorded.left, greaterThan(quotation.right));
+      expect(tick.dy, lessThan(company.top), reason: 'the tick in the section heading');
+      expect(recorded.center.dy, lessThan(company.top),
+          reason: 'recorded stamp in the section heading, not under fields');
       final people = tester.getRect(find.text('Add person'));
       expect(people.top, greaterThan(quotation.bottom));
       expect(papers.top, greaterThan(people.bottom),
@@ -2760,9 +2756,10 @@ void main() {
       await _pumpScreen(tester);
       final tick = find.byKey(const ValueKey('developed_for_external'));
       expect(tick, findsOneWidget);
-      // In the card, under its title bar — not up in the top bar.
+      // In the card's title bar, completing "Developed For External party".
       final card = find.byKey(const ValueKey('section_toggle_client_vendor'));
-      expect(tester.getTopLeft(tick).dy, greaterThan(tester.getTopLeft(card).dy));
+      expect(tester.getTopLeft(tick).dy, closeTo(tester.getTopLeft(card).dy, 12));
+      expect(tester.getTopLeft(tick).dx, greaterThan(tester.getTopLeft(card).dx));
       expect(find.text('People'), findsOneWidget);
 
       await tester.tap(tick);

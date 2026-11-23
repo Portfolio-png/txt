@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
-import '../../../../core/utils/stamp_format.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/company_documents_box.dart';
 import '../../../../core/widgets/fit_to_text.dart';
@@ -241,8 +239,6 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     // The stamp the saved part carries. The deal row's own date cells were
     // filled only by the old whole-sheet save, so a saved deal read "Set on
     // save" for good.
-    final at = widget.recordedAt;
-    final recorded = at == null ? 'Set on save' : partStamp(at);
 
     // One line: the host's tick, the fields, then when it was recorded, its
     // Edit and the way to the company — level with the boxes.
@@ -280,7 +276,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           label: 'Company',
           child: FitToText(
           texts: ['Company', widget.controller.dealPartyName],
-          minWidth: 260,
+          minWidth: 160,
           chrome: 72,
           child: SearchableSelectField<int>(
             key: const ValueKey<String>('deal_company'),
@@ -332,7 +328,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           controller: quotation,
           texts: const ['Quotation (₹)', 'One figure for the part'],
           helper: 'One figure for the part',
-          minWidth: 195,
+          minWidth: 140,
           child: TextField(
             key: const ValueKey<String>('deal_quotation'),
             controller: quotation,
@@ -368,21 +364,6 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.lock_clock_outlined,
-                size: 18, color: SoftErpTheme.textSecondary),
-            const SizedBox(width: 6),
-            Text(
-              'Recorded: $recorded',
-              style: const TextStyle(
-                fontSize: 14,
-                color: SoftErpTheme.textSecondary,
-              ),
-            ),
-          ],
-        ),
         _dealAction(dealLocked),
         if (partyId != null)
           TextButton.icon(

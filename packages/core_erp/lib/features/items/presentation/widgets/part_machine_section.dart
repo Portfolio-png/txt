@@ -5,6 +5,7 @@ import '../../../../core/widgets/pick_or_type_field.dart';
 import '../../../../sheet/sheet_engine.dart';
 import '../../../../sheet/sheet_style.dart';
 import '../../../../sheet/widgets/sheet_step.dart';
+import '../../../../sheet/widgets/coloured_tabs.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -737,10 +738,14 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             )
           else ...[
-            if (_machines.isNotEmpty || widget.staged.isNotEmpty) ...[
-              SheetStep.noTab(_machineList(enabled)),
-              const SizedBox(height: 12),
-            ],
+            // One tab per machine — held ones, then the part's own — round
+            // the one form that edits the open tab; + opens a blank machine.
+            _machineTabs(
+              enabled,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ..._openMachinePhoto(),
             // Each field as wide as what it holds, side by side, wrapping only
             // when the row is full — a stack of page-wide bars for answers
             // like "2011" and "60" was most of this card's height.
@@ -971,10 +976,121 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 ),
               ],
             )),
+                ],
+              ),
+            ),
           ],
         ],
       ),
     );
+  }
+
+  final PartTabColors _tabColors = PartTabColors(offset: 2);
+  final Object _newTabKey = Object();
+
+  /// The machines as tabs round [form]: held ones first, then the part's,
+  /// then "New machine" while the form is blank.
+  Widget _machineTabs(bool enabled, Widget form) {
+    final staged = widget.staged;
+    final held = _editingStagedIndex != null && _editingStagedIndex! < staged.length
+        ? _editingStagedIndex
+        : null;
+    final savedAt = _editingMachineId == null
+        ? -1
+        : _machines.indexWhere((m) => m.id == _editingMachineId);
+    final blank = held == null && savedAt < 0;
+    const busy = 'Busy — one moment';
+    String titleOf(String number, String fallback) =>
+        number.trim().isEmpty ? fallback : number.trim();
+    final tabs = <TabSpec>[
+      for (var i = 0; i < staged.length; i += 1)
+        TabSpec(
+          key: staged[i],
+          title: titleOf(staged[i].assetId, 'Held machine ${i + 1}'),
+          code: _typeNameFor(staged[i].groupId),
+          closeWhy: enabled ? null : busy,
+          closeTip: 'Drop this held machine — nothing was written for it',
+          keyName: 'machine_tab_held_$i',
+        ),
+      for (final m in _machines)
+        TabSpec(
+          key: 'machine:${m.id}',
+          title: titleOf(m.assetId, m.name.trim().isEmpty ? 'Machine ${m.id}' : m.name),
+          code: m.machineType.trim(),
+          saved: true,
+          closeWhy: enabled ? null : busy,
+          closeTip: 'Take off this part — the machine stays in the machines master',
+          keyName: 'machine_tab_${m.id}',
+        ),
+      if (blank)
+        TabSpec(
+          key: _newTabKey,
+          title: 'New machine',
+          closeWhy: staged.isEmpty && _machines.isEmpty
+              ? 'The part has no other machine to show'
+              : null,
+          closeTip: 'Close the new machine without keeping it',
+          keyName: 'machine_tab_new',
+        ),
+    ];
+    final selected = held ?? (savedAt >= 0 ? staged.length + savedAt : tabs.length - 1);
+    void open(int i) {
+      if (i < staged.length) {
+        _editStaged(i);
+      } else if (i < staged.length + _machines.length) {
+        _editMachine(_machines[i - staged.length]);
+      }
+    }
+
+    return ColouredTabs(
+      strip: TabList(
+        tabs: tabs,
+        selected: selected,
+        onSelect: (i) {
+          if (enabled) open(i);
+        },
+      ),
+      colors: _tabColors,
+      noun: 'machine',
+      plural: 'machines',
+      keyPrefix: 'machine',
+      addWhy: !enabled ? busy : (blank ? 'The new machine is open below' : null),
+      onAdd: () => setState(_resetSheet),
+      onClose: (i) async {
+        if (i < staged.length) {
+          widget.onUnstage(i);
+        } else if (i < staged.length + _machines.length) {
+          await _unlink(_machines[i - staged.length]);
+        } else {
+          open(0);
+        }
+      },
+      child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 12), child: form),
+    );
+  }
+
+  /// The open saved machine's photo, over its form (it was in its row).
+  List<Widget> _openMachinePhoto() {
+    final id = _editingMachineId;
+    if (id == null || !MiniPhoto.isAvailable(context)) return const [];
+    final machine = _machines.where((m) => m.id == id).firstOrNull;
+    if (machine == null) return const [];
+    return [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: MiniPhoto(
+          owner: PhotoOwner.machine,
+          id: machine.id,
+          size: _kPhotoSize,
+          label: 'Photo',
+          what: 'machine photo',
+          note: _photoNote,
+          fallbackUrl: machine.photoUrl,
+          disabledReason: 'Save the part to add the machine’s photo',
+        ),
+      ),
+      const SizedBox(height: 10),
+    ];
   }
 
   /// One pick-or-type field, as wide as its label and longest answer.
@@ -1084,289 +1200,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     return context.read<GroupsProvider>().findById(groupId)?.name ?? '';
   }
 
-  Widget _machineList(bool enabled) {
-    if (_machines.isEmpty && widget.staged.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _MachineHeaderStrip(showStatus: widget.staged.isNotEmpty),
-        const SizedBox(height: 4),
-        // Held first: they are what this screen is about to write.
-        for (var i = 0; i < widget.staged.length; i += 1)
-          _MachineRow(
-            key: ValueKey<String>('quick-entry-staged-machine-$i'),
-            machine: _linkFromDraft(widget.staged[i]),
-            selected: i == _editingStagedIndex,
-            pending: true,
-            partExists: widget.part != null,
-            showStatus: true,
-            onTap: enabled ? () => _editStaged(i) : null,
-            onUnlink: enabled ? () => widget.onUnstage(i) : null,
-          ),
-        for (final machine in _machines)
-          _MachineRow(
-            key: ValueKey<String>('quick-entry-machine-row-${machine.id}'),
-            machine: machine,
-            selected: machine.id == _editingMachineId,
-            onTap: enabled ? () => _editMachine(machine) : null,
-            onUnlink: enabled ? () => _unlink(machine) : null,
-            photoNote: _photoNote,
-            showStatus: widget.staged.isNotEmpty,
-          ),
-      ],
-    );
-  }
+
 }
 
-/// One machine on the part: what tells it from the others, and the way off.
-class _MachineRow extends StatelessWidget {
-  const _MachineRow({
-    super.key,
-    required this.machine,
-    required this.selected,
-    this.pending = false,
-    this.partExists = false,
-    this.onTap,
-    this.onUnlink,
-    this.photoNote,
-    this.showStatus = false,
-  });
-
-  /// Whether the list has a status column — only while something is held.
-  final bool showStatus;
-
-  /// Where this row sits, for the phone's camera screen ("for part HH1").
-  final String? photoNote;
-
-  final ItemMachineLink machine;
-  final bool selected;
-
-  /// Held and not written. Says so on the row, because a machine that looks
-  /// saved and is not is the worst of both.
-  final bool pending;
-
-  /// Whether the part it is held for exists yet — the difference between
-  /// "waiting on the part" and "the part was made, this one was refused".
-  final bool partExists;
-  final VoidCallback? onTap;
-  final VoidCallback? onUnlink;
-
-  @override
-  Widget build(BuildContext context) {
-    final capacity = capacityLabel(
-      CapacityKind.fromWire(machine.capacityKind),
-      machine.capacityKgf,
-      'Ton',
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: selected ? SoftErpTheme.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-              border: Border.all(
-                color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
-                width: selected ? 1.6 : 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                if (MiniPhoto.isAvailable(context)) ...[
-                  MiniPhoto(
-                    owner: PhotoOwner.machine,
-                    // A held machine is not in the master yet.
-                    id: pending || machine.id.isEmpty ? null : machine.id,
-                    size: _kPhotoSize,
-                    label: 'Photo',
-                    what: 'machine photo',
-                    note: photoNote,
-                    fallbackUrl: machine.photoUrl,
-                    disabledReason: 'Save the part to add the machine’s photo',
-                  ),
-                  const SizedBox(width: _kPhotoGap),
-                ],
-                // Aligned under the strip above, rather than one joined
-                // sentence that stops being readable past a machine or two.
-                _MachineCell(
-                  machine.assetId.isEmpty ? machine.name : machine.assetId,
-                  flex: _kMachineFlex[0],
-                  strong: true,
-                  selected: selected,
-                ),
-                _MachineCell(machine.machineType, flex: _kMachineFlex[1]),
-                _MachineCell(machine.machineMake, flex: _kMachineFlex[2]),
-                _MachineCell(capacity, flex: _kMachineFlex[3]),
-                _MachineCell(
-                  machine.strokesPerMinute == null
-                      ? ''
-                      : '${machine.strokesPerMinute}',
-                  flex: _kMachineFlex[4],
-                ),
-                _MachineCell(machine.dieFeedType, flex: _kMachineFlex[5]),
-                if (pending)
-                  _MachineCell(
-                    partExists ? 'Not saved yet' : 'Saves with the part',
-                    flex: _kMachineFlex[6],
-                    muted: true,
-                  )
-                else if (showStatus)
-                  Spacer(flex: _kMachineFlex[6]),
-                const SizedBox(width: 6),
-                // Its Edit, said out loud: a saved row opens in the form above,
-                // whose button is then this row's Save.
-                // The same Edit a part line and a person have, and the way
-                // off beside it — in one fixed slot the header leaves room for.
-                SizedBox(
-                  width: _kActionsWidth,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                Tooltip(
-                  message: selected
-                      ? 'Being edited above — Save there'
-                      : 'Edit this machine',
-                  child: OutlinedButton.icon(
-                    key: ValueKey<String>('machine_row_edit_${machine.name}'),
-                    onPressed: selected ? null : onTap,
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit', style: TextStyle(fontSize: 14)),
-                  ),
-                ),
-                Tooltip(
-                  // Said in full, because "remove" reads as "destroy" and this
-                  // one does not.
-                  message: pending
-                      ? 'Drop this one — it has not been made yet'
-                      : 'Take off this part — the machine stays in the master',
-                  child: IconButton(
-                    icon: Icon(
-                      pending ? Icons.close_rounded : Icons.link_off_rounded,
-                      size: 20,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    color: SoftErpTheme.textSecondary,
-                    onPressed: onUnlink,
-                  ),
-                ),
-                    ],
-                  ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Column weights shared by the header strip and every row, so they line up.
-const List<int> _kMachineFlex = [22, 20, 18, 16, 14, 14, 16];
-const List<String> _kMachineHeads = [
-  'Machine No',
-  'Type',
-  'Make',
-  'Capacity',
-  'Strokes',
-  'Feed',
-  '',
-];
-
-// Big enough to carry its "Photo" label: a bare camera at the start of the
-// row was not seen as the place to add one. The part, company and person
-// slots are 40 and need no label — they sit on their own line.
+/// The machine photo's side, in the open machine's form.
 const double _kPhotoSize = 52;
-
-/// The row's end: its Edit and the way off. The header leaves the same room.
-const double _kActionsWidth = 132;
-const double _kPhotoGap = 8;
-
-class _MachineHeaderStrip extends StatelessWidget {
-  const _MachineHeaderStrip({this.showStatus = false});
-
-  final bool showStatus;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // The row's own padding and border, so the heads sit over the cells.
-      padding: const EdgeInsets.fromLTRB(11, 0, 11, 4),
-      child: Row(
-        children: [
-          if (MiniPhoto.isAvailable(context))
-            const SizedBox(width: _kPhotoSize + _kPhotoGap),
-          for (var i = 0; i < _kMachineHeads.length; i += 1)
-            if (i < _kMachineHeads.length - 1 || showStatus)
-            Expanded(
-              flex: _kMachineFlex[i],
-              child: Text(
-                _kMachineHeads[i],
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ),
-          const SizedBox(width: 6 + _kActionsWidth),
-        ],
-      ),
-    );
-  }
-}
-
-class _MachineCell extends StatelessWidget {
-  const _MachineCell(
-    this.text, {
-    required this.flex,
-    this.strong = false,
-    this.selected = false,
-    this.muted = false,
-  });
-
-  final String text;
-  final int flex;
-  final bool strong;
-  final bool selected;
-  final bool muted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Text(
-        text.isEmpty ? '—' : text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: strong ? 15 : 14,
-          fontWeight: strong
-              ? (selected ? FontWeight.w800 : FontWeight.w700)
-              : FontWeight.w600,
-          color: muted || text.isEmpty
-              ? SoftErpTheme.textSecondary
-              : (strong
-                    ? SoftErpTheme.textPrimary
-                    : SoftErpTheme.textSecondary),
-        ),
-      ),
-    );
-  }
-}
 
 /// A held draft, shaped like a linked machine so one row (or one summary line)
 /// describes both. [typeName] is its machine group's name, which the draft

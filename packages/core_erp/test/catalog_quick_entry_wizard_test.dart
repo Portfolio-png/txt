@@ -2129,7 +2129,7 @@ void _manyDiesTests() {
     });
 
     Finder dieRow(String id) =>
-        find.byKey(ValueKey<String>('quick-entry-die-row-$id'));
+        find.byKey(ValueKey<String>('die_tab_$id'));
     Finder addDie() =>
         find.byKey(const ValueKey<String>('quick-entry-add-die'));
 
@@ -2170,9 +2170,11 @@ void _manyDiesTests() {
       );
 
       expect(dieRow('70'), findsOneWidget);
-      // What tells them apart, not just the code.
-      expect(find.textContaining('Atul Mestry'), findsOneWidget);
-      expect(find.textContaining('F206 · Rack 23-4'), findsOneWidget);
+      // Its tab carries its type beside its code; the rest is in its form.
+      expect(
+        find.descendant(of: dieRow('70'), matching: find.textContaining('Cutting')),
+        findsOneWidget,
+      );
 
       await _tapVisible(tester, find.text('Bending'));
       await _tapVisible(tester, addDie());
@@ -2279,7 +2281,7 @@ void _manyDiesTests() {
 
       await _tapVisible(
         tester,
-        find.descendant(of: dieRow('70'), matching: find.byIcon(Icons.link_off_rounded)),
+        find.byKey(const ValueKey<String>('die_tab_70_close')),
       );
 
       // One update, with that die gone from the list — and no delete anywhere.
@@ -2327,7 +2329,7 @@ void _machineSectionTests() {
     Finder addMachine() =>
         find.byKey(const ValueKey<String>('quick-entry-add-machine'));
     Finder machineRow(String id) =>
-        find.byKey(ValueKey<String>('quick-entry-machine-row-$id'));
+        find.byKey(ValueKey<String>('machine_tab_$id'));
 
     /// A part on screen, with a machine type to pick.
     Future<_Harness> partReady(WidgetTester tester) async {
@@ -2572,17 +2574,12 @@ void _machineSectionTests() {
       // What tells them apart, not just the number. The row is aligned columns
       // now rather than one joined sentence, so each fact is asserted where it
       // sits.
+      // Its tab carries its type beside its number; the rest is in its form.
       expect(machineRow('90'), findsOneWidget);
-      for (final fact in ['Power Press', 'Mayank', '35 Ton', '110']) {
-        expect(
-          find.descendant(
-            of: machineRow('90'),
-            matching: find.textContaining(fact),
-          ),
-          findsOneWidget,
-          reason: fact,
-        );
-      }
+      expect(
+        find.descendant(of: machineRow('90'), matching: find.textContaining('Power Press')),
+        findsOneWidget,
+      );
 
       await _tapVisible(tester, addMachine());
       expect(drafts, hasLength(2));
@@ -2607,7 +2604,7 @@ void _machineSectionTests() {
       // And the ✕ takes it off the part without touching the machine.
       await _tapVisible(
         tester,
-        find.descendant(of: machineRow('91'), matching: find.byIcon(Icons.link_off_rounded)),
+        find.byKey(const ValueKey<String>('machine_tab_91_close')),
       );
       expect(harness.itemRepo.updated.last.machineIds, isNot(contains('91')));
       expect(find.textContaining('still in the machines master'), findsOneWidget);
@@ -2697,9 +2694,10 @@ void _stagedCreateTests() {
       // Nothing was written — not the die, and above all not the part.
       expect(dieDrafts, isEmpty);
       expect(harness.itemRepo.created, isEmpty);
-      // And the row says so rather than looking saved.
-      expect(find.textContaining('Saves with the part'), findsWidgets);
-      expect(find.text('CDATP48'), findsOneWidget);
+      // And its tab says so rather than looking saved.
+      final held = find.byKey(const ValueKey<String>('die_tab_held_0'));
+      expect(find.descendant(of: held, matching: find.text('CDATP48')), findsOneWidget);
+      expect(find.descendant(of: held, matching: find.byTooltip('Not saved yet')), findsOneWidget);
     });
 
     testWidgets('a second die of a kind takes the next code while held', (
@@ -2790,10 +2788,9 @@ void _stagedCreateTests() {
       expect(find.textContaining('still held'), findsOneWidget);
       // It stopped at the first refusal rather than hammering the rest.
       expect(dieDrafts, hasLength(1));
-      // Still held — and the rows no longer claim to be waiting on a part
-      // that now exists.
-      expect(find.text('Not saved yet'), findsNWidgets(2));
-      expect(find.textContaining('Saves with the part'), findsNothing);
+      // Still held, both of them.
+      expect(find.byKey(const ValueKey<String>('die_tab_held_0')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('die_tab_held_1')), findsOneWidget);
     });
 
     testWidgets('a held machine counts the other held ones', (tester) async {
@@ -2834,15 +2831,16 @@ void _stagedCreateTests() {
       refuseDies = false;
       await _tapVisible(
         tester,
-        find.byKey(const ValueKey<String>('quick-entry-staged-die-0')),
+        find.byKey(const ValueKey<String>('die_tab_held_0')),
       );
       await _tapVisible(tester, addDie());
 
       // Written once. And it has stopped being held, so it cannot be made a
       // second time for whatever part is created next.
       expect(dieDrafts.where((d) => d.toolCode == 'CDATP48'), hasLength(2));
-      expect(find.text('Not saved yet'), findsOneWidget);
-      expect(find.text('CDATP48'), findsOneWidget);
+      // One still held (the second); CDATP48 is a held tab no longer.
+      expect(find.byKey(const ValueKey<String>('die_tab_held_0')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('die_tab_held_1')), findsNothing);
     });
 
     testWidgets('closing with something held asks first', (tester) async {

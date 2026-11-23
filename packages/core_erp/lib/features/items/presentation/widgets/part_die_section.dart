@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../../sheet/sheet_engine.dart';
 import '../../../../sheet/sheet_style.dart';
 import '../../../../sheet/widgets/sheet_step.dart';
+import '../../../../sheet/widgets/coloured_tabs.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -805,12 +806,14 @@ class _PartDieSectionState extends State<PartDieSection> {
               style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             )
           else ...[
-            if (_dies.isNotEmpty || widget.staged.isNotEmpty) ...[
-              // The dies on the part are opened with their Edit (clicked); Tab
-              // goes through the form below.
-              SheetStep.noTab(_dieList(enabled)),
-              const SizedBox(height: 12),
-            ],
+            // One tab per die — held ones, then the part's own — round the
+            // one form that edits the open tab; + opens a blank die.
+            _dieTabs(
+              enabled,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ..._openDiePhoto(),
             _formStep(
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -987,6 +990,18 @@ class _PartDieSectionState extends State<PartDieSection> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  // While any die is held, the part's own Save part sits here
+                  // (it was in each held die's row): saving the part writes
+                  // the held dies with it.
+                  if (widget.staged.isNotEmpty && widget.heldSaveBuilder != null) ...[
+                    widget.heldSaveBuilder!(
+                      _editingStagedIndex != null &&
+                              _editingStagedIndex! < widget.staged.length
+                          ? _editingStagedIndex!
+                          : 0,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   if (editing != null || _editingStagedIndex != null)
                     TextButton(
                       key: const ValueKey<String>('quick-entry-die-cancel'),
@@ -1017,10 +1032,121 @@ class _PartDieSectionState extends State<PartDieSection> {
                 ],
               ),
             ),
+                ],
+              ),
+            ),
           ],
         ],
       ),
     );
+  }
+
+  final PartTabColors _tabColors = PartTabColors(offset: 1);
+  final Object _newTabKey = Object();
+
+  /// The dies as tabs round [form]: held ones first (what this screen is
+  /// about to write), then the part's, then "New die" while the form is blank.
+  Widget _dieTabs(bool enabled, Widget form) {
+    final staged = widget.staged;
+    final held = _editingStagedIndex != null && _editingStagedIndex! < staged.length
+        ? _editingStagedIndex
+        : null;
+    final savedAt = _editingDieId == null
+        ? -1
+        : _dies.indexWhere((d) => d.id == _editingDieId);
+    final blank = held == null && savedAt < 0;
+    const busy = 'Busy — one moment';
+    String titleOf(String code, String fallback) =>
+        code.trim().isEmpty ? fallback : code.trim();
+    final tabs = <TabSpec>[
+      for (var i = 0; i < staged.length; i += 1)
+        TabSpec(
+          key: staged[i],
+          title: titleOf(staged[i].toolCode, 'Held die ${i + 1}'),
+          code: DieTypeChoice.fromStored(staged[i].dieType, staged[i].dieTypeLabel)?.label ?? '',
+          closeWhy: enabled ? null : busy,
+          closeTip: 'Drop this held die — nothing was written for it',
+          keyName: 'die_tab_held_$i',
+        ),
+      for (final die in _dies)
+        TabSpec(
+          key: 'die:${die.id}',
+          title: titleOf(die.toolCode, 'Die ${die.id}'),
+          code: DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label ?? '',
+          saved: true,
+          closeWhy: enabled ? null : busy,
+          closeTip: 'Take off this part — the die stays in the dies master',
+          keyName: 'die_tab_${die.id}',
+        ),
+      if (blank)
+        TabSpec(
+          key: _newTabKey,
+          title: titleOf(_codeController.text, 'New die'),
+          closeWhy: staged.isEmpty && _dies.isEmpty
+              ? 'The part has no other die to show'
+              : null,
+          closeTip: 'Close the new die without keeping it',
+          keyName: 'die_tab_new',
+        ),
+    ];
+    final selected = held ?? (savedAt >= 0 ? staged.length + savedAt : tabs.length - 1);
+    void open(int i) {
+      if (i < staged.length) {
+        _editStaged(i);
+      } else if (i < staged.length + _dies.length) {
+        _editDie(_dies[i - staged.length]);
+      }
+    }
+
+    return ColouredTabs(
+      strip: TabList(
+        tabs: tabs,
+        selected: selected,
+        onSelect: (i) {
+          if (enabled) open(i);
+        },
+      ),
+      colors: _tabColors,
+      noun: 'die',
+      plural: 'dies',
+      keyPrefix: 'die',
+      addWhy: !enabled ? busy : (blank ? 'The new die is open below' : null),
+      onAdd: () => setState(() => _resetSheet(keepRepeating: false)),
+      onClose: (i) async {
+        if (i < staged.length) {
+          widget.onUnstage(i);
+        } else if (i < staged.length + _dies.length) {
+          await _unlink(_dies[i - staged.length]);
+        } else {
+          open(0);
+        }
+      },
+      child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 12), child: form),
+    );
+  }
+
+  /// The open saved die's photo, over its form (it was in the die's row).
+  List<Widget> _openDiePhoto() {
+    final id = _editingDieId;
+    if (id == null || !MiniPhoto.isAvailable(context)) return const [];
+    final die = _dies.where((d) => d.id == id).firstOrNull;
+    if (die == null) return const [];
+    return [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: MiniPhoto(
+          owner: PhotoOwner.die,
+          id: die.id,
+          size: _kPhotoSize,
+          label: 'Photo',
+          what: 'die photo',
+          note: _photoNote,
+          fallbackUrl: die.photoUrl,
+          disabledReason: 'Save the part to add the die’s photo',
+        ),
+      ),
+      const SizedBox(height: 10),
+    ];
   }
 
   /// Liner sizes used before, read in the unit picked now — so switching to
@@ -1129,44 +1255,6 @@ class _PartDieSectionState extends State<PartDieSection> {
     return 'Built from the type and this part: ${widget.partCode}';
   }
 
-  Widget _dieList(bool enabled) {
-    if (_dies.isEmpty && widget.staged.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _DieHeaderStrip(showStatus: widget.staged.isNotEmpty),
-        const SizedBox(height: 4),
-        // Held first: they are what this screen is about to write, and a row
-        // nobody can see is a row nobody knows they staged.
-        for (var i = 0; i < widget.staged.length; i += 1)
-          _DieRow(
-            key: ValueKey<String>('quick-entry-staged-die-$i'),
-            die: _linkFromDraft(widget.staged[i]),
-            selected: i == _editingStagedIndex,
-            pending: true,
-            partExists: widget.part != null,
-            saveAction: widget.heldSaveBuilder?.call(i),
-            showStatus: true,
-            onTap: enabled ? () => _editStaged(i) : null,
-            onUnlink: enabled ? () => widget.onUnstage(i) : null,
-          ),
-        for (final die in _dies)
-          _DieRow(
-            key: ValueKey<String>('quick-entry-die-row-${die.id}'),
-            die: die,
-            selected: die.id == _editingDieId,
-            onTap: enabled ? () => _editDie(die) : null,
-            onUnlink: enabled ? () => _unlink(die) : null,
-            photoNote: _photoNote,
-            showStatus: widget.staged.isNotEmpty,
-          ),
-      ],
-    );
-  }
-
-  ItemDieLink _linkFromDraft(DieSheetDraft draft) => heldDieLink(draft);
 
   /// Asks for a die type in the shop's own words.
   ///
@@ -1488,323 +1576,8 @@ class _PartDieSectionState extends State<PartDieSection> {
   }
 }
 
-/// One die on the part: what tells it from the others, and the way off.
-class _DieRow extends StatelessWidget {
-  const _DieRow({
-    super.key,
-    required this.die,
-    required this.selected,
-    this.pending = false,
-    this.partExists = false,
-    this.saveAction,
-    this.onTap,
-    this.onUnlink,
-    this.photoNote,
-    this.showStatus = false,
-  });
-
-  /// Whether the list has a status column — only while something is held.
-  /// Saved rows alone gave its 150 px to nothing.
-  final bool showStatus;
-
-  /// Drawn in the status column of a held row, in place of its note.
-  final Widget? saveAction;
-
-  /// Where this row sits, for the phone's camera screen ("for part HH1").
-  final String? photoNote;
-
-  final ItemDieLink die;
-  final bool selected;
-
-  /// Held and not written. Says so on the row, because a die that looks
-  /// saved and is not is the worst of both.
-  final bool pending;
-
-  /// Whether the part it is held for exists yet — which is the difference
-  /// between "waiting on the part" and "the part was made, this one was
-  /// refused", and the row should not claim the first when it is the second.
-  final bool partExists;
-  final VoidCallback? onTap;
-  final VoidCallback? onUnlink;
-
-  @override
-  Widget build(BuildContext context) {
-    final type = DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: selected ? SoftErpTheme.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-              border: Border.all(
-                color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
-                width: selected ? 1.6 : 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                if (MiniPhoto.isAvailable(context)) ...[
-                  MiniPhoto(
-                    owner: PhotoOwner.die,
-                    // A held die is not in the master yet: nowhere to keep it.
-                    id: pending || die.id.isEmpty ? null : die.id,
-                    size: _kPhotoSize,
-                    label: 'Photo',
-                    what: 'die photo',
-                    note: photoNote,
-                    fallbackUrl: die.photoUrl,
-                    disabledReason: 'Save the part to add the die’s photo',
-                  ),
-                  const SizedBox(width: _kPhotoGap),
-                ],
-                // Aligned under the strip above. These used to be one joined
-                // sentence — "Cutting · Ashok Dies · 0.8 mm · 2 sets · Rack
-                // R-12" — which reads fine for one die and not at all for six.
-                _DieCell(
-                  die.toolCode.isEmpty ? 'Die ${die.id}' : die.toolCode,
-                  flex: _kDieFlex[0],
-                  strong: true,
-                  selected: selected,
-                ),
-                _DieCell(type?.label ?? '', flex: _kDieFlex[1]),
-                _DieCell(die.madeBy.trim(), flex: _kDieFlex[2]),
-                _DieCell(
-                  die.poAt == null ? '' : partStampDate(die.poAt!),
-                  flex: _kDieFlex[3],
-                  // The date fits the column; the time only fits a tooltip.
-                  tooltip: die.poAt == null
-                      ? null
-                      : 'Ordered ${partStamp(die.poAt!)}',
-                ),
-                _DieCell(
-                  die.dateInAt == null ? '' : partStampDate(die.dateInAt!),
-                  flex: _kDieFlex[4],
-                  tooltip: _arrivalTooltip(die),
-                ),
-                _DieCell(
-                  die.linerSizeNm == null
-                      ? ''
-                      : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} '
-                            '${die.linerSizeUnit}',
-                  flex: _kDieFlex[5],
-                ),
-                _DieCell(
-                  die.noOfSet == null ? '' : '${die.noOfSet}',
-                  flex: _kDieFlex[6],
-                ),
-                _DieCell(
-                  die.numberOfCavities == null ? '' : '${die.numberOfCavities}',
-                  flex: _kDieFlex[7],
-                ),
-                _DieCell(die.whereKept, flex: _kDieFlex[8]),
-                if (showStatus)
-                  SizedBox(
-                    width: _kStatusWidth,
-                    child: !pending
-                        ? null
-                        : saveAction != null
-                        ? FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: saveAction,
-                          )
-                        : Row(
-                            children: [
-                              _DieCell(
-                                partExists
-                                    ? 'Not saved yet'
-                                    : 'Saves with the part',
-                                flex: 1,
-                                muted: true,
-                              ),
-                            ],
-                          ),
-                  ),
-                const SizedBox(width: 6),
-                // Its Edit, said out loud: a saved row opens in the form above,
-                // whose button is then this row's Save.
-                // The same Edit a part line and a person have, and the way
-                // off beside it — in one fixed slot the header leaves room for.
-                SizedBox(
-                  width: _kActionsWidth,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Tooltip(
-                          message: selected
-                              ? 'Being edited above — Save there'
-                              : 'Edit this die',
-                          child: OutlinedButton.icon(
-                            key: ValueKey<String>(
-                              'die_row_edit_${die.toolCode}',
-                            ),
-                            onPressed: selected ? null : onTap,
-                            icon: const Icon(Icons.edit_outlined, size: 18),
-                            label: const Text(
-                              'Edit',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ),
-                        Tooltip(
-                          // Said in full, because "remove" reads as "destroy": this
-                          // takes the die off the part and leaves the tool alone.
-                          message: pending
-                              ? 'Drop this one — it has not been made yet'
-                              : 'Take off this part — the die stays in the master',
-                          child: IconButton(
-                            icon: Icon(
-                              pending
-                                  ? Icons.close_rounded
-                                  : Icons.link_off_rounded,
-                              size: 20,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            color: SoftErpTheme.textSecondary,
-                            onPressed: onUnlink,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Column weights shared by the header strip and every row, so they line up.
-/// The last column is the status, at a fixed width: a held row draws the part's
-/// Save part there, which a flex share could not be trusted to fit.
-const List<int> _kDieFlex = [26, 12, 14, 11, 11, 11, 8, 8, 12];
-const double _kStatusWidth = 150;
-const List<String> _kDieHeads = [
-  'Code',
-  'Type',
-  'Made by',
-  // The two ends of the tooling lead time — ordered from the maker, and
-  // arrived. The paper sheet calls them PO-Date and Date in, and the row's
-  // tooltips say the whole date and time.
-  'PO',
-  'In',
-  'Liner',
-  'Sets',
-  'Cavity',
-  'Kept',
-];
-
-// Big enough to carry its "Photo" label: a bare camera at the start of the
-// row was not seen as the place to add one. The part, company and person
-// slots are 40 and need no label — they sit on their own line.
+/// The die photo's side, in the open die's form.
 const double _kPhotoSize = 52;
-
-/// The row's end: its Edit and the way off. The header leaves the same room.
-const double _kActionsWidth = 132;
-const double _kPhotoGap = 8;
-
-class _DieHeaderStrip extends StatelessWidget {
-  const _DieHeaderStrip({this.showStatus = false});
-
-  final bool showStatus;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // The row's own padding and border, so the heads sit over the cells.
-      padding: const EdgeInsets.fromLTRB(11, 0, 11, 4),
-      child: Row(
-        children: [
-          if (MiniPhoto.isAvailable(context))
-            const SizedBox(width: _kPhotoSize + _kPhotoGap),
-          for (var i = 0; i < _kDieHeads.length; i += 1)
-            Expanded(
-              flex: _kDieFlex[i],
-              child: Text(
-                _kDieHeads[i],
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ),
-          if (showStatus) const SizedBox(width: _kStatusWidth),
-          const SizedBox(width: 6 + _kActionsWidth),
-        ],
-      ),
-    );
-  }
-}
-
-/// What the arrival cell says on hover: when it came, and how long it took.
-///
-/// The gap between ordering and arrival is the one number the die sheet exists
-/// to answer, so it is shown wherever it costs nothing.
-String? _arrivalTooltip(ItemDieLink die) {
-  if (die.dateInAt == null) return null;
-  final arrived = 'Arrived ${partStamp(die.dateInAt!)}';
-  final lead = die.leadTime;
-  if (lead == null) return arrived;
-  final days = lead.inDays;
-  return '$arrived\n'
-      '${days.abs()} day${days.abs() == 1 ? '' : 's'} '
-      '${days < 0 ? 'BEFORE it was ordered' : 'after the order'}';
-}
-
-class _DieCell extends StatelessWidget {
-  const _DieCell(
-    this.text, {
-    required this.flex,
-    this.strong = false,
-    this.selected = false,
-    this.muted = false,
-    this.tooltip,
-  });
-
-  final String text;
-  final int flex;
-  final bool strong;
-  final bool selected;
-  final bool muted;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = Text(
-      text.isEmpty ? '—' : text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: strong ? 15 : 14,
-        fontWeight: strong
-            ? (selected ? FontWeight.w800 : FontWeight.w700)
-            : FontWeight.w600,
-        color: muted || text.isEmpty
-            ? SoftErpTheme.textSecondary
-            : (strong ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary),
-      ),
-    );
-    return Expanded(
-      flex: flex,
-      child: tooltip == null ? label : Tooltip(message: tooltip!, child: label),
-    );
-  }
-}
 
 /// Asks for a die type in the shop's own words.
 ///

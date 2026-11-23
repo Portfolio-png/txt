@@ -45,6 +45,13 @@ Future<T> _step<T>(String name, Future<T> Function() body) async {
 }
 
 /// A key that starts with [prefix] and is not the not-yet-saved placeholder.
+/// A saved die's or machine's tab (`die_tab_31`), not a held or new one.
+Finder _savedTab(String kind) => find.byWidgetPredicate((widget) {
+  final key = widget.key;
+  return key is ValueKey<String> &&
+      RegExp('^${kind}_tab_[0-9]+\$').hasMatch(key.value);
+});
+
 Finder _keyed(String prefix) => find.byWidgetPredicate((widget) {
   final key = widget.key;
   return key is ValueKey<String> &&
@@ -281,7 +288,7 @@ void main() {
       await _tapVisible(tester, find.byKey(const ValueKey<String>('quick-entry-add-die')));
       await pumpUntil(
         tester,
-        _keyed('quick-entry-die-row-'),
+        _savedTab('die'),
         reason: 'the die should be made and linked to the part',
       );
     });
@@ -300,7 +307,7 @@ void main() {
       await _tapVisible(tester, find.byKey(const ValueKey<String>('quick-entry-add-machine')));
       await pumpUntil(
         tester,
-        _keyed('quick-entry-machine-row-'),
+        _savedTab('machine'),
         reason: 'the machine should be made and linked to the part',
       );
     });
@@ -461,8 +468,8 @@ void main() {
       );
       await stillThere(find.text(_company), 'the company');
       await stillThere(find.textContaining(_person), 'the person');
-      await stillThere(_keyed('quick-entry-die-row-'), 'the die');
-      await stillThere(_keyed('quick-entry-machine-row-'), 'the machine');
+      await stillThere(_savedTab('die'), 'the die');
+      await stillThere(_savedTab('machine'), 'the machine');
       // Reopened on its line, the part's photos are out and raw material is
       // rolled up beside them; its chevron rolls it down.
       final rollDown = find.byTooltip('Roll raw material down');

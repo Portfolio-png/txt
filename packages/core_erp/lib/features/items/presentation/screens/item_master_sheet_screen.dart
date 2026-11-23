@@ -2340,15 +2340,67 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Widget _sectionFor(String id, {required bool collapsed}) {
     switch (id) {
       case 'client_vendor':
+        final tick = SheetStep.noTab(
+          Align(
+            widthFactor: 1,
+            heightFactor: 1,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  key: const ValueKey<String>('developed_for_external'),
+                  value: _controller.isExternal,
+                  activeColor: SoftErpTheme.accent,
+                  onChanged: (val) {
+                    if (val != null) _controller.setExternal(val);
+                  },
+                ),
+                const Text(
+                  'External party',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+                if (_altPressed) ...[
+                  const SizedBox(width: 4),
+                  const KeyTipBadge(label: 'Alt+E'),
+                ],
+              ],
+            ),
+          ),
+        );
         return _section(
           id: 'client_vendor',
           icon: Icons.storefront_rounded,
           heading: 'Developed For',
+          headingWidget: Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Developed For',
+                key: _titleKey('client_vendor'),
+                style: SheetStyle.sectionTitle,
+              ),
+              tick,
+            ],
+          ),
           collapsed: collapsed,
           trailing: _controller.isExternal
-              ? MarginHealthBadge(
-                  quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
-                  cost: _moneyBoundTo(SheetBindsTo.developedForCost),
+              ? Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    MarginHealthBadge(
+                      quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
+                      cost: _moneyBoundTo(SheetBindsTo.developedForCost),
+                    ),
+                    _dealStampChip(),
+                  ],
                 )
               : null,
           child: _partySheet(),
@@ -3033,24 +3085,28 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
         border: Border.all(color: SoftErpTheme.border),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'Part code: ',
-            style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
-          ),
-          Text(
-            (code == null || code.isEmpty) ? 'assigned on save' : code,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: (code == null || code.isEmpty)
-                  ? SoftErpTheme.textMuted
-                  : SoftErpTheme.accent,
+      child: Align(
+        widthFactor: 1,
+        heightFactor: 1,
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text(
+              'Part code: ',
+              style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
             ),
-          ),
-        ],
+            Text(
+              (code == null || code.isEmpty) ? 'assigned on save' : code,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: (code == null || code.isEmpty)
+                    ? SoftErpTheme.textMuted
+                    : SoftErpTheme.accent,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3912,43 +3968,37 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return value?.optionLabel ?? value?.textValue ?? '';
   }
 
+  Widget _dealStampChip() {
+    final recordedAt = _livePart?.developedFor.at;
+    if (recordedAt == null) {
+      return const _HeadingStamp.now(
+        stampKey: ValueKey<String>('deal_heading_stamp'),
+      );
+    }
+    return _HeadingStamp(
+      stampKey: const ValueKey<String>('deal_heading_stamp'),
+      date: partStampDate(recordedAt),
+      time: partStampTime(recordedAt),
+    );
+  }
+
   /// The deal and the people at that company, as ordinary text fields. The
   /// spreadsheet cells here ate keystrokes (each rebuild re-selected the cell,
   /// so 85000 became 0) and were cramped pills; see [DealPeopleForm].
-  /// Developed For: its tick — moved down here from the top bar — first on
-  /// the deal's line, the company, quotation and papers across from it.
   Widget _partySheet() {
-    final tick = SheetStep.noTab(
-      Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Checkbox(
-            key: const ValueKey<String>('developed_for_external'),
-            value: _controller.isExternal,
-            activeColor: SoftErpTheme.accent,
-            onChanged: (val) {
-              if (val != null) _controller.setExternal(val);
-            },
+    if (!_controller.isExternal) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Text(
+          'In-house production — tick “External party” above to record customer quotations and contacts.',
+          style: TextStyle(
+            fontSize: 14,
+            color: SoftErpTheme.textSecondary,
           ),
-          // Under the card's own title, "Developed For": the rest of the
-          // sentence.
-          const Text(
-            'External party',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: SoftErpTheme.textPrimary,
-            ),
-          ),
-          if (_altPressed) ...[
-            const SizedBox(width: 4),
-            const KeyTipBadge(label: 'Alt+E'),
-          ],
-        ],
-      ),
-    );
-    // In-house: the tick is all there is to say.
-    if (!_controller.isExternal) return Align(alignment: Alignment.centerLeft, child: tick);
+        ),
+      );
+    }
+
     return DealPeopleForm(
       controller: _controller,
       lineKey: _cursorRowKey,
@@ -3956,7 +4006,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       recordedAt: _livePart?.developedFor.at,
       flow: _flow,
       onSaveDeal: _saveDeal,
-      leading: tick,
     );
   }
 
@@ -4083,6 +4132,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     required IconData icon,
     required String heading,
     required Widget child,
+    Widget? headingWidget,
     Widget? trailing,
     bool collapsed = false,
   }) {
@@ -4158,17 +4208,22 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 SheetStyle.iconTile(icon),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    heading,
-                    key: _titleKey(id),
-                    style: SheetStyle.sectionTitle,
-                  ),
+                  flex: id == 'client_vendor' ? 3 : 1,
+                  child: headingWidget ??
+                      Text(
+                        heading,
+                        key: _titleKey(id),
+                        style: SheetStyle.sectionTitle,
+                      ),
                 ),
                 if (trailing != null) ...[
                   const SizedBox(width: 12),
                   // Most of the room, so a narrow card wraps its chips rather
                   // than pushing the actions off the end.
-                  Flexible(flex: 3, child: trailing),
+                  Flexible(
+                    flex: id == 'client_vendor' ? 2 : 3,
+                    child: trailing,
+                  ),
                 ],
                 const SizedBox(width: 8),
                 ..._sectionActions(id, heading),
@@ -4714,11 +4769,19 @@ class _LineUpUnderState extends State<_LineUpUnder> {
 }
 
 class _HeadingStamp extends StatefulWidget {
-  const _HeadingStamp({required String this.date, this.time});
-  const _HeadingStamp.now() : date = null, time = null;
+  const _HeadingStamp({
+    super.key,
+    required String this.date,
+    this.time,
+    this.stampKey,
+  });
+  const _HeadingStamp.now({super.key, this.stampKey})
+      : date = null,
+        time = null;
 
   final String? date;
   final String? time;
+  final Key? stampKey;
 
   @override
   State<_HeadingStamp> createState() => _HeadingStampState();
@@ -4770,40 +4833,58 @@ class _HeadingStampState extends State<_HeadingStamp> {
           ? 'Saved on $date${time == null ? '' : ' at $time'}'
           : 'Not saved yet — saving stamps the date and time',
       child: Container(
-        key: const ValueKey<String>('part_heading_stamp'),
+        key: widget.stampKey ?? const ValueKey<String>('part_heading_stamp'),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: SoftErpTheme.sectionSurface,
           borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
           border: Border.all(color: SoftErpTheme.border),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.event_rounded, size: 16, color: colour),
-            const SizedBox(width: 6),
-            Text(
-              date,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: colour,
+        child: Align(
+          widthFactor: 1,
+          heightFactor: 1,
+          // Date and time fold onto two lines in a narrow heading; the text
+          // is never scaled down.
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.event_rounded, size: 16, color: colour),
+                  const SizedBox(width: 6),
+                  // Narrower than even one of them: cut, with the whole in the tooltip.
+                  Flexible(
+                    child: Text(
+                      date,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            if (time != null) ...[
-              const SizedBox(width: 10),
-              Icon(Icons.schedule_rounded, size: 16, color: colour),
-              const SizedBox(width: 6),
-              Text(
-                time,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: colour,
+              if (time != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.schedule_rounded, size: 16, color: colour),
+                    const SizedBox(width: 6),
+                    // Narrower than even one of them: cut, with the whole in the tooltip.
+                    Flexible(
+                      child: Text(
+                        time,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
             ],
-          ],
+          ),
         ),
       ),
     );
