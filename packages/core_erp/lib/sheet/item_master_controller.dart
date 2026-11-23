@@ -107,6 +107,13 @@ class ItemMasterController extends ChangeNotifier {
   Set<int> _loadedTicks = const {};
   int? _loadedTicksFor;
 
+  /// The people ticked on each company tab, by the tab's row key. The table
+  /// lists only the open tab's company, so the others' ticks wait here.
+  final Map<Object, Set<int>> _ticksByDeal = Map.identity();
+
+  /// A company tab was added or closed since the deals were loaded or saved.
+  bool _dealListChanged = false;
+
   bool _isExternal = true;
   String _activeSection = 'group_item';
   bool _isEditing = false;
@@ -487,15 +494,15 @@ class ItemMasterController extends ChangeNotifier {
     _claimDeal(draft);
     final id = draft.entityId;
     final entity = id == null ? null : writer.entityById(id);
-    final deal = entity == null ? null : writer.dealOf(entity);
-    if (deal == null) {
+    final deals = entity == null ? const <({SheetDraft deal, Set<int> ticked})>[] : writer.dealsOf(entity);
+    if (deals.isEmpty) {
       // A saved part with no outside party opens with the section off; a new
       // row starts as the screen does, ready for one.
       _isExternal = id == null;
       _resetDeal();
     } else {
       _isExternal = true;
-      _applyDeal(deal);
+      _applyDeals(deals);
     }
   }
 
@@ -928,36 +935,156 @@ class ItemMasterController extends ChangeNotifier {
     final writer = binding;
     final partId = _dealPartId;
     if (writer == null || partId == null || !_isExternal) return;
-    if (clientVendorController.draft.isDirtySinceSave || _peopleDirty) return;
+    if (_dealDraftsDirty || _dealListChanged || _peopleDirty) return;
     final entity = entities.where((e) => _idOf(e) == partId).firstOrNull;
     if (entity == null) return;
-    final deal = writer.dealOf(entity);
-    if (deal == null) return;
-    final ticksSame = setEquals(deal.ticked, _loadedTicks);
-    if (ticksSame && _sameValues(deal.deal, clientVendorController.draft)) {
-      return;
+    final deals = writer.dealsOf(entity);
+    if (deals.isEmpty) return;
+    final shown = _dealRows;
+    var same = deals.length == shown.length;
+    for (var i = 0; same && i < deals.length; i += 1) {
+      same = _sameValues(deals[i].deal, shown[i]) &&
+          setEquals(deals[i].ticked, _ticksOfDeal(shown[i]));
     }
-    _applyDeal(deal);
+    if (same) return;
+    _applyDeals(deals);
     notifyListeners();
   }
 
-  /// [deal] on screen, its people listed with its ticks.
-  void _applyDeal(({SheetDraft deal, Set<int> ticked}) deal) {
-    _loadedTicks = deal.ticked;
-    final partyColumn = clientVendorController.sheetDef.columnBoundTo(
-      SheetBindsTo.developedForParty,
-    );
-    _loadedTicksFor = partyColumn == null
-        ? null
-        : deal.deal.get(partyColumn.id)?.refId;
-    clientVendorController.loadRecords([deal.deal]);
-    clientVendorController.draft.markClean();
-    // The same company with different ticks: re-list its people with them.
+  /// The part's companies on screen, one tab each, the first open, its
+  /// people listed with its ticks.
+  void _applyDeals(List<({SheetDraft deal, Set<int> ticked})> deals) {
+    _ticksByDeal
+      ..clear()
+      ..addEntries([for (final d in deals) MapEntry<Object, Set<int>>(d.deal.rowKey, d.ticked)]);
+    clientVendorController.loadRecords([for (final d in deals) d.deal]);
+    for (final draft in clientVendorController.drafts) {
+      draft.markClean();
+    }
+    clientVendorController.selectRow(0);
+    _dealListChanged = false;
+    _openDealTicks();
+  }
+
+  /// The open tab's ticks become the people table's, its people re-listed.
+  void _openDealTicks() {
+    final draft = clientVendorController.draft;
+    _loadedTicks = _ticksByDeal[draft.rowKey] ?? const {};
+    _loadedTicksFor = _partyOf(draft);
     final party = dealPartyId;
     if (party != null && party == _peopleRequestedFor && !_peopleInProgress) {
       _peopleSignature = null;
       _loadPeople(party, ticked: _loadedTicks);
+    } else {
+      _onDealChanged();
     }
+  }
+
+  int? _partyOf(SheetDraft draft) {
+    final column = clientVendorController.sheetDef.columnBoundTo(
+      SheetBindsTo.developedForParty,
+    );
+    return column == null ? null : draft.get(column.id)?.refId;
+  }
+
+  // --- the company tabs ------------------------------------------------------
+
+  /// The company tabs: every deal row that holds something.
+  List<SheetDraft> get _dealRows => [
+    for (var row = 0; row < clientVendorController.rowCount; row += 1)
+      if (!clientVendorController.isRowBlank(row)) clientVendorController.draftAt(row),
+  ];
+
+  int get dealTabCount => clientVendorController.rowCount;
+  int get openDealTab => clientVendorController.row;
+  SheetDraft dealTabAt(int i) => clientVendorController.draftAt(i);
+
+  bool get _dealDraftsDirty =>
+      clientVendorController.drafts.any((d) => d.isDirtySinceSave);
+
+  /// The ticks of [draft]'s company: the table's, for the open tab once its
+  /// people have loaded; the kept ones for the others.
+  Set<int> _ticksOfDeal(SheetDraft draft) =>
+      identical(draft, clientVendorController.draft) && peopleLoaded
+      ? _tickedIds().toSet()
+      : (_ticksByDeal[draft.rowKey] ?? const {});
+
+  /// Why the company tabs cannot change now, or null. A person typed and not
+  /// saved belongs to the open company; switching would list another's.
+  String? get dealTabsBlockedWhy => _peopleDirty
+      ? 'Save or discard the person being typed at $dealPartyName first'
+      : null;
+
+  void _keepOpenTicks() {
+    if (peopleLoaded) {
+      _ticksByDeal[clientVendorController.draft.rowKey] = _tickedIds().toSet();
+    }
+  }
+
+  /// Opens company tab [i]: its company, quotation and people.
+  void selectDeal(int i) {
+    if (i == clientVendorController.row || dealTabsBlockedWhy != null) return;
+    _keepOpenTicks();
+    clientVendorController.selectRow(i);
+    _openDealTicks();
+    notifyListeners();
+  }
+
+  /// Another company for the same part, as a blank tab.
+  void addDeal() {
+    if (dealTabsBlockedWhy != null) return;
+    _keepOpenTicks();
+    clientVendorController.addRow();
+    _dealListChanged = true;
+    _openDealTicks();
+    notifyListeners();
+  }
+
+  /// Closes company tab [i]. The last tab is emptied rather than removed —
+  /// the section always has one to type into.
+  void removeDeal(int i) {
+    if (i < 0 || i >= clientVendorController.rowCount) return;
+    _keepOpenTicks();
+    final draft = clientVendorController.draftAt(i);
+    _ticksByDeal.remove(draft.rowKey);
+    if (clientVendorController.rowCount <= 1) {
+      clientVendorController.replaceRows(const []);
+    } else {
+      clientVendorController.removeRow(i);
+    }
+    _dealListChanged = true;
+    _openDealTicks();
+    notifyListeners();
+  }
+
+  /// The companies this save writes — every tab holding something, in order —
+  /// or null when the part says nothing about who it was developed for.
+  List<SheetDraft>? dealDraftsForSave() =>
+      _isExternal && _dealRidesOnThisSave ? _dealRows : null;
+
+  /// The people ticked on [draft]'s company for the save, or null to say
+  /// nothing (the server keeps that company's stored ticks).
+  List<int>? dealContactIdsFor(SheetDraft draft) {
+    if (!_isExternal || !_dealRidesOnThisSave) return null;
+    if (identical(draft, clientVendorController.draft)) {
+      return dealContactIdsForSave();
+    }
+    return _ticksByDeal[draft.rowKey]?.toList();
+  }
+
+  /// A company on two tabs, by name, or null.
+  String? get dealCompanyTwice {
+    final seen = <int>{};
+    for (final draft in _dealRows) {
+      final party = _partyOf(draft);
+      if (party != null && !seen.add(party)) {
+        final column = clientVendorController.sheetDef.columnBoundTo(
+          SheetBindsTo.developedForParty,
+        );
+        return column == null ? 'a company' : (draft.get(column.id)?.optionLabel ?? 'a company');
+      }
+    }
+    return null;
   }
 
   static bool _isArchivedOf(Object? record) {
@@ -1003,6 +1130,8 @@ class ItemMasterController extends ChangeNotifier {
 
   void _resetDeal() {
     clientVendorController.loadRecords(const []);
+    _ticksByDeal.clear();
+    _dealListChanged = false;
     _loadedTicks = const {};
     _loadedTicksFor = null;
     _loadPeople(null);
@@ -1142,8 +1271,7 @@ class ItemMasterController extends ChangeNotifier {
   /// which case parts already written need writing again to carry it.
   bool get _dealDirty =>
       _dealCleared ||
-      (_isExternal &&
-          (clientVendorController.draft.isDirtySinceSave || _peopleDirty));
+      (_isExternal && (_dealDraftsDirty || _dealListChanged || _peopleDirty));
 
   // --- Discard, from the keyboard's save prompt ---------------------------
 
@@ -1176,7 +1304,7 @@ class ItemMasterController extends ChangeNotifier {
     if (deal == null) {
       _resetDeal();
     } else {
-      _applyDeal(deal);
+      _applyDeals(writer!.dealsOf(entity!));
     }
     _statusBarMessage = 'Discarded the changes to the company.';
     notifyListeners();
@@ -1350,15 +1478,15 @@ class ItemMasterController extends ChangeNotifier {
     // The deal on screen is the first row's part's. A part with no
     // outside party opens with the section off rather than offering a blank
     // deal that a save would then write.
-    final deal = writer.dealOf(entities.first);
-    if (deal == null) {
+    final deals = writer.dealsOf(entities.first);
+    if (deals.isEmpty) {
       _isExternal = false;
       // Not left holding the previous part's deal: ticking External again
       // would otherwise offer it, and a save would write it back.
       _resetDeal();
     } else {
       _isExternal = true;
-      _applyDeal(deal);
+      _applyDeals(deals);
     }
 
     _claimDeal(groupItemController.draftAt(0));
@@ -1475,16 +1603,35 @@ class ItemMasterController extends ChangeNotifier {
       }
     }
 
-    if (ownsDeal &&
-        _isExternal &&
-        clientVendorController.draft.isDirtySinceSave &&
-        !clientVendorController.validateRow(0)) {
-      _rowErrors[draft] =
-          clientVendorController.firstErrorOn(0) ??
-          'The Client section needs attention first.';
-      _statusBarMessage = _rowErrors[draft]!;
-      notifyListeners();
-      return false;
+    if (ownsDeal && _isExternal) {
+      for (var row = 0; row < clientVendorController.rowCount; row += 1) {
+        final deal = clientVendorController.draftAt(row);
+        // An untouched tab says nothing. One emptied by hand is refused: Self
+        // (or the tab's ×) is how a company comes off, not blank cells.
+        if (!deal.isDirtySinceSave) continue;
+        if (!clientVendorController.validateRow(row)) {
+          _rowErrors[draft] =
+              clientVendorController.firstErrorOn(row) ??
+              'The Developed For section needs attention first.';
+          _statusBarMessage = _rowErrors[draft]!;
+          notifyListeners();
+          return false;
+        }
+        if (_partyOf(deal) == null) {
+          _rowErrors[draft] =
+              'Company tab ${row + 1} has no company — pick one, or close that tab.';
+          _statusBarMessage = _rowErrors[draft]!;
+          notifyListeners();
+          return false;
+        }
+      }
+      final twice = dealCompanyTwice;
+      if (twice != null) {
+        _rowErrors[draft] = '$twice is on two company tabs — one tab per company.';
+        _statusBarMessage = _rowErrors[draft]!;
+        notifyListeners();
+        return false;
+      }
     }
 
     _isSavingNow = true;
@@ -1533,7 +1680,11 @@ class ItemMasterController extends ChangeNotifier {
       // again while the save ran.
       _dealPartId = id ?? _dealPartId;
       if (dealSent) {
-        clientVendorController.draft.markClean();
+        _keepOpenTicks();
+        for (final deal in clientVendorController.drafts) {
+          deal.markClean();
+        }
+        _dealListChanged = false;
         _dealCleared = false;
       }
     }

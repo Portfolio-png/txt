@@ -145,6 +145,7 @@ class ItemDto {
     this.developedForClientId,
     this.developedForClientName = '',
     this.developedFor = DevelopedFor.empty,
+    this.deals = const [],
     this.sectionTree,
     this.machines = const <ItemMachineLink>[],
     this.dies = const <ItemDieLink>[],
@@ -185,6 +186,7 @@ class ItemDto {
   final int? developedForClientId;
   final String developedForClientName;
   final DevelopedFor developedFor;
+  final List<DevelopedFor> deals;
   final Map<String, String>? sectionTree;
   final List<int> combinationGroupIds;
   final bool availableForPurchase;
@@ -300,6 +302,10 @@ class ItemDto {
             ),
           )
           .toList(growable: false),
+      deals: [
+        for (final row in (json['deals'] as List? ?? const []))
+          if (row is Map<String, dynamic>) DevelopedFor.fromJson(row),
+      ],
       developedForClientId: json['developedForClientId'] as int?,
       developedForClientName: json['developedForClientName'] as String? ?? '',
       // Falls back to the pre-047 pair when the block is absent, which is what
@@ -373,6 +379,7 @@ class ItemDto {
       developedForClientId: developedForClientId,
       developedForClientName: developedForClientName,
       developedFor: developedFor,
+      deals: deals,
       sectionTree: sectionTree,
       combinationGroupIds: combinationGroupIds,
       availableForPurchase: availableForPurchase,
@@ -603,6 +610,7 @@ class CreateItemRequest {
     this.dieIds = const [],
     this.developedForClientId,
     this.developedFor,
+    this.deals,
     this.availableForPurchase = false,
     this.blankWidthMm = 0,
     this.blankHeightMm = 0,
@@ -632,6 +640,7 @@ class CreateItemRequest {
   /// Who the part was developed for. Null says nothing, and the server keeps
   /// what is recorded; [DevelopedFor.empty] is how it is cleared.
   final DevelopedFor? developedFor;
+  final List<DevelopedFor>? deals;
   final bool availableForPurchase;
 
   /// The blank size this part is cut as, in millimetres.
@@ -668,6 +677,7 @@ class CreateItemRequest {
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
       developedFor: input.developedFor,
+      deals: input.deals,
       availableForPurchase: input.availableForPurchase,
       blankWidthMm: input.blankWidthMm,
       blankHeightMm: input.blankHeightMm,
@@ -716,6 +726,7 @@ class CreateItemRequest {
       if (developedForClientId != null)
         'developedForClientId': developedForClientId,
       if (developedFor != null) 'developedFor': developedFor!.toJson(),
+      if (deals != null) 'deals': [for (final deal in deals!) deal.toDealJson()],
       'availableForPurchase': availableForPurchase,
       'blankWidthMm': blankWidthMm,
       'blankHeightMm': blankHeightMm,
@@ -754,6 +765,7 @@ class UpdateItemRequest {
     this.dieIds = const [],
     this.developedForClientId,
     this.developedFor,
+    this.deals,
     this.availableForPurchase = false,
     this.blankWidthMm = 0,
     this.blankHeightMm = 0,
@@ -784,6 +796,7 @@ class UpdateItemRequest {
   /// Who the part was developed for. Null says nothing, and the server keeps
   /// what is recorded; [DevelopedFor.empty] is how it is cleared.
   final DevelopedFor? developedFor;
+  final List<DevelopedFor>? deals;
   final bool availableForPurchase;
 
   /// The blank size this part is cut as, in millimetres.
@@ -824,6 +837,7 @@ class UpdateItemRequest {
       dieIds: input.dieIds,
       developedForClientId: input.developedForClientId,
       developedFor: input.developedFor,
+      deals: input.deals,
       availableForPurchase: input.availableForPurchase,
       blankWidthMm: input.blankWidthMm,
       blankHeightMm: input.blankHeightMm,
@@ -873,6 +887,7 @@ class UpdateItemRequest {
       if (developedForClientId != null)
         'developedForClientId': developedForClientId,
       if (developedFor != null) 'developedFor': developedFor!.toJson(),
+      if (deals != null) 'deals': [for (final deal in deals!) deal.toDealJson()],
       'availableForPurchase': availableForPurchase,
       'blankWidthMm': blankWidthMm,
       'blankHeightMm': blankHeightMm,

@@ -109,6 +109,13 @@ abstract class SheetBinding<T> {
   /// outside party, or the binding has no deal.
   ({SheetDraft deal, Set<int> ticked})? dealOf(T entity) => null;
 
+  /// Every company [entity] was developed for, each a deal row with its
+  /// ticked people, in order. The first is [dealOf]'s.
+  List<({SheetDraft deal, Set<int> ticked})> dealsOf(T entity) {
+    final one = dealOf(entity);
+    return one == null ? const [] : [one];
+  }
+
   /// The record with [id] as this binding last knew it, or null. Default
   /// knows none — a binding that cannot look records up cannot load one into
   /// a row when its name is picked.

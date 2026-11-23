@@ -164,6 +164,7 @@ ItemDefinition _item({
   List<ItemDieLink> dies = const [],
   List<ItemMachineLink> machines = const [],
   DevelopedFor developedFor = DevelopedFor.empty,
+  List<DevelopedFor> deals = const [],
 }) => ItemDefinition(
   id: id,
   name: name,
@@ -175,6 +176,7 @@ ItemDefinition _item({
   groupId: groupId,
   unitId: 7,
   developedFor: developedFor,
+  deals: deals,
   isArchived: false,
   usageCount: 0,
   createdAt: DateTime(2026, 5, 15, 10, 5),
@@ -4059,6 +4061,127 @@ void main() {
       });
     }
   });
+
+  // One part, several companies, each with its own quotation (2026-11-24).
+  group('one part, several companies', () {
+    const gold = DevelopedFor(
+      kind: DevelopedForKind.client,
+      clientId: 5,
+      companyName: 'Gold Medal',
+      quotationAmount: 45000,
+    );
+    const silver = DevelopedFor(
+      kind: DevelopedForKind.client,
+      clientId: 6,
+      companyName: 'Silver Line',
+      quotationAmount: 52000,
+    );
+
+    /// A new part with its group, type and name filled in.
+    Future<SheetController> newPart(WidgetTester tester, _FakeItemRepository repo) async {
+      await _pumpScreen(tester, repository: repo, size: const Size(1800, 3200));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      final def = sheet.sheetDef;
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+      sheet.updateValue(group.id, CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label));
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final kind = sheet.options.firstWhere((o) => o.columnId == type.id && o.parentOptionId == trunk.id);
+      sheet.updateValue(type.id, CellValue(columnId: type.id, optionId: kind.id, optionLabel: kind.label));
+      final name = def.itemColumn!;
+      sheet.updateValue(name.id, CellValue(columnId: name.id, optionLabel: 'Two Quote Patti', isNew: true));
+      await tester.pump();
+      return sheet;
+    }
+
+    ItemMasterController controllerOf(WidgetTester tester) => tester
+        .widget<DealPeopleForm>(find.byType(DealPeopleForm, skipOffstage: false))
+        .controller;
+
+    void company(ItemMasterController controller, int id, String name, String quote) {
+      final deals = controller.clientVendorController;
+      final party = deals.sheetDef.columnBoundTo(SheetBindsTo.developedForParty)!;
+      final quotation = deals.sheetDef.columnBoundTo(SheetBindsTo.developedForQuotation)!;
+      deals.updateValue(party.id, CellValue(columnId: party.id, refId: id, optionLabel: name));
+      deals.updateValue(quotation.id, CellValue(columnId: quotation.id, textValue: quote));
+    }
+
+    Future<void> openDevelopedFor(WidgetTester tester) async {
+      final toggle = find.byKey(const ValueKey('section_toggle_client_vendor'));
+      if (find.byType(DealPeopleForm).evaluate().isEmpty) {
+        await tester.ensureVisible(toggle);
+        await tester.tap(toggle);
+        await tester.pump();
+      }
+    }
+
+    testWidgets('a second company and its quotation are saved with the part', (tester) async {
+      final repo = _FakeItemRepository([]);
+      await newPart(tester, repo);
+      await openDevelopedFor(tester);
+      final controller = controllerOf(tester);
+      company(controller, 5, 'Gold Medal', '45000');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('company_add')));
+      await tester.pump();
+      expect(controller.dealTabCount, 2);
+      expect(find.byKey(const ValueKey('company_tab_1')), findsOneWidget);
+      company(controller, 6, 'Silver Line', '52000');
+      await tester.pump();
+      expect(find.text('Silver Line'), findsWidgets, reason: 'the tab takes the company\'s name');
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+      expect(repo.created, hasLength(1), reason: controller.statusBarMessage);
+      final made = repo.created.single;
+      expect(made.deals!.map((d) => (d.clientId, d.quotationAmount)), [(5, 45000.0), (6, 52000.0)]);
+      expect(made.developedFor?.clientId, 5, reason: 'the first company is the part\'s mirror');
+    });
+
+    testWidgets('one company on two tabs is refused, saying which', (tester) async {
+      final repo = _FakeItemRepository([]);
+      await newPart(tester, repo);
+      await openDevelopedFor(tester);
+      final controller = controllerOf(tester);
+      company(controller, 5, 'Gold Medal', '45000');
+      controller.addDeal();
+      company(controller, 5, 'Gold Medal', '1');
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+      expect(repo.created, isEmpty);
+      expect(controller.statusBarMessage, contains('Gold Medal is on two company tabs'));
+    });
+
+    testWidgets('a part opened with two companies shows two tabs; each tab its own quotation', (tester) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11, developedFor: gold, deals: const [gold, silver]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1800, 3200),
+        foldedOnOpen: ItemMasterSheetScreen.defaultFoldedOnOpen,
+      );
+      // Folded, the one line names both, each with what it quoted.
+      final summary = find.byKey(const ValueKey('section_summary_client_vendor'));
+      expect(find.descendant(of: summary, matching: find.textContaining('Silver Line')), findsWidgets);
+      await openDevelopedFor(tester);
+      expect(find.byKey(const ValueKey('company_tab_0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('company_tab_1')), findsOneWidget);
+      final controller = controllerOf(tester);
+      expect(controller.dealPartyName, 'Gold Medal');
+      await tester.tap(find.byKey(const ValueKey('company_tab_1')));
+      await tester.pump();
+      expect(controller.dealPartyName, 'Silver Line');
+      expect(find.textContaining('52,000'), findsWidgets, reason: 'its own quotation, on its tab');
+    });
+  });
 }
 
 /// A part's gallery, as the server would answer it.
@@ -4069,4 +4192,5 @@ class _GalleryRepository extends EntityPhotoRepository {
 
   @override
   Future<List<PartPhoto>> partPhotos(String itemId) async => photos;
+
 }

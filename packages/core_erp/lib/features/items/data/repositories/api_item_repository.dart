@@ -162,6 +162,7 @@ class ApiItemRepository implements ItemRepository {
             .toList(growable: false),
         developedForClientId: input.developedForClientId,
         developedFor: input.developedFor ?? DevelopedFor.empty,
+        deals: input.deals ?? const [],
         availableForPurchase: input.availableForPurchase,
       );
       _mockItems.add(created);
@@ -262,6 +263,7 @@ class ApiItemRepository implements ItemRepository {
             .toList(growable: false),
         developedForClientId: input.developedForClientId,
         developedFor: input.developedFor ?? DevelopedFor.empty,
+        deals: input.deals ?? const [],
         availableForPurchase: input.availableForPurchase,
       );
       _mockItems[index] = updated;
@@ -320,6 +322,7 @@ class ApiItemRepository implements ItemRepository {
         dies: current.dies,
         developedForClientId: current.developedForClientId,
         developedFor: current.developedFor,
+        deals: current.deals,
         availableForPurchase: current.availableForPurchase,
         sectionTree: Map<String, String>.from(tree),
       );
@@ -725,6 +728,7 @@ class ApiItemRepository implements ItemRepository {
         developedForClientId: current.developedForClientId,
         developedForClientName: current.developedForClientName,
         developedFor: current.developedFor,
+        deals: current.deals,
         combinationGroupIds: current.combinationGroupIds,
       );
       _mockItems[index] = updated;

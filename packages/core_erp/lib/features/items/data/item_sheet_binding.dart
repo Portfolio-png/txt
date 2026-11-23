@@ -36,6 +36,8 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     this.dealDraft,
     this.dealContactIds,
     this.dealCleared,
+    this.dealDrafts,
+    this.dealContactIdsFor,
     this.peopleSheet,
   });
 
@@ -76,6 +78,13 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// True when the part was switched to Self on screen — the outside party
   /// is to come OFF the stored part, not merely be left unsaid.
   final bool Function()? dealCleared;
+
+  /// Every company tab, read live at each save, in order. Null — or answering
+  /// null — says nothing about the part's companies.
+  final List<SheetDraft>? Function()? dealDrafts;
+
+  /// The people ticked on one company tab, or null to say nothing.
+  final List<int>? Function(SheetDraft deal)? dealContactIdsFor;
 
   /// The people table: one row per person at the deal's company.
   final SheetDef? peopleSheet;
@@ -174,6 +183,7 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
               unitId: unitId,
               variationTree: _variationTree(row),
               developedFor: _developedFor(),
+              deals: _deals(),
               // Only what was typed. With neither the server stamps both; with
               // a code alone it keeps the code and stamps the number.
               partNo: identity?.no,
@@ -429,6 +439,7 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       partCode: identity?.code,
       partIdentitySpecified: identity?.both ?? false,
       developedFor: deal ?? existing.developedFor,
+      deals: _deals(existing: existing),
       // A full replace drops anything it does not carry, and these three are
       // not the sheet's to drop: a part's linked machines and dies live on the
       // die and machine sheets, and the client id is resolved from the deal.
@@ -809,9 +820,22 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   }
 
   @override
-  ({SheetDraft deal, Set<int> ticked})? dealOf(ItemDefinition entity) {
+  ({SheetDraft deal, Set<int> ticked})? dealOf(ItemDefinition entity) =>
+      _dealRowOf(entity.developedFor);
+
+  /// Every company, one tab each. A reply from a server without `deals`
+  /// still has its one deal, on developedFor.
+  @override
+  List<({SheetDraft deal, Set<int> ticked})> dealsOf(ItemDefinition entity) {
+    final blocks = entity.deals.isNotEmpty ? entity.deals : [entity.developedFor];
+    return [
+      for (final block in blocks)
+        if (_dealRowOf(block) case final row?) row,
+    ];
+  }
+
+  ({SheetDraft deal, Set<int> ticked})? _dealRowOf(DevelopedFor block) {
     final sheet = partySheet;
-    final block = entity.developedFor;
     if (sheet == null) return null;
     if (block.kind != DevelopedForKind.client &&
         block.kind != DevelopedForKind.contractor) {
@@ -1199,6 +1223,55 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       quotationAmount: quotation,
       costAmount: hasCostColumn ? cost : prior?.costAmount,
     );
+  }
+
+  /// Every company tab as the part's `deals`, in order; null says nothing.
+  ///
+  /// Each is built as [_developedFor] builds the one: a stored deal for the
+  /// same company keeps its contractor and its recorded time while its
+  /// quotation is unchanged. A blank tab is skipped. Switched to Self, the
+  /// developedFor block clears them all and this says nothing.
+  List<DevelopedFor>? _deals({ItemDefinition? existing}) {
+    if (dealCleared?.call() == true) return null;
+    final sheet = partySheet;
+    final drafts = dealDrafts?.call();
+    if (sheet == null || drafts == null) return null;
+    final stored = existing == null
+        ? const <DevelopedFor>[]
+        : (existing.deals.isNotEmpty ? existing.deals : [existing.developedFor]);
+    final out = <DevelopedFor>[];
+    for (final draft in drafts) {
+      int? clientId;
+      double? quotation;
+      for (final column in sheet.columns) {
+        final value = draft.get(column.id);
+        if (value == null) continue;
+        switch (column.bindsTo) {
+          case SheetBindsTo.developedForParty:
+            clientId = value.refId;
+          case SheetBindsTo.developedForQuotation:
+            quotation = _money(value.textValue, value.intValue);
+        }
+      }
+      if (clientId == null && quotation == null) continue;
+      final prior = stored.where((d) => d.clientId != null && d.clientId == clientId).firstOrNull;
+      final contractor = prior != null && prior.kind == DevelopedForKind.contractor;
+      final kind = contractor ? DevelopedForKind.contractor : DevelopedForKind.client;
+      final unchanged = prior != null && prior.quotationAmount == quotation;
+      out.add(
+        DevelopedFor(
+          kind: kind,
+          clientId: clientId,
+          subContractorId: contractor ? prior.subContractorId : null,
+          contactIds: kind == DevelopedForKind.client
+              ? dealContactIdsFor?.call(draft)
+              : const [],
+          at: unchanged && prior.at != null ? prior.at : DateTime.now(),
+          quotationAmount: quotation,
+        ),
+      );
+    }
+    return out;
   }
 
   static double? _money(String? text, int? intValue) =>

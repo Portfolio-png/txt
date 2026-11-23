@@ -162,6 +162,7 @@ class ItemDefinition {
     this.developedForClientId,
     this.developedForClientName = '',
     this.developedFor = DevelopedFor.empty,
+    this.deals = const [],
     this.sectionTree,
     this.machines = const <ItemMachineLink>[],
     this.dies = const <ItemDieLink>[],
@@ -243,6 +244,11 @@ class ItemDefinition {
   /// Who this part was developed for, when, and what was quoted.
   final DevelopedFor developedFor;
 
+  /// Every company the part was developed for, in order, each with its own
+  /// quotation, people and recorded time. The first is [developedFor]'s; the
+  /// development cost is the part's, on [developedFor].
+  final List<DevelopedFor> deals;
+
   /// How this part's item sheet is nested: section → parent section, rooted
   /// at `group_item`. Null is the default chain (Item › Client › Die ›
   /// Machines). The nesting is data, not layout — the server links each
@@ -312,6 +318,7 @@ class ItemDefinition {
       developedForClientId: developedForClientId,
       developedForClientName: developedForClientName,
       developedFor: developedFor,
+      deals: deals,
       sectionTree: sectionTree,
       machines: machines,
       dies: dies,

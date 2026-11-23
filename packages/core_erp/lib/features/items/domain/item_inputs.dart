@@ -84,6 +84,7 @@ class CreateItemInput {
     this.partNo,
     this.partCode,
     this.developedFor,
+    this.deals,
   });
 
   final String name;
@@ -126,6 +127,10 @@ class CreateItemInput {
   /// which is why this needs no `specified` flag of the kind [partNo] has.
   final DevelopedFor? developedFor;
 
+  /// Every company, in order (each without the cost, which is the part's).
+  /// Null says nothing and the server keeps them; [] clears them.
+  final List<DevelopedFor>? deals;
+
 
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.
@@ -160,6 +165,7 @@ class UpdateItemInput {
     this.partCode,
     this.partIdentitySpecified = false,
     this.developedFor,
+    this.deals,
   });
 
   final int id;
@@ -213,6 +219,10 @@ class UpdateItemInput {
   /// ([DevelopedFor.empty]) — the object carries that distinction itself,
   /// which is why this needs no `specified` flag of the kind [partNo] has.
   final DevelopedFor? developedFor;
+
+  /// Every company, in order (each without the cost, which is the part's).
+  /// Null says nothing and the server keeps them; [] clears them.
+  final List<DevelopedFor>? deals;
 
 
   /// Sample run recorded on this item. Null leaves whatever is already stored

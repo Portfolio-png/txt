@@ -315,6 +315,10 @@ class DevelopedFor {
         'costAmount': costAmount,
       };
 
+  /// One company of the part's `deals`: what [toJson] sends, without the
+  /// cost — the cost is the part's, sent once on its developedFor.
+  Map<String, dynamic> toDealJson() => {...toJson()}..remove('costAmount');
+
   @override
   bool operator ==(Object other) =>
       other is DevelopedFor &&

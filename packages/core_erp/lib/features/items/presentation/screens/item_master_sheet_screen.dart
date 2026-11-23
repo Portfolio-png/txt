@@ -539,9 +539,19 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // at each save rather than being handed a copy taken at build time —
       // which is what the old `partyDraft: null` here amounted to: the deal
       // was drawn, typed into, and never once saved.
-      dealDraft: () => _controller.dealDraftForSave(),
-      dealContactIds: () => _controller.dealContactIdsForSave(),
+      // The flat block is the FIRST company's (the server mirrors it); every
+      // company goes in deals.
+      dealDraft: () =>
+          _controller.dealDraftsForSave()?.firstOrNull ?? _controller.dealDraftForSave(),
+      dealContactIds: () {
+        final first = _controller.dealDraftsForSave()?.firstOrNull;
+        return first == null
+            ? _controller.dealContactIdsForSave()
+            : _controller.dealContactIdsFor(first);
+      },
       dealCleared: () => _controller.dealClearedForSave(),
+      dealDrafts: () => _controller.dealDraftsForSave(),
+      dealContactIdsFor: (deal) => _controller.dealContactIdsFor(deal),
       peopleSheet: SheetDef(
         id: 3,
         key: 'item_people',
@@ -2184,13 +2194,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     switch (id) {
       case 'client_vendor':
         if (!_controller.isExternal) return const [(null, 'Developed for: Self')];
-        final company = _controller.dealPartyName;
-        if (company.isEmpty) return const [(null, 'No company chosen yet')];
-        add('Company', company);
-        add(
-          'Quotation',
-          money(_moneyBoundTo(SheetBindsTo.developedForQuotation)),
-        );
+        final partyColumn = _controller.clientVendorController.sheetDef
+            .columnBoundTo(SheetBindsTo.developedForParty);
+        String nameOf(SheetDraft deal) => partyColumn == null
+            ? ''
+            : (deal.get(partyColumn.id)?.optionLabel ?? '').trim();
+        final companies = [
+          for (var i = 0; i < _controller.dealTabCount; i += 1)
+            if (nameOf(_controller.dealTabAt(i)).isNotEmpty)
+              _controller.dealTabAt(i),
+        ];
+        if (companies.isEmpty) return const [(null, 'No company chosen yet')];
+        // Each company as dies are listed: its name, then what it quoted and
+        // when; the people only for the open one, whose are listed.
+        for (final deal in companies) {
+          out.add((null, nameOf(deal)));
+          add('Quotation', money(_moneyOf(deal, SheetBindsTo.developedForQuotation)));
+          add('Recorded', stamp(_storedDealOf(deal)?.at));
+        }
         add('Cost', money(_moneyBoundTo(SheetBindsTo.developedForCost)));
         final people = _controller.peopleController;
         final tick = people.sheetDef.columnBoundTo(
@@ -2212,8 +2233,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                       .trim(),
               ].where((p) => p.isNotEmpty).join(', '),
         ].where((p) => p.isNotEmpty);
-        add('Dealt with', dealtWith.join('; '));
-        add('Recorded', stamp(_livePart?.developedFor.at));
+        if (companies.length == 1) add('Dealt with', dealtWith.join('; '));
       case 'die_master':
         final dies = [
           for (final d in _livePart?.dies ?? const <ItemDieLink>[]) (d, false),
@@ -3111,11 +3131,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
-  double? _moneyBoundTo(String binds) {
+  double? _moneyBoundTo(String binds) =>
+      _moneyOf(_controller.clientVendorController.draft, binds);
+
+  /// A money cell of one company tab.
+  double? _moneyOf(SheetDraft deal, String binds) {
     final sheet = _controller.clientVendorController.sheetDef;
     final column = sheet.columnBoundTo(binds);
     if (column == null) return null;
-    final value = _controller.clientVendorController.draft.get(column.id);
+    final value = deal.get(column.id);
     if (value == null) return null;
     // Rupees as typed, paise included — the text is the figure, and intValue
     // is only there for a whole amount. Stripping to digits and dots read
@@ -3968,8 +3992,21 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return value?.optionLabel ?? value?.textValue ?? '';
   }
 
+  /// The stored deal behind company tab [deal], by its company, or null.
+  DevelopedFor? _storedDealOf(SheetDraft deal) {
+    final column = _controller.clientVendorController.sheetDef.columnBoundTo(
+      SheetBindsTo.developedForParty,
+    );
+    final party = column == null ? null : deal.get(column.id)?.refId;
+    final part = _livePart;
+    if (party == null || part == null) return null;
+    final all = part.deals.isNotEmpty ? part.deals : [part.developedFor];
+    return all.where((d) => d.clientId == party).firstOrNull;
+  }
+
+  /// When the OPEN company was recorded: each company has its own time.
   Widget _dealStampChip() {
-    final recordedAt = _livePart?.developedFor.at;
+    final recordedAt = _storedDealOf(_controller.clientVendorController.draft)?.at;
     if (recordedAt == null) {
       return const _HeadingStamp.now(
         stampKey: ValueKey<String>('deal_heading_stamp'),
@@ -3999,14 +4036,78 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       );
     }
 
-    return DealPeopleForm(
-      controller: _controller,
-      lineKey: _cursorRowKey,
-      partSaved: _livePart != null,
-      recordedAt: _livePart?.developedFor.at,
-      flow: _flow,
-      onSaveDeal: _saveDeal,
+    final controller = _controller;
+    final deals = controller.clientVendorController;
+    final partyColumn = deals.sheetDef.columnBoundTo(SheetBindsTo.developedForParty);
+    final blocked = controller.dealTabsBlockedWhy;
+    final tabs = <TabSpec>[
+      for (var i = 0; i < controller.dealTabCount; i += 1)
+        () {
+          final deal = controller.dealTabAt(i);
+          final name = partyColumn == null
+              ? ''
+              : (deal.get(partyColumn.id)?.optionLabel ?? '').trim();
+          final quote = _moneyOf(deal, SheetBindsTo.developedForQuotation);
+          final blank = deals.isRowBlank(i);
+          return TabSpec(
+            key: deal.rowKey,
+            title: name.isEmpty ? 'New company' : name,
+            code: quote == null ? '' : rupeeStamp(quote),
+            saved: !deal.isDirtySinceSave && _storedDealOf(deal) != null,
+            closeWhy: blocked ??
+                (blank && controller.dealTabCount <= 1
+                    ? 'Nothing to close — untick External party for none'
+                    : null),
+            closeTip: 'Take this company off the part — written when the part saves',
+          );
+        }(),
+    ];
+    final openBlank = deals.isRowBlank(deals.row);
+    return ColouredTabs(
+      strip: TabList(tabs: tabs, selected: deals.row, onSelect: controller.selectDeal),
+      colors: _companyColors,
+      noun: 'company',
+      plural: 'companies',
+      keyPrefix: 'company',
+      addWhy: blocked ?? (openBlank ? 'Fill in this company first' : null),
+      onAdd: controller.addDeal,
+      onClose: _closeDealTab,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: DealPeopleForm(
+          controller: controller,
+          lineKey: _cursorRowKey,
+          partSaved: _livePart != null,
+          recordedAt: _storedDealOf(deals.draft)?.at,
+          flow: _flow,
+          onSaveDeal: _saveDeal,
+        ),
+      ),
     );
+  }
+
+  final PartTabColors _companyColors = PartTabColors(offset: 3);
+
+  /// A company tab holding a quotation or people is asked about first.
+  Future<void> _closeDealTab(int i) async {
+    final controller = _controller;
+    final deals = controller.clientVendorController;
+    if (!deals.isRowBlank(i)) {
+      final column = deals.sheetDef.columnBoundTo(SheetBindsTo.developedForParty);
+      final name = column == null
+          ? 'this company'
+          : (controller.dealTabAt(i).get(column.id)?.optionLabel ?? 'this company');
+      final ok = await showConfirmDialog(
+        context,
+        title: 'Take $name off this part?',
+        message: 'Its quotation and the people ticked come off when the part '
+            'saves. The company stays in the clients master.',
+        confirmLabel: 'Take off',
+        cancelLabel: 'Keep',
+      );
+      if (!ok || !mounted) return;
+    }
+    controller.removeDeal(i);
   }
 
   /// Cancel on the route panel. Stages laid out and not saved are asked
