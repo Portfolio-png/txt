@@ -171,6 +171,9 @@ class PartRowsForm extends StatelessWidget {
                     photo: photoBuilder?.call(row),
                     status: statusBuilder?.call(row),
                     action: actionBuilder(row),
+                    // One part at a time: its Save and × sit on the footer's
+                    // line beside Add property instead of a row of their own.
+                    actionsInLine: !currentRowOnly,
                     onRemove: onRemoveRow,
                     showShortcuts: showShortcuts,
                     showcasePhoto: row == showcaseRow
@@ -202,7 +205,9 @@ class PartRowsForm extends StatelessWidget {
   }
 
   Widget _footer() {
-    return Wrap(
+    final row = sheet.row;
+    final actions = currentRowOnly && row >= 0 && row < sheet.rowCount;
+    final tools = Wrap(
       spacing: 6,
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -246,16 +251,41 @@ class PartRowsForm extends StatelessWidget {
             ],
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: Text(
-            'Parts on this sheet: ${sheet.rowCount}',
-            style: SheetStyle.hint,
-          ),
-        ),
+      ],
+    );
+    if (!actions) return tools;
+    return Row(
+      children: [
+        Expanded(child: tools),
+        const SizedBox(width: 10),
+        actionBuilder(row),
+        partRemoveButton(sheet, row, onRemoveRow),
       ],
     );
   }
+}
+
+/// A part's ×: drawn always, disabled with the reason when the part may not
+/// go — a saved part, or the sheet's last one.
+Widget partRemoveButton(
+  SheetController sheet,
+  int row,
+  Future<void> Function(int row)? onRemove,
+) {
+  final saved = sheet.draftAt(row).entityId != null;
+  final String? why = saved
+      ? 'Saved parts stay in the catalogue — use Archive part'
+      : (sheet.rowCount <= 1 ? 'A sheet always keeps one part' : null);
+  return Tooltip(
+    message: why ?? 'Remove this line',
+    child: IconButton(
+      key: ValueKey<String>('row_remove_$row'),
+      onPressed: why == null
+          ? () => onRemove == null ? sheet.removeRow(row) : onRemove(row)
+          : null,
+      icon: const Icon(Icons.close, size: 18),
+    ),
+  );
 }
 
 /// One part: status, photo, its fields, then Save / Edit and ×.
@@ -271,9 +301,14 @@ class _PartLine extends StatelessWidget {
     this.onRemove,
     this.showShortcuts = false,
     this.showcasePhoto,
+    this.actionsInLine = true,
   });
 
   final Future<void> Function(int row)? onRemove;
+
+  /// Whether Save and × are drawn in the line; false when the form's footer
+  /// carries them ([PartRowsForm.currentRowOnly]).
+  final bool actionsInLine;
 
   /// Set when this line shows its photo big ([PartRowsForm.showcaseRow]).
   final Widget Function(int row, double side)? showcasePhoto;
@@ -290,11 +325,6 @@ class _PartLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = sheet.row == row;
-    final draft = sheet.draftAt(row);
-    final saved = draft.entityId != null;
-    final String? removeWhy = saved
-        ? 'Saved parts stay in the catalogue — use Archive part'
-        : (sheet.rowCount <= 1 ? 'A sheet always keeps one part' : null);
 
     return GestureDetector(
       // A tap on the line's empty space picks the part, as a field would.
@@ -317,7 +347,7 @@ class _PartLine extends StatelessWidget {
         // The fields sit in even columns; Save and × stay at the line's end
         // whatever the width, with the part's photo showcased right above Save.
         child: showcasePhoto != null
-            ? _showcase(context, removeWhy)
+            ? _showcase(context)
             : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -336,17 +366,19 @@ class _PartLine extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (photo != null) ...[
-                          SheetStep.noTab(photo!),
-                          const SizedBox(height: 8),
+                        if (photo != null) SheetStep.noTab(photo!),
+                        if (actionsInLine) ...[
+                          if (photo != null) const SizedBox(height: 8),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SheetStep.noTab(action),
+                              SheetStep.noTab(
+                                partRemoveButton(sheet, row, onRemove),
+                              ),
+                            ],
+                          ),
                         ],
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SheetStep.noTab(action),
-                            SheetStep.noTab(_removeButton(removeWhy)),
-                          ],
-                        ),
                       ],
                     ),
                   ),
@@ -382,20 +414,9 @@ class _PartLine extends StatelessWidget {
     ],
   );
 
-  Widget _removeButton(String? removeWhy) => Tooltip(
-    message: removeWhy ?? 'Remove this line',
-    child: IconButton(
-      key: ValueKey<String>('row_remove_$row'),
-      onPressed: removeWhy == null
-          ? () => onRemove == null ? sheet.removeRow(row) : onRemove!(row)
-          : null,
-      icon: const Icon(Icons.close, size: 18),
-    ),
-  );
-
   /// The line with its photo shown big: the fields, and beside them the
   /// photo as a square as tall as they are; Save and × under the photo.
-  Widget _showcase(BuildContext context, String? removeWhy) {
+  Widget _showcase(BuildContext context) {
     final build = showcasePhoto!;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,17 +443,19 @@ class _PartLine extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SheetStep.noTab(action),
-                    SheetStep.noTab(_removeButton(removeWhy)),
-                  ],
+              if (actionsInLine) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SheetStep.noTab(action),
+                      SheetStep.noTab(partRemoveButton(sheet, row, onRemove)),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

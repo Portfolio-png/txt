@@ -575,7 +575,7 @@ void main() {
       }
 
       // The Item Master grid is on screen; the others are not built at all.
-      expect(find.text('Parts on this sheet: 1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mini_table_add_properties_item')), findsOneWidget);
       expect(find.text('The deal'), findsNothing);
     });
 
@@ -584,7 +584,7 @@ void main() {
     ) async {
       await _pumpScreen(tester);
       // All four at once — the rail no longer switches between them.
-      expect(find.text('Parts on this sheet: 1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mini_table_add_properties_item')), findsOneWidget);
       expect(find.text('Quotation (₹)'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('section_toggle_die_master')),
@@ -3571,23 +3571,23 @@ void main() {
           reason: '${stamp.label} is filled in by the save',
         );
       }
-      // The line ends in its own Save, then the × — inside the part's line,
-      // right of every field, however the fields wrap.
+      // Save, then the ×, on the Add property line under the part — no row
+      // of their own (user, 2026-11-23) — and no count of the parts.
       final line = tester.getRect(find.byKey(const ValueKey('part_line_0')));
       final save = tester.getRect(find.byKey(const ValueKey('row_save_0')));
       final remove = tester.getRect(find.byKey(const ValueKey('row_remove_0')));
-      expect(line.contains(save.center), isTrue);
-      for (final column in form.sheet.sheetDef.columns.where(
-        (c) => !c.isStamp,
-      )) {
-        final field = find.byKey(ValueKey('cell_item_0_${column.id}'));
-        expect(
-          tester.getRect(field).right,
-          lessThanOrEqualTo(save.left),
-          reason: column.label,
-        );
-      }
+      final addProperty = tester.getRect(
+        find.byKey(const ValueKey('mini_table_add_properties_item')),
+      );
+      expect(save.top, greaterThanOrEqualTo(line.bottom), reason: 'under the line');
+      expect(
+        (save.center.dy - addProperty.center.dy).abs(),
+        lessThan(6),
+        reason: 'on the Add property line',
+      );
+      expect(save.left, greaterThan(addProperty.right));
       expect(remove.left, greaterThanOrEqualTo(save.right));
+      expect(find.textContaining('Parts on this sheet'), findsNothing);
     });
 
     testWidgets('a field opens the sheet\'s own picker and takes the pick', (
