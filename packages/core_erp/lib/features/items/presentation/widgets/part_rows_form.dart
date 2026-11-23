@@ -650,10 +650,18 @@ class _PartFieldState extends State<_PartField> {
 
   static const TextStyle _valueStyle = TextStyle(fontSize: 14);
 
+  /// A picked value, measured a shade heavy so it never comes up short.
+  static const TextStyle _pickedStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w600);
+
+  /// The theme's font, which the fields draw in: measured in another, a
+  /// box came out short for its own text.
+  TextStyle _themed(TextStyle style) =>
+      (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(style);
+
   double _measure(String text, TextStyle style, TextScaler scaler) {
     if (text.isEmpty) return 0;
     final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      text: TextSpan(text: text, style: _themed(style)),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
       maxLines: 1,
@@ -682,10 +690,12 @@ class _PartFieldState extends State<_PartField> {
     } else if (_isList) {
       final label = _shown;
       final shown = label.isEmpty ? (_locked ? '—' : 'Select…') : label;
-      var extra = 32.0; // the arrow
-      if (_isProperty && !_locked && label.isNotEmpty) extra += 26; // its ×
-      if (_value?.isNew ?? false) extra += 44; // "New"
-      inBox = _measure(shown, _valueStyle, scaler) + box + extra;
+      // The arrow is the decoration's suffix icon, which takes 48 whatever
+      // it draws; 32 here cut every name short ("Manufacturi…").
+      var extra = 48.0;
+      if (_isProperty && !_locked && label.isNotEmpty) extra += 30; // its ×
+      if (_value?.isNew ?? false) extra += 50; // "New"
+      inBox = _measure(shown, _pickedStyle, scaler) + box + extra;
     } else {
       final derived = _isDerived && !_locked;
       inBox = _measure(_text.text, _valueStyle, scaler) + box + (derived ? 64 : 0);

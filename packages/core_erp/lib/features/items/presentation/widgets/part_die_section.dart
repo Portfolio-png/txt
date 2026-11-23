@@ -205,8 +205,6 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// Anything typed or picked since the form was last cleared, or a die
   /// open for correcting: something Tab past the form should ask about.
   bool get _hasTyped =>
-      _editingDieId != null ||
-      _editingStagedIndex != null ||
       _unlinkedDieId != null ||
       _snapshot() != (_clean ??= _snapshot());
 
@@ -217,13 +215,18 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// open for correcting, or one made and not yet linked. What repeats down
   /// the sheet (type, maker, dates…) stays after each save on purpose, so it
   /// alone is not unsaved work.
-  bool get isDirty =>
-      _linerController.text.trim().isNotEmpty ||
-      _setsController.text.trim().isNotEmpty ||
-      _cavityController.text.trim().isNotEmpty ||
-      _editingDieId != null ||
-      _editingStagedIndex != null ||
-      _unlinkedDieId != null;
+  bool get isDirty {
+    if (_unlinkedDieId != null) return true;
+    // Open for correcting (its tab chosen): unsaved only once changed.
+    // Opening a tab is looking at it, and counted as work it held the sheet
+    // open on leaving.
+    if (_editingDieId != null || _editingStagedIndex != null) {
+      return _snapshot() != (_clean ??= _snapshot());
+    }
+    return _linerController.text.trim().isNotEmpty ||
+        _setsController.text.trim().isNotEmpty ||
+        _cavityController.text.trim().isNotEmpty;
+  }
 
   void _reportDirty() {
     final report = widget.onDirtyChanged;
@@ -447,6 +450,8 @@ class _PartDieSectionState extends State<PartDieSection> {
       _rackController.text = draft.rackNo;
       _poAt = draft.poAt;
       _dateInAt = draft.dateInAt;
+      // Opened as stored: only a change to it is unsaved work.
+      _clean = _snapshot();
     });
   }
 
@@ -476,6 +481,8 @@ class _PartDieSectionState extends State<PartDieSection> {
       _rackController.text = die.rackNo;
       _poAt = die.poAt;
       _dateInAt = die.dateInAt;
+      // Opened as stored: only a change to it is unsaved work.
+      _clean = _snapshot();
     });
   }
 
@@ -831,7 +838,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                         label: 'Die Code',
                         child: FitToText(
                           controller: _codeController,
-                          texts: const ['Die Code'],
+                          heading: 'Die Code',
                           helper: _codeHelper(),
                           minWidth: 180,
                           child: TextField(
@@ -855,7 +862,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                         label: 'Die Made By',
                         child: FitToText(
                           controller: _madeByController,
-                          texts: const ['Die Made By'],
+                          heading: 'Die Made By',
                           helper:
                               'Whoever cut it — a fitter here, or an outside toolroom',
                           minWidth: 240,
@@ -1179,8 +1186,10 @@ class _PartDieSectionState extends State<PartDieSection> {
       label: label,
       child: FitToText(
         controller: controller,
-        texts: [label, ...options.take(8)],
-        minWidth: numeric ? 140 : 160,
+        // As wide as what is in it (or its heading), not as its longest
+        // suggestion: "4" under "No. Of Sets" was a 140 px box.
+        heading: label,
+        minWidth: numeric ? 80 : 120,
         chrome: 72,
         child: PickOrTypeField(
           fieldKey: ValueKey<String>('quick-entry-die-$slug-field'),

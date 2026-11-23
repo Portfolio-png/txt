@@ -196,8 +196,6 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// Anything typed or picked since the form was last cleared, or a machine
   /// open for correcting.
   bool get _hasTyped =>
-      _editingMachineId != null ||
-      _editingStagedIndex != null ||
       _unlinkedMachineId != null ||
       _snapshot() != (_clean ??= _snapshot());
 
@@ -222,15 +220,20 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// open for correcting, or one made and not yet linked. What repeats down
   /// the sheet (type, maker, dates…) stays after each save on purpose, so it
   /// alone is not unsaved work.
-  bool get isDirty =>
-      _nameController.text.trim().isNotEmpty ||
-      _yearController.text.trim().isNotEmpty ||
-      _hoursController.text.trim().isNotEmpty ||
-      _strokesController.text.trim().isNotEmpty ||
-      _capacityController.text.trim().isNotEmpty ||
-      _editingMachineId != null ||
-      _editingStagedIndex != null ||
-      _unlinkedMachineId != null;
+  bool get isDirty {
+    if (_unlinkedMachineId != null) return true;
+    // Open for correcting (its tab chosen): unsaved only once changed.
+    // Opening a tab is looking at it, and counted as work it held the sheet
+    // open on leaving.
+    if (_editingMachineId != null || _editingStagedIndex != null) {
+      return _snapshot() != (_clean ??= _snapshot());
+    }
+    return _nameController.text.trim().isNotEmpty ||
+        _yearController.text.trim().isNotEmpty ||
+        _hoursController.text.trim().isNotEmpty ||
+        _strokesController.text.trim().isNotEmpty ||
+        _capacityController.text.trim().isNotEmpty;
+  }
 
   void _reportDirty() {
     final report = widget.onDirtyChanged;
@@ -416,6 +419,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
         _capacityUnit,
       );
       _feedTypeController.text = draft.dieFeedType;
+      // Opened as stored: only a change to it is unsaved work.
+      _clean = _snapshot();
     });
   }
 
@@ -444,6 +449,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
         _capacityUnit,
       );
       _feedTypeController.text = machine.dieFeedType;
+      // Opened as stored: only a change to it is unsaved work.
+      _clean = _snapshot();
     });
   }
 
@@ -761,7 +768,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 SheetStyle.labelled(
                   label: 'Machine Type',
                   child: FitToText(
-                  texts: ['Machine Type', _typeNameFor(_groupId)],
+                  heading: 'Machine Type',
+                  texts: [_typeNameFor(_groupId)],
                   minWidth: 220,
                   chrome: 72,
                   child: GroupPickerField(
@@ -808,7 +816,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   label: 'Machine No.',
                   child: FitToText(
                   controller: _noController,
-                  texts: const ['Machine No.'],
+                  heading: 'Machine No.',
                   child: TextField(
                     key: const ValueKey<String>('quick-entry-machine-no-field'),
                     controller: _noController,
@@ -1138,8 +1146,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       label: label,
       child: FitToText(
         controller: controller,
-        texts: [label, ...options.take(8)],
-        minWidth: numeric ? 140 : 180,
+        // As wide as what is in it (or its heading), not as its longest
+        // suggestion: "4" under "No. Of Sets" was a 140 px box.
+        heading: label,
+        minWidth: numeric ? 80 : 120,
         chrome: 72,
         child: PickOrTypeField(
           fieldKey: ValueKey<String>('quick-entry-machine-$slug-field'),

@@ -437,7 +437,9 @@ class ApiMachineRepository implements MachineRepository {
 
   Map<String, dynamic> _machineToJson(Machine m) {
     return {
-      'id': m.id,
+      // A new one has no id yet: '' was sent, and the save's contract (an
+      // integer or nothing, since 2026-11-19) refused every new one.
+      'id': int.tryParse(m.id.trim()),
       'name': m.name,
       'assetId': m.assetId,
       'barcode': m.barcode,

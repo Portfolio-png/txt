@@ -2158,6 +2158,21 @@ void _manyDiesTests() {
       return harness;
     }
 
+    testWidgets('an empty Sets or Cavity is as wide as its heading, no more', (
+      tester,
+    ) async {
+      await partWithADie(tester);
+      for (final (slug, heading) in [('sets', 'No. Of Sets'), ('cavity', 'Cavity')]) {
+        final field = find.byKey(ValueKey<String>('quick-entry-die-$slug-field'));
+        await tester.ensureVisible(field);
+        await tester.pump();
+        final title = tester.getSize(find.text(heading).first).width;
+        // It was the heading AND a box's padding on top (or 140 and the
+        // longest suggestion, whichever was wider).
+        expect(tester.getSize(field).width, lessThan(title + 40), reason: slug);
+      }
+    });
+
     testWidgets('a second die goes on beside the first, not over it', (
       tester,
     ) async {

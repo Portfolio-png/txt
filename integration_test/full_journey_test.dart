@@ -97,6 +97,14 @@ Future<void> _typeInto(WidgetTester tester, String key, String text) async {
   await tester.pump();
 }
 
+/// Opens a section of the sheet if it is folded — the masters under the
+/// part open folded (2026-11-23); a folded one shows its one-line summary.
+Future<void> _openSection(WidgetTester tester, String id) async {
+  if (find.byKey(ValueKey<String>('section_summary_$id')).evaluate().isEmpty) return;
+  await _tapVisible(tester, find.byKey(ValueKey<String>('section_toggle_$id')));
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
 Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder.first);
   await tester.pump(const Duration(milliseconds: 200));
@@ -232,6 +240,7 @@ void main() {
 
     // --- who it was developed for ---------------------------------------------
     await _step('choose the company', () async {
+      await _openSection(tester, 'client_vendor');
       await _tapVisible(tester, find.byKey(const ValueKey<String>('deal_company_tap')));
       await pumpUntil(tester, find.byType(TextField), reason: 'the company search should open');
       await tester.enterText(find.byType(TextField).last, _company);
@@ -280,6 +289,7 @@ void main() {
 
     // --- dies and machines ----------------------------------------------------
     await _step('add a die', () async {
+      await _openSection(tester, 'die_master');
       final section = find.byWidgetPredicate(
         (w) => w.runtimeType.toString() == 'PartDieSection',
       );
@@ -294,6 +304,7 @@ void main() {
     });
 
     await _step('add a machine', () async {
+      await _openSection(tester, 'machine_master');
       await _tapVisible(
         tester,
         find.byKey(const ValueKey<String>('quick-entry-machine-type-field')),
@@ -332,9 +343,16 @@ void main() {
     await _letToastGo(tester);
     await _step('upload the person photo', () => _uploadPhoto(tester, 'photo-party_contact-'));
     await _letToastGo(tester);
-    await _step('upload the die photo', () => _uploadPhoto(tester, 'photo-die-'));
+    // A die's photo is in its tab's form: open the saved die's tab first.
+    await _step('upload the die photo', () async {
+      await _tapVisible(tester, _savedTab('die'));
+      await _uploadPhoto(tester, 'photo-die-');
+    });
     await _letToastGo(tester);
-    await _step('upload the machine photo', () => _uploadPhoto(tester, 'photo-machine-'));
+    await _step('upload the machine photo', () async {
+      await _tapVisible(tester, _savedTab('machine'));
+      await _uploadPhoto(tester, 'photo-machine-');
+    });
     await _letToastGo(tester);
 
     await _step('delete the person photo', () async {
@@ -438,6 +456,16 @@ void main() {
       await openItemSheet(tester);
       await _pickCell(tester, column: 1, label: 'Primary Group');
       await _pickCell(tester, column: 3, label: _part);
+      // A name alone does not say which part (another alloy or thickness is
+      // another part), so the part opens once every property matches too.
+      await _pickCell(tester, column: 6, label: 'MS');
+      final thickness = find.descendant(
+        of: find.byKey(const ValueKey<String>('cell_item_0_7')),
+        matching: find.byType(TextField),
+      );
+      await tester.ensureVisible(thickness);
+      await tester.enterText(thickness, '23');
+      await tester.pump(const Duration(milliseconds: 200));
       await pumpUntil(
         tester,
         find.textContaining('SAVED #$partId'),
@@ -446,6 +474,9 @@ void main() {
     });
 
     await _step('check everything came back', () async {
+      for (final id in ['client_vendor', 'die_master', 'machine_master']) {
+        await _openSection(tester, id);
+      }
       Future<void> stillThere(Finder finder, String what) =>
           pumpUntil(tester, finder, timeout: const Duration(seconds: 20), reason: '$what should be retained');
       await stillThere(find.text(_part), 'the part name');

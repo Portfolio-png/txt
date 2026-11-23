@@ -22,6 +22,7 @@ class FitToText extends StatefulWidget {
     this.minWidth = 150,
     this.maxWidth = 420,
     this.chrome = 48,
+    this.heading,
   });
 
   final Widget child;
@@ -39,6 +40,12 @@ class FitToText extends StatefulWidget {
 
   /// Room the field needs beyond its text — padding, a suffix icon, a border.
   final double chrome;
+
+  /// The name ABOVE the box ([SheetStyle.labelled]): the box is at least as
+  /// wide as it, but it is not inside the box, so it gets no [chrome]. Put in
+  /// [texts], a short answer under a long heading got the heading's width
+  /// plus a box's padding on top.
+  final String? heading;
 
   @override
   State<FitToText> createState() => _FitToTextState();
@@ -81,7 +88,12 @@ class _FitToTextState extends State<FitToText> {
   double _measure(String text, TextScaler scaler) {
     if (text.isEmpty) return 0;
     final painter = TextPainter(
-      text: TextSpan(text: text, style: _measureStyle),
+      // In the theme's font, which the field draws in.
+      text: TextSpan(
+        text: text,
+        style: (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
+            .merge(_measureStyle),
+      ),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
       maxLines: 1,
@@ -104,9 +116,13 @@ class _FitToTextState extends State<FitToText> {
       final half = _measure(helper, scaler) / 2;
       if (half > widest) widest = half;
     }
-    final width = (widest + widget.chrome)
-        .clamp(widget.minWidth, widget.maxWidth)
-        .toDouble();
+    var width = widest + widget.chrome;
+    final heading = widget.heading;
+    if (heading != null) {
+      final above = _measure(heading, scaler);
+      if (above > width) width = above;
+    }
+    width = width.clamp(widget.minWidth, widget.maxWidth).toDouble();
     return SizedBox(width: width, child: widget.child);
   }
 }

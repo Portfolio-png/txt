@@ -275,7 +275,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         SheetStyle.labelled(
           label: 'Company',
           child: FitToText(
-          texts: ['Company', widget.controller.dealPartyName],
+          heading: 'Company',
+          texts: [widget.controller.dealPartyName],
           minWidth: 160,
           chrome: 72,
           child: SearchableSelectField<int>(
@@ -326,7 +327,8 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           label: 'Quotation (₹)',
           child: FitToText(
           controller: quotation,
-          texts: const ['Quotation (₹)', 'One figure for the part'],
+          heading: 'Quotation (₹)',
+          texts: const ['One figure for the part'],
           helper: 'One figure for the part',
           minWidth: 140,
           child: TextField(
@@ -596,7 +598,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           label: label,
           child: FitToText(
           controller: text,
-          texts: [label, ...options.take(8)],
+          heading: label,
           minWidth: min,
           chrome: 72,
           child: PickOrTypeField(
@@ -621,7 +623,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         label: label,
         child: FitToText(
         controller: text,
-        texts: [label],
+        heading: label,
         minWidth: min,
         child: TextField(
           key: ValueKey<String>('deal_person_${row}_$binds'),

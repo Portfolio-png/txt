@@ -454,7 +454,9 @@ class ApiDieRepository implements DieRepository {
 
   Map<String, dynamic> _dieToJson(Die d) {
     return {
-      'id': d.id,
+      // A new one has no id yet: '' was sent, and the save's contract (an
+      // integer or nothing, since 2026-11-19) refused every new one.
+      'id': int.tryParse(d.id.trim()),
       'name': d.name,
       'toolCode': d.toolCode,
       'producedPartNumbers': d.name

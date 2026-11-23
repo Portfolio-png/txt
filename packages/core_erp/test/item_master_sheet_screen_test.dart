@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:core_erp/core/widgets/app_button.dart';
@@ -2034,6 +2035,40 @@ void main() {
     );
 
     testWidgets(
+      'opening a saved die\'s tab is not unsaved work; changing it is',
+      (tester) async {
+        AppFlowHooks.createDieFromSheet = (context, draft) async =>
+            throw UnimplementedError('not saved in this test');
+        addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+        final patti = _item(
+          id: 500,
+          name: 'Patti',
+          groupId: 11,
+          dies: const [ItemDieLink(id: '31', toolCode: 'PGESP1', noOfSet: 4)],
+        );
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: _FakeItemRepository([patti]),
+          size: const Size(1700, 3200),
+        );
+        await tester.ensureVisible(find.byKey(const ValueKey('die_tab_31')));
+        await tester.tap(find.byKey(const ValueKey('die_tab_31')));
+        // The section reports after the frame; the screen then rebuilds.
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump();
+        expect(find.byKey(const ValueKey('die_tab_selected')), findsOneWidget);
+
+        // Only looked at: leaving does not ask (it kept the sheet open).
+        await tester.tap(find.byTooltip('Back').first);
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('Leave with unsaved work?'), findsNothing);
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
       'picking a part already on the sheet keeps a line that holds a die',
       (tester) async {
         AppFlowHooks.createDieFromSheet = (context, draft) async =>
@@ -3137,13 +3172,21 @@ void main() {
           nameColumn.id,
           CellValue(
             columnId: nameColumn.id,
-            optionLabel: 'Patti for the long brass hinge assembly',
+            optionLabel: 'Long brass hinge',
             isNew: true,
           ),
         );
         await tester.pump();
         final after = cell(SheetBindsTo.name).width;
         expect(after, greaterThan(before), reason: 'the box grows with its text');
+        // ...and shows it whole, not cut with … (the arrow's room was short).
+        final shown = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(ValueKey('cell_item_0_${nameColumn.id}')),
+            matching: find.text('Long brass hinge'),
+          ),
+        );
+        expect(shown.didExceedMaxLines, isFalse, reason: 'the whole name shows');
         expect(after, lessThanOrEqualTo(360), reason: 'and stops at the widest a field goes');
         expect(
           cell(SheetBindsTo.partNo).width,
