@@ -438,7 +438,73 @@ void main() {
       );
       await _pumpEditor(tester, set: set);
       expect(nameField(tester), 'Ash Tray + Lid');
-      expect(find.text('Built from the items below — type to change it.'), findsOneWidget);
+      expect(find.text('Built from the items below — arrange it under here, or type your own.'), findsOneWidget);
+    });
+  });
+
+  // The name arranged like an equation: order, what joins each pair, and
+  // which items are in it (user, 2026-11-24).
+  group('the set name can be arranged', () {
+    test('order, separators per gap, left out and put back', () {
+      final a = SetNameArrangement()..sync(['Ash Tray', 'Lid', 'Stand', 'lid']);
+      expect(a.compose(), 'Ash Tray + Lid + Stand');
+      a.setJoin(1, ', ');
+      expect(a.compose(), 'Ash Tray + Lid, Stand');
+      a.move(0, 1);
+      expect(a.compose(), 'Lid + Ash Tray, Stand', reason: 'the joins stay in their gaps');
+      a.leaveOut('Ash Tray');
+      expect(a.compose(), 'Lid + Stand');
+      a.putBack('Ash Tray');
+      expect(a.included, ['Lid', 'Ash Tray', 'Stand']);
+      a.sync(['Lid', 'Stand', 'Hinge']);
+      expect(
+        a.compose(),
+        'Lid + Stand, Hinge',
+        reason: 'a gone item goes, a new one joins at the end; the joins keep their places',
+      );
+      expect(a.touched, isTrue);
+    });
+
+    testWidgets('changing what joins two items, or their order, renames the set', (tester) async {
+      final set = InventorySetDefinition(
+        id: 9,
+        name: 'Ash Tray + Lid',
+        totalItemCount: 2,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        lines: [..._filedSet.lines, ..._newerCopy.lines],
+      );
+      await _pumpEditor(tester, set: set);
+      String name() => tester
+          .widget<TextFormField>(find.byKey(const ValueKey('set-editor-name-field')))
+          .controller!
+          .text;
+      expect(find.byKey(const ValueKey('set-name-part-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('set-name-join-0')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('set-name-join-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('comma').last);
+      await tester.pumpAndSettle();
+      expect(name(), 'Ash Tray, Lid');
+
+      await tester.tap(find.byKey(const ValueKey('set-name-part-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Move right').last);
+      await tester.pumpAndSettle();
+      expect(name(), 'Lid, Ash Tray');
+
+      // A typed name is the user's; arranging again takes the arranged one.
+      await tester.enterText(find.byKey(const ValueKey('set-editor-name-field')), 'Tray Kit');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('set-name-part-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Leave out of the name').last);
+      await tester.pumpAndSettle();
+      expect(name(), 'Lid');
+      await tester.tap(find.byKey(const ValueKey('set-name-out-Ash Tray')));
+      await tester.pumpAndSettle();
+      expect(name(), 'Lid, Ash Tray');
     });
   });
 }

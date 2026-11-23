@@ -135,10 +135,30 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
   /// name is never written over.
   bool _nameTyped = false;
 
-  /// The name the items in Composition give, right now.
-  String get _builtName => buildSetName(
-    _lines.where((line) => line.itemId != null).map((line) => line.itemLabel),
-  );
+  /// How the name is arranged — the items' order, what joins them, which
+  /// are left out. Until someone arranges it, [buildSetName]'s.
+  SetNameArrangement _arrangement = SetNameArrangement();
+
+  /// The name the items in Composition give, right now, as arranged.
+  String get _builtName {
+    final labels = [
+      for (final line in _lines)
+        if (line.itemId != null) line.itemLabel,
+    ];
+    _arrangement.sync(labels);
+    return _arrangement.touched ? _arrangement.compose() : buildSetName(labels);
+  }
+
+  /// An arrangement change: the name follows it again, even over a typed one
+  /// — arranging IS choosing the name.
+  void _arrange(void Function() change) {
+    setState(() {
+      change();
+      _touched = true;
+      _nameTyped = false;
+      _followItems();
+    });
+  }
 
   /// Puts the built name in the box while the name is not a typed one.
   void _followItems() {
@@ -217,6 +237,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     }
     // A saved set keeps its name unless that name IS the built one, in which
     // case it goes on following its items.
+    _arrangement = SetNameArrangement();
     final stored = (set?.name ?? '').trim();
     _nameTyped = stored.isNotEmpty && stored != _builtName;
     _followItems();
@@ -701,6 +722,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
             validator: (value) =>
                 value == null || value.trim().isEmpty ? 'Required' : null,
           ),
+          _nameArranger(),
           const SizedBox(height: 16),
           // The same scope an item files into, so a group holds a kit next to
           // the items it is built from. Optional: a set need not be filed.
@@ -1562,6 +1584,135 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     }
   }
 
+  static const Map<String, String> _joinNames = {
+    ' + ': 'plus',
+    ', ': 'comma',
+    ' & ': 'and',
+    ' / ': 'slash',
+    ' × ': 'times',
+  };
+
+  /// The name's items as chips in order, each pair joined by a separator
+  /// that can be changed — " + " here, ", " there, like the terms of an
+  /// equation (user, 2026-11-24). A chip moves left or right, or leaves the
+  /// name; one left out comes back with a tap.
+  Widget _nameArranger() {
+    _builtName; // brings the arrangement in line with the rows
+    final names = _arrangement.included;
+    final out = _arrangement.leftOut;
+    if (names.length + out.length < 2) return const SizedBox.shrink();
+    const chipText = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A));
+    BoxDecoration pill(Color fill, Color line) => BoxDecoration(
+      color: fill,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: line),
+    );
+
+    Widget join(int gap) {
+      final current = _arrangement.joinAt(gap);
+      return PopupMenuButton<String>(
+        key: ValueKey<String>('set-name-join-$gap'),
+        tooltip: 'What joins these two',
+        initialValue: current,
+        onSelected: (separator) => _arrange(() => _arrangement.setJoin(gap, separator)),
+        itemBuilder: (_) => [
+          for (final separator in SetNameArrangement.separators)
+            PopupMenuItem<String>(
+              value: separator,
+              child: Text(
+                '${separator.trim()}   ${_joinNames[separator] ?? ''}',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: pill(const Color(0xFFEEF2FF), const Color(0xFFC7D2FE)),
+          child: Text(
+            current.trim(),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF4F46E5)),
+          ),
+        ),
+      );
+    }
+
+    Widget part(int i) {
+      final name = names[i];
+      return PopupMenuButton<String>(
+        key: ValueKey<String>('set-name-part-$i'),
+        tooltip: 'Move $name, or leave it out of the name',
+        onSelected: (choice) => _arrange(() {
+          switch (choice) {
+            case 'left':
+              _arrangement.move(i, -1);
+            case 'right':
+              _arrangement.move(i, 1);
+            case 'out':
+              _arrangement.leaveOut(name);
+          }
+        }),
+        itemBuilder: (_) => [
+          PopupMenuItem<String>(value: 'left', enabled: i > 0, child: const Text('Move left', style: TextStyle(fontSize: 14))),
+          PopupMenuItem<String>(value: 'right', enabled: i < names.length - 1, child: const Text('Move right', style: TextStyle(fontSize: 14))),
+          PopupMenuItem<String>(value: 'out', enabled: names.length > 1, child: const Text('Leave out of the name', style: TextStyle(fontSize: 14))),
+        ],
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+          decoration: pill(Colors.white, const Color(0xFFD8E0EA)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(name, style: chipText),
+              const Icon(Icons.arrow_drop_down_rounded, size: 20, color: Color(0xFF6B7280)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Arrange the name',
+            style: _inventoryInterStyle(color: const Color(0xFF6B7280), size: 13, weight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = 0; i < names.length; i += 1) ...[
+                if (i > 0) join(i - 1),
+                part(i),
+              ],
+              for (final name in out)
+                Tooltip(
+                  message: 'Put $name back in the name',
+                  child: InkWell(
+                    key: ValueKey<String>('set-name-out-$name'),
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _arrange(() => _arrangement.putBack(name)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: pill(const Color(0xFFF8FAFC), const Color(0xFFE2E8F0)),
+                      child: Text(
+                        '+ $name',
+                        style: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   String _nameHelper() {
     if (_nameTyped) {
       return _builtName.isEmpty
@@ -1570,7 +1721,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     }
     return _builtName.isEmpty
         ? 'Fills in from the items you add below — or type your own.'
-        : 'Built from the items below — type to change it.';
+        : 'Built from the items below — arrange it under here, or type your own.';
   }
 
   /// Drawn always; disabled, with the reason, when it has nothing to do.
