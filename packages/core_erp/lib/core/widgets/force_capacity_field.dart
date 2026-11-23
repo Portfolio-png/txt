@@ -131,10 +131,15 @@ class ForceCapacityField extends StatelessWidget {
     this.suggestions,
     this.decoration,
     this.floatLabel = true,
+    this.compactFreeHand = false,
   });
 
   /// False when the host draws [label] above the field itself.
   final bool floatLabel;
+
+  /// The tick says only "Free hand", its meaning in a tooltip — for a row of
+  /// fields where the long words would push the box onto the next line.
+  final bool compactFreeHand;
 
   final TextEditingController controller;
   final String unitSymbol;
@@ -253,11 +258,16 @@ class ForceCapacityField extends StatelessWidget {
                 ),
                 // Flexible so a narrow host wraps the words rather than
                 // overflowing them.
-                const Flexible(
-                  child: Text(
-                    'Free hand — no rated capacity',
-                    style: TextStyle(fontSize: 14),
-                  ),
+                Flexible(
+                  child: compactFreeHand
+                      ? const Tooltip(
+                          message: 'Free hand — no rated capacity',
+                          child: Text('Free hand', style: TextStyle(fontSize: 14)),
+                        )
+                      : const Text(
+                          'Free hand — no rated capacity',
+                          style: TextStyle(fontSize: 14),
+                        ),
                 ),
               ],
             ),

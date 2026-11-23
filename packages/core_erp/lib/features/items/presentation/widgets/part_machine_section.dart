@@ -770,8 +770,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   child: FitToText(
                   heading: 'Machine Type',
                   texts: [_typeNameFor(_groupId)],
-                  minWidth: 220,
-                  chrome: 72,
+                  minWidth: 120,
+                  chrome: 84, // padding, the arrow (48), the border
                   child: GroupPickerField(
                     key: const ValueKey<String>(
                       'quick-entry-machine-type-field',
@@ -831,13 +831,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   ),
                 ),
                 ),
-                _pick(
-                  slug: 'name',
-                  label: 'Name',
-                  controller: _nameController,
-                  options: _suggestions.names,
-                  enabled: enabled,
-                ),
+                // No Name field (user, 2026-11-24): a machine is known by its
+                // number, which a new one is named after; one already named
+                // keeps its name (loaded into _nameController, sent back).
                 _pick(
                   slug: 'make',
                   label: 'Machine Make',
@@ -878,11 +874,22 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     ),
                   ],
                 ),
-                // A figure, a unit and a "free hand" tick: one compact block.
+                // A figure, a unit and a "free hand" tick: one compact block,
+                // beside Stroke / Min, as wide as the figure and its unit —
+                // and its tick's words under them. It was a fixed 340, which
+                // pushed it onto the next line.
                 SheetStyle.labelled(
                   label: 'Capacity',
-                  child: SizedBox(
-                  width: 340,
+                  child: FitToText(
+                  controller: _capacityController,
+                  texts: const ['00.0'],
+                  // The figure's box: padding (24), its arrow (48), the
+                  // border; then a gap and the unit picker (104).
+                  chrome: 24 + 48 + 4 + 8 + 104,
+                  // Its tick says "Free hand" (the rest in a tooltip), so the
+                  // block fits beside Stroke / Min.
+                  minWidth: 220,
+                  maxWidth: 340,
                   child: ForceCapacityField(
                     fieldKey: const ValueKey<String>(
                       'quick-entry-machine-capacity-field',
@@ -892,6 +899,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                     ),
                     controller: _capacityController,
                     floatLabel: false,
+                    compactFreeHand: true,
                     unitSymbol: _capacityUnit,
                     kind: _capacityKind,
                     enabled: enabled,
@@ -1150,7 +1158,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
         // suggestion: "4" under "No. Of Sets" was a 140 px box.
         heading: label,
         minWidth: numeric ? 80 : 120,
-        chrome: 72,
+        chrome: 84, // padding, the arrow (48), the border
         child: PickOrTypeField(
           fieldKey: ValueKey<String>('quick-entry-machine-$slug-field'),
           controller: controller,

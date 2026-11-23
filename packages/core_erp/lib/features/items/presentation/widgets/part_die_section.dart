@@ -866,7 +866,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                           helper:
                               'Whoever cut it — a fitter here, or an outside toolroom',
                           minWidth: 240,
-                          chrome: 72,
+                          chrome: 84, // padding, the arrow (48), the border
                           child: _madeByField(enabled),
                         ),
                       ),
@@ -1190,7 +1190,7 @@ class _PartDieSectionState extends State<PartDieSection> {
         // suggestion: "4" under "No. Of Sets" was a 140 px box.
         heading: label,
         minWidth: numeric ? 80 : 120,
-        chrome: 72,
+        chrome: 84, // padding, the arrow (48), the border
         child: PickOrTypeField(
           fieldKey: ValueKey<String>('quick-entry-die-$slug-field'),
           controller: controller,

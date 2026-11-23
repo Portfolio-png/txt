@@ -4,6 +4,7 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2375,12 +2376,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                     if (val != null) _controller.setExternal(val);
                   },
                 ),
-                const Text(
-                  'External party',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: SoftErpTheme.textPrimary,
+                const Flexible(
+                  child: Text(
+                    'External party',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: SoftErpTheme.textPrimary,
+                    ),
                   ),
                 ),
                 if (_altPressed) ...[
@@ -2410,19 +2415,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ),
           collapsed: collapsed,
           trailing: _controller.isExternal
-              ? Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    MarginHealthBadge(
-                      quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
-                      cost: _moneyBoundTo(SheetBindsTo.developedForCost),
-                    ),
-                    _dealStampChip(),
-                  ],
+              ? MarginHealthBadge(
+                  quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
+                  cost: _moneyBoundTo(SheetBindsTo.developedForCost),
                 )
               : null,
+          trailingEnd: _controller.isExternal ? _dealStampChip() : null,
           child: _partySheet(),
         );
       case 'die_master':
@@ -2461,7 +2459,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           icon: Icons.category_rounded,
           heading: 'Item Master',
           collapsed: collapsed,
-          trailing: _partHeading(),
+          trailing: _identityChip(),
+          trailingEnd: _stampChip(),
           child: _groupItemSheet(),
         );
     }
@@ -2477,15 +2476,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     ({String label, String? value})? heading,
   ) {
     if (heading == null) return null;
-    return _LineUpUnder(
-      anchor: _partCodeChipKey,
-      after: _titleKey(section),
-      child: _codeChip(
-        heading.label,
-        heading.value,
-        key: ValueKey<String>(key),
-      ),
-    );
+    return _codeChip(heading.label, heading.value, key: ValueKey<String>(key));
   }
 
   /// "Part code: SADP48" — the words muted, the code bold in the accent; a
@@ -3062,12 +3053,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   }
 
   /// The heading's right end: the part's code, then when the part was made.
-  Widget _partHeading() => Wrap(
-    alignment: WrapAlignment.end,
-    spacing: 8,
-    runSpacing: 6,
-    children: [_identityChip(), _stampChip()],
-  );
+  /// The three buttons at a section bar's end (compact icon buttons, 40
+  /// each), whose room the part's bar keeps so the chips line up.
+  static const double _sectionActionsWidth = 3 * 40;
+
 
   /// When the part under the cursor was saved — the Date and Time its line
   /// leaves out. A part not saved yet shows the time now, muted: its save is
@@ -3108,15 +3097,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       child: Align(
         widthFactor: 1,
         heightFactor: 1,
-        child: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Part code: ',
-              style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+            // Both give way in a very narrow bar, the code last.
+            const Flexible(
+              child: Text(
+                'Part code: ',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+              ),
             ),
-            Text(
+            Flexible(
+              flex: 3,
+              child: Text(
               (code == null || code.isEmpty) ? 'assigned on save' : code,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
@@ -3124,6 +3122,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                     ? SoftErpTheme.textMuted
                     : SoftErpTheme.accent,
               ),
+            ),
             ),
           ],
         ),
@@ -4235,6 +4234,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     required Widget child,
     Widget? headingWidget,
     Widget? trailing,
+    /// At the bar's very end, after [trailing], kept whole while [trailing]
+    /// gives way: a date and time.
+    Widget? trailingEnd,
     bool collapsed = false,
   }) {
     // Saving and editing are per row now (each row's own Save, then Edit), so
@@ -4308,25 +4310,30 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 const SizedBox(width: 4),
                 SheetStyle.iconTile(icon),
                 const SizedBox(width: 10),
-                // The title's room first: a quarter of the row broke "Die
-                // Process Master" over three lines. The chips fold instead.
+                // The title at its own width (at most half the bar), the
+                // chips in the rest on ONE row, right-aligned (user,
+                // 2026-11-24); they give way by cutting the part code short.
+                // Every section's chips end at one place: the part's bar and
+                // Routing's, which have no buttons, keep their room.
                 Expanded(
-                  flex: 3,
-                  child: headingWidget ??
-                      Text(
-                        heading,
-                        key: _titleKey(id),
-                        style: SheetStyle.sectionTitle,
-                      ),
+                  child: _TitleBar(
+                    title: headingWidget ??
+                        Text(
+                          heading,
+                          key: _titleKey(id),
+                          style: SheetStyle.sectionTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    chips: trailing ?? const SizedBox.shrink(),
+                    tail: trailingEnd ?? const SizedBox.shrink(),
+                  ),
                 ),
-                if (trailing != null) ...[
-                  const SizedBox(width: 12),
-                  // Most of the room, so a narrow card wraps its chips rather
-                  // than pushing the actions off the end.
-                  Flexible(flex: 2, child: trailing),
-                ],
                 const SizedBox(width: 8),
-                ..._sectionActions(id, heading),
+                if (id == 'group_item' || id == 'routing')
+                  const SizedBox(width: _sectionActionsWidth)
+                else
+                  ..._sectionActions(id, heading),
               ],
             ),
           ),
@@ -4784,90 +4791,6 @@ class _KindTile extends StatelessWidget {
 /// The date and time in the Item Master heading. Given a [date], it is the
 /// part's stamp; without one it is the clock, moved on each minute, for a part
 /// the save has not stamped yet.
-/// [child] at the start of the room it is given, moved so it starts where
-/// [anchor] starts: right as far as it still fits whole (lining up must not
-/// cut the code off), left into the bar's empty space as far as the end of
-/// the [after] text (the section's title) — never over it. While the anchor
-/// is not on screen (scrolled away) it keeps where it last lined up.
-class _LineUpUnder extends StatefulWidget {
-  const _LineUpUnder({
-    required this.anchor,
-    required this.after,
-    required this.child,
-  });
-
-  final GlobalKey anchor;
-  final GlobalKey after;
-  final Widget child;
-
-  @override
-  State<_LineUpUnder> createState() => _LineUpUnderState();
-}
-
-class _LineUpUnderState extends State<_LineUpUnder> {
-  double _inset = 0;
-  final GlobalKey _childKey = GlobalKey();
-
-  @override
-  Widget build(BuildContext context) {
-    // Measured after every layout — a resize, a section nested deeper — since
-    // both edges are only known once laid out.
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
-        return Align(
-          alignment: Alignment.centerLeft,
-          // Moved as painted, not as laid out: left of the room is the
-          // title's, which only lends its empty end.
-          child: Transform.translate(
-            offset: Offset(_inset, 0),
-            child: KeyedSubtree(key: _childKey, child: widget.child),
-          ),
-        );
-      },
-    );
-  }
-
-  void _measure() {
-    if (!mounted) return;
-    try {
-      final mine = context.findRenderObject();
-      final anchorContext = widget.anchor.currentContext;
-      if (anchorContext == null || !anchorContext.mounted) return;
-      final anchor = anchorContext.findRenderObject();
-      if (mine is! RenderBox || !mine.hasSize || !mine.attached) return;
-      if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
-      final myLeft = mine.localToGlobal(Offset.zero).dx;
-      final anchorLeft = anchor.localToGlobal(Offset.zero).dx;
-      // The room the child needs at its full width; whatever is left over is
-      // all the lining up may take.
-      final childContext = _childKey.currentContext;
-      if (childContext == null || !childContext.mounted) return;
-      final child = childContext.findRenderObject();
-      final natural = child is RenderBox && child.attached
-          ? child.getMaxIntrinsicWidth(double.infinity)
-          : 0.0;
-      final spare = math.max(0.0, mine.size.width - natural);
-      // How far left there is empty bar: up to the title's text, and a gap.
-      var lend = 0.0;
-      final titleContext = widget.after.currentContext;
-      if (titleContext != null && titleContext.mounted) {
-        final title = titleContext.findRenderObject();
-        if (title is RenderBox && title.hasSize && title.attached) {
-          final text = math.min(
-            title.size.width,
-            title.getMaxIntrinsicWidth(double.infinity),
-          );
-          final titleEnd = title.localToGlobal(Offset.zero).dx + text;
-          lend = math.max(0.0, myLeft - (titleEnd + 12));
-        }
-      }
-      final inset = (anchorLeft - myLeft).clamp(-lend, spare);
-      if ((inset - _inset).abs() > 0.5 && mounted) setState(() => _inset = inset);
-    } catch (_) {}
-  }
-}
-
 class _HeadingStamp extends StatefulWidget {
   const _HeadingStamp({
     super.key,
@@ -4943,46 +4866,20 @@ class _HeadingStampState extends State<_HeadingStamp> {
         child: Align(
           widthFactor: 1,
           heightFactor: 1,
-          // Date and time fold onto two lines in a narrow heading; the text
-          // is never scaled down.
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 2,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          // Date and time on one row, at their own width (user,
+          // 2026-11-24): the heading gives way on the part code instead.
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.event_rounded, size: 16, color: colour),
-                  const SizedBox(width: 6),
-                  // Narrower than even one of them: cut, with the whole in the tooltip.
-                  Flexible(
-                    child: Text(
-                      date,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
-                    ),
-                  ),
-                ],
-              ),
-              if (time != null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.schedule_rounded, size: 16, color: colour),
-                    const SizedBox(width: 6),
-                    // Narrower than even one of them: cut, with the whole in the tooltip.
-                    Flexible(
-                      child: Text(
-                        time,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour),
-                      ),
-                    ),
-                  ],
-                ),
+              Icon(Icons.event_rounded, size: 16, color: colour),
+              const SizedBox(width: 6),
+              Flexible(child: Text(date, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour))),
+              if (time != null) ...[
+                const SizedBox(width: 10),
+                Icon(Icons.schedule_rounded, size: 16, color: colour),
+                const SizedBox(width: 6),
+                Flexible(child: Text(time, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour))),
+              ],
             ],
           ),
         ),
@@ -5240,5 +5137,106 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
         ),
       ),
     );
+  }
+}
+
+
+/// A section bar's title, its chips and its tail: the title at its natural
+/// width (at most [titleShare] of the bar), the tail (a date) at the far
+/// right at its natural width, the chips right-aligned against it in what is
+/// left — so the chips give way first, then the tail, never the bar's end.
+/// All centred on the bar's height. A Row cannot do it: a flexible child
+/// wastes the share it does not use, a rigid one runs the bar past its end.
+class _TitleBar extends MultiChildRenderObjectWidget {
+  _TitleBar({required Widget title, required Widget chips, required Widget tail})
+    : super(children: [title, chips, tail]);
+
+  static const double gap = 12;
+  static const double tailGap = 8;
+  static const double titleShare = 0.55;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderTitleBar();
+}
+
+class _TitleBarParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderTitleBar extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _TitleBarParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _TitleBarParentData> {
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _TitleBarParentData) {
+      child.parentData = _TitleBarParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final title = firstChild!;
+    final chips = childAfter(title)!;
+    final tail = childAfter(chips)!;
+    final width = constraints.maxWidth;
+    final wanted = title.getMaxIntrinsicWidth(double.infinity);
+    title.layout(
+      BoxConstraints(maxWidth: math.min(wanted, width * _TitleBar.titleShare)),
+      parentUsesSize: true,
+    );
+    var room = math.max(0.0, width - title.size.width - _TitleBar.gap);
+    tail.layout(BoxConstraints(maxWidth: room), parentUsesSize: true);
+    if (tail.size.width > 0) room = math.max(0.0, room - tail.size.width - _TitleBar.tailGap);
+    // Too little left for even a chip's icon and padding: left out, not
+    // squeezed past its own edges. (Their texts give way with … above this;
+    // a min intrinsic width over-states it — a code counts as one long word.)
+    _chipsHidden = room < 48;
+    chips.layout(
+      _chipsHidden ? const BoxConstraints() : BoxConstraints(maxWidth: room),
+      parentUsesSize: true,
+    );
+    final height = math.max(title.size.height, math.max(chips.size.height, tail.size.height));
+    Offset centred(RenderBox box, double x) => Offset(x, (height - box.size.height) / 2);
+    (title.parentData! as _TitleBarParentData).offset = centred(title, 0);
+    final tailLeft = width - tail.size.width;
+    (tail.parentData! as _TitleBarParentData).offset = centred(tail, tailLeft);
+    final chipsRight = tail.size.width > 0 ? tailLeft - _TitleBar.tailGap : width;
+    final shownChips = _chipsHidden ? 0.0 : chips.size.width;
+    (chips.parentData! as _TitleBarParentData).offset =
+        centred(chips, chipsRight - shownChips);
+    size = constraints.constrain(Size(width, height));
+  }
+
+  bool _chipsHidden = false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    var child = firstChild;
+    var index = 0;
+    while (child != null) {
+      final data = child.parentData! as _TitleBarParentData;
+      if (!(index == 1 && _chipsHidden)) context.paintChild(child, data.offset + offset);
+      child = data.nextSibling;
+      index += 1;
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    var child = lastChild;
+    var index = childCount - 1;
+    while (child != null) {
+      final data = child.parentData! as _TitleBarParentData;
+      if (!(index == 1 && _chipsHidden)) {
+        final hit = result.addWithPaintOffset(
+          offset: data.offset,
+          position: position,
+          hitTest: (result, transformed) => child!.hitTest(result, position: transformed),
+        );
+        if (hit) return true;
+      }
+      child = data.previousSibling;
+      index -= 1;
+    }
+    return false;
   }
 }

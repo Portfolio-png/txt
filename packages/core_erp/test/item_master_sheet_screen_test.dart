@@ -2415,18 +2415,13 @@ void main() {
             reason: 'in the $title title bar',
           );
           expect(tester.getCenter(heading).dx, greaterThan(bar.dx));
-          // Lined up under Item Master's "Part code" chip, starting where it
-          // starts — not ragged against each bar's own buttons.
-          final partCode = find
-              .ancestor(
-                of: find.text('Part code: '),
-                matching: find.byType(Container),
-              )
-              .first;
+          // Every section's chips end at one place: under the end of Item
+          // Master's date (its bar keeps the room the buttons take here).
+          final stamp = find.byKey(const ValueKey('part_heading_stamp'));
           expect(
-            tester.getTopLeft(heading).dx,
-            closeTo(tester.getTopLeft(partCode).dx, 1),
-            reason: '$title starts under the part code',
+            tester.getTopRight(heading).dx,
+            closeTo(tester.getTopRight(stamp).dx, 1),
+            reason: '$title ends where the part\'s date ends',
           );
         }
 

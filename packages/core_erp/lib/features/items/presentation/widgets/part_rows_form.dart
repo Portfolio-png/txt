@@ -698,7 +698,7 @@ class _PartFieldState extends State<_PartField> {
       inBox = _measure(shown, _pickedStyle, scaler) + box + extra;
     } else {
       final derived = _isDerived && !_locked;
-      inBox = _measure(_text.text, _valueStyle, scaler) + box + (derived ? 64 : 0);
+      inBox = _measure(_text.text, _pickedStyle, scaler) + box + (derived ? 80 : 0);
     }
     final widest = heading > inBox ? heading : inBox;
     return widest.clamp(minFieldWidth, maxFieldWidth).toDouble();

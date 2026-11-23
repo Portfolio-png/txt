@@ -108,12 +108,17 @@ class _MarginHealthBadgeState extends State<MarginHealthBadge> {
                     color: _tone,
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    _label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: _tone,
+                  // Cut with … in a heading short of room, never past its end.
+                  Flexible(
+                    child: Text(
+                      _label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: _tone,
+                      ),
                     ),
                   ),
                 ],

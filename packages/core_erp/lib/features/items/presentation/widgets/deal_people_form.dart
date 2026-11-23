@@ -278,7 +278,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           heading: 'Company',
           texts: [widget.controller.dealPartyName],
           minWidth: 160,
-          chrome: 72,
+          chrome: 84, // padding, the arrow (48), the border
           child: SearchableSelectField<int>(
             key: const ValueKey<String>('deal_company'),
             tapTargetKey: const ValueKey<String>('deal_company_tap'),
@@ -600,7 +600,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           controller: text,
           heading: label,
           minWidth: min,
-          chrome: 72,
+          chrome: 84, // padding, the arrow (48), the border
           child: PickOrTypeField(
             fieldKey: ValueKey<String>('deal_person_${row}_$binds'),
             controller: text,
