@@ -197,14 +197,17 @@ class _PartTabsState extends State<PartTabs>
 
   /// Brings the chosen tab into view when the cursor lands on it by some
   /// other way than a click on it (Ctrl+Tab, +, a save that moves on).
-  void _reveal(int row, double tabWidth) {
+  void _reveal(int row, double tabWidth, [int? totalCount]) {
     if (row == _shownRow) return;
     _shownRow = row;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
       final position = _scroll.position;
       final start = row * (tabWidth + _gap);
-      final end = start + tabWidth;
+      final isLast = totalCount != null && row >= totalCount - 1;
+      final end = start +
+          tabWidth +
+          (isLast ? (widget.showShortcuts ? 84.0 : 44.0) : 0.0);
       double? to;
       if (start < position.pixels) {
         to = start;
@@ -299,7 +302,7 @@ class _PartTabsState extends State<PartTabs>
       padding: const EdgeInsets.fromLTRB(
         _margin + _frameRadius + _flare,
         8,
-        12,
+        _margin + _frameRadius + _flare,
         0,
       ),
       child: Row(
@@ -307,7 +310,7 @@ class _PartTabsState extends State<PartTabs>
         children: [
           if (drafts.length >= 2) ...[
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 6),
               child: _tabsOverviewMenu(drafts),
             ),
             const SizedBox(width: 8),
@@ -317,11 +320,14 @@ class _PartTabsState extends State<PartTabs>
               key: _viewportKey,
               builder: (context, box) {
                 final count = drafts.length;
+                final addBtnWidth = widget.showShortcuts ? 76.0 : 36.0;
+                final availableForTabs =
+                    math.max(0.0, box.maxWidth - addBtnWidth - _gap);
                 // Tabs share the strip until they are too narrow to read,
                 // then the strip scrolls.
-                final width = ((box.maxWidth - _gap * (count - 1)) / count)
+                final width = ((availableForTabs - _gap * (count - 1)) / count)
                     .clamp(150.0, 260.0);
-                _reveal(sheet.row, width);
+                _reveal(sheet.row, width, count);
                 return SingleChildScrollView(
                   controller: _scroll,
                   scrollDirection: Axis.horizontal,
@@ -332,43 +338,57 @@ class _PartTabsState extends State<PartTabs>
                         if (row > 0) const SizedBox(width: _gap),
                         SizedBox(width: width, child: _tab(row, drafts[row])),
                       ],
+                      const SizedBox(width: _gap),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _addPartButton(),
+                      ),
                     ],
                   ),
                 );
               },
             ),
           ),
-          const SizedBox(width: _flare + 8),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: 'Add a part',
-                  child: IconButton(
-                    key: const ValueKey<String>('part_add_row'),
-                    onPressed: widget.onAddPart,
-                    style: IconButton.styleFrom(
-                      backgroundColor: SoftErpTheme.cardSurface,
-                      side: BorderSide(
-                        color: SoftErpTheme.border.withValues(alpha: 0.8),
-                      ),
-                      shape: const CircleBorder(),
-                      padding: const EdgeInsets.all(6),
-                    ),
-                    icon: const Icon(Icons.add_rounded, size: 20),
-                  ),
-                ),
-                if (widget.showShortcuts) ...[
-                  const SizedBox(width: 4),
-                  const KeyTipBadge(label: 'Alt+1'),
-                ],
-              ],
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  Widget _addPartButton() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Tooltip(
+          message: 'Add a part',
+          child: IconButton(
+            key: const ValueKey<String>('part_add_row'),
+            onPressed: widget.onAddPart,
+            splashRadius: 16,
+            style: IconButton.styleFrom(
+              backgroundColor: SoftErpTheme.cardSurface.withValues(alpha: 0.85),
+              side: BorderSide(
+                color: SoftErpTheme.border.withValues(alpha: 0.7),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(32, 32),
+              fixedSize: const Size(32, 32),
+            ),
+            icon: const Icon(
+              Icons.add_rounded,
+              size: 20,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+        ),
+        if (widget.showShortcuts) ...[
+          const SizedBox(width: 4),
+          const KeyTipBadge(label: 'Alt+1'),
+        ],
+      ],
     );
   }
 
