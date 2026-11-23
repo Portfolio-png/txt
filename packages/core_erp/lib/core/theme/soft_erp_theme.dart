@@ -66,18 +66,62 @@ class SoftErpTheme {
   // --- Part tabs -----------------------------------------------------------
   // One per part open on the item sheet, taken in turn: the tab and the frame
   // round the sheet are drawn in the part's colour, so landing on another
-  // part by mistake shows at once. Ordered so neighbours differ most (forest,
-  // burnt orange, sky, sand, steel) — sand sits beside orange and steel beside
-  // sky in the picture they were sampled from.
+  // part by mistake shows at once. Ordered by the four distinct identities:
+  // Blue (#4285F4), Yellow (#FBBC05), Red (#EA4335), Green (#34A853), each
+  // ranging smoothly from light luminous highlight through intermediate shades
+  // to deep grounding dark.
   static const List<LinearGradient> partTabGradients = <LinearGradient>[
-    LinearGradient(colors: [Color(0xFF41634E), Color(0xFF2C4D2C)]),
-    LinearGradient(colors: [Color(0xFFBD6339), Color(0xFFD69E77)]),
-    LinearGradient(colors: [Color(0xFF73C5EB), Color(0xFFB895E7)]),
+    // 1. Blue (#4285F4) ranging light to dark
     LinearGradient(
-      colors: [Color(0xFFE9BE64), Color(0xFFD4D0CC), Color(0xFFDBB8B3)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFF8AB4F8), // light luminous blue
+        Color(0xFF669DF6), // intermediate mid-light
+        Color(0xFF4285F4), // base vibrant blue (#4285F4)
+        Color(0xFF1A73E8), // intermediate mid-dark
+        Color(0xFF174EA6), // deep dark royal blue
+      ],
+      stops: [0.0, 0.25, 0.50, 0.75, 1.0],
     ),
+    // 2. Yellow (#FBBC05) ranging light to dark
     LinearGradient(
-      colors: [Color(0xFF427493), Color(0xFFC5BA99), Color(0xFF9BB1BE)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFFDE293), // light luminous gold
+        Color(0xFFFDD663), // intermediate mid-light
+        Color(0xFFFBBC05), // base vibrant yellow (#FBBC05)
+        Color(0xFFF29900), // intermediate rich amber
+        Color(0xFFE37400), // deep dark warm amber
+      ],
+      stops: [0.0, 0.25, 0.50, 0.75, 1.0],
+    ),
+    // 3. Red (#EA4335) ranging light to dark
+    LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFF6AEA9), // light luminous coral/rose
+        Color(0xFFEE675C), // intermediate mid-light
+        Color(0xFFEA4335), // base vibrant red (#EA4335)
+        Color(0xFFD93025), // intermediate deep crimson
+        Color(0xFFA50E0E), // deep dark ruby
+      ],
+      stops: [0.0, 0.25, 0.50, 0.75, 1.0],
+    ),
+    // 4. Green (#34A853) ranging light to dark
+    LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFA8DAB5), // light luminous mint
+        Color(0xFF5BB974), // intermediate mid-light
+        Color(0xFF34A853), // base vibrant green (#34A853)
+        Color(0xFF1E8E3E), // intermediate deep emerald
+        Color(0xFF0D652D), // deep dark forest
+      ],
+      stops: [0.0, 0.25, 0.50, 0.75, 1.0],
     ),
   ];
 

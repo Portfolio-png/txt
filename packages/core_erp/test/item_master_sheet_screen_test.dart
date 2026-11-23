@@ -3912,11 +3912,11 @@ void main() {
       expect(gone.getBounds().top, closeTo(60, 0.01));
     });
 
-    testWidgets('the sixth part takes the first colour again', (tester) async {
+    testWidgets('the fifth part takes the first colour again', (tester) async {
       final all = PartTabColors();
-      final keys = [for (var i = 0; i < 6; i += 1) Object()];
+      final keys = [for (var i = 0; i < 5; i += 1) Object()];
       all.sync(keys);
-      expect([for (final k in keys) all.indexOf(k)], [0, 1, 2, 3, 4, 0]);
+      expect([for (final k in keys) all.indexOf(k)], [0, 1, 2, 3, 0]);
     });
 
     testWidgets(

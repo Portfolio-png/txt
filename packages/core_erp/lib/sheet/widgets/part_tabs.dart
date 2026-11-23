@@ -812,14 +812,15 @@ class PartFramePainter extends CustomPainter {
       final shader = gradient.createShader(bounds);
 
       // Layer 1: Ambient chromatic glow (neon atmospheric halo, like modern AI UIs)
+      final glowColor = gradient.colors[gradient.colors.length ~/ 2];
       canvas.drawPath(
         path,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 5.5
+          ..strokeWidth = 6.0
           ..strokeJoin = StrokeJoin.round
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5)
-          ..color = gradient.colors.first.withValues(alpha: 0.32),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0)
+          ..color = glowColor.withValues(alpha: 0.30),
       );
 
       // Layer 2: Solid crisp card surface fill inside the tab and container
