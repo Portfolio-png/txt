@@ -28,6 +28,9 @@ function createSave(deps, api) {
   const persistItemPropertySchema = (...args) => api.persistItemPropertySchema(...args);
   const sanitizeNodes = (...args) => api.sanitizeNodes(...args);
   const writeDealContacts = (...args) => api.writeDealContacts(...args);
+  const normalizeDeals = (...args) => api.normalizeDeals(...args);
+  const writeDeals = (...args) => api.writeDeals(...args);
+  const syncDealsFromMirror = (...args) => api.syncDealsFromMirror(...args);
 
   async function findGroupDuplicate({ name, parentGroupId = null, excludeId = null }) {
     const rows = await all('SELECT id, name, parent_group_id FROM groups');
@@ -287,6 +290,10 @@ function createSave(deps, api) {
     // Who the part was developed for (migrations/047). Same contract again:
     // absent preserves, and a block with kind 'self' is how it is cleared.
     developedFor,
+    // Several companies, each with its quotation (item_deals, 2026-11-24): the
+    // whole list in order. Absent preserves; [] clears. The first is mirrored
+    // into the flat columns. With it, developedFor speaks only for the cost.
+    deals,
     id = null,
   }, { useTransaction = true } = {}) {
     const trimmedName = String(name || '').trim();
@@ -380,7 +387,19 @@ function createSave(deps, api) {
 
     // Resolved before BEGIN, so a bad party is a 400 that costs nothing and
     // leaves the rest of the edit sitting in the form.
-    const normalizedDevelopedFor = await normalizeDevelopedFor(developedFor);
+    let normalizedDevelopedFor = await normalizeDevelopedFor(developedFor);
+    const normalizedDeals = await normalizeDeals(deals, id);
+    if (normalizedDeals !== undefined) {
+      // The flat columns are the first deal's; the cost is the part's own.
+      const costAmount = normalizedDevelopedFor ? normalizedDevelopedFor.costAmount : undefined;
+      const first = normalizedDeals[0];
+      normalizedDevelopedFor = first
+        ? { ...first, costAmount }
+        : {
+          kind: '', clientId: null, subContractorId: null, at: null,
+          quotationAmount: null, costAmount, contactIds: [],
+        };
+    }
 
     // Another Alloy or Thickness under the same name is another part (B):
     // the duplicate is the same name AND the same alloy and thickness.
@@ -707,6 +726,14 @@ function createSave(deps, api) {
         if (dealContactIds !== undefined) {
           await writeDealContacts(id, dealContactIds);
         }
+      }
+
+      // The deals: written whole when sent; brought into line with the flat
+      // columns when only the one deal was spoken about.
+      if (normalizedDeals !== undefined) {
+        await writeDeals(itemId, normalizedDeals);
+      } else if (developedFor !== undefined || developedForClientId !== undefined) {
+        await syncDealsFromMirror(itemId);
       }
 
       if (structuralChangeDetected) {

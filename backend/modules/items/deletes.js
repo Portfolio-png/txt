@@ -43,6 +43,8 @@ function createDeletes(deps, api) {
     // for this id again. Its deal ticks (056) likewise.
     await desk.ask('links.removeRelation', { relation: `part_tree:${id}` });
     await run('DELETE FROM item_deal_contacts WHERE item_id = ?', [id]);
+    await run('DELETE FROM item_deal_people WHERE deal_id IN (SELECT id FROM item_deals WHERE item_id = ?)', [id]);
+    await run('DELETE FROM item_deals WHERE item_id = ?', [id]);
     if (purgeEntityLinks) await purgeEntityLinks('item', id);
     if (purgeEntityVariations) await purgeEntityVariations('item', id);
     await trashAndDelete('items', id, req);

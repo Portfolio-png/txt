@@ -6259,6 +6259,10 @@
                   "nullable": true
                 }
               }
+            },
+            "deals": {
+              "type": "array",
+              "nullable": true
             }
           }
         }
@@ -8141,6 +8145,10 @@
                   "nullable": true
                 }
               }
+            },
+            "deals": {
+              "type": "array",
+              "nullable": true
             }
           }
         }

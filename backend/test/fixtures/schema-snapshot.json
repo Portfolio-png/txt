@@ -374,6 +374,12 @@
     },
     {
       "type": "index",
+      "name": "idx_item_deals_item",
+      "table": "item_deals",
+      "sql": "CREATE INDEX idx_item_deals_item ON item_deals(item_id, position)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_pipeline_baselines_pair",
       "table": "item_pipeline_baselines",
       "sql": "CREATE UNIQUE INDEX idx_item_pipeline_baselines_pair ON item_pipeline_baselines(item_id, pipeline_id)"
@@ -1073,6 +1079,18 @@
       "name": "item_deal_contacts",
       "table": "item_deal_contacts",
       "sql": "CREATE TABLE item_deal_contacts ( item_id INTEGER NOT NULL, contact_id INTEGER NOT NULL, PRIMARY KEY (item_id, contact_id) )"
+    },
+    {
+      "type": "table",
+      "name": "item_deal_people",
+      "table": "item_deal_people",
+      "sql": "CREATE TABLE item_deal_people ( deal_id INTEGER NOT NULL REFERENCES item_deals(id) ON DELETE CASCADE, contact_id INTEGER NOT NULL, PRIMARY KEY (deal_id, contact_id) )"
+    },
+    {
+      "type": "table",
+      "name": "item_deals",
+      "table": "item_deals",
+      "sql": "CREATE TABLE item_deals ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, kind TEXT NOT NULL DEFAULT 'client', client_id INTEGER, sub_contractor_id INTEGER, quotation_amount REAL, at TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL )"
     },
     {
       "type": "table",
@@ -2578,6 +2596,12 @@
     },
     {
       "type": "index",
+      "name": "idx_item_deals_item",
+      "table": "item_deals",
+      "sql": "CREATE INDEX idx_item_deals_item ON item_deals(item_id, position)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_property_schema_item_id",
       "table": "item_property_schema",
       "sql": "CREATE INDEX idx_item_property_schema_item_id ON item_property_schema(item_id)"
@@ -3061,6 +3085,18 @@
       "name": "item_bom_lines",
       "table": "item_bom_lines",
       "sql": "CREATE TABLE item_bom_lines ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, material_barcode TEXT NOT NULL, material_name TEXT DEFAULT '', quantity_per_unit REAL NOT NULL DEFAULT 1, wastage_percent REAL NOT NULL DEFAULT 0, unit_id INTEGER REFERENCES units(id), unit_symbol TEXT DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(item_id, material_barcode) )"
+    },
+    {
+      "type": "table",
+      "name": "item_deal_people",
+      "table": "item_deal_people",
+      "sql": "CREATE TABLE item_deal_people ( deal_id INTEGER NOT NULL REFERENCES item_deals(id) ON DELETE CASCADE, contact_id INTEGER NOT NULL, PRIMARY KEY (deal_id, contact_id) )"
+    },
+    {
+      "type": "table",
+      "name": "item_deals",
+      "table": "item_deals",
+      "sql": "CREATE TABLE item_deals ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, kind TEXT NOT NULL DEFAULT 'client', client_id INTEGER, sub_contractor_id INTEGER, quotation_amount REAL, at TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL )"
     },
     {
       "type": "table",

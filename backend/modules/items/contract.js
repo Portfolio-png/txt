@@ -95,6 +95,10 @@ const itemWrite = {
         contactIds: { type: 'array', nullable: true },
       },
     },
+    // Every company the part was developed for, in order (item_deals). Each
+    // entry is shaped like developedFor without the cost; absent keeps what is
+    // recorded, [] clears. Checked deal by deal in normalizeDeals.
+    deals: { type: 'array', nullable: true },
   },
 };
 

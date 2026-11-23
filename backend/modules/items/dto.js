@@ -97,6 +97,43 @@ function createDto(deps, api) {
         WHERE item_machines.item_id ${where}
         ORDER BY item_machines.item_id ASC, LOWER(machines.name) ASC, machines.id ASC`,
     },
+    // Every company the part was developed for (item_deals), with the columns
+    // developedForDto reads, so each deal reads exactly as the single one does.
+    deals: {
+      sql: (where) => `
+        SELECT item_deals.item_id, item_deals.id AS deal_id, item_deals.position,
+               item_deals.kind AS developed_for_kind,
+               item_deals.client_id AS developed_for_client_id,
+               item_deals.sub_contractor_id AS developed_for_sub_contractor_id,
+               item_deals.at AS developed_for_at,
+               item_deals.quotation_amount AS developed_for_quotation_amount,
+               c.name AS developed_for_client_name,
+               c.contact_name AS developed_for_contact_name,
+               c.designation AS developed_for_designation,
+               c.phone AS developed_for_phone,
+               c.email AS developed_for_email,
+               sc.name AS developed_for_sub_contractor_name,
+               sc.designation AS developed_for_sub_contractor_designation,
+               sc.phone AS developed_for_sub_contractor_phone,
+               sc.email AS developed_for_sub_contractor_email,
+               (
+                 SELECT json_group_array(json_object(
+                   'id', pc.id, 'name', pc.name, 'designation', pc.designation,
+                   'phone', pc.phone, 'email', pc.email, 'isArchived', pc.is_archived
+                 ))
+                 FROM (
+                   SELECT party_contacts.* FROM item_deal_people
+                   JOIN party_contacts ON party_contacts.id = item_deal_people.contact_id
+                   WHERE item_deal_people.deal_id = item_deals.id
+                   ORDER BY party_contacts.is_primary DESC, party_contacts.name COLLATE NOCASE ASC
+                 ) pc
+               ) AS developed_for_contacts_json
+        FROM item_deals
+        LEFT JOIN clients c ON c.id = item_deals.client_id
+        LEFT JOIN sub_contractors sc ON sc.id = item_deals.sub_contractor_id
+        WHERE item_deals.item_id ${where}
+        ORDER BY item_deals.item_id ASC, item_deals.position ASC, item_deals.id ASC`,
+    },
     dies: {
       sql: (where) => `
         SELECT item_dies.item_id,
@@ -157,6 +194,7 @@ function createDto(deps, api) {
     const attachmentRows = await one('attachments');
     const machineLinkRows = await one('machines');
     const dieLinkRows = await one('dies');
+    const dealRows = await one('deals');
 
     return {
       id: row.id,
@@ -253,6 +291,12 @@ function createDto(deps, api) {
         };
       }),
       developedFor: developedForDto(row),
+      // Every company, in order; the first is developedFor's. The cost is the
+      // part's, so it is not repeated per deal.
+      deals: dealRows.map((deal) => {
+        const { costAmount, ...rest } = developedForDto(deal);
+        return { id: deal.deal_id, ...rest };
+      }),
       // How the part's item sheet is nested (057); null = the default chain.
       sectionTree: (() => {
         if (!row.section_tree_json) return null;

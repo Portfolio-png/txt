@@ -312,7 +312,145 @@ function createDevelopedFor(deps, api) {
     };
   }
 
-  return { normalizeDealContactIds, normalizeDevelopedFor, writeDealContacts, developedForDto };
+  // --- several companies per part (item_deals, 2026-11-24) -----------------
+
+  const companyKey = (deal) => `${deal.clientId || 0}:${deal.subContractorId || 0}`;
+
+  async function storedDeals(itemId) {
+    if (!itemId) return [];
+    const rows = await all(
+      'SELECT * FROM item_deals WHERE item_id = ? ORDER BY position ASC, id ASC',
+      [itemId],
+    );
+    const people = rows.length
+      ? await all(
+        `SELECT deal_id, contact_id FROM item_deal_people
+          WHERE deal_id IN (${rows.map(() => '?').join(',')})`,
+        rows.map((row) => row.id),
+      )
+      : [];
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      clientId: row.client_id || null,
+      subContractorId: row.sub_contractor_id || null,
+      quotationAmount: row.quotation_amount ?? null,
+      at: row.at || null,
+      contactIds: people.filter((p) => p.deal_id === row.id).map((p) => p.contact_id),
+    }));
+  }
+
+  // The `deals` a save sends: the whole list, in order. Absent → undefined
+  // (keep what is stored). Each deal is checked as the single block always
+  // was; a deal must name a company, and a company only once per part. A deal
+  // that says nothing about its people or its time keeps what the stored deal
+  // for the same company had, so a screen that does not show them cannot wipe
+  // them.
+  async function normalizeDeals(raw, itemId) {
+    if (raw === undefined) return undefined;
+    if (raw === null) return [];
+    if (!Array.isArray(raw)) {
+      const error = new Error('Deals must be a list.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const stored = new Map((await storedDeals(itemId)).map((deal) => [companyKey(deal), deal]));
+    const seen = new Set();
+    const out = [];
+    for (const entry of raw) {
+      const deal = await normalizeDevelopedFor({ ...(entry || {}), costAmount: undefined });
+      if (deal.kind !== 'client' && deal.kind !== 'contractor') {
+        const error = new Error('Each company tab needs its company.');
+        error.statusCode = 400;
+        error.code = 'deal_company_missing';
+        throw error;
+      }
+      const key = companyKey(deal);
+      if (seen.has(key)) {
+        const error = new Error('That company is already on this part — one tab per company.');
+        error.statusCode = 400;
+        error.code = 'deal_company_twice';
+        throw error;
+      }
+      seen.add(key);
+      const before = stored.get(key);
+      out.push({
+        kind: deal.kind,
+        clientId: deal.clientId,
+        subContractorId: deal.subContractorId,
+        quotationAmount: deal.quotationAmount,
+        at: deal.at || before?.at || new Date().toISOString(),
+        contactIds: deal.contactIds !== undefined ? deal.contactIds : (before?.contactIds || []),
+      });
+    }
+    return out;
+  }
+
+  // Replaces a part's deals with [deals], in order. Inside saveItem's
+  // transaction.
+  async function writeDeals(itemId, deals) {
+    await run(
+      'DELETE FROM item_deal_people WHERE deal_id IN (SELECT id FROM item_deals WHERE item_id = ?)',
+      [itemId],
+    );
+    await run('DELETE FROM item_deals WHERE item_id = ?', [itemId]);
+    const now = new Date().toISOString();
+    for (let position = 0; position < deals.length; position += 1) {
+      const deal = deals[position];
+      const result = await run(
+        `INSERT INTO item_deals (item_id, kind, client_id, sub_contractor_id, quotation_amount, at, position, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [itemId, deal.kind, deal.clientId, deal.subContractorId, deal.quotationAmount, deal.at, position, now],
+      );
+      for (const contactId of deal.contactIds || []) {
+        await run(
+          'INSERT OR IGNORE INTO item_deal_people (deal_id, contact_id) VALUES (?, ?)',
+          [result.lastID, contactId],
+        );
+      }
+    }
+  }
+
+  // A save that spoke about the ONE deal (developedFor, or the older
+  // developedForClientId) — the item editor, the catalog wizard. The flat
+  // columns now hold it; the first deal becomes it, the other companies stay,
+  // and one that is now the first is not kept twice. "Developed for: self"
+  // clears them all.
+  async function syncDealsFromMirror(itemId) {
+    const item = await get(
+      `SELECT developed_for_kind, developed_for_client_id, developed_for_sub_contractor_id,
+              developed_for_quotation_amount, developed_for_at FROM items WHERE id = ?`,
+      [itemId],
+    );
+    const kind = String(item?.developed_for_kind || '');
+    if (kind !== 'client' && kind !== 'contractor') {
+      await writeDeals(itemId, []);
+      return;
+    }
+    const people = await all('SELECT contact_id FROM item_deal_contacts WHERE item_id = ?', [itemId]);
+    const first = {
+      kind,
+      clientId: item.developed_for_client_id || null,
+      subContractorId: item.developed_for_sub_contractor_id || null,
+      quotationAmount: item.developed_for_quotation_amount ?? null,
+      at: item.developed_for_at || new Date().toISOString(),
+      contactIds: people.map((row) => row.contact_id),
+    };
+    const rest = (await storedDeals(itemId))
+      .slice(1)
+      .filter((deal) => companyKey(deal) !== companyKey(first));
+    await writeDeals(itemId, [first, ...rest]);
+  }
+
+  return {
+    normalizeDealContactIds,
+    normalizeDevelopedFor,
+    writeDealContacts,
+    developedForDto,
+    normalizeDeals,
+    writeDeals,
+    syncDealsFromMirror,
+  };
 }
 
 module.exports = { createDevelopedFor };

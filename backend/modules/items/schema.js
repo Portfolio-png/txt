@@ -84,6 +84,33 @@ async function createSchema({ run, all, get }) {
     )
   `);
 
+  // Who a part was developed for, ONE ROW PER COMPANY (2026-11-24): a part is
+  // often quoted to several. Each deal has its own quotation, people and
+  // recorded time; the development cost stays one figure on the item. The
+  // flat items.developed_for_* columns and item_deal_contacts mirror the FIRST
+  // deal (position 0), so every reader written for one deal keeps working.
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_deals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'client',
+      client_id INTEGER,
+      sub_contractor_id INTEGER,
+      quotation_amount REAL,
+      at TEXT,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_item_deals_item ON item_deals(item_id, position)');
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_deal_people (
+      deal_id INTEGER NOT NULL REFERENCES item_deals(id) ON DELETE CASCADE,
+      contact_id INTEGER NOT NULL,
+      PRIMARY KEY (deal_id, contact_id)
+    )
+  `);
+
   await run(`
     CREATE TABLE IF NOT EXISTS item_dies (
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -412,6 +439,34 @@ async function createSchema({ run, all, get }) {
   // unique index deliberately ignores.
   await ensureColumnExists('items', 'part_no', 'INTEGER');
   await ensureColumnExists('items', 'part_code', "TEXT NOT NULL DEFAULT ''");
+
+  // A part recorded with one deal before item_deals existed gets that deal as
+  // its first row, people included. Once only: a part that has any deal row is
+  // left alone. Guarded, because an empty database reaches this before the
+  // developed_for columns exist.
+  try {
+    const now = new Date().toISOString();
+    await run(
+      `INSERT INTO item_deals (item_id, kind, client_id, sub_contractor_id, quotation_amount, at, position, created_at)
+       SELECT items.id, items.developed_for_kind, items.developed_for_client_id,
+              items.developed_for_sub_contractor_id, items.developed_for_quotation_amount,
+              items.developed_for_at, 0, COALESCE(items.developed_for_at, ?)
+       FROM items
+       WHERE items.developed_for_kind IN ('client', 'contractor')
+         AND NOT EXISTS (SELECT 1 FROM item_deals d WHERE d.item_id = items.id)`,
+      [now],
+    );
+    await run(
+      `INSERT OR IGNORE INTO item_deal_people (deal_id, contact_id)
+       SELECT d.id, idc.contact_id
+       FROM item_deals d
+       JOIN item_deal_contacts idc ON idc.item_id = d.item_id
+       WHERE d.position = 0
+         AND NOT EXISTS (SELECT 1 FROM item_deal_people p WHERE p.deal_id = d.id)`,
+    );
+  } catch (_) {
+    // Columns not there yet: nothing recorded to carry over.
+  }
 
   await ensureColumnExists('variation_stock', 'variation_path_label', "TEXT DEFAULT ''");
   await ensureColumnExists('variation_stock', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
