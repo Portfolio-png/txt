@@ -420,7 +420,7 @@ class _ColouredTabsState extends State<ColouredTabs>
                     children: [
                       for (var i = 0; i < count; i += 1) ...[
                         if (i > 0) const SizedBox(width: _gap),
-                        SizedBox(width: width, child: _tab(i)),
+                        SizedBox(width: width, child: _tab(i, width)),
                       ],
                       const SizedBox(width: _gap),
                       Padding(
@@ -594,14 +594,16 @@ class _ColouredTabsState extends State<ColouredTabs>
     );
   }
 
-  Widget _tab(int i) {
+  Widget _tab(int i, double width) {
     final strip = widget.strip;
     final p = widget.keyPrefix;
     final selected = strip.selected == i;
     final saved = strip.savedAt(i);
     final gradient = widget.colors.of(strip.keyAt(i));
     final title = strip.titleAt(i);
-    final code = strip.codeAt(i);
+    // A narrow tab keeps its name readable: the second label (a type, a
+    // quotation) shows only where there is room for both.
+    final code = width >= 240 ? strip.codeAt(i) : '';
     final closeWhy = strip.closeWhyAt(i);
     final named = strip.keyNameAt(i);
     final tabKey = named ?? '${p}_tab_$i';

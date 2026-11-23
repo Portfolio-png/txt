@@ -4308,8 +4308,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 const SizedBox(width: 4),
                 SheetStyle.iconTile(icon),
                 const SizedBox(width: 10),
+                // The title's room first: a quarter of the row broke "Die
+                // Process Master" over three lines. The chips fold instead.
                 Expanded(
-                  flex: id == 'client_vendor' ? 3 : 1,
+                  flex: 3,
                   child: headingWidget ??
                       Text(
                         heading,
@@ -4321,10 +4323,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   const SizedBox(width: 12),
                   // Most of the room, so a narrow card wraps its chips rather
                   // than pushing the actions off the end.
-                  Flexible(
-                    flex: id == 'client_vendor' ? 2 : 3,
-                    child: trailing,
-                  ),
+                  Flexible(flex: 2, child: trailing),
                 ],
                 const SizedBox(width: 8),
                 ..._sectionActions(id, heading),

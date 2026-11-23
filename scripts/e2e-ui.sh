@@ -166,6 +166,21 @@ for name in "${TESTS[@]}"; do
     || failed "${name}"
 done
 
+# --- two companies on one part: the rows are the assertion ------------------
+if [[ " ${TESTS[*]} " == *" sheet_deals "* ]]; then
+  say "Companies saved on the part (item_deals)"
+  PART="SELECT id FROM items WHERE name = 'E2E Deals Part'"
+  sqlite3 -header -column "${DB}" "SELECT d.position, c.name AS company, d.quotation_amount AS quotation,
+         d.at IS NOT NULL AS recorded FROM item_deals d JOIN clients c ON c.id = d.client_id
+         WHERE d.item_id IN (${PART}) ORDER BY d.position;"
+  ROWS="$(sqlite3 "${DB}" "SELECT GROUP_CONCAT(CAST(quotation_amount AS INTEGER), ',') FROM
+         (SELECT quotation_amount FROM item_deals WHERE item_id IN (${PART}) ORDER BY position);")"
+  [[ "${ROWS}" == "45000,52000" ]] || fail "expected two companies quoting 45000 then 52000, found '${ROWS}'"
+  MIRROR="$(sqlite3 "${DB}" "SELECT CAST(developed_for_quotation_amount AS INTEGER) FROM items WHERE id IN (${PART});")"
+  [[ "${MIRROR}" == "45000" ]] || fail "the part's own deal columns should mirror the first company, found '${MIRROR}'"
+  printf '  two companies, in order; the first mirrored on the part\n'
+fi
+
 # --- the full journey: how long each step took, and every row it wrote ------
 if [[ "${TESTS[0]}" == "full_journey" ]]; then
   say "Step timings (from tap to the app confirming it)"
@@ -323,6 +338,8 @@ fi
 # Quitting twice while "Leave with unsaved work?" is up: the test itself is
 # the check (a second quit that went through would have ended the app).
 [[ "${TESTS[0]}" == "quit_guard" ]] && { say "OK — quit guard only"; exit 0; }
+# Two companies on one part: checked above, against item_deals.
+[[ "${TESTS[0]}" == "sheet_deals" ]] && { say "OK — two companies on one part"; exit 0; }
 
 ROUTES="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM process_routes WHERE status='active';")"
 if [[ "${ROUTES}" == "0" ]]; then

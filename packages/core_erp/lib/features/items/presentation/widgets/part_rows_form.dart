@@ -8,7 +8,6 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/utils/dropdown_intents.dart';
 import '../../../../core/utils/typed_character.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
-import '../../../../core/widgets/even_grid.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../production_pipelines/domain/thickness_label.dart';
 import '../../../units/domain/global_length_units.dart';
@@ -99,13 +98,13 @@ class PartRowsForm extends StatelessWidget {
     for (final cells in lineGrid(def)) ...cells.whereType<ColumnDef>(),
   ];
 
-  /// A line's fields as four even columns, so every part reads the same:
+  /// A line's fields in reading order, as four to a row once were:
   ///
   ///     Group | Type      | Part Name | Part Code
   ///     Alloy | Thickness | Grade     | Part No
   ///
-  /// A window too narrow for four reads two at a time, in the same order
-  /// ([EvenGrid]).
+  /// Drawn as a wrap of fields each as wide as what it holds (2026-11-24),
+  /// so this is their ORDER, which Tab follows, not their columns.
   ///
   /// The last column holds the part's two numbers; the properties fill the
   /// three before it, a row at a time, however many have been added. A null
@@ -393,24 +392,30 @@ class _PartLine extends StatelessWidget {
   /// Keyed globally to the line: it switches between its two layouts (small
   /// photo, big photo) the moment one of its fields takes focus, and without
   /// the key the fields were rebuilt in the new layout and lost that focus.
-  Widget _fields() => EvenGrid(
+  /// The line's fields, each as wide as what it holds, side by side in the
+  /// grid's order and wrapping only when the line is full.
+  ///
+  /// Keyed globally to the line: it switches between its two layouts (small
+  /// photo, big photo) the moment one of its fields takes focus, and without
+  /// the key the fields were rebuilt in the new layout and lost that focus.
+  Widget _fields() => Wrap(
     key: _LineFieldsKey(sheet.draftAt(row).rowKey),
-    columns: PartRowsForm.gridColumns,
-    minColumnWidth: 160,
+    spacing: 10,
+    runSpacing: 8,
+    crossAxisAlignment: WrapCrossAlignment.end,
     children: [
       for (final cells in grid)
         for (final column in cells)
-          column == null
-              ? const SizedBox.shrink()
-              : _PartField(
-                  key: ValueKey<String>(
-                    'cell_${sheet.sheetDef.key}_${row}_${column.id}',
-                  ),
-                  sheet: sheet,
-                  row: row,
-                  column: column,
-                  showShortcuts: showShortcuts,
-                ),
+          if (column != null)
+            _PartField(
+              key: ValueKey<String>(
+                'cell_${sheet.sheetDef.key}_${row}_${column.id}',
+              ),
+              sheet: sheet,
+              row: row,
+              column: column,
+              showShortcuts: showShortcuts,
+            ),
     ],
   );
 
@@ -538,10 +543,21 @@ class _PartFieldState extends State<_PartField> {
     return v.optionLabel ?? v.textValue ?? (v.intValue?.toString() ?? '');
   }
 
+  double? _lastTextWidth;
+  void _onTextWidth() {
+    if (!mounted) return;
+    final width = _text.text.length.toDouble();
+    if (width == _lastTextWidth) return;
+    _lastTextWidth = width;
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     _text.text = _isThickness ? _thicknessNumber : _shown;
+    // The box grows and shrinks with what is typed into it.
+    _text.addListener(_onTextWidth);
     _focus.addListener(() {
       if (_focus.hasFocus) {
         _hadFocus = true;
@@ -618,9 +634,64 @@ class _PartFieldState extends State<_PartField> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isThickness) return _thicknessField();
-    if (_isList) return _optionField();
-    return _textField();
+    final field = _isThickness
+        ? _thicknessField()
+        : (_isList ? _optionField() : _textField());
+    return SizedBox(width: _fitWidth(context), child: field);
+  }
+
+  // --- the field's width: as wide as what it holds -------------------------
+
+  /// The narrowest a field goes, so an empty one is still a target.
+  static const double minFieldWidth = 96;
+
+  /// The widest: past it the text is cut with … and the box keeps its place.
+  static const double maxFieldWidth = 360;
+
+  static const TextStyle _valueStyle = TextStyle(fontSize: 14);
+
+  double _measure(String text, TextStyle style, TextScaler scaler) {
+    if (text.isEmpty) return 0;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  /// The widest of the field's heading and the text in its box, with room
+  /// for what sits beside each: a property's Edit and Delete, a key tip, the
+  /// box's padding, its arrow, its × or New, the Auto pill, the unit picker.
+  double _fitWidth(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    var heading = _measure(SheetStyle.titleCase(_column.label), SheetStyle.label, scaler);
+    if (_isProperty || _isThickness) heading += 4 + 2 * 24;
+    if (widget.showShortcuts && _shortcutKey != null) heading += 34;
+
+    // The box: 12 padding each side, the border, the caret.
+    const box = 12.0 * 2 + 2 + 4;
+    final double inBox;
+    if (_isThickness) {
+      final unit = _thicknessUnit;
+      final typed = _text.text.isEmpty ? (unit == 'ga' ? 'Gauge' : unit) : _text.text;
+      inBox = _measure(typed, _valueStyle, scaler) + box + 6 + 118;
+    } else if (_isList) {
+      final label = _shown;
+      final shown = label.isEmpty ? (_locked ? '—' : 'Select…') : label;
+      var extra = 32.0; // the arrow
+      if (_isProperty && !_locked && label.isNotEmpty) extra += 26; // its ×
+      if (_value?.isNew ?? false) extra += 44; // "New"
+      inBox = _measure(shown, _valueStyle, scaler) + box + extra;
+    } else {
+      final derived = _isDerived && !_locked;
+      inBox = _measure(_text.text, _valueStyle, scaler) + box + (derived ? 64 : 0);
+    }
+    final widest = heading > inBox ? heading : inBox;
+    return widest.clamp(minFieldWidth, maxFieldWidth).toDouble();
   }
 
   Widget _textField() {
@@ -1044,12 +1115,11 @@ class _PropertyActions extends StatelessWidget {
 /// A line's fields with its photo beside them, the photo a square exactly as
 /// tall as the fields are.
 ///
-/// The fields' height depends on their width (four columns fold to two on a
-/// narrow line), and their width on how much the photo takes — so this lays
+/// The fields' height depends on their width (they wrap onto more lines on
+/// a narrow one), and their width on how much the photo takes — so this lays
 /// the fields out, sizes the photo to them, and lays them out again if that
-/// changed the fold. Two or three passes settle it. [EvenGrid] has no
-/// intrinsic height to ask for instead, and its text fields have no dry
-/// layout.
+/// changed the wrap. Two or three passes settle it. Text fields have no dry
+/// layout to ask instead.
 class _FieldsBesidePhoto extends MultiChildRenderObjectWidget {
   _FieldsBesidePhoto({required Widget fields, required Widget photo})
     : super(children: [fields, photo]);

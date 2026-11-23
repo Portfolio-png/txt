@@ -45,11 +45,12 @@ class FitToText extends StatefulWidget {
 }
 
 class _FitToTextState extends State<FitToText> {
-  // Label-sized, the larger of the field's two text sizes, so a label never
-  // truncates when it floats back down into an empty box.
+  // The field's own size (14) at the heading's weight, so neither the value
+  // nor its heading (13, heavy, spaced) is cut. It measured at 16 before,
+  // from when labels floated, and every box came out a fifth too wide.
   static const TextStyle _measureStyle = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
   );
 
   @override

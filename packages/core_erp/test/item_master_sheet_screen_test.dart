@@ -3106,9 +3106,8 @@ void main() {
     );
 
     testWidgets(
-      'the line is four even columns, and the heading says when the part was made',
+      'each field is as wide as what it holds, in the line\'s order; the heading says when',
       (tester) async {
-        // Wide enough for four: a narrower line reads two at a time (EvenGrid).
         await _pumpScreen(
           tester,
           repository: _FakeItemRepository([]),
@@ -3122,26 +3121,35 @@ void main() {
         Rect cell(String binds) => tester.getRect(
           find.byKey(ValueKey('cell_item_0_${def.columnBoundTo(binds)!.id}')),
         );
+        // In the grid's order, left to right: Group, Type, Part Name, then
+        // Part Code — on one line when the line has room.
         final group = cell(SheetBindsTo.group);
-        final code = cell(SheetBindsTo.partCode);
-        final alloy = cell(SheetBindsTo.variation('Alloy'));
-        final number = cell(SheetBindsTo.partNo);
-        expect(cell(SheetBindsTo.set).bottom, group.bottom);
-        expect(cell(SheetBindsTo.name).bottom, group.bottom);
-        expect(
-          code.bottom,
-          group.bottom,
-          reason: 'Part Code ends the first row',
+        final type = cell(SheetBindsTo.set);
+        final name = cell(SheetBindsTo.name);
+        expect(type.left, greaterThan(group.right));
+        expect(name.left, greaterThan(type.right));
+        expect(type.bottom, closeTo(group.bottom, 0.01));
+
+        // A long name widens its box; a short one does not need the room.
+        final before = cell(SheetBindsTo.name).width;
+        final nameColumn = def.itemColumn!;
+        sheet.updateValue(
+          nameColumn.id,
+          CellValue(
+            columnId: nameColumn.id,
+            optionLabel: 'Patti for the long brass hinge assembly',
+            isNew: true,
+          ),
         );
-        expect(alloy.left, group.left, reason: 'Alloy is under Group');
-        expect(number.left, code.left, reason: 'Part No is under Part Code');
+        await tester.pump();
+        final after = cell(SheetBindsTo.name).width;
+        expect(after, greaterThan(before), reason: 'the box grows with its text');
+        expect(after, lessThanOrEqualTo(360), reason: 'and stops at the widest a field goes');
         expect(
-          number.bottom,
-          alloy.bottom,
-          reason: 'Part No ends the second row',
+          cell(SheetBindsTo.partNo).width,
+          lessThan(after),
+          reason: 'a number needs less room than a long name',
         );
-        expect(alloy.width, closeTo(group.width, 0.01));
-        expect(code.width, closeTo(group.width, 0.01));
 
         // Not saved yet: the heading shows the time now, for the save to stamp.
         final stamp = find.byKey(const ValueKey('part_heading_stamp'));
@@ -4040,7 +4048,7 @@ void main() {
     // Overflow is how this screen has failed before — a 6.5px identity row, a
     // 72px sidebar, a 1px title bar. Each was found by a test that happened to
     // be looking elsewhere.
-    for (final width in [1366.0, 1600.0, 1920.0]) {
+    for (final width in [1280.0, 1366.0, 1600.0, 1920.0]) {
       testWidgets('no section overflows at ${width.toInt()}px', (tester) async {
         await _pumpScreen(tester, size: Size(width, 1000));
 

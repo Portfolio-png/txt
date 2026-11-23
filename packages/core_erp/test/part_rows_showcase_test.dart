@@ -1,4 +1,3 @@
-import 'package:core_erp/core/widgets/even_grid.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_rows_form.dart';
 import 'package:core_erp/sheet/sheet.dart';
 import 'package:flutter/material.dart';
@@ -63,9 +62,15 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final photo = tester.getRect(find.byKey(const ValueKey<String>('big_photo_0')));
-    final fields = tester.getRect(find.byType(EvenGrid).first);
+    final fields = tester.getRect(find.descendant(of: find.byKey(const ValueKey('part_line_0')), matching: find.byType(Wrap)).first);
     expect(photo.width, closeTo(photo.height, 0.5), reason: 'a square');
-    expect(photo.height, closeTo(fields.height, 0.5), reason: 'as tall as the fields');
+    // As tall as the fields, and never under 120: sized to their text, a
+    // line's fields often fit one row, shorter than a photo can usefully be.
+    expect(
+      photo.height,
+      closeTo(fields.height < 120 ? 120 : fields.height, 0.5),
+      reason: 'as tall as the fields, at least 120',
+    );
     expect(photo.top, closeTo(fields.top, 0.5), reason: 'level with them');
     expect(photo.left, greaterThan(fields.right), reason: 'beside them, on the right');
 
@@ -94,7 +99,7 @@ void main() {
     await _pump(tester, showcaseRow: 0, width: 760);
     expect(tester.takeException(), isNull);
     final photo = tester.getRect(find.byKey(const ValueKey<String>('big_photo_0')));
-    final fields = tester.getRect(find.byType(EvenGrid).first);
+    final fields = tester.getRect(find.descendant(of: find.byKey(const ValueKey('part_line_0')), matching: find.byType(Wrap)).first);
     expect(photo.width, closeTo(photo.height, 0.5));
     expect(photo.width, lessThanOrEqualTo(760 * 0.38 + 0.5), reason: 'it never crowds the fields out');
     expect(photo.left, greaterThan(fields.right));

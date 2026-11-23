@@ -865,8 +865,13 @@ class _PartDieSectionState extends State<PartDieSection> {
                       ),
                       SheetStyle.labelled(
                         label: 'Liner Size',
-                        child: SizedBox(
-                          width: 300,
+                        // As wide as the figure, beside its unit picker (104).
+                        child: FitToText(
+                          controller: _linerController,
+                          texts: const ['0.000'],
+                          chrome: 30 + 8 + 104,
+                          minWidth: 200,
+                          maxWidth: 320,
                           child: LengthUnitField(
                             fieldKey: const ValueKey<String>(
                               'quick-entry-die-liner-field',
@@ -1538,8 +1543,12 @@ class _PartDieSectionState extends State<PartDieSection> {
   }) {
     return SheetStyle.labelled(
       label: label,
-      child: SizedBox(
-        width: 230,
+      // As wide as the date and time it shows, with its icon or ×.
+      child: FitToText(
+        texts: [value == null ? 'Pick a date' : partStamp(value)],
+        chrome: 30 + 44,
+        minWidth: 150,
+        maxWidth: 260,
         child: InkWell(
           key: ValueKey<String>('quick-entry-die-$slug-field'),
           borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
