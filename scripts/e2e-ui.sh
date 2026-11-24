@@ -164,7 +164,8 @@ failed() {
 # none of its state set up: SIGSEGV at pc 0 in vdbeUnbind (B73, three crashes
 # on 2026-11-24, all just after an e2e run). So the test app is built in its
 # own tree: only what a macOS build needs is copied (no keys, no databases,
-# no backend — the server still runs from here), and its build folder stays
+# no backend — the server still runs from here; not macos/Pods, whose paths
+# are relative to where the tree sits — the mirror installs its own), and its build folder stays
 # between runs, so after the first build it is incremental.
 APP_TREE="${E2E_APP_TREE:-${HOME}/.paper/e2e-app-tree}"
 say "Mirroring the app into ${APP_TREE} (its own build folder; yours is not touched)"
@@ -176,6 +177,7 @@ for dir in lib assets integration_test macos packages; do
   rsync -a --delete \
     --exclude 'build/' --exclude '.dart_tool/' --exclude 'node_modules/' \
     --exclude 'Flutter/ephemeral/' \
+    --exclude 'Pods/' \
     "${REPO}/${dir}/" "${APP_TREE}/${dir}/"
 done
 
