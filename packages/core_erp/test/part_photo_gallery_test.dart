@@ -38,13 +38,15 @@ class _Repo extends EntityPhotoRepository {
   Future<Map<String, EntityPhoto>> primaryPhotos(String owner, List<String> ids) async => {};
 
   @override
-  Future<List<PartPhoto>> partPhotos(String itemId) async => List.of(photos);
+  Future<List<PartPhoto>> partPhotos(String itemId, {String owner = PhotoOwner.item}) async =>
+      List.of(photos);
 
   @override
   Future<List<PartPhoto>> arrangePartPhotos(
     String itemId, {
     required List<int> order,
     int? primaryId,
+    String owner = PhotoOwner.item,
   }) async {
     arranged.add((order.join(','), primaryId));
     return List.of(photos);
@@ -72,12 +74,17 @@ class _FailingRepo extends _Repo {
   bool failed = false;
 
   @override
-  Future<List<PartPhoto>> arrangePartPhotos(String itemId, {required List<int> order, int? primaryId}) async {
+  Future<List<PartPhoto>> arrangePartPhotos(
+    String itemId, {
+    required List<int> order,
+    int? primaryId,
+    String owner = PhotoOwner.item,
+  }) async {
     if (!failed) {
       failed = true;
       throw const EntityPhotoException('The connection dropped.');
     }
-    return super.arrangePartPhotos(itemId, order: order, primaryId: primaryId);
+    return super.arrangePartPhotos(itemId, order: order, primaryId: primaryId, owner: owner);
   }
 }
 

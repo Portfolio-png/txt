@@ -6167,8 +6167,13 @@ function thumbnailKeyFor(objectKey) {
   return `${key.slice(0, slash + 1)}thumbs/${stem}.jpg`;
 }
 
-function photoLimitError() {
-  const error = new Error(`A part keeps up to ${MAX_PART_PHOTOS} photos — remove one first.`);
+/// The records that keep a gallery of photos, each up to [MAX_PART_PHOTOS]:
+/// a part's views, and a die's (2026-11-24). Others keep one shown photo.
+const GALLERY_ENTITY_TYPES = new Set(['item', 'die']);
+
+function photoLimitError(entityType = 'item') {
+  const what = entityType === 'die' ? 'A die' : 'A part';
+  const error = new Error(`${what} keeps up to ${MAX_PART_PHOTOS} photos — remove one first.`);
   error.statusCode = 409;
   error.code = 'photo_limit';
   return error;
@@ -6187,12 +6192,12 @@ async function countEntityPhotos(entityType, entityId) {
   return Number(row?.count || 0);
 }
 
-/// Refuses a photo past the part's limit. Other records keep one shown photo
-/// and are not counted.
+/// Refuses a photo past a gallery's limit (a part's, a die's). Other
+/// records keep one shown photo and are not counted.
 async function assertRoomForPhoto(entityType, entityId) {
-  if (entityType !== 'item') return;
+  if (!GALLERY_ENTITY_TYPES.has(entityType)) return;
   if ((await countEntityPhotos(entityType, entityId)) >= MAX_PART_PHOTOS) {
-    throw photoLimitError();
+    throw photoLimitError(entityType);
   }
 }
 
@@ -10920,6 +10925,8 @@ registerDieRoutes({
   listAssetsForEntity,
   createAssetUploadIntent,
   completeAssetUpload,
+  listEntityPhotos,
+  arrangeEntityPhotos,
 });
 
 // The client master and its sub-contractors, then the portal. `io` is declared

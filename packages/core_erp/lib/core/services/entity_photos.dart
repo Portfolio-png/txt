@@ -171,10 +171,24 @@ class EntityPhotoRepository {
     };
   }
 
-  /// [itemId]'s photos, first to last — one request for the whole gallery.
-  Future<List<PartPhoto>> partPhotos(String itemId) async {
-    if (useMockResponses) return List.of(_mockGallery[itemId] ?? const []);
-    final payload = await _send('GET', '/api/items/$itemId/photos', null);
+  /// The records with a gallery of photos: a part's views, and a die's
+  /// (2026-11-24). Others keep one shown photo.
+  static bool keepsGallery(String owner) =>
+      owner == PhotoOwner.item || owner == PhotoOwner.die;
+
+  static String _galleryPath(String owner, String id) => owner == PhotoOwner.die
+      ? '/api/dies/$id/photos'
+      : '/api/items/$id/photos';
+
+  /// The mock's gallery key: a part's by its id alone, as it always was.
+  static String _galleryKey(String owner, String id) =>
+      owner == PhotoOwner.item ? id : '$owner:$id';
+
+  /// [itemId]'s photos (a part's, or [owner]'s), first to last — one request
+  /// for the whole gallery.
+  Future<List<PartPhoto>> partPhotos(String itemId, {String owner = PhotoOwner.item}) async {
+    if (useMockResponses) return List.of(_mockGallery[_galleryKey(owner, itemId)] ?? const []);
+    final payload = await _send('GET', _galleryPath(owner, itemId), null);
     return [
       for (final row in payload['photos'] as List<dynamic>? ?? const [])
         if (row is Map<String, dynamic>) PartPhoto.fromJson(row),
@@ -187,9 +201,10 @@ class EntityPhotoRepository {
     String itemId, {
     required List<int> order,
     int? primaryId,
+    String owner = PhotoOwner.item,
   }) async {
     if (useMockResponses) {
-      final photos = _mockGallery[itemId] ?? const <PartPhoto>[];
+      final photos = _mockGallery[_galleryKey(owner, itemId)] ?? const <PartPhoto>[];
       final byId = {for (final photo in photos) photo.id: photo};
       final ids = [...order, ...photos.map((p) => p.id).where((id) => !order.contains(id))];
       final primary = primaryId ?? photos.where((p) => p.isPrimary).firstOrNull?.id;
@@ -198,13 +213,13 @@ class EntityPhotoRepository {
           if (byId[id] case final photo?)
             photo.copyWith(position: index + 1, isPrimary: id == primary),
       ];
-      _mockGallery[itemId] = arranged;
+      _mockGallery[_galleryKey(owner, itemId)] = arranged;
       if (arranged.where((p) => p.isPrimary).firstOrNull case final main?) {
-        _mock['${PhotoOwner.item}:$itemId'] = (assetId: main.id, url: _mockUrl);
+        _mock['$owner:$itemId'] = (assetId: main.id, url: _mockUrl);
       }
       return List.of(arranged);
     }
-    final payload = await _send('PUT', '/api/items/$itemId/photos', {
+    final payload = await _send('PUT', _galleryPath(owner, itemId), {
       'order': order,
       'primaryId': ?primaryId,
     });
@@ -246,11 +261,11 @@ class EntityPhotoRepository {
         mockDocuments.add((owner: owner, id: id, title: documentTitle, assetId: assetId));
         return {'id': assetId, 'documentTitle': documentTitle, 'fileName': file.name};
       }
-      if (owner == PhotoOwner.item) {
-        final gallery = _mockGallery[id] ??= [];
+      if (keepsGallery(owner)) {
+        final gallery = _mockGallery[_galleryKey(owner, id)] ??= [];
         if (gallery.length >= maxPartPhotos) {
-          throw const EntityPhotoException(
-            'A part keeps up to $maxPartPhotos photos — remove one first.',
+          throw EntityPhotoException(
+            '${owner == PhotoOwner.die ? 'A die' : 'A part'} keeps up to $maxPartPhotos photos — remove one first.',
             code: 'photo_limit',
           );
         }
@@ -365,8 +380,8 @@ class EntityPhotoRepository {
 
   Future<void> remove(String owner, String id, int assetId) async {
     if (useMockResponses) {
-      final gallery = _mockGallery[id];
-      if (owner == PhotoOwner.item && gallery != null) {
+      final gallery = _mockGallery[_galleryKey(owner, id)];
+      if (keepsGallery(owner) && gallery != null) {
         final wasMain = gallery.any((p) => p.id == assetId && p.isPrimary);
         gallery.removeWhere((p) => p.id == assetId);
         for (final (index, photo) in gallery.indexed) {
@@ -517,8 +532,9 @@ class EntityPhotosProvider extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  /// [itemId]'s photos, first to last.
-  Future<List<PartPhoto>> partPhotos(String itemId) => _repository.partPhotos(itemId);
+  /// [itemId]'s photos (a part's, or [owner]'s), first to last.
+  Future<List<PartPhoto>> partPhotos(String itemId, {String owner = PhotoOwner.item}) =>
+      _repository.partPhotos(itemId, owner: owner);
 
   /// The gallery's Save, in the order that keeps a part under its limit:
   /// [removed] first, then each new photo of [order] uploaded (shrunk, as one
@@ -529,8 +545,8 @@ class EntityPhotosProvider extends ChangeNotifier {
     required List<int> removed,
     required List<GalleryPhoto> order,
     required GalleryPhoto? main,
+    String owner = PhotoOwner.item,
   }) async {
-    const owner = PhotoOwner.item;
     final key = _key(owner, itemId);
     _busy.add(key);
     notifyListeners();
@@ -554,7 +570,7 @@ class EntityPhotosProvider extends ChangeNotifier {
         if (identical(photo, main)) mainId = id;
       }
       if (ids.isNotEmpty) {
-        await _repository.arrangePartPhotos(itemId, order: ids, primaryId: mainId);
+        await _repository.arrangePartPhotos(itemId, order: ids, primaryId: mainId, owner: owner);
       }
       return null;
     } catch (error) {

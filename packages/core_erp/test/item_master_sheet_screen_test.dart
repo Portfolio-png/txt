@@ -2564,6 +2564,100 @@ void main() {
       },
     );
 
+    testWidgets('a die keeps its own photos: its tile, at the right, opens its gallery', (
+      tester,
+    ) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          throw UnimplementedError();
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        developedFor: const DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+        ),
+        dies: const [ItemDieLink(id: '31', toolCode: 'PGESP1')],
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      // A new die has nowhere to keep photos yet: its tile is there, and says so.
+      final unsaved = find.byKey(const ValueKey<String>('die_photos_unsaved'));
+      expect(unsaved, findsOneWidget);
+      expect(find.byTooltip('Save the die, then add its photos'), findsOneWidget);
+
+      await tester.ensureVisible(find.byKey(const ValueKey<String>('die_tab_31')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey<String>('die_tab_31')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final tile = find.byKey(const ValueKey<String>('photo-die-31'));
+      expect(tile, findsOneWidget);
+      // In the column at the right of the die's form.
+      final code = find.byKey(const ValueKey<String>('quick-entry-die-code-field'));
+      expect(tester.getRect(tile).left, greaterThan(tester.getRect(code).right));
+
+      await tester.ensureVisible(tile);
+      await tester.pump();
+      await tester.tap(tile);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey<String>('part_photo_gallery')), findsOneWidget);
+      expect(find.textContaining('Each view of the die'), findsOneWidget);
+      expect(find.text('Photos of PGESP1'), findsOneWidget);
+
+      // The company's photo, likewise, in the column at the right.
+      await tester.tap(find.byTooltip('Close').first, warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    testWidgets('the company photo sits in the column at the right of Developed For', (
+      tester,
+    ) async {
+      final photos = EntityPhotosProvider(
+        repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+      );
+      addTearDown(photos.dispose);
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        developedFor: const DevelopedFor(
+          kind: DevelopedForKind.client,
+          clientId: 5,
+          companyName: 'Gold Medal',
+        ),
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        photos: photos,
+      );
+      final photo = find.byKey(const ValueKey<String>('photo-client-5'));
+      expect(photo, findsOneWidget);
+      final company = tester.getRect(find.byKey(const ValueKey<String>('deal_company')));
+      final rect = tester.getRect(photo);
+      expect(rect.left, greaterThan(company.right), reason: 'at the right, not before the company');
+      expect(rect.width, greaterThan(100), reason: 'a photo, not a thumbnail');
+      expect(
+        find.descendant(of: photo, matching: find.text('Company photo')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('each die and machine on the part has its photo', (
       tester,
     ) async {
@@ -2612,11 +2706,11 @@ void main() {
       );
       // A bare camera at the start of the row went unnoticed; the empty slot
       // says what it is for.
-      for (final key in ['photo-die-31', 'photo-machine-41']) {
+      for (final (key, label) in [('photo-die-31', 'Die photos'), ('photo-machine-41', 'Photo')]) {
         expect(
           find.descendant(
             of: find.byKey(ValueKey<String>(key)),
-            matching: find.text('Photo'),
+            matching: find.text(label),
           ),
           findsOneWidget,
           reason: '$key should be labelled',
@@ -4301,6 +4395,7 @@ class _GalleryRepository extends EntityPhotoRepository {
   final List<PartPhoto> photos;
 
   @override
-  Future<List<PartPhoto>> partPhotos(String itemId) async => photos;
+  Future<List<PartPhoto>> partPhotos(String itemId, {String owner = PhotoOwner.item}) async =>
+      photos;
 
 }

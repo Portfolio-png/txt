@@ -169,7 +169,23 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       listenable: Listenable.merge([widget.controller, _deal]),
       builder: (context, _) {
         final hasCompany = widget.controller.dealPartyId != null;
-        return Column(
+        final partyId = widget.controller.dealPartyId;
+        // The company's photo in the column at the right, as the part's is on
+        // its line (user, 2026-11-24). Kept on the company: every part for
+        // it shows the same one.
+        final photo = MiniPhoto.isAvailable(context)
+            ? SheetStep.noTab(MiniPhoto(
+                owner: PhotoOwner.client,
+                id: partyId?.toString(),
+                size: 132,
+                label: 'Company photo',
+                what: 'company photo',
+                // The logo set on the Clients screen, until one is uploaded here.
+                fallbackUrl: _companyLogo(partyId),
+                disabledReason: 'Pick the company first to add its photo',
+              ))
+            : null;
+        final content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _dealRow(),
@@ -205,6 +221,15 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                     : 'for ${widget.controller.dealPartyName.trim()}',
               )),
             ),
+          ],
+        );
+        if (photo == null) return content;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: content),
+            const SizedBox(width: 16),
+            photo,
           ],
         );
       },
@@ -257,21 +282,6 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 12,
       crossAxisAlignment: WrapCrossAlignment.start,
       children: [
-        // The company's logo, kept on the company: every part for it shows
-        // the same one.
-        // Level with the boxes, which sit under their headings.
-        SheetStep.noTab(Padding(
-          padding: const EdgeInsets.only(top: _boxTop),
-          child: MiniPhoto(
-          owner: PhotoOwner.client,
-          id: partyId?.toString(),
-          size: 40,
-          what: 'company logo',
-          // The logo set on the Clients screen, until one is uploaded here.
-          fallbackUrl: _companyLogo(partyId),
-          disabledReason: 'Pick the company first to add its logo',
-        ),
-        )),
         SheetStyle.labelled(
           label: 'Company',
           child: FitToText(

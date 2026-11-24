@@ -197,6 +197,22 @@ Future<void> _uploadPhoto(WidgetTester tester, String prefix) async {
   );
 }
 
+/// A photo through its record's gallery — a part's views, a die's (up to
+/// five each): its tile opens the gallery, a + slot takes a file, Save.
+Future<void> _uploadToGallery(WidgetTester tester, String prefix, String what) async {
+  await pumpUntil(tester, _keyed(prefix), reason: 'a $what thumbnail should be drawn');
+  await _tapVisible(tester, _keyed(prefix));
+  await pumpUntil(tester, find.byKey(const ValueKey<String>('gallery_add_0')),
+      reason: 'the $what photo should open its gallery');
+  await tester.tap(find.byKey(const ValueKey<String>('gallery_add_0')));
+  await pumpUntil(tester, find.byKey(const ValueKey<String>('gallery_from_computer')),
+      reason: 'a + slot should offer a file');
+  await tester.tap(find.byKey(const ValueKey<String>('gallery_from_computer')));
+  await pumpUntil(tester, find.text('1 of 5'), reason: 'the file should be held');
+  await tester.tap(find.byKey(const ValueKey<String>('gallery_save')));
+  await pumpUntil(tester, find.text('Photos saved.'), reason: 'the $what photo should upload');
+}
+
 /// The confirmation fades on its own; waited out between steps, untimed, so
 /// the next upload's "Photo saved." is its own.
 Future<void> _letToastGo(WidgetTester tester) =>
@@ -324,30 +340,19 @@ void main() {
     });
 
     // --- photos ----------------------------------------------------------------
-    await _step('upload the part photo', () async {
-      // A part's photo is one of its views, added through its gallery.
-      await pumpUntil(tester, _keyed('photo-item-'), reason: 'a part thumbnail should be drawn');
-      await _tapVisible(tester, _keyed('photo-item-'));
-      await pumpUntil(tester, find.byKey(const ValueKey<String>('gallery_add_0')),
-          reason: 'the part photo should open its gallery');
-      await tester.tap(find.byKey(const ValueKey<String>('gallery_add_0')));
-      await pumpUntil(tester, find.byKey(const ValueKey<String>('gallery_from_computer')),
-          reason: 'a + slot should offer a file');
-      await tester.tap(find.byKey(const ValueKey<String>('gallery_from_computer')));
-      await pumpUntil(tester, find.text('1 of 5'), reason: 'the file should be held');
-      await tester.tap(find.byKey(const ValueKey<String>('gallery_save')));
-      await pumpUntil(tester, find.text('Photos saved.'), reason: 'the part photo should upload');
-    });
+    await _step('upload the part photo', () => _uploadToGallery(tester, 'photo-item-', 'part'));
     await pumpUntilGone(tester, find.text('Photos saved.'), timeout: const Duration(seconds: 10));
     await _step('upload the company logo', () => _uploadPhoto(tester, 'photo-client-'));
     await _letToastGo(tester);
     await _step('upload the person photo', () => _uploadPhoto(tester, 'photo-party_contact-'));
     await _letToastGo(tester);
     // A die's photo is in its tab's form: open the saved die's tab first.
+    // A die keeps up to five photos too, through its own gallery.
     await _step('upload the die photo', () async {
       await _tapVisible(tester, _savedTab('die'));
-      await _uploadPhoto(tester, 'photo-die-');
+      await _uploadToGallery(tester, 'photo-die-', 'die');
     });
+    await pumpUntilGone(tester, find.text('Photos saved.'), timeout: const Duration(seconds: 10));
     await _letToastGo(tester);
     await _step('upload the machine photo', () async {
       await _tapVisible(tester, _savedTab('machine'));
@@ -510,7 +515,10 @@ void main() {
       }
       await stillThere(find.textContaining(_vendor), 'the raw sheet vendor');
       await stillThere(find.byTooltip('Open part photos (1 of 5)'), 'the part photo');
-      await stillThere(find.byTooltip('Open company logo'), 'the company logo');
+      await stillThere(find.byTooltip('Open company photo'), 'the company photo');
+      // The die's photo, in its own gallery: open its tab to see it.
+      await _tapVisible(tester, _savedTab('die'));
+      await stillThere(find.byTooltip('Open die photos (1 of 5)'), 'the die photo');
     });
 
     dumpVisibleText(tester, 'E2E journey, after reopening');

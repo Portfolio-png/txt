@@ -23,6 +23,7 @@ import '../../../die_makers/presentation/widgets/die_maker_picker_field.dart';
 import '../../../dies/domain/die_code.dart';
 import '../../../items/domain/part_code.dart';
 import '../../domain/item_definition.dart';
+import 'part_photo_gallery.dart';
 
 /// The die sheet, beside the part it was made for.
 ///
@@ -820,7 +821,6 @@ class _PartDieSectionState extends State<PartDieSection> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ..._openDiePhoto(),
             _formStep(
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1133,32 +1133,48 @@ class _PartDieSectionState extends State<PartDieSection> {
           open(0);
         }
       },
-      child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 12), child: form),
+      // The die's photos in the column at the right, as the part's are on
+      // its line (user, 2026-11-24).
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: form),
+            if (MiniPhoto.isAvailable(context)) ...[
+              const SizedBox(width: 16),
+              SheetStep.noTab(_diePhotoTile()),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
-  /// The open saved die's photo, over its form (it was in the die's row).
-  List<Widget> _openDiePhoto() {
+  /// The open die's photos — up to five, in its own gallery. A die not in
+  /// the master yet (held, or new) has nowhere to keep them: drawn, with why.
+  Widget _diePhotoTile() {
     final id = _editingDieId;
-    if (id == null || !MiniPhoto.isAvailable(context)) return const [];
-    final die = _dies.where((d) => d.id == id).firstOrNull;
-    if (die == null) return const [];
-    return [
-      Align(
-        alignment: Alignment.centerLeft,
-        child: MiniPhoto(
-          owner: PhotoOwner.die,
-          id: die.id,
-          size: _kPhotoSize,
-          label: 'Photo',
-          what: 'die photo',
-          note: _photoNote,
-          fallbackUrl: die.photoUrl,
-          disabledReason: 'Save the part to add the die’s photo',
-        ),
-      ),
-      const SizedBox(height: 10),
-    ];
+    final die = id == null ? null : _dies.where((d) => d.id == id).firstOrNull;
+    final name = die == null
+        ? 'this die'
+        : (die.toolCode.trim().isEmpty ? 'Die ${die.id}' : die.toolCode.trim());
+    return MiniPhoto(
+      key: ValueKey<String>('die_photos_${die?.id ?? 'unsaved'}'),
+      owner: PhotoOwner.die,
+      id: die?.id,
+      size: _kPhotoSize,
+      label: 'Die photos',
+      what: 'die photo',
+      note: _photoNote,
+      fallbackUrl: die?.photoUrl,
+      disabledReason: _editingStagedIndex != null
+          ? 'Held for the part — save the part, then add this die’s photos'
+          : 'Save the die, then add its photos',
+      onOpen: die == null
+          ? null
+          : () => showDiePhotoGallery(context, dieId: die.id, dieName: name),
+    );
   }
 
   /// Liner sizes used before, read in the unit picked now — so switching to
@@ -1594,8 +1610,8 @@ class _PartDieSectionState extends State<PartDieSection> {
   }
 }
 
-/// The die photo's side, in the open die's form.
-const double _kPhotoSize = 52;
+/// The die photo tile's side, in the column at the right of its form.
+const double _kPhotoSize = 132;
 
 /// Asks for a die type in the shop's own words.
 ///

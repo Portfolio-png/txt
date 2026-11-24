@@ -29,14 +29,28 @@ Future<bool> showPartPhotoGallery(
   required String itemId,
   required String partName,
   int? openOn,
+  String owner = PhotoOwner.item,
 }) async {
   final saved = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => PartPhotoGallery(itemId: itemId, partName: partName, openOn: openOn),
+    builder: (_) => PartPhotoGallery(
+      itemId: itemId,
+      partName: partName,
+      openOn: openOn,
+      owner: owner,
+    ),
   );
   return saved == true;
 }
+
+/// A die's photos — up to [maxPartPhotos], as a part's (2026-11-24).
+Future<bool> showDiePhotoGallery(
+  BuildContext context, {
+  required String dieId,
+  required String dieName,
+}) =>
+    showPartPhotoGallery(context, itemId: dieId, partName: dieName, owner: PhotoOwner.die);
 
 class PartPhotoGallery extends StatefulWidget {
   const PartPhotoGallery({
@@ -44,10 +58,18 @@ class PartPhotoGallery extends StatefulWidget {
     required this.itemId,
     required this.partName,
     this.openOn,
+    this.owner = PhotoOwner.item,
   });
 
+  /// The record's id — a part's, or a die's when [owner] says so.
   final String itemId;
   final String partName;
+
+  /// Whose photos: [PhotoOwner.item] (a part's views) or [PhotoOwner.die].
+  final String owner;
+
+  bool get _isDie => owner == PhotoOwner.die;
+  String get _thing => _isDie ? 'die' : 'part';
 
   /// The photo to show big as it opens, by id; the main one otherwise.
   final int? openOn;
@@ -85,7 +107,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
   @override
   void initState() {
     super.initState();
-    _revision = _store.revisionOf(PhotoOwner.item, widget.itemId);
+    _revision = _store.revisionOf(widget.owner, widget.itemId);
     _store.addListener(_onStoreChanged);
     unawaited(_load(first: true));
   }
@@ -98,7 +120,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
 
   /// A photo stored elsewhere — the phone, mostly — while this is open.
   void _onStoreChanged() {
-    final revision = _store.revisionOf(PhotoOwner.item, widget.itemId);
+    final revision = _store.revisionOf(widget.owner, widget.itemId);
     if (revision == _revision || _saving) return;
     _revision = revision;
     unawaited(_load(first: false));
@@ -106,7 +128,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
 
   Future<void> _load({required bool first}) async {
     try {
-      final fresh = await _store.partPhotos(widget.itemId);
+      final fresh = await _store.partPhotos(widget.itemId, owner: widget.owner);
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -199,7 +221,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
       context: context,
       builder: (dialogContext) => SimpleDialog(
         key: const ValueKey<String>('gallery_add_choice'),
-        title: const Text('Add a view of the part'),
+        title: Text('Add a view of the ${widget._thing}'),
         children: [
           PhotoChoiceTile(
             key: const ValueKey<String>('gallery_take_on_phone'),
@@ -207,7 +229,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
             title: 'Take on phone',
             detail: requests == null
                 ? 'Phone photos are not set up in this app.'
-                : 'Your phone opens the camera with this part\'s details. '
+                : 'Your phone opens the camera with this ${widget._thing}\'s details. '
                       'The shot appears here as soon as it is taken.',
             onTap: requests == null ? null : () => Navigator.of(dialogContext).pop('phone'),
           ),
@@ -230,7 +252,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
 
   Future<void> _askPhone(PhotoRequestsProvider requests) async {
     final error = await requests.ask(
-      PhotoOwner.item,
+      widget.owner,
       widget.itemId,
       context: 'a view of ${widget.partName}',
     );
@@ -267,14 +289,14 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
     if (files.length > taken.length) {
       showAppToast(
         context,
-        'Only ${taken.length} added — a part keeps up to $maxPartPhotos photos.',
+        'Only ${taken.length} added — a ${widget._thing} keeps up to $maxPartPhotos photos.',
         kind: AppToastKind.warning,
       );
     }
   }
 
   Future<void> _takeBackFromPhone(PhotoRequestsProvider requests) async {
-    final error = await requests.cancel(PhotoOwner.item, widget.itemId);
+    final error = await requests.cancel(widget.owner, widget.itemId);
     if (!mounted || error == null) return;
     showAppToast(context, error, kind: AppToastKind.error);
   }
@@ -289,6 +311,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
       removed: List.of(_removed),
       order: List.of(_photos),
       main: _main,
+      owner: widget.owner,
     );
     if (!mounted) return;
     if (error == null) {
@@ -369,7 +392,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
   @override
   Widget build(BuildContext context) {
     final requests = _requestsOf(context, listen: true);
-    final onPhone = requests?.pendingFor(PhotoOwner.item, widget.itemId) != null;
+    final onPhone = requests?.pendingFor(widget.owner, widget.itemId) != null;
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
       child: Focus(
@@ -429,10 +452,10 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Each view of the part — front, side, a section. The main one is '
-              'shown wherever the part is.',
-              style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+            Text(
+              'Each view of the ${widget._thing} — front, side, a section. The main one is '
+              'shown wherever the ${widget._thing} is.',
+              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
             ),
           ],
         ),
@@ -686,7 +709,7 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
           const SizedBox(height: 4),
           if (full)
             Tooltip(
-              message: 'A part keeps up to $maxPartPhotos photos',
+              message: 'A ${widget._thing} keeps up to $maxPartPhotos photos',
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
