@@ -199,3 +199,46 @@ test('vendors: an unused vendor can be deleted and is gone afterwards', async (t
   const after = await api(ctx, 'GET', `/api/vendors/${id}`);
   assert.equal(after.status, 404);
 });
+
+// What a vendor is for (2026-11-24): raw material, outsourced work, or both.
+test('vendors: raw material and outsourcing are ticks; an update without them keeps them', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+
+  const plain = await api(ctx, 'POST', '/api/vendors', { name: 'Untyped Traders' });
+  assert.equal(plain.status, 201, JSON.stringify(plain.body));
+  assert.equal(plain.body.vendor.suppliesRawMaterial, false);
+  assert.equal(plain.body.vendor.doesOutsourcing, false);
+
+  const both = await api(ctx, 'POST', '/api/vendors', {
+    name: 'Both Ways Metals',
+    suppliesRawMaterial: true,
+    doesOutsourcing: true,
+  });
+  assert.equal(both.status, 201, JSON.stringify(both.body));
+  assert.equal(both.body.vendor.suppliesRawMaterial, true);
+  assert.equal(both.body.vendor.doesOutsourcing, true);
+  const id = both.body.vendor.id;
+
+  // Not mentioned: kept.
+  const renamed = await api(ctx, 'PATCH', `/api/vendors/${id}`, { name: 'Both Ways Metals Pvt' });
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
+  assert.equal(renamed.body.vendor.suppliesRawMaterial, true);
+  assert.equal(renamed.body.vendor.doesOutsourcing, true);
+
+  // Unticked: cleared, the other left as it is.
+  const unticked = await api(ctx, 'PATCH', `/api/vendors/${id}`, {
+    name: 'Both Ways Metals Pvt',
+    doesOutsourcing: false,
+  });
+  assert.equal(unticked.body.vendor.suppliesRawMaterial, true);
+  assert.equal(unticked.body.vendor.doesOutsourcing, false);
+
+  const listed = await api(ctx, 'GET', '/api/vendors');
+  const row = listed.body.vendors.find((v) => v.id === id);
+  assert.equal(row.suppliesRawMaterial, true);
+  assert.equal(row.doesOutsourcing, false);
+
+  const wrong = await api(ctx, 'POST', '/api/vendors', { name: 'Odd Co', doesOutsourcing: 'yes' });
+  assert.equal(wrong.status, 400, 'a tick is true or false');
+});

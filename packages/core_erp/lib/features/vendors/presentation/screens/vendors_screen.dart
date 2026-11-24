@@ -406,10 +406,17 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
   bool _isSaving = false;
   String? _localError;
 
+  /// What the vendor is for (user, 2026-11-24): either, both, or — for a
+  /// vendor from before the ticks — neither until someone says.
+  late bool _rawMaterial;
+  late bool _outsourcing;
+
   @override
   void initState() {
     super.initState();
     final vendor = widget.vendor;
+    _rawMaterial = vendor?.suppliesRawMaterial ?? false;
+    _outsourcing = vendor?.doesOutsourcing ?? false;
     _nameController = TextEditingController(text: vendor?.name ?? '');
     _aliasController = TextEditingController(text: vendor?.alias ?? '');
     _gstController = TextEditingController(text: vendor?.gstNumber ?? '');
@@ -543,6 +550,29 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
               ),
             ),
             const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Vendor For',
+              subtitle: 'Tick what this vendor supplies — one or both.',
+              child: Wrap(
+                spacing: 24,
+                runSpacing: 8,
+                children: [
+                  _kindTick(
+                    key: const ValueKey<String>('vendor_supplies_raw_material'),
+                    label: 'Raw material vendor',
+                    value: _rawMaterial,
+                    onChanged: (v) => setState(() => _rawMaterial = v),
+                  ),
+                  _kindTick(
+                    key: const ValueKey<String>('vendor_does_outsourcing'),
+                    label: 'Outsourcing vendor',
+                    value: _outsourcing,
+                    onChanged: (v) => setState(() => _outsourcing = v),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
 
             const SizedBox(height: 16),
             ErpDialogSectionCard(
@@ -666,6 +696,37 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
     );
   }
 
+  /// A tick and its words, the words clickable too.
+  Widget _kindTick({
+    required Key key,
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return InkWell(
+      key: key,
+      borderRadius: BorderRadius.circular(6),
+      onTap: _isSaving ? null : () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: _isSaving ? null : (v) => onChanged(v ?? false),
+            ),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _field(
     String label,
     TextEditingController controller, {
@@ -733,6 +794,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
                 email: _emailController.text,
                 logoUrl: _logoUrlController.text,
                 photoUrl: _photoUrlController.text,
+                suppliesRawMaterial: _rawMaterial,
+                doesOutsourcing: _outsourcing,
               ),
             )
           : await provider.updateVendor(
@@ -747,6 +810,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
                 email: _emailController.text,
                 logoUrl: _logoUrlController.text,
                 photoUrl: _photoUrlController.text,
+                suppliesRawMaterial: _rawMaterial,
+                doesOutsourcing: _outsourcing,
               ),
             );
       if (saved != null && mounted && provider.errorMessage == null) {

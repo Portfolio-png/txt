@@ -2276,7 +2276,12 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             createOptionLabelBuilder: (query) => 'Add vendor "${query.trim()}"',
             onCreateOption: (query) async {
               final created = await vendors.createVendor(
-                CreateVendorInput(name: query.trim()),
+                // Added where the sheet's supplier is picked: it supplies
+                // raw material.
+                CreateVendorInput(
+                  name: query.trim(),
+                  suppliesRawMaterial: true,
+                ),
               );
               if (created == null) return null;
               if (mounted) setState(() => _setVendor(created.id, created.name));

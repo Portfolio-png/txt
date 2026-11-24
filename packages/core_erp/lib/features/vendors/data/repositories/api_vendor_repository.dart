@@ -70,6 +70,8 @@ class ApiVendorRepository implements VendorRepository {
         updatedAt: DateTime.now(),
         logoUrl: input.logoUrl,
         photoUrl: input.photoUrl,
+        suppliesRawMaterial: input.suppliesRawMaterial,
+        doesOutsourcing: input.doesOutsourcing,
       );
       _mockVendors.add(created);
       return created;
@@ -87,6 +89,8 @@ class ApiVendorRepository implements VendorRepository {
         'email': input.email,
         'logoUrl': input.logoUrl,
         'photoUrl': input.photoUrl,
+        'suppliesRawMaterial': input.suppliesRawMaterial,
+        'doesOutsourcing': input.doesOutsourcing,
       },
     );
     return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
@@ -112,6 +116,9 @@ class ApiVendorRepository implements VendorRepository {
         updatedAt: DateTime.now(),
         logoUrl: input.logoUrl,
         photoUrl: input.photoUrl,
+        suppliesRawMaterial:
+            input.suppliesRawMaterial ?? current.suppliesRawMaterial,
+        doesOutsourcing: input.doesOutsourcing ?? current.doesOutsourcing,
       );
       _mockVendors[index] = updated;
       return updated;
@@ -129,6 +136,10 @@ class ApiVendorRepository implements VendorRepository {
         'email': input.email,
         'logoUrl': input.logoUrl,
         'photoUrl': input.photoUrl,
+        if (input.suppliesRawMaterial != null)
+          'suppliesRawMaterial': input.suppliesRawMaterial,
+        if (input.doesOutsourcing != null)
+          'doesOutsourcing': input.doesOutsourcing,
       },
     );
     return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
@@ -207,6 +218,10 @@ class ApiVendorRepository implements VendorRepository {
       photoUrl:
           json['photoUrl'] as String? ?? json['photo_url'] as String? ?? '',
       isArchived: json['isArchived'] as bool? ?? json['is_archived'] == 1,
+      suppliesRawMaterial: json['suppliesRawMaterial'] as bool? ??
+          json['supplies_raw_material'] == 1,
+      doesOutsourcing:
+          json['doesOutsourcing'] as bool? ?? json['does_outsourcing'] == 1,
       usageCount:
           json['usageCount'] as int? ?? json['usage_count'] as int? ?? 0,
       createdAt:

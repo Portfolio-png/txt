@@ -89,7 +89,8 @@ class _AppSidebarState extends State<AppSidebar> {
   ];
 
   static const List<_SidebarItemData> _configuratorItems = <_SidebarItemData>[
-    _SidebarItemData('configurator_employees', 'People', Icons.badge_outlined),
+    // "Employees", as the screen it opens is titled (user, 2026-11-24).
+    _SidebarItemData('configurator_employees', 'Employees', Icons.badge_outlined),
     _SidebarItemData('configurator_clients', 'Clients', Icons.groups_outlined),
     _SidebarItemData(
       'configurator_vendors',

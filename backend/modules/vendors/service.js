@@ -27,6 +27,8 @@ function rowToVendorDto(row) {
     logoUrl: row.logo_url || '',
     photoUrl: row.photo_url || '',
     isArchived: Boolean(row.is_archived),
+    suppliesRawMaterial: Boolean(row.supplies_raw_material),
+    doesOutsourcing: Boolean(row.does_outsourcing),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -78,6 +80,10 @@ function createVendorService({ get, all, run, logChange, challans }) {
     // Absent keeps what is stored (the update reads it below); '' clears.
     logoUrl,
     photoUrl,
+    // What the vendor is for. Absent (or null) on an update keeps what is
+    // stored; on a create it is false.
+    suppliesRawMaterial,
+    doesOutsourcing,
     id = null,
   }) {
     const trimmedName = String(name || '').trim();
@@ -109,9 +115,10 @@ function createVendorService({ get, all, run, logChange, challans }) {
       const result = await run(
         `
         INSERT INTO vendors (
-          name, alias, gst_number, address, contact_name, phone, email, logo_url, photo_url, is_archived, created_at, updated_at
+          name, alias, gst_number, address, contact_name, phone, email, logo_url, photo_url,
+          supplies_raw_material, does_outsourcing, is_archived, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         `,
         [
           trimmedName,
@@ -123,6 +130,8 @@ function createVendorService({ get, all, run, logChange, challans }) {
           trimmedEmail,
           String(logoUrl || '').trim(),
           String(photoUrl || '').trim(),
+          suppliesRawMaterial ? 1 : 0,
+          doesOutsourcing ? 1 : 0,
           now,
           now,
         ],
@@ -141,7 +150,8 @@ function createVendorService({ get, all, run, logChange, challans }) {
     await run(
       `
       UPDATE vendors
-      SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, logo_url = ?, photo_url = ?, updated_at = ?
+      SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, logo_url = ?, photo_url = ?,
+          supplies_raw_material = ?, does_outsourcing = ?, updated_at = ?
       WHERE id = ?
       `,
       [
@@ -154,6 +164,8 @@ function createVendorService({ get, all, run, logChange, challans }) {
         trimmedEmail,
         logoUrl !== undefined ? String(logoUrl || '').trim() : (existing.logo_url || ''),
         photoUrl !== undefined ? String(photoUrl || '').trim() : (existing.photo_url || ''),
+        suppliesRawMaterial == null ? (existing.supplies_raw_material ? 1 : 0) : (suppliesRawMaterial ? 1 : 0),
+        doesOutsourcing == null ? (existing.does_outsourcing ? 1 : 0) : (doesOutsourcing ? 1 : 0),
         now,
         id,
       ],

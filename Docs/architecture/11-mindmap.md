@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c117["⟳ Change 117: inventory shows item groups and sets only, no machine/die types"]
+      c118["⟳ Change 118: vendors are raw material and/or outsourcing; sidebar People → Employees"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -136,6 +136,7 @@ mindmap
           vb2["a vendor named on a challan cannot be deleted"]
           vb3["absent logo or photo keeps what is stored"]
           vb4["name is required"]
+          vb5["⟳ a vendor is for raw material, outsourcing, or both; absent on an update keeps the ticks"]
         vApi["API surface"]
           va1["GET /api/vendors"]
           va2["GET /api/vendors/:id"]

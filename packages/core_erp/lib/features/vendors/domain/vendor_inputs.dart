@@ -9,8 +9,12 @@ class CreateVendorInput {
     this.email = '',
     this.logoUrl = '',
     this.photoUrl = '',
+    this.suppliesRawMaterial = false,
+    this.doesOutsourcing = false,
   });
 
+  final bool suppliesRawMaterial;
+  final bool doesOutsourcing;
   final String name;
   final String alias;
   final String gstNumber;
@@ -34,8 +38,13 @@ class UpdateVendorInput {
     this.email = '',
     this.logoUrl = '',
     this.photoUrl = '',
+    this.suppliesRawMaterial,
+    this.doesOutsourcing,
   });
 
+  /// Null says nothing: the server keeps what it has.
+  final bool? suppliesRawMaterial;
+  final bool? doesOutsourcing;
   final int id;
   final String name;
   final String alias;

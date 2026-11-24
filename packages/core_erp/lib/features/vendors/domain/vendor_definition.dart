@@ -14,7 +14,13 @@ class VendorDefinition {
     required this.updatedAt,
     this.logoUrl = '',
     this.photoUrl = '',
+    this.suppliesRawMaterial = false,
+    this.doesOutsourcing = false,
   });
+
+  /// What the vendor is for — ticks on the vendor form, either or both.
+  final bool suppliesRawMaterial;
+  final bool doesOutsourcing;
 
   final int id;
   final String name;
@@ -49,6 +55,10 @@ class VendorDefinition {
       photoUrl:
           json['photoUrl'] as String? ?? json['photo_url'] as String? ?? '',
       isArchived: json['isArchived'] as bool? ?? json['is_archived'] == 1,
+      suppliesRawMaterial: json['suppliesRawMaterial'] as bool? ??
+          json['supplies_raw_material'] == 1,
+      doesOutsourcing:
+          json['doesOutsourcing'] as bool? ?? json['does_outsourcing'] == 1,
       usageCount:
           json['usageCount'] as int? ?? json['usage_count'] as int? ?? 0,
       createdAt:

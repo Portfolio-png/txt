@@ -11772,6 +11772,14 @@
         "photoUrl": {
           "type": "string",
           "nullable": true
+        },
+        "suppliesRawMaterial": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "doesOutsourcing": {
+          "type": "boolean",
+          "nullable": true
         }
       },
       "output": {
@@ -11964,6 +11972,14 @@
         },
         "photoUrl": {
           "type": "string",
+          "nullable": true
+        },
+        "suppliesRawMaterial": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "doesOutsourcing": {
+          "type": "boolean",
           "nullable": true
         }
       },

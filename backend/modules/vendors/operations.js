@@ -35,6 +35,9 @@ const vendorFields = {
   email: text,
   logoUrl: text,
   photoUrl: text,
+  // Absent on an update keeps what is stored.
+  suppliesRawMaterial: { type: 'boolean', nullable: true },
+  doesOutsourcing: { type: 'boolean', nullable: true },
 };
 const vendorResult = { fields: { vendor: { ...object, required: true } } };
 

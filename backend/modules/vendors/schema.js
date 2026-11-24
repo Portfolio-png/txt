@@ -28,6 +28,8 @@ async function createSchema({ run, all, get }) {
       phone TEXT DEFAULT '',
       email TEXT DEFAULT '',
       is_archived INTEGER NOT NULL DEFAULT 0,
+      supplies_raw_material INTEGER NOT NULL DEFAULT 0,
+      does_outsourcing INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -40,6 +42,10 @@ async function createSchema({ run, all, get }) {
   await ensureColumnExists('vendors', 'phone', "TEXT DEFAULT ''");
   await ensureColumnExists('vendors', 'email', "TEXT DEFAULT ''");
   await ensureColumnExists('vendors', 'is_archived', 'INTEGER NOT NULL DEFAULT 0');
+  // What a vendor is for (2026-11-24): raw material, outsourced work, or
+  // both. Ticks on the vendor form; an older vendor is neither until ticked.
+  await ensureColumnExists('vendors', 'supplies_raw_material', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('vendors', 'does_outsourcing', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 module.exports = { createSchema };

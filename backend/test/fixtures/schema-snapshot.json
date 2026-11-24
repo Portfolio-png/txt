@@ -1588,7 +1588,7 @@
       "type": "table",
       "name": "vendors",
       "table": "vendors",
-      "sql": "CREATE TABLE vendors ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, alias TEXT DEFAULT '', gst_number TEXT DEFAULT '', address TEXT DEFAULT '', contact_name TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , logo_url TEXT DEFAULT '', photo_url TEXT DEFAULT '')"
+      "sql": "CREATE TABLE vendors ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, alias TEXT DEFAULT '', gst_number TEXT DEFAULT '', address TEXT DEFAULT '', contact_name TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , logo_url TEXT DEFAULT '', photo_url TEXT DEFAULT '', supplies_raw_material INTEGER NOT NULL DEFAULT 0, does_outsourcing INTEGER NOT NULL DEFAULT 0)"
     },
     {
       "type": "trigger",
@@ -3462,7 +3462,7 @@
       "type": "table",
       "name": "vendors",
       "table": "vendors",
-      "sql": "CREATE TABLE vendors ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, alias TEXT DEFAULT '', gst_number TEXT DEFAULT '', address TEXT DEFAULT '', contact_name TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , logo_url TEXT DEFAULT '', photo_url TEXT DEFAULT '')"
+      "sql": "CREATE TABLE vendors ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, alias TEXT DEFAULT '', gst_number TEXT DEFAULT '', address TEXT DEFAULT '', contact_name TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , logo_url TEXT DEFAULT '', photo_url TEXT DEFAULT '', supplies_raw_material INTEGER NOT NULL DEFAULT 0, does_outsourcing INTEGER NOT NULL DEFAULT 0)"
     },
     {
       "type": "trigger",
