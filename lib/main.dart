@@ -11,6 +11,7 @@ import 'package:core_erp/core/network/authenticated_http_client.dart';
 import 'package:core_erp/core/network/sitting_scope.dart';
 import 'package:core_erp/core/network/conditional_cache_client.dart';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:core_erp/core/database/local_database_helper.dart';
 import 'package:core_erp/core/sync/replica_sync_service.dart';
@@ -110,6 +111,7 @@ import 'package:core_erp/features/search/data/repositories/api_search_repository
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/services/auto_updater_service.dart';
+import 'core/services/diagnostics_log.dart';
 import 'package:core_erp/core/services/app_performance.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 
@@ -196,16 +198,112 @@ Future<void> main() async {
     isDemoMode: _isDemoMode,
   );
 
+  // What runs where, for the log and for Sentry: "paper@1.0.123+123".
+  String version = 'unknown';
+  try {
+    final info = await PackageInfo.fromPlatform();
+    version = '${info.version}+${info.buildNumber}';
+  } catch (_) {}
+  await DiagnosticsLog.instance.start(version: version);
+
   await SentryFlutter.init((options) {
-    options.dsn = const String.fromEnvironment(
-      'PAPER_SENTRY_DSN',
-      defaultValue: '',
+    // The paper-desktop project (2026-11-25). Every client build until now
+    // was made with this empty, so Sentry was off and a client's crashes and
+    // hangs went nowhere. A DSN is a public client key, so it ships in the
+    // app; PAPER_SENTRY_DSN still overrides it. Debug runs (a developer's
+    // `flutter run`) send nothing.
+    const fromBuild = String.fromEnvironment('PAPER_SENTRY_DSN');
+    options.dsn = !kReleaseMode && !kProfileMode
+        ? ''
+        : (fromBuild.isNotEmpty ? fromBuild : _sentryDsn);
+    options.release = 'paper@$version';
+    options.environment = clientId;
+    // A UI thread blocked 2 s or more is reported as an App Hang (macOS and
+    // iOS) — the "hangs his PC" case.
+    options.enableAppHangTracking = true;
+    options.appHangTimeoutInterval = const Duration(seconds: 2);
+    // Replay records the screen: not on a desktop, where it is unsupported
+    // and was already cut back for the CPU it cost.
+    options.experimental.replay.sessionSampleRate = 0;
+    options.experimental.replay.onErrorSampleRate = 0;
+    options.tracesSampleRate = 0.05;
+    options.sendDefaultPii = false;
+    // print/debugPrint become breadcrumbs; none may carry a login token.
+    options.beforeBreadcrumb = (crumb, hint) {
+      if (crumb == null) return null;
+      final message = crumb.message ?? '';
+      if (message.contains('Bearer ') || message.startsWith('DC API')) {
+        return crumb.copyWith(message: _scrubToken(message));
+      }
+      return crumb;
+    };
+    // The local log rides along with every report, so one Sentry issue shows
+    // the memory and stalls that led up to it.
+    final logPath = DiagnosticsLog.instance.path;
+    if (logPath != null) {
+      options.addEventProcessor(_LogAttachmentProcessor(logPath));
+    }
+  }, appRunner: () {
+    _logUncaughtErrors();
+    // `--dart-define=PAPER_SENTRY_SELFTEST=true` sends one message at start,
+    // to prove a build reaches Sentry before it goes to a client.
+    if (const bool.fromEnvironment('PAPER_SENTRY_SELFTEST')) {
+      unawaited(Sentry.captureMessage('Sentry self-test from paper@$version'));
+      DiagnosticsLog.instance.write('SELFTEST', 'sent to Sentry');
+    }
+    runApp(const MyApp());
+  });
+}
+
+/// The paper-desktop project's client key.
+const String _sentryDsn = 'https://0c485235dd3c51a389ed174ecf33f727@o4512486360023040.ingest.de.sentry.io/4512488768340048';
+
+String _scrubToken(String text) =>
+    text.replaceAll(RegExp(r'Bearer [A-Za-z0-9._\-]+'), 'Bearer <hidden>');
+
+/// Every uncaught error also goes into the local log, then on to whatever
+/// was handling it (Sentry's handlers are installed by now).
+void _logUncaughtErrors() {
+  final previousFlutter = FlutterError.onError;
+  FlutterError.onError = (details) {
+    DiagnosticsLog.instance.error(
+      details.exception,
+      details.stack,
+      where: details.library ?? 'flutter',
     );
-    // Lower trace and session replay sampling rates to eliminate client CPU profiling lag
-    options.tracesSampleRate = 0.1;
-    options.experimental.replay.sessionSampleRate = 0.05;
-    options.experimental.replay.onErrorSampleRate = 1.0;
-  }, appRunner: () => runApp(const MyApp()));
+    previousFlutter?.call(details);
+  };
+  final dispatcher = PlatformDispatcher.instance;
+  final previousPlatform = dispatcher.onError;
+  dispatcher.onError = (error, stack) {
+    DiagnosticsLog.instance.error(error, stack, where: 'platform');
+    return previousPlatform?.call(error, stack) ?? false;
+  };
+}
+
+/// Attaches the tail of the local log to each event going to Sentry.
+class _LogAttachmentProcessor implements EventProcessor {
+  _LogAttachmentProcessor(this.path);
+
+  final String path;
+
+  @override
+  SentryEvent? apply(SentryEvent event, Hint hint) {
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        final bytes = file.readAsBytesSync();
+        // The last 256 KB: what led up to it, not the whole history.
+        final tail = bytes.length > 262144
+            ? bytes.sublist(bytes.length - 262144)
+            : bytes;
+        hint.attachments.add(
+          SentryAttachment.fromUint8List(tail, 'paper.log', contentType: 'text/plain'),
+        );
+      }
+    } catch (_) {}
+    return event;
+  }
 }
 
 class _RealtimeSocketConnector extends StatefulWidget {
@@ -245,15 +343,36 @@ class _RealtimeSocketConnectorState extends State<_RealtimeSocketConnector>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    DiagnosticsLog.instance.write('LIFE', state.name);
     if (state == AppLifecycleState.resumed) {
       SocketService.instance.requestResync();
     }
   }
 
+  /// Who Sentry and the local log last heard is signed in.
+  int? _reportedUserId;
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     SocketService.instance.init(_apiBaseUrl, token: auth.token);
+    // Reports say whose machine they came from: the account's id and role,
+    // never a name or email.
+    final user = auth.user;
+    if (user?.id != _reportedUserId) {
+      _reportedUserId = user?.id;
+      DiagnosticsLog.instance.write(
+        'USER',
+        user == null ? 'signed out' : 'signed in id=${user.id} role=${user.role}',
+      );
+      Sentry.configureScope(
+        (scope) => scope.setUser(
+          user == null
+              ? null
+              : SentryUser(id: '${user.id}', data: {'role': user.role}),
+        ),
+      );
+    }
     return widget.child;
   }
 }

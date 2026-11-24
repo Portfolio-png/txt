@@ -89,6 +89,7 @@ jobs:
           flutter test \
             test/clients_logic_test.dart \
             test/core/app_flow_hooks_test.dart \
+            test/core/diagnostics_log_test.dart \
             test/features/groups/component_links_card_test.dart \
             test/features/groups/component_workflow_panel_test.dart \
             test/features/items/item_expression_executor_test.dart \

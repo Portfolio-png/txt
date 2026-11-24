@@ -1570,9 +1570,13 @@ class ApiChallanRepository implements ChallanRepository {
     final bodyPreview = response.body.length > 500
         ? response.body.substring(0, 500)
         : response.body;
-    debugPrint('DC API RESPONSE STATUS => ${response.statusCode}');
-    debugPrint('DC API RESPONSE TYPE => $contentType');
-    debugPrint('DC API RESPONSE BODY => $bodyPreview', wrapWidth: 2048);
+    // Debug builds only: a shipped app wrote every response into the Mac's
+    // system log (and Sentry's print breadcrumbs) — 2026-11-25.
+    if (kDebugMode) {
+      debugPrint('DC API RESPONSE STATUS => ${response.statusCode}');
+      debugPrint('DC API RESPONSE TYPE => $contentType');
+      debugPrint('DC API RESPONSE BODY => $bodyPreview', wrapWidth: 2048);
+    }
 
     final returnedHtml =
         contentType.contains('text/html') || trimmedBody.startsWith('<');
@@ -1661,8 +1665,17 @@ class ApiChallanRepository implements ChallanRepository {
     Map<String, String> headers,
     String? body,
   ) {
+    // Debug builds only, and never the login token: the headers carried
+    // "Authorization: Bearer …" into the system log of every client's Mac.
+    if (!kDebugMode) return;
+    final shown = {
+      for (final entry in headers.entries)
+        entry.key: entry.key.toLowerCase() == 'authorization'
+            ? '<hidden>'
+            : entry.value,
+    };
     debugPrint('DC API REQUEST => $method $uri');
-    debugPrint('DC API HEADERS => ${jsonEncode(headers)}', wrapWidth: 2048);
+    debugPrint('DC API HEADERS => ${jsonEncode(shown)}', wrapWidth: 2048);
     debugPrint('DC API BODY => ${body ?? ''}', wrapWidth: 2048);
   }
 

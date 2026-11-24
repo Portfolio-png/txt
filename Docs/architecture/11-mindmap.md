@@ -34,6 +34,7 @@ mindmap
   root((Paper backend))
     Latest change
       c119["⟳ Change 119: e2e builds in its own mirror tree — it was rebuilding the running debug app's bundle and crashing it (B73)"]
+      c121["⟳ Change 121: client diagnostics — Sentry project + key in the app, hang tracking, local paper.log (memory, stalls, errors), no token logging"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
