@@ -40,6 +40,9 @@ async function createSchema({ run, all, get }) {
   // Machine barcode: unique system-generated scan code (defaults to asset_id
   // when unset, minted on create/update below).
   await ensureColumnExists('machines', 'barcode', "TEXT NOT NULL DEFAULT ''");
+  // D.O.M. as a date, picked on a calendar (2026-11-24): 'YYYY-MM-DD'. Its
+  // year is kept in manufactured_year too, which everything older reads.
+  await ensureColumnExists('machines', 'manufactured_on', 'TEXT');
 
   await ensureColumnExists('machines', 'report_output_per_hour', 'REAL');
   await ensureColumnExists('machines', 'setup_minutes', 'REAL');

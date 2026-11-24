@@ -1289,6 +1289,104 @@ void main() {
       },
     );
 
+    testWidgets('the part\'s die Liner Size is handed to the raw panel as its Width',
+        (tester) async {
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        dies: const [
+          ItemDieLink(id: '30', toolCode: 'NOLINER'),
+          ItemDieLink(id: '31', toolCode: 'PGESP1', linerSizeNm: 120 * 1000000),
+        ],
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel.linerWidth?.nm, 120 * 1000000, reason: 'the first die that has one');
+      expect(panel.linerWidth?.unit, 'mm');
+      expect(panel.linerWidth?.dieLabel, 'die PGESP1');
+    });
+
+    testWidgets(
+      'a folded Routing says what the route is, as the other masters do',
+      (tester) async {
+        final patti = _item(id: 500, name: 'Patti', groupId: 11);
+        final routes = ProcessRouteService(baseUrl: '', useMockResponses: true);
+        await routes.save(500, const [
+          RouteStep(stageId: 1, seq: 1, stageCode: 'die', stageName: 'Die'),
+          RouteStep(stageId: 2, seq: 2, stageCode: 'shearing', stageName: 'Shearing'),
+        ]);
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: _FakeItemRepository([patti]),
+          size: const Size(1700, 3200),
+          routes: routes,
+          foldedOnOpen: const {'routing'},
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+
+        final line = tester.widget<Text>(find.descendant(
+          of: find.byKey(const ValueKey('section_summary_routing')),
+          matching: find.byType(Text),
+        ).first).textSpan!.toPlainText();
+        expect(line, contains('Route'));
+        expect(line, contains('Version v1'));
+        expect(line, contains('2 stages Die → Shearing'));
+        expect(line, isNot(contains('No route yet')));
+      },
+    );
+
+    testWidgets(
+      'stages laid out but not saved still show on a folded Routing',
+      (tester) async {
+        final patti = _item(id: 500, name: 'Patti', groupId: 11);
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: _FakeItemRepository([patti]),
+          size: const Size(1700, 3200),
+          routes: ProcessRouteService(baseUrl: '', useMockResponses: true),
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+        final author = find.ancestor(
+          of: find.text('Author route'),
+          matching: find.byType(AppButton),
+        ).first;
+        await tester.ensureVisible(author);
+        await tester.tap(author);
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+        await tester.ensureVisible(find.byKey(const ValueKey('route_add_step')));
+        await tester.tap(find.byKey(const ValueKey('route_add_step')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        await tester.tap(find.byKey(const ValueKey('section_toggle_routing')));
+        await tester.pump();
+        final line = tester.widget<Text>(find.descendant(
+          of: find.byKey(const ValueKey('section_summary_routing')),
+          matching: find.byType(Text),
+        ).first).textSpan!.toPlainText();
+        expect(line, contains('Route not saved yet'));
+        expect(line, contains('Stages '));
+      },
+    );
+
     testWidgets(
       'the footer Edit, typed pieces, Save: the pieces are on the part',
       (tester) async {
@@ -2706,7 +2804,7 @@ void main() {
       );
       // A bare camera at the start of the row went unnoticed; the empty slot
       // says what it is for.
-      for (final (key, label) in [('photo-die-31', 'Die photos'), ('photo-machine-41', 'Photo')]) {
+      for (final (key, label) in [('photo-die-31', 'Die photos'), ('photo-machine-41', 'Machine photos')]) {
         expect(
           find.descendant(
             of: find.byKey(ValueKey<String>(key)),

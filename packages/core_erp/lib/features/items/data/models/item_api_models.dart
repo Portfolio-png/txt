@@ -271,6 +271,7 @@ class ItemDto {
               machineType: entry['machineType'] as String? ?? '',
               machineMake: entry['machineMake'] as String? ?? '',
               manufacturedYear: entry['manufacturedYear'] as int?,
+              manufacturedOn: entry['manufacturedOn'] as String?,
               feederMake: entry['feederMake'] as String? ?? '',
               runningHours: entry['runningHours'] as int?,
               strokesPerMinute: entry['strokesPerMinute'] as int?,

@@ -52,6 +52,19 @@ Future<bool> showDiePhotoGallery(
 }) =>
     showPartPhotoGallery(context, itemId: dieId, partName: dieName, owner: PhotoOwner.die);
 
+/// A machine's photos — up to [maxPartPhotos], as a part's (2026-11-24).
+Future<bool> showMachinePhotoGallery(
+  BuildContext context, {
+  required String machineId,
+  required String machineName,
+}) =>
+    showPartPhotoGallery(
+      context,
+      itemId: machineId,
+      partName: machineName,
+      owner: PhotoOwner.machine,
+    );
+
 class PartPhotoGallery extends StatefulWidget {
   const PartPhotoGallery({
     super.key,
@@ -68,8 +81,11 @@ class PartPhotoGallery extends StatefulWidget {
   /// Whose photos: [PhotoOwner.item] (a part's views) or [PhotoOwner.die].
   final String owner;
 
-  bool get _isDie => owner == PhotoOwner.die;
-  String get _thing => _isDie ? 'die' : 'part';
+  String get _thing => switch (owner) {
+    PhotoOwner.die => 'die',
+    PhotoOwner.machine => 'machine',
+    _ => 'part',
+  };
 
   /// The photo to show big as it opens, by id; the main one otherwise.
   final int? openOn;

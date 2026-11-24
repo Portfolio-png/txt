@@ -161,6 +161,7 @@ class MachineSheetDraft {
     this.groupId,
     this.machineMake = '',
     this.manufacturedYear,
+    this.manufacturedOn,
     this.feederMake = '',
     this.runningHours,
     this.strokesPerMinute,
@@ -191,6 +192,9 @@ class MachineSheetDraft {
   /// fact, and a stored 2011-01-01 would print a day nobody recorded.
   final int? manufacturedYear;
 
+  /// D.O.M. as a date, picked on a calendar: 'YYYY-MM-DD'. Null says nothing.
+  final String? manufacturedOn;
+
   /// The make of the feeder attached to it. Not the pipeline sense of the
   /// word, which is an upstream node in a graph.
   final String feederMake;
@@ -216,6 +220,7 @@ class MachineSheetDraft {
     'groupId': groupId,
     'machineMake': machineMake,
     'manufacturedYear': manufacturedYear,
+    if (manufacturedOn != null) 'manufacturedOn': manufacturedOn,
     'feederMake': feederMake,
     'runningHours': runningHours,
     'strokesPerMinute': strokesPerMinute,

@@ -174,11 +174,13 @@ class EntityPhotoRepository {
   /// The records with a gallery of photos: a part's views, and a die's
   /// (2026-11-24). Others keep one shown photo.
   static bool keepsGallery(String owner) =>
-      owner == PhotoOwner.item || owner == PhotoOwner.die;
+      owner == PhotoOwner.item || owner == PhotoOwner.die || owner == PhotoOwner.machine;
 
-  static String _galleryPath(String owner, String id) => owner == PhotoOwner.die
-      ? '/api/dies/$id/photos'
-      : '/api/items/$id/photos';
+  static String _galleryPath(String owner, String id) => switch (owner) {
+    PhotoOwner.die => '/api/dies/$id/photos',
+    PhotoOwner.machine => '/api/machines/$id/photos',
+    _ => '/api/items/$id/photos',
+  };
 
   /// The mock's gallery key: a part's by its id alone, as it always was.
   static String _galleryKey(String owner, String id) =>
@@ -265,7 +267,7 @@ class EntityPhotoRepository {
         final gallery = _mockGallery[_galleryKey(owner, id)] ??= [];
         if (gallery.length >= maxPartPhotos) {
           throw EntityPhotoException(
-            '${owner == PhotoOwner.die ? 'A die' : 'A part'} keeps up to $maxPartPhotos photos — remove one first.',
+            '${switch (owner) { PhotoOwner.die => 'A die', PhotoOwner.machine => 'A machine', _ => 'A part' }} keeps up to $maxPartPhotos photos — remove one first.',
             code: 'photo_limit',
           );
         }

@@ -389,6 +389,7 @@ class ItemMachineLink {
     this.machineType = '',
     this.machineMake = '',
     this.manufacturedYear,
+    this.manufacturedOn,
     this.feederMake = '',
     this.runningHours,
     this.strokesPerMinute,
@@ -413,6 +414,9 @@ class ItemMachineLink {
 
   /// The year it was built. A year, not a date: that is all anyone records.
   final int? manufacturedYear;
+
+  /// D.O.M. as a date ('YYYY-MM-DD'), when it was picked as one.
+  final String? manufacturedOn;
 
   /// The make of the feeder on it — not the pipeline sense of the word.
   final String feederMake;

@@ -7,10 +7,14 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/data/sheet_property_repository.dart';
 import 'package:core_erp/features/items/domain/sheet_property.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/sheet_properties_provider.dart';
 import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
+import 'package:core_erp/features/items/presentation/widgets/part_rows_form.dart';
+import 'package:core_erp/sheet/sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -52,7 +56,7 @@ class _Items implements ItemRepository {
     }
     return null;
   }
-  _Items([this.items = const []]);
+  _Items([List<ItemDefinition> items = const []]) : items = [...items];
 
   final List<ItemDefinition> items;
 
@@ -61,6 +65,24 @@ class _Items implements ItemRepository {
 
   @override
   Future<List<ItemDefinition>> getItems() async => items;
+
+  final List<UpdateItemInput> updated = [];
+  final List<CreateItemInput> created = [];
+
+  @override
+  Future<ItemDefinition> createItem(CreateItemInput input) async {
+    created.add(input);
+    // As the server answers: the part as made, its properties with it.
+    final made = _partFrom(900 + created.length, input);
+    items.add(made);
+    return made;
+  }
+
+  @override
+  Future<ItemDefinition> updateItem(UpdateItemInput input) async {
+    updated.add(input);
+    return items.firstWhere((i) => i.id == input.id);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -84,8 +106,44 @@ class _FlakyRepository extends ApiSheetPropertyRepository {
   }
 }
 
-/// A saved part whose Plating is [plating].
-ItemDefinition _partPlated(int id, String plating) {
+/// The part a create makes: its name, group and properties as sent.
+ItemDefinition _partFrom(int id, CreateItemInput input) {
+  var next = id * 100;
+  ItemVariationNodeDefinition node(ItemVariationNodeInput n, int? parent) {
+    final me = next++;
+    return ItemVariationNodeDefinition(
+      id: me,
+      itemId: id,
+      parentNodeId: parent,
+      kind: n.kind,
+      name: n.name,
+      displayName: n.name,
+      position: 0,
+      children: [for (final c in n.children) node(c, me)],
+      isArchived: false,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+  }
+
+  return ItemDefinition(
+    id: id,
+    name: input.name,
+    alias: '',
+    displayName: input.name,
+    quantity: 0,
+    groupId: input.groupId,
+    unitId: input.unitId,
+    isArchived: false,
+    usageCount: 0,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+    variationTree: [for (final n in input.variationTree) node(n, null)],
+  );
+}
+
+/// A saved part whose Plating is [plating] — or whose [property] is.
+ItemDefinition _partPlated(int id, String plating, {String property = 'Plating'}) {
   ItemVariationNodeDefinition node(
     int nodeId,
     ItemVariationNodeKind kind,
@@ -119,7 +177,7 @@ ItemDefinition _partPlated(int id, String plating) {
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
     variationTree: [
-      node(id * 10, ItemVariationNodeKind.property, 'Plating', children: [
+      node(id * 10, ItemVariationNodeKind.property, property, children: [
         node(id * 10 + 1, ItemVariationNodeKind.value, plating, parent: id * 10),
       ]),
     ],
@@ -130,6 +188,8 @@ Future<SheetPropertiesProvider> _pump(
   WidgetTester tester, {
   SheetPropertyRepository? repository,
   List<ItemDefinition> parts = const [],
+  List<ItemDefinition> open = const [],
+  _Items? itemRepo,
 }) async {
   final groups = GroupsProvider(repository: _Groups());
   await groups.initialize();
@@ -137,7 +197,7 @@ Future<SheetPropertiesProvider> _pump(
     repository: repository ?? ApiSheetPropertyRepository(useMockResponses: true),
   );
   addTearDown(props.dispose);
-  final items = ItemsProvider(repository: _Items(parts));
+  final items = ItemsProvider(repository: itemRepo ?? _Items(parts));
   if (parts.isNotEmpty) await items.initialize();
 
   tester.view.physicalSize = const Size(1700, 1100);
@@ -151,7 +211,7 @@ Future<SheetPropertiesProvider> _pump(
         ChangeNotifierProvider<GroupsProvider>.value(value: groups),
         ChangeNotifierProvider<SheetPropertiesProvider>.value(value: props),
       ],
-      child: const MaterialApp(home: ItemMasterSheetScreen()),
+      child: MaterialApp(home: ItemMasterSheetScreen(initialItems: open)),
     ),
   );
   await tester.pump();
@@ -400,5 +460,157 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(props.byKey('temper'), isNull);
     expect(find.text('Temper'), findsNothing);
+  });
+
+  // The report (2026-11-24): a part saved, opened again with Edit, Hardness
+  // added with "+" — and its Grade was gone, from the sheet and from the save.
+  testWidgets('adding a property to a saved part keeps its other properties', (tester) async {
+    await ApiSheetPropertyRepository(useMockResponses: true)
+        .create(name: 'Grade', kind: 'text', options: const ['1st', '2nd']);
+    final part = _partPlated(500, '2nd', property: 'Grade');
+    final repo = _Items([part]);
+    await _pump(tester, parts: [part], open: [part], itemRepo: repo);
+    expect(find.text('2nd'), findsWidgets, reason: 'Grade as saved');
+
+    await tester.tap(find.byKey(const ValueKey('row_edit_0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mini_table_add_properties_item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('property_name')), 'Hardness');
+    await tester.tap(find.text('Free text'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('property_submit')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Hardness'), findsWidgets, reason: 'the new column');
+    expect(find.text('Grade'), findsWidgets, reason: 'Grade stays');
+    expect(find.text('2nd'), findsWidgets, reason: 'and so does its value');
+
+    // A hardness typed for the part.
+    final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+    final hardness = sheet.sheetDef.columnBoundTo(SheetBindsTo.variation('Hardness'))!;
+    sheet.updateValue(
+      hardness.id,
+      CellValue(columnId: hardness.id, optionLabel: 'Hard', isNew: true),
+      row: 0,
+    );
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('row_save_0')));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    });
+    await tester.pump();
+    if (find.byKey(const Key('identity_change_this_part')).evaluate().isNotEmpty) {
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('identity_change_this_part')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+    }
+    final sent = repo.updated.lastOrNull;
+    expect(sent, isNotNull, reason: 'the edit was saved');
+    final names = sent!.variationTree.map((n) => n.name).toList();
+    expect(names, contains('Grade'), reason: 'the save keeps Grade');
+  });
+
+  testWidgets('"Make a new part" after adding a property keeps the other properties', (tester) async {
+    await ApiSheetPropertyRepository(useMockResponses: true)
+        .create(name: 'Grade', kind: 'text', options: const ['1st', '2nd']);
+    final part = _partPlated(500, '2nd', property: 'Grade');
+    final repo = _Items([part]);
+    await _pump(tester, parts: [part], open: [part], itemRepo: repo);
+    await tester.tap(find.byKey(const ValueKey('row_edit_0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mini_table_add_properties_item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('property_name')), 'Hardness');
+    await tester.tap(find.text('Free text'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('property_submit')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+    final hardness = sheet.sheetDef.columnBoundTo(SheetBindsTo.variation('Hardness'))!;
+    sheet.updateValue(hardness.id, CellValue(columnId: hardness.id, optionLabel: 'Hard', isNew: true), row: 0);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('row_save_0')));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    });
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('identity_make_new_part')));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    });
+    await tester.pump();
+    expect(repo.created, hasLength(1), reason: 'a new part');
+    final names = repo.created.single.variationTree.map((n) => n.name).toList();
+    expect(names, containsAll(['Grade', 'Hardness']), reason: 'the new part keeps Grade');
+  });
+
+  testWidgets('a part made with Ctrl+Enter, opened again, keeps Grade when Hardness is added', (tester) async {
+    await ApiSheetPropertyRepository(useMockResponses: true)
+        .create(name: 'Grade', kind: 'text', options: const ['1st', '2nd']);
+    final repo = _Items();
+    await _pump(tester, itemRepo: repo);
+    final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+    final def = sheet.sheetDef;
+    final group = def.groupColumn!;
+    final trunk = sheet.options.firstWhere((o) => o.columnId == group.id);
+    sheet.updateValue(group.id, CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label));
+    final name = def.itemColumn!;
+    sheet.updateValue(name.id, CellValue(columnId: name.id, optionLabel: 'Ctrl Patti', isNew: true));
+    final grade = def.columnBoundTo(SheetBindsTo.variation('Grade'))!;
+    sheet.updateValue(grade.id, CellValue(columnId: grade.id, optionLabel: '2nd'));
+    await tester.pump();
+
+    // Ctrl+Enter: the part line's own "save and add another".
+    final step = tester
+        .widgetList<SheetStep>(find.byType(SheetStep, skipOffstage: false))
+        .firstWhere((w) => w.id == PartRowsForm.stepId(sheet.draftAt(0).rowKey));
+    await tester.runAsync(() async {
+      await step.actions.saveAndAddAnother!();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(repo.created, hasLength(1));
+    if (find.byType(Dialog).evaluate().isNotEmpty) {
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pump();
+    }
+
+    // Back to it, Edit, Hardness added and filled, saved.
+    sheet.selectRow(0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('row_edit_0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mini_table_add_properties_item')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('property_name')), 'Hardness');
+    await tester.tap(find.text('Free text'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('property_submit')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final hardness = sheet.sheetDef.columnBoundTo(SheetBindsTo.variation('Hardness'))!;
+    sheet.updateValue(hardness.id, CellValue(columnId: hardness.id, optionLabel: 'Hard', isNew: true), row: 0);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('row_save_0')));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    });
+    await tester.pump();
+    if (find.byKey(const Key('identity_change_this_part')).evaluate().isNotEmpty) {
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('identity_change_this_part')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+    }
+    expect(repo.updated.last.variationTree.map((n) => n.name), containsAll(['Grade', 'Hardness']));
   });
 }

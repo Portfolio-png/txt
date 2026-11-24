@@ -354,11 +354,12 @@ void main() {
     });
     await pumpUntilGone(tester, find.text('Photos saved.'), timeout: const Duration(seconds: 10));
     await _letToastGo(tester);
+    // A machine keeps up to five too (2026-11-24), the same gallery.
     await _step('upload the machine photo', () async {
       await _tapVisible(tester, _savedTab('machine'));
-      await _uploadPhoto(tester, 'photo-machine-');
+      await _uploadToGallery(tester, 'photo-machine-', 'machine');
     });
-    await _letToastGo(tester);
+    await pumpUntilGone(tester, find.text('Photos saved.'), timeout: const Duration(seconds: 10));
 
     await _step('delete the person photo', () async {
       await _tapVisible(tester, _keyed('photo-party_contact-'));
@@ -519,6 +520,8 @@ void main() {
       // The die's photo, in its own gallery: open its tab to see it.
       await _tapVisible(tester, _savedTab('die'));
       await stillThere(find.byTooltip('Open die photos (1 of 5)'), 'the die photo');
+      await _tapVisible(tester, _savedTab('machine'));
+      await stillThere(find.byTooltip('Open machine photos (1 of 5)'), 'the machine photo');
     });
 
     dumpVisibleText(tester, 'E2E journey, after reopening');

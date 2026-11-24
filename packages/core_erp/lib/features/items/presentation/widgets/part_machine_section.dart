@@ -21,6 +21,7 @@ import '../../../groups/presentation/group_picker_field.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../machines/domain/machine_no.dart';
 import '../../domain/item_definition.dart';
+import 'part_photo_gallery.dart';
 
 /// The "Machine in Plant" sheet, beside the part that runs on it.
 ///
@@ -178,7 +179,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// the keyboard's save prompt. The number counts only once typed over.
   String? _clean;
 
+  /// D.O.M. as picked on the calendar ('YYYY-MM-DD'); its year also goes in
+  /// [_yearController], which the machine's year is saved from.
+  String? _builtOn;
+
   String _snapshot() => [
+        '$_builtOn',
         _noPinned ? _noController.text : '',
         _nameController.text,
         _makeController.text,
@@ -338,6 +344,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       machineType: shaped.machineType,
       machineMake: shaped.machineMake,
       manufacturedYear: shaped.manufacturedYear,
+      manufacturedOn: shaped.manufacturedOn,
       feederMake: shaped.feederMake,
       runningHours: shaped.runningHours,
       strokesPerMinute: shaped.strokesPerMinute,
@@ -385,6 +392,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _noPinned = false;
     _nameController.clear();
     _yearController.clear();
+    _builtOn = null;
     _hoursController.clear();
     _strokesController.clear();
     _capacityController.clear();
@@ -410,6 +418,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       _groupId = draft.groupId;
       _makeController.text = draft.machineMake;
       _yearController.text = draft.manufacturedYear?.toString() ?? '';
+      _builtOn = draft.manufacturedOn;
       _feederController.text = draft.feederMake;
       _hoursController.text = draft.runningHours?.toString() ?? '';
       _strokesController.text = draft.strokesPerMinute?.toString() ?? '';
@@ -440,6 +449,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       _groupId = machine.groupId;
       _makeController.text = machine.machineMake;
       _yearController.text = machine.manufacturedYear?.toString() ?? '';
+      _builtOn = machine.manufacturedOn;
       _feederController.text = machine.feederMake;
       _hoursController.text = machine.runningHours?.toString() ?? '';
       _strokesController.text = machine.strokesPerMinute?.toString() ?? '';
@@ -536,6 +546,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       groupId: _groupId,
       machineMake: _makeController.text.trim(),
       manufacturedYear: SheetEngine.parseWhole(_yearController.text),
+      manufacturedOn: _builtOn,
       feederMake: _feederController.text.trim(),
       runningHours: SheetEngine.parseWhole(_hoursController.text),
       strokesPerMinute: SheetEngine.parseWhole(_strokesController.text),
@@ -614,6 +625,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
         groupId: _groupId,
         machineMake: _makeController.text.trim(),
         manufacturedYear: SheetEngine.parseWhole(_yearController.text),
+        manufacturedOn: _builtOn,
         feederMake: _feederController.text.trim(),
         runningHours: SheetEngine.parseWhole(_hoursController.text),
         strokesPerMinute: SheetEngine.parseWhole(_strokesController.text),
@@ -752,7 +764,6 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ..._openMachinePhoto(),
             // Each field as wide as what it holds, side by side, wrapping only
             // when the row is full — a stack of page-wide bars for answers
             // like "2011" and "60" was most of this card's height.
@@ -841,14 +852,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                   options: _suggestions.makes,
                   enabled: enabled,
                 ),
-                _pick(
-                  slug: 'dom',
-                  label: 'D.O.M.',
-                  controller: _yearController,
-                  options: _suggestions.years,
-                  enabled: enabled,
-                  numeric: true,
-                ),
+                // Picked on a calendar (user, 2026-11-24): Enter on it, or
+                // a click, opens one.
+                _domField(enabled),
                 // How hard the machine runs reads as one figure pair, so the
                 // two never wrap apart.
                 Row(
@@ -1081,32 +1087,123 @@ class _PartMachineSectionState extends State<PartMachineSection> {
           open(0);
         }
       },
-      child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 12), child: form),
+      // The machine's photos in the column at the right, as the part's and
+      // the die's are (user, 2026-11-24).
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: form),
+            if (MiniPhoto.isAvailable(context)) ...[
+              const SizedBox(width: 16),
+              SheetStep.noTab(_machinePhotoTile()),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
-  /// The open saved machine's photo, over its form (it was in its row).
-  List<Widget> _openMachinePhoto() {
-    final id = _editingMachineId;
-    if (id == null || !MiniPhoto.isAvailable(context)) return const [];
-    final machine = _machines.where((m) => m.id == id).firstOrNull;
-    if (machine == null) return const [];
-    return [
-      Align(
-        alignment: Alignment.centerLeft,
-        child: MiniPhoto(
-          owner: PhotoOwner.machine,
-          id: machine.id,
-          size: _kPhotoSize,
-          label: 'Photo',
-          what: 'machine photo',
-          note: _photoNote,
-          fallbackUrl: machine.photoUrl,
-          disabledReason: 'Save the part to add the machine’s photo',
+  /// D.O.M. as shown: the picked date, or the year a machine saved before
+  /// dates were kept carries.
+  String get _domText {
+    final on = _builtOn;
+    if (on != null && on.length >= 10) {
+      return '${on.substring(8, 10)}/${on.substring(5, 7)}/${on.substring(0, 4)}';
+    }
+    return _yearController.text.trim();
+  }
+
+  Future<void> _pickDom() async {
+    final now = DateTime.now();
+    final year = SheetEngine.parseWhole(_yearController.text);
+    final current = _builtOn == null ? null : DateTime.tryParse(_builtOn!);
+    var initial = current ?? (year != null ? DateTime(year, 1, 1) : now);
+    if (initial.isAfter(now)) initial = now;
+    if (initial.isBefore(DateTime(1950))) initial = DateTime(1950);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1950),
+      lastDate: now,
+      helpText: 'Date of manufacture',
+    );
+    if (picked == null || !mounted) return;
+    String two(int n) => n.toString().padLeft(2, '0');
+    setState(() {
+      _builtOn = '${picked.year}-${two(picked.month)}-${two(picked.day)}';
+      _yearController.text = '${picked.year}';
+    });
+  }
+
+  Widget _domField(bool enabled) {
+    final shown = _domText;
+    return SheetStyle.labelled(
+      label: 'D.O.M.',
+      child: FitToText(
+        heading: 'D.O.M.',
+        texts: [shown.isEmpty ? 'Pick a date' : shown],
+        chrome: 30 + 48,
+        minWidth: 150,
+        maxWidth: 230,
+        child: InkWell(
+          key: const ValueKey<String>('quick-entry-machine-dom-field'),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+          onTap: enabled ? _pickDom : null,
+          child: InputDecorator(
+            isEmpty: false,
+            decoration: SheetStyle.field(
+              suffixIcon: enabled && (_builtOn != null || shown.isNotEmpty)
+                  // A click's, not a Tab stop.
+                  ? ExcludeFocus(child: IconButton(
+                      key: const ValueKey<String>('quick-entry-machine-dom-clear'),
+                      tooltip: 'Clear D.O.M.',
+                      onPressed: () => setState(() {
+                        _builtOn = null;
+                        _yearController.clear();
+                      }),
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                    ))
+                  : const Icon(Icons.event_outlined, size: 18),
+            ),
+            child: Text(
+              shown.isEmpty ? 'Pick a date' : shown,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: shown.isEmpty ? SheetStyle.muted : const TextStyle(fontSize: 14),
+            ),
+          ),
         ),
       ),
-      const SizedBox(height: 10),
-    ];
+    );
+  }
+
+  /// The open machine's photos — up to five, in its own gallery. A machine
+  /// not in the master yet (held, or new) has nowhere to keep them: drawn,
+  /// with why.
+  Widget _machinePhotoTile() {
+    final id = _editingMachineId;
+    final machine = id == null ? null : _machines.where((m) => m.id == id).firstOrNull;
+    final name = machine == null
+        ? 'this machine'
+        : (machine.assetId.trim().isNotEmpty ? machine.assetId.trim() : machine.name);
+    return MiniPhoto(
+      key: ValueKey<String>('machine_photos_${machine?.id ?? 'unsaved'}'),
+      owner: PhotoOwner.machine,
+      id: machine?.id,
+      size: _kPhotoSize,
+      label: 'Machine photos',
+      what: 'machine photo',
+      note: _photoNote,
+      fallbackUrl: machine?.photoUrl,
+      disabledReason: _editingStagedIndex != null
+          ? 'Held for the part — save the part, then add this machine’s photos'
+          : 'Save the machine, then add its photos',
+      onOpen: machine == null
+          ? null
+          : () => showMachinePhotoGallery(context, machineId: machine.id, machineName: name),
+    );
   }
 
   /// One pick-or-type field, as wide as its label and longest answer.
@@ -1221,8 +1318,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
 
 }
 
-/// The machine photo's side, in the open machine's form.
-const double _kPhotoSize = 52;
+/// The machine photo tile's side, in the column at the right of its form.
+const double _kPhotoSize = 132;
 
 /// A held draft, shaped like a linked machine so one row (or one summary line)
 /// describes both. [typeName] is its machine group's name, which the draft
@@ -1236,6 +1333,7 @@ ItemMachineLink heldMachineLink(MachineSheetDraft draft, {String typeName = ''})
       machineType: typeName,
       machineMake: draft.machineMake,
       manufacturedYear: draft.manufacturedYear,
+      manufacturedOn: draft.manufacturedOn,
       feederMake: draft.feederMake,
       runningHours: draft.runningHours,
       strokesPerMinute: draft.strokesPerMinute,

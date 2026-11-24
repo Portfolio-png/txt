@@ -234,7 +234,13 @@ class ForceCapacityField extends StatelessWidget {
             ),
           ],
         ),
-        InkWell(
+        // Compact (the item sheet's machine form): the tick is the mouse's.
+        // Tab and a double Enter go past it to the next field (user,
+        // 2026-11-24) — free hand is rare, and stopping on it every time
+        // cost a key press.
+        ExcludeFocus(
+          excluding: compactFreeHand,
+          child: InkWell(
           key: freeHandKey,
           onTap: enabled
               ? () => onKindChanged(
@@ -272,6 +278,7 @@ class ForceCapacityField extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
       ],
     );

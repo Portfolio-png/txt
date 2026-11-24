@@ -57,6 +57,7 @@ class Machine {
     this.powerKw,
     this.machineMake = '',
     this.manufacturedYear,
+    this.manufacturedOn,
     this.feederMake = '',
     this.runningHours,
     this.strokesPerMinute,
@@ -97,6 +98,9 @@ class Machine {
   /// The year it was built — a year, not a date, because that is all anyone
   /// records. Distinct from [installationDate], which is when it arrived here.
   final int? manufacturedYear;
+
+  /// D.O.M. as a date ('YYYY-MM-DD'), when it was picked on a calendar.
+  final String? manufacturedOn;
 
   /// The make of the feeder attached to it. NOT the pipeline sense of the
   /// word, which is an upstream node in a graph.
@@ -141,6 +145,7 @@ class Machine {
     Object? powerKw = _absent,
     String? machineMake,
     Object? manufacturedYear = _absent,
+    Object? manufacturedOn = _absent,
     String? feederMake,
     Object? runningHours = _absent,
     Object? strokesPerMinute = _absent,
@@ -179,6 +184,9 @@ class Machine {
       manufacturedYear: manufacturedYear == _absent
           ? this.manufacturedYear
           : manufacturedYear as int?,
+      manufacturedOn: manufacturedOn == _absent
+          ? this.manufacturedOn
+          : manufacturedOn as String?,
       feederMake: feederMake ?? this.feederMake,
       runningHours: runningHours == _absent
           ? this.runningHours

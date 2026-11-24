@@ -411,6 +411,7 @@ class ApiMachineRepository implements MachineRepository {
       // cannot blank it by leaving it out.
       machineMake: json['machineMake'] as String? ?? '',
       manufacturedYear: json['manufacturedYear'] as int?,
+      manufacturedOn: json['manufacturedOn'] as String?,
       feederMake: json['feederMake'] as String? ?? '',
       runningHours: json['runningHours'] as int?,
       strokesPerMinute: json['strokesPerMinute'] as int?,
@@ -456,6 +457,7 @@ class ApiMachineRepository implements MachineRepository {
       'powerKw': m.powerKw,
       'machineMake': m.machineMake,
       'manufacturedYear': m.manufacturedYear,
+      if (m.manufacturedOn != null) 'manufacturedOn': m.manufacturedOn,
       'feederMake': m.feederMake,
       'runningHours': m.runningHours,
       'strokesPerMinute': m.strokesPerMinute,

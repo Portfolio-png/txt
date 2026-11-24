@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c112["⟳ Change 112: Part No and Part Code swap places on the part line"]
+      c113["⟳ Change 113: machine photo gallery + D.O.M. calendar; Free hand off the keyboard path; folded Routing summary; raw Width = die Liner Size"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -245,6 +245,8 @@ mindmap
           mb3["a save that does not mention a field keeps what is stored"]
           mb4["capacity kind is rated or free hand; only rated carries a figure"]
           mb5["a machine held by a live pipeline run cannot be deleted"]
+          mb6["⟳ D.O.M. is a date, YYYY-MM-DD; its year kept in manufactured_year; absent keeps, null clears, anything else 400"]
+          mb7["⟳ up to five photos, as a part or a die"]
         mApi["API surface"]
           ma1["GET /api/machines"]
           ma2["GET /api/machines/:id"]
@@ -252,6 +254,7 @@ mindmap
           ma4["DELETE /api/machines/:id"]
           ma5["GET /api/machines/:id/assets"]
           ma6["POST /api/machines/:id/assets/upload-intent and upload-complete"]
+          ma7["⟳ GET/PUT /api/machines/:id/photos, list and arrange"]
         mOrch["Orchestration: modules/machines/routes.js"]
           mo1["registerMachineRoutes ctx"]
           mo2["a refusal from the service becomes its status and body"]
@@ -266,10 +269,11 @@ mindmap
           mp1["production.machineAssignedToActiveRun"]
           mp2["assets kernel: listAssetsForEntity, createAssetUploadIntent, completeAssetUpload"]
         mData["Data"]
-          md1["machines"]
+          md1["⟳ machines, now with manufactured_on"]
         mTest["Tests"]
           mt1["machines-api.test.js"]
           mt2["machine-sheet-fields.test.js"]
+          mt3["⟳ die-photo-gallery.test.js, over dies and machines, and the D.O.M. date"]
         mLeft["Still in server.js"]
           ml1["GET /api/machines/:id/queue reads pipeline_runs"]
           ml2["direct SQL on machines from item save, barcode resolve, seeds, delete-request approve"]

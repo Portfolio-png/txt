@@ -10,6 +10,8 @@
 //   GET    /api/machines/:id/assets                   its photos
 //   POST   /api/machines/:id/assets/upload-intent     ask for somewhere to put one
 //   POST   /api/machines/:id/assets/upload-complete   say it arrived
+//   GET    /api/machines/:id/photos                   its photos, in order (its gallery)
+//   PUT    /api/machines/:id/photos                   their order and the main one
 //
 // `machines` is the first path segment, so the central CRUD gate maps every
 // route here to the machines module. The four master routes ask the module's
@@ -35,6 +37,8 @@ module.exports = function registerMachineRoutes(ctx) {
     listAssetsForEntity,
     createAssetUploadIntent,
     completeAssetUpload,
+    listEntityPhotos,
+    arrangeEntityPhotos,
   } = ctx;
   const { ask, refuse } = httpKit(desk);
 
@@ -93,6 +97,28 @@ module.exports = function registerMachineRoutes(ctx) {
       res.json({ success: true, assets, error: null });
     } catch (error) {
       res.status(500).json({ success: false, assets: [], error: error.message });
+    }
+  });
+
+  // A machine's photos, up to five, as a part's and a die's are (2026-11-24).
+  app.get('/api/machines/:id/photos', requirePermission('config.read'), async (req, res) => {
+    try {
+      const photos = await listEntityPhotos('machine', Number(req.params.id));
+      res.json({ success: true, photos, limit: 5, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, photos: [], error: error.message });
+    }
+  });
+
+  app.put('/api/machines/:id/photos', requirePermission('config.write'), async (req, res) => {
+    try {
+      const photos = await arrangeEntityPhotos('machine', Number(req.params.id), {
+        order: req.body?.order,
+        primaryId: req.body?.primaryId,
+      });
+      res.json({ success: true, photos, limit: 5, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, photos: [], error: error.message });
     }
   });
 

@@ -6169,10 +6169,10 @@ function thumbnailKeyFor(objectKey) {
 
 /// The records that keep a gallery of photos, each up to [MAX_PART_PHOTOS]:
 /// a part's views, and a die's (2026-11-24). Others keep one shown photo.
-const GALLERY_ENTITY_TYPES = new Set(['item', 'die']);
+const GALLERY_ENTITY_TYPES = new Set(['item', 'die', 'machine']);
 
 function photoLimitError(entityType = 'item') {
-  const what = entityType === 'die' ? 'A die' : 'A part';
+  const what = entityType === 'die' ? 'A die' : entityType === 'machine' ? 'A machine' : 'A part';
   const error = new Error(`${what} keeps up to ${MAX_PART_PHOTOS} photos — remove one first.`);
   error.statusCode = 409;
   error.code = 'photo_limit';
@@ -10902,6 +10902,8 @@ registerMachineRoutes({
   listAssetsForEntity,
   createAssetUploadIntent,
   completeAssetUpload,
+  listEntityPhotos,
+  arrangeEntityPhotos,
 });
 
 // The die master. Same late-bound purges as machines.

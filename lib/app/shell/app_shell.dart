@@ -807,6 +807,8 @@ void _registerAppFlowHooks() {
         groupId: draft.groupId,
         machineMake: draft.machineMake,
         manufacturedYear: draft.manufacturedYear,
+        // The picked date, or what the machine already had.
+        manufacturedOn: draft.manufacturedOn ?? existing?.manufacturedOn,
         feederMake: draft.feederMake,
         runningHours: draft.runningHours,
         strokesPerMinute: draft.strokesPerMinute,

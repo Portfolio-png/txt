@@ -2438,7 +2438,7 @@ void _machineSectionTests() {
 
       await pickType(tester, 'Power Press');
       await pickOrType(tester, 'make', 'Mayank');
-      await pickOrType(tester, 'dom', '2011');
+      // D.O.M. is a calendar now (its own test below); left empty here.
       await pickOrType(tester, 'hours', '5001');
       await pickOrType(tester, 'strokes', '110');
       await pickOrType(tester, 'capacity', '35');
@@ -2451,7 +2451,8 @@ void _machineSectionTests() {
       expect(draft.assetId, 'PP-1');
       expect(draft.groupId, 60);
       expect(draft.machineMake, 'Mayank');
-      expect(draft.manufacturedYear, 2011);
+      expect(draft.manufacturedYear, isNull);
+      expect(draft.manufacturedOn, isNull);
       expect(draft.runningHours, 5001);
       expect(draft.strokesPerMinute, 110);
       // 35 Ton in whole kilograms-force, which is what the units contract asks
@@ -2488,6 +2489,58 @@ void _machineSectionTests() {
       // The figure left in the box does not ride along: the two would be two
       // answers to one question.
       expect(drafts.single.capacityKgf, isNull);
+    });
+
+    testWidgets('D.O.M. is picked on a calendar: the date and its year are sent', (
+      tester,
+    ) async {
+      await partReady(tester);
+
+      await pickType(tester, 'Power Press');
+      final dom = find.byKey(const ValueKey<String>('quick-entry-machine-dom-field'));
+      expect(
+        find.descendant(of: dom, matching: find.text('Pick a date')),
+        findsOneWidget,
+      );
+      await _tapVisible(tester, dom);
+      expect(find.text('Date of manufacture'), findsOneWidget, reason: 'a calendar');
+      // Today's month: the 1st is always on or before today.
+      await tester.tap(find.descendant(of: find.byType(Dialog), matching: find.text('1')).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      final month = now.month.toString().padLeft(2, '0');
+      expect(
+        find.descendant(of: dom, matching: find.text('01/$month/${now.year}')),
+        findsOneWidget,
+        reason: 'shown as a date',
+      );
+      await _tapVisible(tester, addMachine());
+      expect(drafts.single.manufacturedOn, '${now.year}-$month-01');
+      expect(drafts.single.manufacturedYear, now.year, reason: 'the year kept in step');
+    });
+
+    testWidgets('Tab and a double Enter pass over the free-hand tick', (
+      tester,
+    ) async {
+      await partReady(tester);
+      final tick = find.byKey(const ValueKey<String>('quick-entry-machine-free-hand'));
+      await tester.ensureVisible(tick);
+      await tester.pumpAndSettle();
+      final focusable = find.descendant(of: tick, matching: find.byType(Focus));
+      for (final element in focusable.evaluate()) {
+        final node = Focus.of(element, createDependency: false);
+        expect(node.canRequestFocus && !node.skipTraversal && node.descendantsAreTraversable,
+            isFalse, reason: 'a click, not a keyboard stop');
+      }
+      // Still a click.
+      await _tapVisible(tester, tick);
+      expect(
+        tester.widget<Checkbox>(find.descendant(of: tick, matching: find.byType(Checkbox))).value,
+        isTrue,
+      );
     });
 
     testWidgets('a capacity that is not a whole kgf is refused', (

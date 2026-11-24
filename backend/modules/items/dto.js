@@ -87,7 +87,7 @@ function createDto(deps, api) {
       sql: (where) => `
         SELECT item_machines.item_id,
                machines.id, machines.name, machines.asset_id, machines.primary_photo_url,
-               machines.machine_make, machines.manufactured_year, machines.feeder_make,
+               machines.machine_make, machines.manufactured_year, machines.manufactured_on, machines.feeder_make,
                machines.running_hours, machines.strokes_per_minute,
                machines.capacity_kind, machines.capacity_kgf, machines.die_feed_type,
                machines.group_id, machine_groups.name AS machine_group_name
@@ -254,6 +254,7 @@ function createDto(deps, api) {
         machineMake: entry.machine_make || '',
         manufacturedYear:
           entry.manufactured_year == null ? null : Number(entry.manufactured_year),
+        manufacturedOn: entry.manufactured_on || null,
         feederMake: entry.feeder_make || '',
         runningHours: entry.running_hours == null ? null : Number(entry.running_hours),
         strokesPerMinute:

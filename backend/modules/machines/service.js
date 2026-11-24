@@ -32,6 +32,8 @@ function createMachineService({ get, all, run, parseJson, desk }) {
       // read as zero are different answers.
       machineMake: r.machine_make || '',
       manufacturedYear: r.manufactured_year == null ? null : Number(r.manufactured_year),
+      // The date of manufacture, when it was picked as one ('YYYY-MM-DD').
+      manufacturedOn: r.manufactured_on || null,
       feederMake: r.feeder_make || '',
       runningHours: r.running_hours == null ? null : Number(r.running_hours),
       strokesPerMinute:
@@ -104,6 +106,7 @@ function createMachineService({ get, all, run, parseJson, desk }) {
       // The machine sheet (migrations/049).
       machineMake,
       manufacturedYear,
+      manufacturedOn,
       feederMake,
       runningHours,
       strokesPerMinute,
@@ -265,6 +268,27 @@ function createMachineService({ get, all, run, parseJson, desk }) {
         };
       }
       throw error;
+    }
+
+    // D.O.M. as a date: absent keeps it, null or '' clears it, a date sets
+    // it and its year with it.
+    if (manufacturedOn !== undefined) {
+      const text = manufacturedOn == null ? '' : String(manufacturedOn).trim();
+      const day = text.slice(0, 10);
+      if (text && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        return {
+          refusal: {
+            status: 400,
+            body: { success: false, machine: null, error: 'D.O.M. must be a date (YYYY-MM-DD).' },
+          },
+        };
+      }
+      await run(
+        day
+          ? 'UPDATE machines SET manufactured_on = ?, manufactured_year = ? WHERE id = ?'
+          : 'UPDATE machines SET manufactured_on = NULL WHERE id = ?',
+        day ? [day, Number(day.slice(0, 4)), Number(resultId)] : [Number(resultId)],
+      );
     }
 
     const row = await get('SELECT * FROM machines WHERE id = ?', [resultId]);

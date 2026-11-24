@@ -1359,6 +1359,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ? null
           : _cellNow(SheetBindsTo.variation('Thickness')),
       onThicknessChanged: _setThickness,
+      // The die's Liner Size is the raw material's Width (user, 2026-11-24).
+      linerWidth: _linerWidthNow,
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
@@ -2266,9 +2268,36 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           out.addAll(machineLines(machine, held: held));
         }
       case 'routing':
+        // As the dies list held ones: stages being laid out show folded too
+        // (user, 2026-11-24 — a folded Routing said "No route yet" over a
+        // route on screen).
         final route = _route;
-        if (route == null) return const [(null, 'No route yet')];
-        add('Route', routeLine(route));
+        final panel = _showRoutePanel ? _routePanelKey.currentState : null;
+        final laidOut = panel?.stageNamesOnScreen ?? const <String>[];
+        final unsaved = panel != null && panel.isDirty && laidOut.isNotEmpty;
+        if (route == null && !unsaved) {
+          return const [(null, 'No route yet')];
+        }
+        if (route != null) {
+          out.add((null, route.title));
+          add('Version', 'v${route.version}');
+          add('Status', switch (route.status) {
+            RouteStatus.active => 'Active',
+            RouteStatus.draft => 'Draft',
+            RouteStatus.retired => 'Retired',
+          });
+          add(
+            '${route.steps.length} ${route.steps.length == 1 ? 'stage' : 'stages'}',
+            route.steps.map((step) => step.stageName).join(' → '),
+          );
+        }
+        if (unsaved) {
+          if (route == null) out.add((null, 'Route not saved yet'));
+          add(
+            route == null ? 'Stages' : 'Unsaved change',
+            laidOut.join(' → '),
+          );
+        }
       default:
         final sheet = _controller.groupItemController;
         final nameColumn =
@@ -2899,6 +2928,26 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       return _cellNow(binds);
     }
     return '';
+  }
+
+  /// The first of the part's dies — saved, then held — with a Liner Size:
+  /// the raw material's Width. Null when none has one, so Width is typed.
+  RawWidthFromDie? get _linerWidthNow {
+    final dies = [
+      ...?_livePart?.dies,
+      for (final draft in _stagedDies) heldDieLink(draft),
+    ];
+    for (final die in dies) {
+      final nm = die.linerSizeNm;
+      if (nm == null || nm <= 0) continue;
+      final code = die.toolCode.trim();
+      return RawWidthFromDie(
+        nm: nm,
+        unit: die.linerSizeUnit,
+        dieLabel: code.isEmpty ? 'the die' : 'die $code',
+      );
+    }
+    return null;
   }
 
   /// A thickness typed in the raw material panel, into the part's Thickness

@@ -92,6 +92,17 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
     return false;
   }
 
+  /// The stages on screen, by name, in order — what a folded Routing
+  /// section lists while they are being laid out.
+  List<String> get stageNamesOnScreen => [
+    for (final step in _steps)
+      if (step.stageName.trim().isNotEmpty)
+        step.stageName.trim()
+      else
+        _stages.where((known) => known.id == step.stageId).firstOrNull?.name ??
+            'Stage ${step.stageId}',
+  ];
+
   /// Saves the stages on screen, as the panel's own Save does. True when
   /// nothing is left unsaved afterwards. For the host's "Save and close".
   Future<bool> save() async {
