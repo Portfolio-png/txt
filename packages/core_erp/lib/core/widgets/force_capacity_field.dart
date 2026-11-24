@@ -11,6 +11,7 @@
 /// beside the figure.
 library;
 
+import 'length_unit_field.dart' show unitPickerWidth;
 import 'package:flutter/material.dart';
 
 import 'pick_or_type_field.dart';
@@ -210,7 +211,7 @@ class ForceCapacityField extends StatelessWidget {
             // field look — it was a smaller button of its own, off the
             // field's baseline.
             SizedBox(
-              width: 104,
+              width: unitPickerWidth,
               child: SearchableSelectField<String>(
                 value: unitSymbol,
                 fieldEnabled: enabled && !freeHand,

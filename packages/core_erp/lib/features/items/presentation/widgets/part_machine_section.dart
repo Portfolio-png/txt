@@ -1,3 +1,4 @@
+import '../../../../core/widgets/length_unit_field.dart' show unitPickerWidth;
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/pick_or_type_field.dart';
@@ -779,6 +780,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 SheetStyle.labelled(
                   label: 'Machine Type',
                   child: FitToText(
+                    dropdown: true,
                   heading: 'Machine Type',
                   texts: [_typeNameFor(_groupId)],
                   minWidth: 120,
@@ -887,11 +889,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                 SheetStyle.labelled(
                   label: 'Capacity',
                   child: FitToText(
+                    dropdown: true,
                   controller: _capacityController,
                   texts: const ['00.0'],
                   // The figure's box: padding (24), its arrow (48), the
-                  // border; then a gap and the unit picker (104).
-                  chrome: 24 + 48 + 4 + 8 + 104,
+                  // border; then a gap and the unit picker.
+                  chrome: 24 + 48 + 4 + 8 + unitPickerWidth,
                   // Its tick says "Free hand" (the rest in a tooltip), so the
                   // block fits beside Stroke / Min.
                   minWidth: 220,
@@ -1250,6 +1253,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     return SheetStyle.labelled(
       label: label,
       child: FitToText(
+        dropdown: true,
         controller: controller,
         // As wide as what is in it (or its heading), not as its longest
         // suggestion: "4" under "No. Of Sets" was a 140 px box.

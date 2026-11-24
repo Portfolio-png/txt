@@ -285,6 +285,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         SheetStyle.labelled(
           label: 'Company',
           child: FitToText(
+            dropdown: true,
           heading: 'Company',
           texts: [widget.controller.dealPartyName],
           minWidth: 160,
@@ -607,6 +608,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         return SheetStyle.labelled(
           label: label,
           child: FitToText(
+            dropdown: true,
           controller: text,
           heading: label,
           minWidth: min,

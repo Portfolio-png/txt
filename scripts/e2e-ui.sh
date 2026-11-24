@@ -335,6 +335,15 @@ fi
   say "OK — keyboard only"; exit 0;
 }
 
+# Enter drummed fast through the sheet: the app staying up is the test's own
+# check; here, the part was written once — not once per Enter.
+[[ "${TESTS[0]}" == "sheet_enter_storm" ]] && {
+  SPART="$(sqlite3 "${DB}" "SELECT COUNT(*) FROM items WHERE name LIKE 'E2E Storm Part%';")"
+  echo "enter storm: parts ${SPART}"
+  [[ "${SPART}" == "1" ]] || fail "the storm part was written ${SPART} times"
+  say "OK — Enter storm"; exit 0;
+}
+
 # Quitting twice while "Leave with unsaved work?" is up: the test itself is
 # the check (a second quit that went through would have ended the app).
 [[ "${TESTS[0]}" == "quit_guard" ]] && { say "OK — quit guard only"; exit 0; }

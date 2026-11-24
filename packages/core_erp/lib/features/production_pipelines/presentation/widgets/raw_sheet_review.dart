@@ -36,12 +36,22 @@ List<RawSheetReviewSection> rawSheetReviewSections({
 }) {
   String kg(double value) => '${_kg(value)} kg';
   String mm(double value) => '${_trim(value)} mm';
-  String said(String value) => value.trim().isEmpty ? 'Not set' : value.trim();
 
   final parts = baseline.yields.where((entry) => !entry.isOffcut).toList();
   final sheetAreaMm2 = baseline.sheetWidthMm * baseline.sheetHeightMm;
   final partsAreaMm2 = parts.fold<double>(0, (sum, e) => sum + e.areaMm2);
   final yieldPct = sheetAreaMm2 > 0 ? partsAreaMm2 / sheetAreaMm2 * 100 : 0.0;
+
+  // The form the record is for, and only what was entered (user,
+  // 2026-11-24): a coil's record does not show a Sheet heading, a "0 ×
+  // sheet" or a plan that says nothing is planned. The sheet is one of four,
+  // shown when it is the form chosen or holds a plan of its own.
+  final form = baseline.lastForm;
+  final sheetHasPlan = sheetAreaMm2 > 0 || parts.isNotEmpty;
+  String? given(String value) => value.trim().isEmpty ? null : value.trim();
+  void add(List<(String, String)> rows, String label, String? value) {
+    if (value != null && value.trim().isNotEmpty) rows.add((label, value));
+  }
 
   final sections = <RawSheetReviewSection>[
     RawSheetReviewSection('Part', [
@@ -49,42 +59,80 @@ List<RawSheetReviewSection> rawSheetReviewSections({
       if (baseline.pipelineName.trim().isNotEmpty)
         ('Pipeline', baseline.pipelineName.trim()),
     ]),
-    RawSheetReviewSection('Sheet', [
-      ('Sheet', sheetLabel),
-      ('Alloy', said(baseline.materialName)),
-      (
-        'Grade',
-        baseline.materialGrade.isEmpty
-            ? 'Not set'
-            : '${baseline.materialGrade} grade',
-      ),
-      ('Vendor', said(baseline.vendorName)),
-    ]),
-    RawSheetReviewSection('Cut plan', [
-      if (parts.isEmpty) ('Pieces', 'Nothing planned on the sheet yet'),
-      for (final entry in parts)
-        (entry.label, '${entry.count} × ${entry.sizeLabel}'),
-      if (baseline.edgeTrimMm > 0) ('Edge trim', mm(baseline.edgeTrimMm)),
-      ('Pieces per sheet', piecesText(baseline.pieceCount, countFamily)),
-      if (sheetAreaMm2 > 0) ('Yield', '${yieldPct.toStringAsFixed(1)}%'),
-    ]),
   ];
+
+  if (form == RawForm.sheet || sheetHasPlan) {
+    final rows = <(String, String)>[];
+    // The label spells out the sheet's size; without one it only repeats
+    // the alloy, which has its own line.
+    if (sheetAreaMm2 > 0) add(rows, 'Sheet', given(sheetLabel));
+    add(rows, 'Alloy', given(baseline.materialName));
+    add(
+      rows,
+      'Grade',
+      baseline.materialGrade.isEmpty ? null : '${baseline.materialGrade} grade',
+    );
+    add(rows, 'Vendor', given(baseline.vendorName));
+    if (rows.isNotEmpty) sections.add(RawSheetReviewSection('Sheet', rows));
+  }
+  if (parts.isNotEmpty) {
+    sections.add(
+      RawSheetReviewSection('Shearing plan', [
+        for (final entry in parts)
+          (entry.label, '${entry.count} × ${entry.sizeLabel}'),
+        if (baseline.edgeTrimMm > 0) ('Edge trim', mm(baseline.edgeTrimMm)),
+        if (baseline.pieceCount > 0)
+          ('Pieces per sheet', piecesText(baseline.pieceCount, countFamily)),
+        if (sheetAreaMm2 > 0 && partsAreaMm2 > 0)
+          ('Yield', '${yieldPct.toStringAsFixed(1)}%'),
+      ]),
+    );
+  }
+
+  // Strip, coil and roll: the one chosen, and any other holding anything —
+  // the order is the order they are offered in.
+  for (final band in RawForm.values.where((f) => f.isBand)) {
+    final plan = baseline.formOf(band);
+    if (band != form && !plan.hasData) continue;
+    String? length(int? nm, String unit) => nm == null || nm <= 0
+        ? null
+        : '${formatLengthFromNanometres(nm, unit)} $unit';
+    final fromLength = plan.partsFromLength();
+    final rows = <(String, String)>[];
+    add(rows, 'Width', length(plan.widthNm, plan.widthUnit));
+    if (plan.lengthKnown) add(rows, 'Length', length(plan.lengthNm, plan.lengthUnit));
+    add(rows, 'Thickness', length(plan.thicknessNm, plan.thicknessUnit));
+    add(rows, 'Pitch', length(plan.pitchNm, plan.pitchUnit));
+    if (fromLength != null && fromLength > 0) {
+      rows.add(('Parts from the length', '$fromLength'));
+    }
+    add(rows, 'Alloy', given(baseline.materialName));
+    add(rows, 'Grade', plan.grade.isEmpty ? null : '${plan.grade} grade');
+    add(rows, 'Vendor', given(plan.vendorName));
+    // Its weights are not here: material in and out is one record for
+    // every form, shown once below.
+    if (rows.isNotEmpty) sections.add(RawSheetReviewSection(band.label, rows));
+  }
 
   final rows = baseline.stageReconciliations;
   if (!baseline.isGranular && rows.isNotEmpty) {
     final row = rows.first;
-    sections.add(
-      RawSheetReviewSection('Material in and out', [
-        (
-          'In',
-          '${row.sheetsIn} × ${row.inputName.isEmpty ? 'sheet' : row.inputName}',
-        ),
-        ('Weight in', kg(row.inputKg)),
-        ('Out', piecesText(row.piecesOut, countFamily)),
-        ('Weight out', kg(row.outputKg)),
-        if (row.recordScrap) ('Scrap', kg(row.scrapKg)),
-        if (row.recordRejection) ('Rejection', kg(row.rejectionKg)),
-        if (row.recordWeightLoss) ('Weight loss', kg(row.weightLossKg)),
+    // What went in is called what it is: the label typed, else the form.
+    final inName = row.inputLabel.trim().isNotEmpty
+        ? row.inputLabel.trim()
+        : form.label.toLowerCase();
+    final weighed = row.inputKg > 0 || row.outputKg > 0;
+    final lines = <(String, String)>[
+      if (row.sheetsIn > 0) ('In', '${row.sheetsIn} × $inName'),
+      if (row.inputKg > 0) ('Weight in', kg(row.inputKg)),
+      if (row.piecesOut > 0) ('Out', piecesText(row.piecesOut, countFamily)),
+      if (row.outputKg > 0) ('Weight out', kg(row.outputKg)),
+      if (row.recordScrap && row.scrapKg > 0) ('Scrap', kg(row.scrapKg)),
+      if (row.recordRejection && row.rejectionKg > 0)
+        ('Rejection', kg(row.rejectionKg)),
+      if (row.recordWeightLoss && row.weightLossKg > 0)
+        ('Weight loss', kg(row.weightLossKg)),
+      if (weighed)
         (
           'Balance',
           // The tolerance the balance strip in Material data uses.
@@ -93,8 +141,10 @@ List<RawSheetReviewSection> rawSheetReviewSections({
               : '${kg(row.balanceDeltaKg.abs())} '
                     '${row.balanceDeltaKg > 0 ? 'unaccounted' : 'over'}',
         ),
-      ]),
-    );
+    ];
+    if (lines.isNotEmpty) {
+      sections.add(RawSheetReviewSection('Material in and out', lines));
+    }
   } else if (baseline.isGranular && rows.isNotEmpty) {
     sections.add(
       RawSheetReviewSection('Material stage by stage', [
@@ -104,36 +154,11 @@ List<RawSheetReviewSection> rawSheetReviewSections({
     );
   }
 
-  // Strip, coil and roll after the sheet, each that holds anything — all
-  // four stand equal, so the order is just the order they are offered in.
-  for (final form in RawForm.values.where((f) => f.isBand)) {
-    final plan = baseline.forms[form];
-    if (plan == null || !plan.hasData) continue;
-    String length(int? nm, String unit) =>
-        nm == null ? 'Not set' : '${formatLengthFromNanometres(nm, unit)} $unit';
-    final parts = plan.partsFromLength();
-    sections.add(
-      RawSheetReviewSection(form.label, [
-        ('Width', length(plan.widthNm, plan.widthUnit)),
-        ('Length', plan.lengthKnown
-            ? length(plan.lengthNm, plan.lengthUnit)
-            : 'Undefined'),
-        ('Thickness', length(plan.thicknessNm, plan.thicknessUnit)),
-        ('Pitch', length(plan.pitchNm, plan.pitchUnit)),
-        if (parts != null) ('Parts from the length', '$parts'),
-        ('Alloy', said(baseline.materialName)),
-        ('Grade', plan.grade.isEmpty ? 'Not set' : '${plan.grade} grade'),
-        ('Vendor', said(plan.vendorName)),
-        // Its weights are not here: material in and out is one record for
-        // every form, shown once above.
-      ]),
-    );
-  }
-
   final notes = baseline.notes.trim().isNotEmpty
       ? baseline.notes.trim()
       : (rows.isEmpty ? '' : rows.first.notes.trim());
-  if (notes.isNotEmpty) {
+  // A note the sample record wrote is not a note anybody made.
+  if (notes.isNotEmpty && !PenPaperBaseline.isSampleNote(notes)) {
     sections.add(RawSheetReviewSection('Notes', [('', notes)]));
   }
   return sections;
@@ -245,7 +270,8 @@ String _latin1(String text) {
   return out.toString();
 }
 
-/// The same review as a printable A4 page, with the cut plan drawn to scale.
+/// The same review as a printable A4 page, with the shearing plan drawn to
+/// scale when the sheet has one.
 Future<Uint8List> buildRawSheetReviewPdf({
   required PenPaperBaseline baseline,
   required List<RawSheetReviewSection> sections,
@@ -258,7 +284,7 @@ Future<Uint8List> buildRawSheetReviewPdf({
       margin: const pw.EdgeInsets.all(32),
       build: (context) => [
         pw.Text(
-          'RAW SHEET & STRIPS',
+          'RAW MATERIAL',
           style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
         ),
         pw.SizedBox(height: 2),

@@ -1315,7 +1315,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       }
     }
     final route = _route;
-    final baseline = part?.penPaperBaseline ?? PenPaperBaseline.createDefault();
+    final baseline = part?.penPaperBaseline ?? PenPaperBaseline.blank();
     final panel = MasterDataPanel(
       // Bumped on Cancel, so the edits are thrown away with the old state.
       key: ValueKey<String>('raw_${part?.id ?? 0}_$_rawEpoch'),

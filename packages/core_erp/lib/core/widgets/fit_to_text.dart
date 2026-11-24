@@ -23,6 +23,7 @@ class FitToText extends StatefulWidget {
     this.maxWidth = 420,
     this.chrome = 48,
     this.heading,
+    this.dropdown = false,
   });
 
   final Widget child;
@@ -46,6 +47,11 @@ class FitToText extends StatefulWidget {
   /// [texts], a short answer under a long heading got the heading's width
   /// plus a box's padding on top.
   final String? heading;
+
+  /// The box is a dropdown ([SearchableSelectField], [PickOrTypeField]),
+  /// which draws its value at 16 on a desktop, not the 14 a text box types
+  /// in: measured at 14, its value was cut to "4…" (user, 2026-11-24).
+  final bool dropdown;
 
   @override
   State<FitToText> createState() => _FitToTextState();
@@ -85,20 +91,28 @@ class _FitToTextState extends State<FitToText> {
     if (mounted) setState(() {});
   }
 
-  double _measure(String text, TextScaler scaler) {
+  double _measure(String text, TextScaler scaler, {bool value = false}) {
     if (text.isEmpty) return 0;
+    // A dropdown's value as it draws it: the ambient style at its size,
+    // with a few pixels so a rounding never ellipsises the last letter.
+    final asDropdown = value && widget.dropdown;
+    final style = asDropdown
+        ? DefaultTextStyle.of(context).style.merge(
+            TextStyle(
+              fontSize: MediaQuery.sizeOf(context).width >= 600 ? 16 : 14,
+            ),
+          )
+        : (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(
+            _measureStyle,
+          );
     final painter = TextPainter(
       // In the theme's font, which the field draws in.
-      text: TextSpan(
-        text: text,
-        style: (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
-            .merge(_measureStyle),
-      ),
+      text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
       maxLines: 1,
     )..layout();
-    final width = painter.width;
+    final width = painter.width + (asDropdown ? 4 : 0);
     painter.dispose();
     return width;
   }
@@ -108,7 +122,7 @@ class _FitToTextState extends State<FitToText> {
     final scaler = MediaQuery.textScalerOf(context);
     var widest = 0.0;
     for (final text in [...widget.texts, widget.controller?.text ?? '']) {
-      final width = _measure(text, scaler);
+      final width = _measure(text, scaler, value: true);
       if (width > widest) widest = width;
     }
     final helper = widget.helper;

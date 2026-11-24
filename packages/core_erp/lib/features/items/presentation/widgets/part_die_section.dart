@@ -861,6 +861,7 @@ class _PartDieSectionState extends State<PartDieSection> {
                       SheetStyle.labelled(
                         label: 'Die Made By',
                         child: FitToText(
+                          dropdown: true,
                           controller: _madeByController,
                           heading: 'Die Made By',
                           helper:
@@ -872,13 +873,18 @@ class _PartDieSectionState extends State<PartDieSection> {
                       ),
                       SheetStyle.labelled(
                         label: 'Liner Size',
-                        // As wide as the figure, beside its unit picker (104).
+                        // As wide as the figure, beside its unit picker.
+                        // The figure is a dropdown: its padding, arrow
+                        // and border (84, as Die Made By) — with 30 for
+                        // padding alone a typed 45.8 showed as "4…" (user,
+                        // 2026-11-24).
                         child: FitToText(
+                          dropdown: true,
                           controller: _linerController,
                           texts: const ['0.000'],
-                          chrome: 30 + 8 + 104,
+                          chrome: 84 + 8 + unitPickerWidth,
                           minWidth: 200,
-                          maxWidth: 320,
+                          maxWidth: 360,
                           child: LengthUnitField(
                             fieldKey: const ValueKey<String>(
                               'quick-entry-die-liner-field',
@@ -1201,6 +1207,7 @@ class _PartDieSectionState extends State<PartDieSection> {
     return SheetStyle.labelled(
       label: label,
       child: FitToText(
+        dropdown: true,
         controller: controller,
         // As wide as what is in it (or its heading), not as its longest
         // suggestion: "4" under "No. Of Sets" was a 140 px box.

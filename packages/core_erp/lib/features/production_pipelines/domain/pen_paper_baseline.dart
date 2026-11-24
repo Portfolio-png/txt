@@ -1184,6 +1184,25 @@ class PenPaperBaseline {
 
   static PenPaperBaseline createDefault() => createDefaultForStages();
 
+  /// The note [createDefault]'s record carries. Not something anybody wrote.
+  static const String sampleNote = 'Recorded from sample production logs.';
+
+  /// Whether [note] is one the sample record wrote ("Recorded from sample
+  /// production logs.", "Log for Raw Preparation") rather than a person.
+  static bool isSampleNote(String note) {
+    final text = note.trim();
+    return text == sampleNote || text.startsWith('Log for ');
+  }
+
+  /// A record with nothing in it: no weights, no note. What a part with no
+  /// raw sheet starts from — [createDefault]'s sample figures (100 kg in,
+  /// 90 out, 5 scrap…) were shown in its review as if recorded (user,
+  /// 2026-11-24: "only show for what has the data being entered").
+  static PenPaperBaseline blank() => const PenPaperBaseline(
+    notes: '',
+    stageReconciliations: [PenPaperStageReconciliation.empty],
+  );
+
   PenPaperBaseline copyWith({
     bool? isGranular,
     bool? materialFromPlan,

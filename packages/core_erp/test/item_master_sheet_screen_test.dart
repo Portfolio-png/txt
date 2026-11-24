@@ -1936,6 +1936,50 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('a typed figure is never cut short in the die and machine forms',
+        (tester) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
+      AppFlowHooks.createMachineFromSheet = (context, draft) async =>
+          const MachineCreateOutcome.created(CreatedRecord(id: '41', title: 'M'));
+      addTearDown(() {
+        AppFlowHooks.createDieFromSheet = null;
+        AppFlowHooks.createMachineFromSheet = null;
+      });
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      // User, 2026-11-24: "when type 45.8 then i see … 4…".
+      for (final (field, value) in const [
+        ('quick-entry-die-liner-field', '45.8'),
+        ('quick-entry-die-liner-field', '1250.375'),
+        ('quick-entry-machine-make-field', 'Mayank Engineering'),
+        ('quick-entry-machine-hours-field', '125000'),
+        ('quick-entry-machine-strokes-field', '110'),
+        ('quick-entry-machine-capacity-field', '250.5'),
+        ('quick-entry-machine-feeder-field', 'Jay Shanti'),
+      ]) {
+        await _pickOrType(tester, field, value);
+        final cut = <String>[];
+        for (final section in [PartDieSection, PartMachineSection]) {
+          for (final element in find
+              .descendant(of: find.byType(section), matching: find.byType(RichText))
+              .evaluate()) {
+            final paragraph = element.renderObject! as RenderParagraph;
+            if (paragraph.didExceedMaxLines) {
+              cut.add(paragraph.text.toPlainText());
+            }
+          }
+        }
+        expect(cut, isEmpty, reason: 'after "$value" in $field, nothing is cut short');
+      }
+    });
+
     testWidgets('a die\'s Cavity sits beside No. of Sets and is sent with it',
         (tester) async {
       DieSheetDraft? sent;

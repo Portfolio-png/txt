@@ -483,16 +483,85 @@ void main() {
     );
     expect(sections.map((s) => s.title), isNot(contains('Weights per sheet')));
     final sheet = sections.firstWhere((s) => s.title == 'Sheet');
-    expect(
-      sheet.rows.map((r) => r.$1),
-      containsAll(['Alloy', 'Grade', 'Vendor']),
-    );
+    // Only what was entered: this record names its alloy but no grade or
+    // vendor, so neither gets a "Not set" line.
+    expect(sheet.rows.map((r) => r.$1), contains('Alloy'));
+    expect(sheet.rows.map((r) => r.$2), isNot(contains('Not set')));
     final bytes = await buildRawSheetReviewPdf(
       baseline: following,
       sections: sections,
       partName: 'Dolly Patti',
     );
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+  });
+
+  test('a coil\'s record is about the coil: no sheet, no zeros', () {
+    // User, 2026-11-24: weights typed for a coil showed a SHEET heading, a
+    // CUT PLAN saying nothing was planned and "In 0 × sheet".
+    final coil = PenPaperBaseline.createDefault()
+        .copyWith(
+          materialName: 'Aluminium',
+          lastForm: RawForm.coil,
+          stageReconciliations: [
+            const PenPaperStageReconciliation(
+              stageId: 'whole_pipeline',
+              stageName: 'Raw material',
+              inputKg: 100,
+              outputKg: 90,
+              scrapKg: 5,
+              rejectionKg: 3,
+              weightLossKg: 2,
+            ),
+          ],
+        )
+        .withForm(RawForm.coil, const RawStockForm(widthNm: 45800000, grade: '3rd'));
+    final sections = rawSheetReviewSections(
+      baseline: coil,
+      partName: 'Dolly Patti',
+      sheetLabel: 'Aluminium',
+    );
+    final titles = sections.map((s) => s.title).toList();
+    expect(titles, isNot(contains('Sheet')));
+    expect(titles, isNot(contains('Cut plan')));
+    expect(titles, isNot(contains('Shearing plan')), reason: 'nothing sheared');
+    expect(titles, contains('Coil'));
+    final lines = [for (final s in sections) ...s.rows];
+    final labels = lines.map((r) => r.$1).toList();
+    expect(labels, isNot(contains('In')), reason: 'no count typed: no "0 × sheet"');
+    expect(labels, isNot(contains('Out')), reason: 'no pieces typed: no "0 Pc"');
+    expect(lines.map((r) => r.$2), isNot(contains('Not set')));
+    expect(labels, containsAll(['Width', 'Alloy', 'Grade', 'Weight in', 'Weight out']));
+  });
+
+  test('a part with no raw sheet starts blank, and sample notes are not shown', () {
+    final blank = PenPaperBaseline.blank();
+    expect(blank.notes, isEmpty);
+    expect(blank.stageReconciliations.single.inputKg, 0);
+    final titles = rawSheetReviewSections(
+      baseline: blank,
+      partName: 'Dolly Patti',
+      sheetLabel: '',
+    ).map((s) => s.title).toList();
+    expect(titles, isNot(contains('Material in and out')), reason: 'nothing typed');
+    // A record saved from the old sample still carries its note: not shown.
+    final old = PenPaperBaseline.createDefault();
+    final oldTitles = rawSheetReviewSections(
+      baseline: old,
+      partName: 'Dolly Patti',
+      sheetLabel: '',
+    ).map((s) => s.title);
+    expect(oldTitles, isNot(contains('Notes')));
+  });
+
+  test('a sheet with pieces planned calls it the shearing plan', () {
+    final sections = rawSheetReviewSections(
+      baseline: following,
+      partName: 'Dolly Patti',
+      sheetLabel: 'Steel / MS · 48 × 96 in · 1.6 mm',
+    );
+    final titles = sections.map((s) => s.title).toList();
+    expect(titles, contains('Shearing plan'));
+    expect(titles, isNot(contains('Cut plan')));
   });
 
   // --- alloy from the part, scrap from the balance, vendor -----------------

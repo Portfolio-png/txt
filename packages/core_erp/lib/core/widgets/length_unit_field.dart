@@ -22,6 +22,11 @@ import 'searchable_select.dart';
 /// Nanometres in one millimetre.
 const int nanometresPerMillimetre = 1000000;
 
+/// The unit box beside a figure (mm, thou, Ton). Its arrow takes 48 and its
+/// padding 24, so 104 left "Ton" cut to "T…" (2026-11-24); 120 holds the
+/// longest symbol. Hosts that size the pair add this to their figure's room.
+const double unitPickerWidth = 120;
+
 /// What a typed number and a unit come to, in whole nanometres.
 ///
 /// Null when the field is empty, which is a different answer from zero.
@@ -190,7 +195,7 @@ class LengthUnitField extends StatelessWidget {
         // The same searchable dropdown as every other pick on the sheet, so
         // "thou" is found by typing it rather than scrolling for it.
         SizedBox(
-          width: 104,
+          width: unitPickerWidth,
           child: SearchableSelectField<String>(
             key: unitKey,
             value: unitSymbol,
