@@ -374,7 +374,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                                       size: 18,
                                     ),
                                     label: const Text(
-                                      'Open in sheet',
+                                      'Express edit',
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(fontSize: 14),
                                     ),

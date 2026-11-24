@@ -1855,28 +1855,42 @@ class _ItemRow extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              SoftActionLink(
-                label: 'Edit',
-                onTap: () => ItemsScreen.openEditor(
-                  context,
-                  item: item,
-                  onCreatePipeline: onCreatePipeline,
-                ),
-              ),
-              // The sheet could only start blank: both doors opened "New
-              // part", so an existing part could never be worked on there.
-              if (!item.isArchived)
-                SoftActionLink(
-                  key: ValueKey<String>('open_in_sheet_${item.id}'),
-                  label: 'Open in sheet',
-                  onTap: () => ItemMasterSheetScreen.open(
+              // Two ways to edit (user, 2026-11-24): Edit, the full item
+              // editor; Express edit, the part on the item sheet (the
+              // wizard), with its company, dies, machines, route and raw
+              // material on one page.
+              Tooltip(
+                message: 'Edit — the full item editor',
+                child: SoftActionLink(
+                  key: ValueKey<String>('edit_item_${item.id}'),
+                  label: 'Edit',
+                  onTap: () => ItemsScreen.openEditor(
                     context,
-                    initialItems: [item],
-                    title: item.partCode.trim().isEmpty
-                        ? item.name
-                        : item.partCode,
+                    item: item,
+                    onCreatePipeline: onCreatePipeline,
                   ),
                 ),
+              ),
+              // Drawn for an archived part too, off and saying why: the
+              // sheet works on live parts.
+              Tooltip(
+                message: item.isArchived
+                    ? 'Unarchive the part to express edit it'
+                    : 'Express edit — open this part in the wizard',
+                child: SoftActionLink(
+                  key: ValueKey<String>('open_in_sheet_${item.id}'),
+                  label: 'Express edit',
+                  onTap: item.isArchived
+                      ? null
+                      : () => ItemMasterSheetScreen.open(
+                          context,
+                          initialItems: [item],
+                          title: item.partCode.trim().isEmpty
+                              ? item.name
+                              : item.partCode,
+                        ),
+                ),
+              ),
               SoftActionLink(
                 label: 'Delete',
                 onTap: itemsProvider.isSaving

@@ -482,7 +482,8 @@ class SoftActionLink extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+        // 13: no pill text smaller (user's floor).
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
     );
   }

@@ -266,6 +266,25 @@ void main() {
     expect(find.byType(ItemDetailPanel), findsOneWidget);
   });
 
+  testWidgets('a part offers Edit and Express edit, side by side', (tester) async {
+    // User, 2026-11-24: two ways to edit from the Items master — the full
+    // editor, and Express edit, which opens the part in the wizard (sheet).
+    final items = await _openItems(tester);
+    items.revealItem(_plug.id);
+    await tester.pumpAndSettle();
+
+    final edit = find.byKey(ValueKey<String>('edit_item_${_plug.id}'));
+    final express = find.byKey(ValueKey<String>('open_in_sheet_${_plug.id}'));
+    expect(find.descendant(of: edit, matching: find.text('Edit')), findsOneWidget);
+    expect(
+      find.descendant(of: express, matching: find.text('Express edit')),
+      findsOneWidget,
+    );
+    expect(tester.widget<SoftActionLink>(express).onTap, isNotNull);
+    expect(tester.getRect(express).left, greaterThan(tester.getRect(edit).right),
+        reason: 'beside Edit');
+  });
+
   testWidgets('the Wizard button opens quick entry', (tester) async {
     await _openItems(tester);
 
