@@ -100,8 +100,8 @@ class PartRowsForm extends StatelessWidget {
 
   /// A line's fields in reading order, as four to a row once were:
   ///
-  ///     Group | Type      | Part Name | Part Code
-  ///     Alloy | Thickness | Grade     | Part No
+  ///     Group | Type      | Part Name | Part No
+  ///     Alloy | Thickness | Grade     | Part Code
   ///
   /// Drawn as a wrap of fields each as wide as what it holds (2026-11-24),
   /// so this is their ORDER, which Tab follows, not their columns.
@@ -135,12 +135,14 @@ class PartRowsForm extends StatelessWidget {
         if (column != null) column.id,
     };
     final rest = columns.where((c) => !placed.contains(c.id)).toList();
+    // Part No ends the first line, beside the name; the code it is part of
+    // comes after the properties it is built from (user, 2026-11-24).
     final rows = <List<ColumnDef?>>[
-      [...identity, code],
+      [...identity, number],
       for (var i = 0; i == 0 || i < rest.length; i += 3)
         [
           for (var j = i; j < i + 3; j += 1) j < rest.length ? rest[j] : null,
-          i == 0 ? number : null,
+          i == 0 ? code : null,
         ],
     ];
     return [

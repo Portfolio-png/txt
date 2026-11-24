@@ -70,13 +70,25 @@ void main() {
     await origin.start();
   });
 
+  // Every client a test made, so the folder is deleted only once their
+  // copies have landed — a write still in flight made the delete fail now
+  // and then ("Directory not empty").
+  final made = <ConditionalCacheClient>[];
+
   tearDown(() async {
+    for (final client in made) {
+      await client.flush();
+    }
+    made.clear();
     await origin.stop();
     if (temp.existsSync()) temp.deleteSync(recursive: true);
   });
 
-  ConditionalCacheClient clientOn(Directory directory) =>
-      ConditionalCacheClient(inner: http.Client(), storageDirectory: directory);
+  ConditionalCacheClient clientOn(Directory directory) {
+    final client = ConditionalCacheClient(inner: http.Client(), storageDirectory: directory);
+    made.add(client);
+    return client;
+  }
 
   test('with the server gone, the last copy is served, marked stale', () async {
     final client = clientOn(temp);

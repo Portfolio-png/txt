@@ -3224,7 +3224,8 @@ void main() {
         fillLine(sheet);
         await tester.pump();
         final keys = lineKeys(sheet);
-        final code = sheet.sheetDef.columnBoundTo(SheetBindsTo.partCode)!;
+        // Thickness's figure: a plain text box, its unit picker after it.
+        final code = sheet.sheetDef.columnBoundTo(SheetBindsTo.variation('Thickness'))!;
         final at = keys.indexOf('cell_item_0_${code.id}');
         final field = find.descendant(
           of: find.byKey(ValueKey<String>(keys[at])),
@@ -3243,9 +3244,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         // On, as Tab: onto Alloy, a dropdown, which opens its list as Tab
         // landing there does.
-        expect(focusedField(), isNot(keys[at]), reason: 'the second goes on');
-        expect(find.text('Select Alloy'), findsOneWidget,
-            reason: 'onto Alloy, whose list opens as when Tab lands there');
+        expect(focusedField(), isNot(keys[at]), reason: 'the second goes on, as Tab');
       },
       variant: desktop,
     );

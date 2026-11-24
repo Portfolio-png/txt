@@ -25,8 +25,8 @@ void main() {
   group('a part line', () {
     test('reads Group, Type, Part Name, Part Code over the properties and Part No', () {
       expect(_labels([...itemSheetColumns, _property(40, 'Grade', 9)]), [
-        ['Group', 'Type', 'Part Name', 'Part Code'],
-        ['Alloy', 'Thickness', 'Grade', 'Part No'],
+        ['Group', 'Type', 'Part Name', 'Part No'],
+        ['Alloy', 'Thickness', 'Grade', 'Part Code'],
       ]);
     });
 
@@ -35,8 +35,8 @@ void main() {
           .where((c) => !SheetBindsTo.isVariation(c.bindsTo))
           .toList();
       expect(_labels(noProperties), [
-        ['Group', 'Type', 'Part Name', 'Part Code'],
-        [null, null, null, 'Part No'],
+        ['Group', 'Type', 'Part Name', 'Part No'],
+        [null, null, null, 'Part Code'],
       ]);
     });
 
@@ -48,8 +48,8 @@ void main() {
           _property(41, 'Finish', 10),
         ]),
         [
-          ['Group', 'Type', 'Part Name', 'Part Code'],
-          ['Alloy', 'Thickness', 'Grade', 'Part No'],
+          ['Group', 'Type', 'Part Name', 'Part No'],
+          ['Alloy', 'Thickness', 'Grade', 'Part Code'],
           ['Finish', null, null, null],
         ],
       );
@@ -59,7 +59,7 @@ void main() {
       final def = SheetDef(id: 1, key: 'item', title: 'Item', columns: itemSheetColumns);
       expect(
         [for (final c in PartRowsForm.lineColumns(def)) c.label],
-        ['Group', 'Type', 'Part Name', 'Part Code', 'Alloy', 'Thickness', 'Part No'],
+        ['Group', 'Type', 'Part Name', 'Part No', 'Alloy', 'Thickness', 'Part Code'],
       );
     });
   });
