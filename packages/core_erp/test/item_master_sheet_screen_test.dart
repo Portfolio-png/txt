@@ -1289,6 +1289,43 @@ void main() {
       },
     );
 
+    testWidgets('a Liner Size typed on a die not yet added is the Width at once',
+        (tester) async {
+      AppFlowHooks.createDieFromSheet = (context, draft) async =>
+          const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
+      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        // A saved die with its own liner: the one being typed comes first.
+        dies: const [ItemDieLink(id: '30', toolCode: 'OLD', linerSizeNm: 80 * 1000000)],
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      MasterDataPanel panel() => tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+      expect(panel().linerWidth?.nm, 80 * 1000000, reason: 'the saved die, before typing');
+
+      // A new die's form (the + tab), its liner typed, Add die not pressed.
+      await tester.ensureVisible(find.byKey(const ValueKey('die_add')));
+      await tester.tap(find.byKey(const ValueKey('die_add')));
+      await tester.pump();
+      await _pickOrType(tester, 'quick-entry-die-liner-field', '45.8');
+      await tester.pump();
+      expect(panel().linerWidth?.nm, 45800000, reason: 'typed, not yet added');
+
+      // Typed again: the Width follows each change.
+      await _pickOrType(tester, 'quick-entry-die-liner-field', '120');
+      await tester.pump();
+      expect(panel().linerWidth?.nm, 120 * 1000000);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('the part\'s die Liner Size is handed to the raw panel as its Width',
         (tester) async {
       final patti = _item(

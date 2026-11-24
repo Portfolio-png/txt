@@ -61,6 +61,7 @@ class PartDieSection extends StatefulWidget {
     this.framed = true,
     this.onHeading,
     this.onTypeChanged,
+    this.onLinerTyped,
     this.heldSaveBuilder,
     this.onDirtyChanged,
     this.flow,
@@ -95,6 +96,13 @@ class PartDieSection extends StatefulWidget {
   /// The type picked or typed on the form ("Cutting", "Deep Drawing"), each
   /// time it changes — the item sheet fills the machine's Die Type with it.
   final ValueChanged<String>? onTypeChanged;
+
+  /// The Liner Size on the form as it is typed — before Add die — in
+  /// nanometres with its unit and the die's code; null while it is empty or
+  /// not a length. The item sheet makes it the raw material's Width at once
+  /// (user, 2026-11-24: "liner size was already entered, it didn't came
+  /// directly here").
+  final ValueChanged<({int nm, String unit, String code})?>? onLinerTyped;
 
   /// The sheet line this is typed for. A different line is a different part
   /// — saved or not — so what was typed for the last one is cleared.
@@ -778,6 +786,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   Widget build(BuildContext context) {
     _reportDirty();
     _reportType();
+    _reportLiner();
     final part = widget.part;
     // Open with no part: everything Add does is held until the part is made.
     final enabled = !widget.busy && !_saving;
@@ -1235,6 +1244,27 @@ class _PartDieSectionState extends State<PartDieSection> {
 
   /// Hands the type to [PartDieSection.onTypeChanged] once it has changed —
   /// after the frame, since the host rebuilds on it.
+  ({int nm, String unit, String code})? _reportedLiner;
+  bool _linerReported = false;
+
+  void _reportLiner() {
+    final report = widget.onLinerTyped;
+    if (report == null) return;
+    final parsed = _linerController.text.trim().isEmpty
+        ? null
+        : parseLengthToNanometres(_linerController.text, _linerUnit);
+    final nm = parsed == null || parsed.isFailure ? null : parsed.nanometres;
+    final liner = nm == null || nm <= 0
+        ? null
+        : (nm: nm, unit: _linerUnit, code: _codeController.text.trim());
+    if (_linerReported && liner == _reportedLiner) return;
+    _linerReported = true;
+    _reportedLiner = liner;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) report(liner);
+    });
+  }
+
   void _reportType() {
     final report = widget.onTypeChanged;
     final type = _type?.label ?? '';
