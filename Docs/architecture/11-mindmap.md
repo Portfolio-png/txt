@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c118["⟳ Change 118: vendors are raw material and/or outsourcing; sidebar People → Employees"]
+      c119["⟳ Change 119: e2e builds in its own mirror tree — it was rebuilding the running debug app's bundle and crashing it (B73)"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]

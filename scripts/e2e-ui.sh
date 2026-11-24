@@ -156,9 +156,32 @@ failed() {
   fail "integration_test/$1_test.dart"
 }
 
+# --- the app is built in a mirror, never in ./build --------------------------
+# `flutter test -d macos` builds build/macos/Build/Products/Debug/paper.app —
+# the very bundle `flutter run` (the editor's debug session) runs from. A test
+# build replaced that bundle's sqlite3.framework under the running app, whose
+# next first-time SQLite call then loaded the new file as a SECOND copy with
+# none of its state set up: SIGSEGV at pc 0 in vdbeUnbind (B73, three crashes
+# on 2026-11-24, all just after an e2e run). So the test app is built in its
+# own tree: only what a macOS build needs is copied (no keys, no databases,
+# no backend — the server still runs from here), and its build folder stays
+# between runs, so after the first build it is incremental.
+APP_TREE="${E2E_APP_TREE:-${HOME}/.paper/e2e-app-tree}"
+say "Mirroring the app into ${APP_TREE} (its own build folder; yours is not touched)"
+mkdir -p "${APP_TREE}"
+for part in pubspec.yaml pubspec.lock analysis_options.yaml .metadata; do
+  [[ -e "${REPO}/${part}" ]] && cp -p "${REPO}/${part}" "${APP_TREE}/${part}"
+done
+for dir in lib assets integration_test macos packages; do
+  rsync -a --delete \
+    --exclude 'build/' --exclude '.dart_tool/' --exclude 'node_modules/' \
+    --exclude 'Flutter/ephemeral/' \
+    "${REPO}/${dir}/" "${APP_TREE}/${dir}/"
+done
+
 for name in "${TESTS[@]}"; do
   say "flutter test integration_test/${name}_test.dart -d macos"
-  ( cd "${REPO}" && flutter test "integration_test/${name}_test.dart" -d macos \
+  ( cd "${APP_TREE}" && flutter test "integration_test/${name}_test.dart" -d macos \
       --dart-define=PAPER_API_BASE_URL="${BASE_URL}" \
       --dart-define=PAPER_SKIP_ACTIVATION=true \
       --dart-define=E2E_SHOTS="${SHOTS_DEFINE}" \
