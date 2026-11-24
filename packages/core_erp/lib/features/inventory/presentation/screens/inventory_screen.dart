@@ -248,11 +248,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
             : inventory.materials;
 
         final sets = inventory.sets;
+        // Item groups only (user, 2026-11-24: "don't show any other groups
+        // than item groups and sets"): machine and die types are groups
+        // too, and each came up here as an empty inventory folder. Every
+        // row, folder and filter below is built from these two maps.
+        final itemGroups = groups.filableItemGroups;
         final groupNameById = <int, String>{
-          for (final group in groups.groups) group.id: group.name,
+          for (final group in itemGroups) group.id: group.name,
         };
         final groupsById = <int, GroupDefinition>{
-          for (final group in groups.groups) group.id: group,
+          for (final group in itemGroups) group.id: group,
         };
         final activeGroup = _activeGroupIdFilter == null
             ? null
