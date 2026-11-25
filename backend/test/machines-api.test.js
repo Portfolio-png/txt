@@ -91,6 +91,11 @@ test('machines: create, read one, list, update', async (t) => {
   const updated = await api(ctx, 'POST', '/api/machines', { id: machine.id, location: 'Shop 2' });
   assert.equal(updated.status, 200);
   assert.equal(updated.body.machine.location, 'Shop 2');
+  // Numeric id, as the app sends it since B69 (B74: `.trim()` on a number).
+  const numeric = await api(ctx, 'POST', '/api/machines', { id: Number(machine.id), location: 'Shop 3' });
+  assert.equal(numeric.status, 200, JSON.stringify(numeric.body));
+  assert.equal(numeric.body.machine.location, 'Shop 3');
+  assert.equal(numeric.body.machine.id, machine.id, 'a numeric id updates, never duplicates');
   assert.equal(updated.body.machine.assetId, 'PA-1', 'what the save did not mention is kept');
 
   const ghost = await api(ctx, 'POST', '/api/machines', { id: '999999', name: 'Nobody' });

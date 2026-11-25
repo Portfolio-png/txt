@@ -93,8 +93,18 @@ test('dies: create, read one, list, update keeps what the save did not mention',
   assert.equal(updated.body.die.storageLocation, 'Rack 4', 'what the save did not mention is kept');
   assert.equal(updated.body.die.toolCode, 'CD-TEST-1');
 
+  // The app sends the id as a NUMBER since B69 (2026-11-24); the service used
+  // to call `.trim()` on it and every save of an existing die answered 500
+  // "id.trim is not a function" (B74).
+  const numeric = await api(ctx, 'POST', '/api/dies', { id: Number(die.id), rackNo: 'R-10' });
+  assert.equal(numeric.status, 200, JSON.stringify(numeric.body));
+  assert.equal(numeric.body.die.rackNo, 'R-10');
+  assert.equal(numeric.body.die.toolCode, 'CD-TEST-1', 'a numeric id updates, never duplicates');
+
   const ghost = await api(ctx, 'POST', '/api/dies', { id: '999999', toolCode: 'NOPE' });
   assert.equal(ghost.status, 404);
+  const ghostNumber = await api(ctx, 'POST', '/api/dies', { id: 999999, toolCode: 'NOPE' });
+  assert.equal(ghostNumber.status, 404);
 });
 
 test('dies: the client is a link, set by clientId and cleared by null', async (t) => {

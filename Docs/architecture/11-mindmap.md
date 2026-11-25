@@ -35,6 +35,7 @@ mindmap
     Latest change
       c119["⟳ Change 119: e2e builds in its own mirror tree — it was rebuilding the running debug app's bundle and crashing it (B73)"]
       c121["⟳ Change 121: client diagnostics — Sentry project + key in the app, hang tracking, local paper.log (memory, stalls, errors), no token logging"]
+      c126["⟳ Change 126 (api): B74 — die/machine save takes a numeric id (String(id).trim()); B69 had made the app send a number and every edit of a saved die or machine answered 500"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]

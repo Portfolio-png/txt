@@ -116,7 +116,10 @@ function createMachineService({ get, all, run, parseJson, desk }) {
     } = body || {};
 
     const now = new Date().toISOString();
-    const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
+    // The id arrives as a number from the app (B69) and as a string from
+    // older callers and the Dies / Machines screens; both must update.
+    const idText = id === undefined || id === null ? '' : String(id).trim();
+    const isUpdate = idText !== '' && !idText.startsWith('temp_') && Number.isFinite(Number(idText));
     const beforeRow = isUpdate
       ? await get('SELECT * FROM machines WHERE id = ?', [Number(id)])
       : null;
