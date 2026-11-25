@@ -1531,9 +1531,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _rawDieId == null
-                          ? 'Raw material'
-                          : 'Raw material · ${_dieLabel(_rawDieId!).replaceFirst('die', 'Die')}',
+                      // Which die it is for is on the selector beside it.
+                      'Raw material',
                       key: const ValueKey<String>('raw_title'),
                       overflow: TextOverflow.ellipsis,
                       style: SheetStyle.sectionTitle,
@@ -3097,7 +3096,68 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     });
   }
 
-  /// The ⋯ beside "Raw material": the part's own plan, then one per die the
+  /// What the die selector shows: "Select die ⌄" while the plan is the
+  /// part's own, the die's code once one is picked — filled, so it is plain
+  /// whose raw sheet is being typed into. Drawn greyed when there is no die.
+  Widget _rawDieChip(bool none) {
+    final dieId = _rawDieId;
+    final code = dieId == null ? '' : _savedDie(dieId)?.toolCode.trim() ?? '';
+    final picked = dieId != null;
+    final label = !picked
+        ? 'Select die'
+        : code.isEmpty
+        ? 'Die (no code)'
+        : code;
+    final fg = none
+        ? SoftErpTheme.textMuted
+        : picked
+        ? Colors.white
+        : SoftErpTheme.accentDeeper;
+    return Container(
+      key: const ValueKey<String>('raw_die_chip'),
+      constraints: const BoxConstraints(maxWidth: 190),
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: none
+            ? SoftErpTheme.sectionSurface
+            : picked
+            ? SoftErpTheme.accent
+            : SoftErpTheme.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: none
+              ? SoftErpTheme.border
+              : picked
+              ? SoftErpTheme.accent
+              : SoftErpTheme.accentSoft,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (picked) ...[
+            Icon(Icons.precision_manufacturing_outlined, size: 16, color: fg),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: fg),
+        ],
+      ),
+    );
+  }
+
+  /// The die selector beside "Raw material": the part's own plan, then one per die the
   /// part is made on — every die cuts its own raw material (owner,
   /// 2026-11-25). A die still held, not saved, is shown but not pickable.
   Widget _rawDieMenu(ItemDefinition? part) {
@@ -3174,8 +3234,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 : 'Add a die to the part: each die gets its own raw sheet '
                       'here.')
           : 'Raw sheet per die',
-      icon: const Icon(Icons.more_horiz_rounded),
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 360),
+      child: _rawDieChip(none),
       onSelected: (value) => unawaited(_pickRawDie(value == 0 ? null : value)),
       itemBuilder: (_) => [
         row(

@@ -33,7 +33,8 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c133["⟳ Change 133 (app): die Liner Size no longer fills the raw material Width — MasterDataPanel.linerWidth, RawWidthFromDie, PartDieSection.onLinerTyped and the sheet's _linerWidthNow/_typedLiner removed; Width is typed on every form again; the form guard stays"]
+      c134["⟳ Change 134 (app): the die picker beside Raw material is a 'Select die ⌄' pill (raw_die_chip), not ⋯; once a die is picked it shows that die's code, filled, so it is plain whose raw sheet is being typed; the title stays 'Raw material'"]
+      c133["Change 133 (app): die Liner Size no longer fills the raw material Width — MasterDataPanel.linerWidth, RawWidthFromDie, PartDieSection.onLinerTyped and the sheet's _linerWidthNow/_typedLiner removed; Width is typed on every form again; the form guard stays"]
       c132["Change 132: raw material per die — item_die_raw_plans (part, die) → PenPaperBaseline JSON; GET /api/items/:id/die-raw-plans, PUT …/:dieId (items.dieRawPlans.*, die asked via dies.rows.get); sheet ⋯ beside Raw material picks Part (no die) or a saved die, unsaved switch asks; production still reads the part's own plan"]
       c131["Change 131: duplicates allowed while the owner collects data — backend 409 item_name_duplicate removed, sheet duplicate_item now a note on the save (SheetEngine.duplicateNotice); Part Code stays unique"]
       c130["Change 130: Part No is a die generation, not a key — sheet Part No uniqueness check (seq_used) removed, conflict dialog ignores a shared Part No, typed number kept and sent alone on create, backend builds the code from a given number"]

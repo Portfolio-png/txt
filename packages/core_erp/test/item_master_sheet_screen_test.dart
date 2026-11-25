@@ -1384,7 +1384,7 @@ void main() {
     );
 
     testWidgets(
-      'the ⋯ beside Raw material lists the dies: each die has its own raw sheet',
+      'the Select die chevron beside Raw material lists the dies: each die has its own raw sheet',
       (tester) async {
         final patti = _item(
           id: 500,
@@ -1416,6 +1416,7 @@ void main() {
           '',
           reason: 'the part\'s own first',
         );
+        expect(find.descendant(of: find.byKey(const ValueKey('raw_die_chip')), matching: find.text('Select die')), findsOneWidget);
 
         Future<void> pick(int value) async {
           await tester.tap(find.byKey(const ValueKey('raw_die_menu')));
@@ -1439,7 +1440,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         expect(panel().baseline.materialGrade, 'D-NEW');
-        expect(find.text('Raw material · Die NEW'), findsOneWidget);
+        expect(find.descendant(of: find.byKey(const ValueKey('raw_die_chip')), matching: find.text('NEW')), findsOneWidget, reason: 'the die being typed for');
 
         // The old die has no plan yet: a blank one, asking for its form.
         await pick(30);
@@ -1466,7 +1467,7 @@ void main() {
 
         // Back to the part's own.
         await pick(0);
-        expect(find.text('Raw material'), findsOneWidget);
+        expect(find.descendant(of: find.byKey(const ValueKey('raw_die_chip')), matching: find.text('Select die')), findsOneWidget);
         expect(panel().baseline.materialGrade, '');
         expect(tester.takeException(), isNull);
       },
@@ -1513,17 +1514,17 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Raw material'), findsOneWidget, reason: 'stayed put');
+      expect(find.descendant(of: find.byKey(const ValueKey('raw_die_chip')), matching: find.text('Select die')), findsOneWidget, reason: 'stayed put');
       expect(find.byKey(const ValueKey('raw_unsaved')), findsOneWidget);
 
       await pick();
       await tester.tap(find.text('Leave it'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Raw material · Die NEW'), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('raw_die_chip')), matching: find.text('NEW')), findsOneWidget, reason: 'the die being typed for');
       expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing);
     });
 
-    testWidgets('a part with no dies draws the ⋯ disabled, saying why', (
+    testWidgets('a part with no dies draws Select die disabled, saying why', (
       tester,
     ) async {
       final patti = _item(id: 500, name: 'Patti', groupId: 11);
