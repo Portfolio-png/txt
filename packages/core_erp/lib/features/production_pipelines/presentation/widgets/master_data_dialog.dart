@@ -116,7 +116,6 @@ class MasterDataPanel extends StatefulWidget {
     this.grade,
     this.thickness,
     this.onThicknessChanged,
-    this.linerWidth,
   });
 
   /// The baseline the panel opens on. Edits are made to a working copy, so the
@@ -203,12 +202,6 @@ class MasterDataPanel extends StatefulWidget {
   /// keeps a thickness of the panel's own.
   final String? thickness;
   final ValueChanged<String>? onThicknessChanged;
-
-  /// A die's Liner Size, when the part has a die that gives one: the raw
-  /// material's Width on every form, shown here and changed on the die (user,
-  /// 2026-11-24 — "liner size from die master is equal to width in raw
-  /// material"). Null keeps a width of the panel's own, typed as before.
-  final RawWidthFromDie? linerWidth;
 
   @override
   State<MasterDataPanel> createState() => _MasterDataPanelState();
@@ -393,33 +386,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     _seedControllers();
     _ensureTrailingBlank(_primaryRegion);
     _adoptPartThickness();
-    _adoptLinerWidth();
-  }
-
-  /// Takes the die's Liner Size, when the host gives one, as the Width: the
-  /// sheet's, and the band's on the form open and on any form already
-  /// planned. A form nobody has opened is left out of the record until it is.
-  void _adoptLinerWidth() {
-    final liner = widget.linerWidth;
-    if (liner == null) return;
-    var next = _baseline.copyWith(
-      sheetWidthInches: liner.nm / nanometresPerMillimetre / _mmPerInch,
-    );
-    for (final form in RawForm.values) {
-      if (!form.isBand) continue;
-      if (form != _form && !next.forms.containsKey(form)) continue;
-      next = next.withForm(
-        form,
-        next.formOf(form).copyWith(widthNm: liner.nm, widthUnit: liner.unit),
-      );
-    }
-    _baseline = next;
-    _bandErrors.remove('width');
-    _widthController.text = _faceText(
-      _baseline.sheetWidthInches,
-      _baseline.faceUnit,
-    );
-    _writeBandFields();
   }
 
   /// The sheet no longer has a pitch: blanks sit edge to edge, and a gap an
@@ -469,8 +435,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     if (widget.thickness != oldWidget.thickness && !_thicknessFocus.hasFocus) {
       _adoptPartThickness();
     }
-    // The die's Liner Size likewise; nobody types it here.
-    if (widget.linerWidth != oldWidget.linerWidth) _adoptLinerWidth();
     // Only a panel nobody is typing into follows its input. A read-only panel
     // is a view of the record, so a save made elsewhere belongs on it the
     // moment it lands; an editing panel holds a working copy that is the
@@ -1157,7 +1121,6 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       _bandErrors.clear();
       // Recorded, so the panel reopens here — none of the four is a default.
       _baseline = _baseline.copyWith(lastForm: form, formChosen: true);
-      _adoptLinerWidth();
       _writeBandFields();
     });
   }
@@ -1201,10 +1164,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   static const String _pickFormReason =
       'Pick the form first — Sheet, Strip, Coil or Roll';
 
-  /// In place of the steps until a form is picked: what to do, and why it is
-  /// asked — the Width the die fills in goes onto whichever is picked.
+  /// In place of the steps until a form is picked: what to do.
   Widget _pickFormFirst() {
-    final liner = widget.linerWidth;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
@@ -1234,8 +1195,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                     ? 'No form has been picked for this part yet. Edit to pick '
                           'Sheet, Strip, Coil or Roll.'
                     : 'Pick Sheet, Strip, Coil or Roll above. Nothing is saved '
-                          'or reviewed until one is picked'
-                          '${liner == null ? '.' : ' — the Width from ${liner.dieLabel} goes onto the form you pick.'}',
+                          'or reviewed until one is picked.',
                 style: const TextStyle(
                   fontSize: 14,
                   color: SoftErpTheme.warningText,
@@ -1321,47 +1281,32 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// A band's width, laid out like the sheet's so the four forms read alike.
   Widget _bandWidthField() {
     final plan = _baseline.formOf(_form);
-    final fromDie = widget.linerWidth != null;
-    return _fromDieTip(
-      _DimensionField(
-        key: ValueKey<String>('${_form.name}-width'),
-        controller: _bandWidthController,
-        label: 'Width',
-        unit: plan.widthUnit,
-        readOnly: widget.readOnly || fromDie,
-        errorText: _bandErrors['width'],
-        onChanged: () => _onBandLength(
-          'width',
-          _bandWidthController,
-          plan.widthUnit,
-          (p, nm) => p.copyWith(widthNm: nm),
-        ),
-        unitWidget: _UnitPicker(
-          symbol: plan.widthUnit,
-          options: faceLengthUnits,
-          onChanged: widget.readOnly || fromDie
-              ? null
-              : (unit) {
-                  _updateBand((p) => p.copyWith(widthUnit: unit.symbol));
-                  _bandWidthController.text = formatLengthFromNanometres(
-                    plan.widthNm,
-                    unit.symbol,
-                  );
-                },
-        ),
+    return _DimensionField(
+      key: ValueKey<String>('${_form.name}-width'),
+      controller: _bandWidthController,
+      label: 'Width',
+      unit: plan.widthUnit,
+      readOnly: widget.readOnly,
+      errorText: _bandErrors['width'],
+      onChanged: () => _onBandLength(
+        'width',
+        _bandWidthController,
+        plan.widthUnit,
+        (p, nm) => p.copyWith(widthNm: nm),
       ),
-    );
-  }
-
-  /// The Width box when it is the die's Liner Size: says so, and where to
-  /// change it.
-  Widget _fromDieTip(Widget field) {
-    final liner = widget.linerWidth;
-    if (liner == null) return field;
-    return Tooltip(
-      key: const ValueKey<String>('raw-width-from-die'),
-      message: 'The Liner Size of ${liner.dieLabel} — change it on the die',
-      child: field,
+      unitWidget: _UnitPicker(
+        symbol: plan.widthUnit,
+        options: faceLengthUnits,
+        onChanged: widget.readOnly
+            ? null
+            : (unit) {
+                _updateBand((p) => p.copyWith(widthUnit: unit.symbol));
+                _bandWidthController.text = formatLengthFromNanometres(
+                  plan.widthNm,
+                  unit.symbol,
+                );
+              },
+      ),
     );
   }
 
@@ -1927,19 +1872,17 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         Expanded(
           child: _form.isBand
               ? _bandWidthField()
-              : _fromDieTip(
-                  _DimensionField(
-                    key: const ValueKey<String>('sheet-width'),
-                    controller: _widthController,
-                    label: 'Width',
-                    // The face is one measurement in two directions, so both
-                    // sides read in the same unit — a sheet quoted 96 in by
-                    // 1219 mm is a mistake waiting to be made.
-                    unit: face.symbol,
-                    readOnly: widget.readOnly || widget.linerWidth != null,
-                    onChanged: _onDimensionChanged,
-                    unitWidget: facePicker(),
-                  ),
+              : _DimensionField(
+                  key: const ValueKey<String>('sheet-width'),
+                  controller: _widthController,
+                  label: 'Width',
+                  // The face is one measurement in two directions, so both
+                  // sides read in the same unit — a sheet quoted 96 in by
+                  // 1219 mm is a mistake waiting to be made.
+                  unit: face.symbol,
+                  readOnly: widget.readOnly,
+                  onChanged: _onDimensionChanged,
+                  unitWidget: facePicker(),
                 ),
         ),
         const SizedBox(width: 8),
@@ -4175,29 +4118,4 @@ class _PlainNumberField extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A die's Liner Size handed to [MasterDataPanel] as the raw material's
-/// Width: [nm] nanometres, shown in [unit], from the die called [dieLabel].
-@immutable
-class RawWidthFromDie {
-  const RawWidthFromDie({
-    required this.nm,
-    required this.unit,
-    required this.dieLabel,
-  });
-
-  final int nm;
-  final String unit;
-  final String dieLabel;
-
-  @override
-  bool operator ==(Object other) =>
-      other is RawWidthFromDie &&
-      other.nm == nm &&
-      other.unit == unit &&
-      other.dieLabel == dieLabel;
-
-  @override
-  int get hashCode => Object.hash(nm, unit, dieLabel);
 }

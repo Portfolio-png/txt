@@ -1383,43 +1383,6 @@ void main() {
       },
     );
 
-    testWidgets('a Liner Size typed on a die not yet added is the Width at once',
-        (tester) async {
-      AppFlowHooks.createDieFromSheet = (context, draft) async =>
-          const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
-      addTearDown(() => AppFlowHooks.createDieFromSheet = null);
-      final patti = _item(
-        id: 500,
-        name: 'Patti',
-        groupId: 11,
-        // A saved die with its own liner: the one being typed comes first.
-        dies: const [ItemDieLink(id: '30', toolCode: 'OLD', linerSizeNm: 80 * 1000000)],
-      );
-      await _pumpScreen(
-        tester,
-        initialItems: [patti],
-        repository: _FakeItemRepository([patti]),
-        size: const Size(1700, 3200),
-      );
-      await tester.pump(const Duration(milliseconds: 50));
-      MasterDataPanel panel() => tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
-      expect(panel().linerWidth?.nm, 80 * 1000000, reason: 'the saved die, before typing');
-
-      // A new die's form (the + tab), its liner typed, Add die not pressed.
-      await tester.ensureVisible(find.byKey(const ValueKey('die_add')));
-      await tester.tap(find.byKey(const ValueKey('die_add')));
-      await tester.pump();
-      await _pickOrType(tester, 'quick-entry-die-liner-field', '45.8');
-      await tester.pump();
-      expect(panel().linerWidth?.nm, 45800000, reason: 'typed, not yet added');
-
-      // Typed again: the Width follows each change.
-      await _pickOrType(tester, 'quick-entry-die-liner-field', '120');
-      await tester.pump();
-      expect(panel().linerWidth?.nm, 120 * 1000000);
-      expect(tester.takeException(), isNull);
-    });
-
     testWidgets(
       'the ⋯ beside Raw material lists the dies: each die has its own raw sheet',
       (tester) async {
@@ -1453,7 +1416,6 @@ void main() {
           '',
           reason: 'the part\'s own first',
         );
-        expect(panel().linerWidth?.nm, 80 * 1000000);
 
         Future<void> pick(int value) async {
           await tester.tap(find.byKey(const ValueKey('raw_die_menu')));
@@ -1472,13 +1434,11 @@ void main() {
         expect(find.textContaining('not planned yet'), findsOneWidget);
         expect(find.textContaining('planned'), findsNWidgets(2));
 
-        // The new die: its own plan, and its own liner as the Width.
+        // The new die: its own plan.
         await tester.tap(find.byKey(const ValueKey('raw_die_option_31')));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         expect(panel().baseline.materialGrade, 'D-NEW');
-        expect(panel().linerWidth?.nm, 120 * 1000000);
-        expect(panel().linerWidth?.dieLabel, 'die NEW');
         expect(find.text('Raw material · Die NEW'), findsOneWidget);
 
         // The old die has no plan yet: a blank one, asking for its form.
@@ -1578,29 +1538,6 @@ void main() {
       );
       expect(menu.enabled, isFalse);
       expect(menu.tooltip, contains('Add a die'));
-    });
-
-    testWidgets('the part\'s die Liner Size is handed to the raw panel as its Width',
-        (tester) async {
-      final patti = _item(
-        id: 500,
-        name: 'Patti',
-        groupId: 11,
-        dies: const [
-          ItemDieLink(id: '30', toolCode: 'NOLINER'),
-          ItemDieLink(id: '31', toolCode: 'PGESP1', linerSizeNm: 120 * 1000000),
-        ],
-      );
-      await _pumpScreen(
-        tester,
-        initialItems: [patti],
-        repository: _FakeItemRepository([patti]),
-        size: const Size(1700, 3200),
-      );
-      final panel = tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
-      expect(panel.linerWidth?.nm, 120 * 1000000, reason: 'the first die that has one');
-      expect(panel.linerWidth?.unit, 'mm');
-      expect(panel.linerWidth?.dieLabel, 'die PGESP1');
     });
 
     testWidgets(

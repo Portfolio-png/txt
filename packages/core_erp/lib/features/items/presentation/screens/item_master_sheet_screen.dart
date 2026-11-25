@@ -246,8 +246,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// `defaultPipelineId`, which a routed part never sets.
   PartRoute? _route;
 
-  /// The Liner Size on the die form, typed and not yet added.
-  ({int nm, String unit, String code})? _typedLiner;
   int? _routeForPartId;
 
   /// The left rail folded to an icon strip (remembered on this device).
@@ -1417,9 +1415,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ? null
           : _cellNow(SheetBindsTo.variation('Thickness')),
       onThicknessChanged: _setThickness,
-      // The die's Liner Size is the raw material's Width (user, 2026-11-24):
-      // the chosen die's, when the plan is a die's.
-      linerWidth: dieId == null ? _linerWidthNow : _linerWidthOfDie(dieId),
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
@@ -3057,38 +3052,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return '';
   }
 
-  /// The first of the part's dies — saved, then held — with a Liner Size:
-  /// the raw material's Width. Null when none has one, so Width is typed.
-  RawWidthFromDie? get _linerWidthNow {
-    // The die on the form first, as it is typed: it is the one being looked
-    // at, and Add die is not needed for its liner to be the Width.
-    final typed = _typedLiner;
-    if (typed != null) {
-      return RawWidthFromDie(
-        nm: typed.nm,
-        unit: typed.unit,
-        dieLabel: typed.code.isEmpty
-            ? 'the die being typed'
-            : 'die ${typed.code}',
-      );
-    }
-    final dies = [
-      ...?_livePart?.dies,
-      for (final draft in _stagedDies) heldDieLink(draft),
-    ];
-    for (final die in dies) {
-      final nm = die.linerSizeNm;
-      if (nm == null || nm <= 0) continue;
-      final code = die.toolCode.trim();
-      return RawWidthFromDie(
-        nm: nm,
-        unit: die.linerSizeUnit,
-        dieLabel: code.isEmpty ? 'the die' : 'die $code',
-      );
-    }
-    return null;
-  }
-
   /// The open part's saved die with this id, or null.
   ItemDieLink? _savedDie(int dieId) {
     for (final die in _livePart?.dies ?? const <ItemDieLink>[]) {
@@ -3101,19 +3064,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   String _dieLabel(int dieId) {
     final code = _savedDie(dieId)?.toolCode.trim() ?? '';
     return code.isEmpty ? 'the die' : 'die $code';
-  }
-
-  /// A die's own Liner Size as the Width, for that die's plan; null when it
-  /// has none, so Width is typed.
-  RawWidthFromDie? _linerWidthOfDie(int dieId) {
-    final die = _savedDie(dieId);
-    final nm = die?.linerSizeNm;
-    if (die == null || nm == null || nm <= 0) return null;
-    return RawWidthFromDie(
-      nm: nm,
-      unit: die.linerSizeUnit,
-      dieLabel: _dieLabel(dieId),
-    );
   }
 
   /// Reads every die's raw plan for the part — unless the sheet has moved on.
@@ -3329,10 +3279,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // where it stands alone, in the quick-entry dialog.
       framed: false,
       onHeading: (text) => setState(() => _dieHeading = text),
-      onLinerTyped: (liner) {
-        if (mounted && liner != _typedLiner)
-          setState(() => _typedLiner = liner);
-      },
       onTypeChanged: (type) {
         if (type.isNotEmpty && type != _dieType) {
           setState(() => _dieType = type);

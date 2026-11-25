@@ -99,7 +99,6 @@ void main() {
     String? grade,
     String? thickness,
     ValueChanged<String>? onThicknessChanged,
-    RawWidthFromDie? linerWidth,
     VendorsProvider? vendors,
   }) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -126,7 +125,6 @@ void main() {
                     grade: grade,
                     thickness: thickness,
                     onThicknessChanged: onThicknessChanged,
-                    linerWidth: linerWidth,
                     // These tests are about a plan whose form was picked (the pick itself is
                     // tested on its own: 'no form is the form until one is picked').
                     baseline: baseline.copyWith(formChosen: true),
@@ -935,60 +933,19 @@ void main() {
       );
     });
 
-    testWidgets('the die\'s Liner Size is the Width, on every form, '
-        'and is changed on the die', (tester) async {
-      PenPaperBaseline? saved;
-      const liner = RawWidthFromDie(nm: 120 * 1000000, unit: 'mm', dieLabel: 'die PGESP1');
-      await mount(tester, linerWidth: liner, onSave: (b) => saved = b);
-      TextField fieldIn(String key) => tester.widget<TextField>(find.descendant(
-        of: find.byKey(ValueKey<String>(key)),
-        matching: find.byType(TextField),
-      ));
-
+    testWidgets('the Width is typed on every form — a die no longer fills it', (tester) async {
+      await mount(tester);
       for (final form in RawForm.values) {
         await tester.tap(find.byKey(ValueKey<String>('raw-form-${form.name}')));
         await tester.pumpAndSettle();
         final key = form.isBand ? '${form.name}-width' : 'sheet-width';
-        final field = fieldIn(key);
-        expect(field.readOnly, isTrue, reason: '${form.label}: changed on the die');
-        if (form.isBand) {
-          expect(field.controller!.text, '120', reason: form.label);
-        } else {
-          // The sheet's face reads in its own unit; whatever it is, it is
-          // 120 mm across, not blank.
-          expect(double.tryParse(field.controller!.text), greaterThan(0));
-        }
-        expect(
-          find.byWidgetPredicate((w) =>
-              w is Tooltip &&
-              w.message == 'The Liner Size of die PGESP1 — change it on the die'),
-          findsWidgets,
-        );
+        final field = tester.widget<TextField>(find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.byType(TextField),
+        ));
+        expect(field.readOnly, isFalse, reason: form.label);
       }
-      await tester.tap(find.text('Save Raw Sheet'));
-      await tester.pump();
-      expect(saved!.sheetWidthInches * 25.4, closeTo(120, 1e-9));
-      for (final form in [RawForm.strip, RawForm.coil, RawForm.roll]) {
-        expect(saved!.formOf(form).widthNm, 120 * 1000000, reason: form.label);
-      }
-
-      // The die changed: the Width follows.
-      await mount(
-        tester,
-        linerWidth: const RawWidthFromDie(nm: 80 * 1000000, unit: 'mm', dieLabel: 'die PGESP1'),
-      );
-      expect(fieldIn('${RawForm.roll.name}-width').controller!.text, '80');
-    });
-
-    testWidgets('with no die Liner Size the Width is typed as before', (tester) async {
-      await mount(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('raw-form-strip')));
-      await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(find.descendant(
-        of: find.byKey(const ValueKey<String>('strip-width')),
-        matching: find.byType(TextField),
-      ));
-      expect(field.readOnly, isFalse);
+      expect(find.byKey(const ValueKey<String>('raw-width-from-die')), findsNothing);
     });
 
     testWidgets('a Thickness cell that is not a measurement says so', (tester) async {
@@ -1204,7 +1161,6 @@ void main() {
                   embedded: true,
                   baseline: baseline,
                   itemName: 'Patti No. 1',
-                  linerWidth: const RawWidthFromDie(nm: 120 * 1000000, unit: 'mm', dieLabel: 'die PGESP1'),
                   onSave: saved.add,
                   onCancel: () {},
                 ),
@@ -1223,14 +1179,13 @@ void main() {
     testWidgets('a new plan: nothing picked, the steps wait, Save and Next are off', (tester) async {
       final saved = await fresh(tester);
       expect(find.byKey(const ValueKey<String>('raw-pick-form')), findsOneWidget);
-      expect(find.textContaining('the Width from die PGESP1 goes onto the form you pick'), findsOneWidget);
       expect(button(tester, 'master-data-save').onPressed, isNull);
       expect(button(tester, 'master-data-next').onPressed, isNull);
       expect(find.byTooltip('Pick the form first — Sheet, Strip, Coil or Roll'), findsWidgets);
       expect(saved, isEmpty);
     });
 
-    testWidgets('picking Strip: the Width goes on the strip, and Strip is what is saved', (tester) async {
+    testWidgets('picking Strip: Strip is what is saved', (tester) async {
       final saved = await fresh(tester);
       await tester.tap(find.byKey(const ValueKey<String>('raw-form-strip')));
       await tester.pumpAndSettle();
@@ -1241,7 +1196,6 @@ void main() {
       final record = saved.single;
       expect(record.formChosen, isTrue);
       expect(record.lastForm, RawForm.strip, reason: 'not the Sheet it opened on');
-      expect(record.formOf(RawForm.strip).widthNm, 120 * 1000000);
     });
 
     testWidgets('the Sheet it opened on is picked by a click on it too', (tester) async {
