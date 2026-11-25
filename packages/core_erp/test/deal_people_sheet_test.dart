@@ -11,7 +11,9 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/developed_for.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
+import 'package:core_erp/features/items/presentation/widgets/deal_message_dialog.dart';
 import 'package:core_erp/features/items/presentation/widgets/deal_people_form.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:flutter/material.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/sheet/sheet.dart';
@@ -453,10 +455,55 @@ void main() {
       expect(controller.dealPartyName, 'Havells');
     });
 
-    testWidgets('a person line has its own Save, then Edit', (tester) async {
+    // User, 2026-11-25: "don't have two buttons in company for saving, just
+    // give one button to save whole company at once".
+    testWidgets('a person line has no Save of its own; the company has one', (tester) async {
       await tester.runAsync(open);
-      // Room for a whole person line: the fields are the sheet's own size now.
       tester.view.physicalSize = const Size(1400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      pickGoldMedal();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ListenableBuilder(
+              listenable: controller,
+              builder: (context, child) => DealPeopleForm(
+                controller: controller,
+                partSaved: true,
+                onSaveDeal: () async => true,
+              ),
+            ),
+          ),
+        ),
+      ));
+      // People on file come in saved: Edit, and nothing to save.
+      expect(find.byKey(const ValueKey('deal_person_0_edit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('deal_person_0_unsaved')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('deal_add_person')));
+      await tester.pump();
+      await tester.enterText(find.byKey(const ValueKey('deal_person_2_person.name')), 'Meena');
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('deal_person_2_save')), findsNothing,
+          reason: 'no Save contact any more');
+      expect(find.byKey(const ValueKey('deal_person_2_unsaved')), findsOneWidget);
+      expect(find.text('Not saved yet'), findsOneWidget);
+      expect(controller.peopleUnsaved, isTrue);
+      // One save button for the whole company, and only one.
+      expect(find.byKey(const ValueKey('deal_save')), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((w) => w is AppButton && w.label.startsWith('Save')),
+        findsOneWidget,
+      );
+    });
+
+    // Owner, 2026-11-25: a Draft beside the Email ID of whoever the deal
+    // was done with.
+    testWidgets('Draft is off until Dealt with is ticked, then opens a draft to them', (tester) async {
+      await tester.runAsync(open);
+      tester.view.physicalSize = const Size(1600, 1200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       pickGoldMedal();
@@ -470,21 +517,58 @@ void main() {
           ),
         ),
       ));
-      // People on file come in saved: Edit, not Save.
-      expect(find.byKey(const ValueKey('deal_person_0_edit')), findsOneWidget);
+      ButtonStyleButton draft() =>
+          tester.widget<ButtonStyleButton>(find.byKey(const ValueKey('deal_person_0_draft')));
+      expect(find.byKey(const ValueKey('deal_person_0_draft')), findsOneWidget, reason: 'drawn, not hidden');
+      expect(draft().onPressed, isNull, reason: 'not dealt with yet');
+
+      await tester.tap(find.byKey(const ValueKey('deal_person_0_tick')));
+      await tester.pump();
+      expect(draft().onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('deal_person_0_draft')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DealMessageDialog), findsOneWidget);
+      expect(find.text('Kissan Jain · Gold Medal'), findsOneWidget);
+      expect(find.byKey(const ValueKey('deal-message-email')), findsOneWidget);
+      expect(find.byKey(const ValueKey('deal-message-whatsapp')), findsOneWidget);
+    });
+
+    testWidgets('a person added to a saved company still has the company Save', (tester) async {
+      await tester.runAsync(open);
+      tester.view.physicalSize = const Size(1400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      pickGoldMedal();
+      // The company line as saved: nothing on it changed since.
+      controller.clientVendorController.markRowSaved(
+        controller.clientVendorController.row,
+        1,
+        sent: Map.of(controller.clientVendorController.draft.values),
+      );
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ListenableBuilder(
+              listenable: controller,
+              builder: (context, child) => DealPeopleForm(
+                controller: controller,
+                partSaved: true,
+                onSaveDeal: () async => true,
+              ),
+            ),
+          ),
+        ),
+      ));
+      expect(find.byKey(const ValueKey('deal_edit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('deal_save')), findsNothing, reason: 'nothing to save');
 
       await tester.tap(find.byKey(const ValueKey('deal_add_person')));
       await tester.pump();
       await tester.enterText(find.byKey(const ValueKey('deal_person_2_person.name')), 'Meena');
       await tester.pump();
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const ValueKey('deal_person_2_save')));
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-      });
-      await tester.pump();
-
-      expect(clientsRepo.added.single.name, 'Meena');
-      expect(find.byKey(const ValueKey('deal_person_2_edit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('deal_save')), findsOneWidget,
+          reason: 'never a typed person with no way to save them');
+      expect(find.byKey(const ValueKey('deal_edit')), findsOneWidget);
     });
 
     testWidgets('Designation offers what people were given before, and takes a new one',

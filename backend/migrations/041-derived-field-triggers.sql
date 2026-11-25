@@ -242,3 +242,36 @@ BEGIN
   WHERE OLD.order_item_id IS NOT NULL;
 END;
 
+
+-- A group's item count (the "N items" pill on every group row and card) is
+-- derived from items. Added to the group list after this file was written,
+-- without its trigger: adding a part left every replica showing its group
+-- empty (found 2026-11-25 — a rivet in Rivets, "0 items"). Announced on
+-- insert, on a move between groups or an archive/unarchive (both groups), and
+-- on delete. Existing databases get these at boot: initDb re-creates every
+-- changelog/derived trigger defined here (restoreChangelogTriggers).
+
+CREATE TRIGGER IF NOT EXISTS trg_derived_items_groups_ai
+  AFTER INSERT ON items
+BEGIN
+  INSERT INTO changelog (table_name, record_id, event_type, timestamp)
+  VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now'));
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_derived_items_groups_au
+  AFTER UPDATE OF group_id, is_archived ON items
+  WHEN OLD.group_id IS NOT NEW.group_id OR OLD.is_archived IS NOT NEW.is_archived
+BEGIN
+  INSERT INTO changelog (table_name, record_id, event_type, timestamp)
+  VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now'));
+  INSERT INTO changelog (table_name, record_id, event_type, timestamp)
+  SELECT 'groups', OLD.group_id, 'UPDATE', datetime('now')
+  WHERE OLD.group_id IS NOT NEW.group_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_derived_items_groups_ad
+  AFTER DELETE ON items
+BEGIN
+  INSERT INTO changelog (table_name, record_id, event_type, timestamp)
+  VALUES ('groups', OLD.group_id, 'UPDATE', datetime('now'));
+END;

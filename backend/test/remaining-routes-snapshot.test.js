@@ -28,7 +28,7 @@ const MODULE_SEGMENTS = new Set([
   'materials', 'material-types', 'production', 'production-runs', 'production-scrap', 'freelancer-jobs',
   'freelancer-portal', 'delete-requests', 'trash', 'issues', 'process-stages', 'process-routes', 'links',
   'entity-variations', 'variations', 'kernel', 'party-contacts', 'item-sheet-properties', 'conversion-overrides',
-  'waste-audit', 'report-groups', 'sub-contractors', 'dev',
+  'waste-audit', 'report-groups', 'sub-contractors', 'dev', 'raw-materials',
 ]);
 
 // Never called: they stream forever, wipe the database the later calls need, or

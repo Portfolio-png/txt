@@ -14,6 +14,7 @@ class GroupDto {
     this.unitId,
     this.itemFormSections,
     required this.isArchived,
+    this.systemKey,
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
@@ -31,6 +32,7 @@ class GroupDto {
   final int? unitId;
   final ItemFormSections? itemFormSections;
   final bool isArchived;
+  final String? systemKey;
   final int usageCount;
   final List<GroupCoverItem> coverItems;
   final int itemCount;
@@ -53,6 +55,7 @@ class GroupDto {
             )
           : null,
       isArchived: json['isArchived'] as bool? ?? false,
+      systemKey: json['systemKey'] as String?,
       usageCount: json['usageCount'] as int? ?? 0,
       coverItems: (json['coverItems'] as List<dynamic>? ?? const <dynamic>[])
           .whereType<Map>()
@@ -80,6 +83,7 @@ class GroupDto {
       unitId: unitId,
       itemFormSections: itemFormSections,
       isArchived: isArchived,
+      systemKey: systemKey,
       usageCount: usageCount,
       coverItems: coverItems,
       coverBasis: coverBasis,

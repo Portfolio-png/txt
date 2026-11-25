@@ -49,11 +49,11 @@ enum DevelopedForKind {
   }
 
   String get label => switch (this) {
-        DevelopedForKind.none => 'Not recorded',
-        DevelopedForKind.self => 'Self (in-house)',
-        DevelopedForKind.client => 'Client',
-        DevelopedForKind.contractor => 'Contractor',
-      };
+    DevelopedForKind.none => 'Not recorded',
+    DevelopedForKind.self => 'Self (in-house)',
+    DevelopedForKind.client => 'Client',
+    DevelopedForKind.contractor => 'Contractor',
+  };
 }
 
 class DevelopedFor {
@@ -168,11 +168,12 @@ class DevelopedFor {
 
   /// Who you actually deal with, for a one-line summary. Empty for self.
   String get partyName => switch (kind) {
-        DevelopedForKind.contractor =>
-          subContractorName.isNotEmpty ? subContractorName : companyName,
-        DevelopedForKind.client => companyName.isNotEmpty ? companyName : clientName,
-        _ => '',
-      };
+    DevelopedForKind.contractor =>
+      subContractorName.isNotEmpty ? subContractorName : companyName,
+    DevelopedForKind.client =>
+      companyName.isNotEmpty ? companyName : clientName,
+    _ => '',
+  };
 
   DevelopedFor copyWith({
     DevelopedForKind? kind,
@@ -206,8 +207,9 @@ class DevelopedFor {
       // means something — `copyWith(clientId: null)` cannot say "remove it".
       clientId: clearClientId ? null : (clientId ?? this.clientId),
       clientName: clientName ?? this.clientName,
-      subContractorId:
-          clearSubContractorId ? null : (subContractorId ?? this.subContractorId),
+      subContractorId: clearSubContractorId
+          ? null
+          : (subContractorId ?? this.subContractorId),
       subContractorName: subContractorName ?? this.subContractorName,
       companyName: companyName ?? this.companyName,
       contactName: contactName ?? this.contactName,
@@ -215,8 +217,9 @@ class DevelopedFor {
       phone: phone ?? this.phone,
       email: email ?? this.email,
       at: clearAt ? null : (at ?? this.at),
-      quotationAmount:
-          clearQuotationAmount ? null : (quotationAmount ?? this.quotationAmount),
+      quotationAmount: clearQuotationAmount
+          ? null
+          : (quotationAmount ?? this.quotationAmount),
       costAmount: clearCostAmount ? null : (costAmount ?? this.costAmount),
       contactIds: clearContactIds
           ? null
@@ -273,10 +276,7 @@ class DevelopedFor {
       // Reading it as [] would let a reply from an older server clear every
       // tick on the next save.
       contactIds: json['contactIds'] is List
-          ? [
-              for (final id in json['contactIds'] as List)
-                (id as num).toInt(),
-            ]
+          ? [for (final id in json['contactIds'] as List) (id as num).toInt()]
           : null,
       contacts: [
         for (final row in (json['contacts'] as List? ?? const []))
@@ -293,7 +293,9 @@ class DevelopedFor {
       // Left null when unparseable rather than defaulted to now(): a fabricated
       // timestamp would be printed as if someone had entered it.
       at: (rawAt == null || rawAt.isEmpty) ? null : DateTime.tryParse(rawAt),
-      quotationAmount: rawQuotation == null ? null : (rawQuotation as num).toDouble(),
+      quotationAmount: rawQuotation == null
+          ? null
+          : (rawQuotation as num).toDouble(),
       costAmount: rawCost == null ? null : (rawCost as num).toDouble(),
     );
   }
@@ -305,15 +307,15 @@ class DevelopedFor {
   /// `at` goes out in UTC: the server stores a full ISO instant and the client
   /// is the only thing that knows the local offset.
   Map<String, dynamic> toJson() => {
-        'kind': kind.wire,
-        'clientId': clientId,
-        // Absent when null, so a save that never showed people keeps them.
-        if (contactIds != null) 'contactIds': contactIds,
-        'subContractorId': subContractorId,
-        'at': at?.toUtc().toIso8601String(),
-        'quotationAmount': quotationAmount,
-        'costAmount': costAmount,
-      };
+    'kind': kind.wire,
+    'clientId': clientId,
+    // Absent when null, so a save that never showed people keeps them.
+    if (contactIds != null) 'contactIds': contactIds,
+    'subContractorId': subContractorId,
+    'at': at?.toUtc().toIso8601String(),
+    'quotationAmount': quotationAmount,
+    'costAmount': costAmount,
+  };
 
   /// One company of the part's `deals`: what [toJson] sends, without the
   /// cost — the cost is the part's, sent once on its developedFor.
@@ -357,20 +359,20 @@ class DevelopedFor {
 
   @override
   int get hashCode => Object.hash(
-        kind,
-        clientId,
-        clientName,
-        subContractorId,
-        subContractorName,
-        companyName,
-        contactName,
-        designation,
-        phone,
-        email,
-        at,
-        quotationAmount,
-        costAmount,
-        contactIds == null ? null : Object.hashAll(contactIds!),
-        Object.hashAll(contacts),
-      );
+    kind,
+    clientId,
+    clientName,
+    subContractorId,
+    subContractorName,
+    companyName,
+    contactName,
+    designation,
+    phone,
+    email,
+    at,
+    quotationAmount,
+    costAmount,
+    contactIds == null ? null : Object.hashAll(contactIds!),
+    Object.hashAll(contacts),
+  );
 }

@@ -727,7 +727,8 @@ class CreateItemRequest {
       if (developedForClientId != null)
         'developedForClientId': developedForClientId,
       if (developedFor != null) 'developedFor': developedFor!.toJson(),
-      if (deals != null) 'deals': [for (final deal in deals!) deal.toDealJson()],
+      if (deals != null)
+        'deals': [for (final deal in deals!) deal.toDealJson()],
       'availableForPurchase': availableForPurchase,
       'blankWidthMm': blankWidthMm,
       'blankHeightMm': blankHeightMm,
@@ -888,7 +889,8 @@ class UpdateItemRequest {
       if (developedForClientId != null)
         'developedForClientId': developedForClientId,
       if (developedFor != null) 'developedFor': developedFor!.toJson(),
-      if (deals != null) 'deals': [for (final deal in deals!) deal.toDealJson()],
+      if (deals != null)
+        'deals': [for (final deal in deals!) deal.toDealJson()],
       'availableForPurchase': availableForPurchase,
       'blankWidthMm': blankWidthMm,
       'blankHeightMm': blankHeightMm,

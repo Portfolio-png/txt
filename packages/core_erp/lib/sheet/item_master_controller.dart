@@ -11,7 +11,11 @@ import 'sheet_engine.dart';
 /// One identity cell (Alloy, Thickness) a saved part had and the row now says.
 @immutable
 class IdentityCellChange {
-  const IdentityCellChange({required this.label, required this.from, required this.to});
+  const IdentityCellChange({
+    required this.label,
+    required this.from,
+    required this.to,
+  });
 
   final String label;
   final String from;
@@ -23,7 +27,12 @@ class IdentityCellChange {
 /// number), so it is not saved over the old one without asking.
 @immutable
 class IdentityChange {
-  const IdentityChange({required this.row, required this.partName, required this.partCode, required this.cells});
+  const IdentityChange({
+    required this.row,
+    required this.partName,
+    required this.partCode,
+    required this.cells,
+  });
 
   final int row;
   final String partName;
@@ -117,6 +126,7 @@ class ItemMasterController extends ChangeNotifier {
   bool _isExternal = true;
   String _activeSection = 'group_item';
   bool _isEditing = false;
+
   /// The id the legacy whole-sheet [saveItem] last wrote. The item sheet
   /// commits row by row and reads its part off the cursor row instead.
   int? _savedItemId;
@@ -481,8 +491,7 @@ class ItemMasterController extends ChangeNotifier {
     final writer = binding;
     if (writer == null) return;
     final draft = groupItemController.draft;
-    if (identical(draft.rowKey, _dealRowKey) &&
-        draft.entityId == _dealPartId) {
+    if (identical(draft.rowKey, _dealRowKey) && draft.entityId == _dealPartId) {
       return;
     }
     if (!force && _dealDirty && dealRow != null) {
@@ -494,7 +503,9 @@ class ItemMasterController extends ChangeNotifier {
     _claimDeal(draft);
     final id = draft.entityId;
     final entity = id == null ? null : writer.entityById(id);
-    final deals = entity == null ? const <({SheetDraft deal, Set<int> ticked})>[] : writer.dealsOf(entity);
+    final deals = entity == null
+        ? const <({SheetDraft deal, Set<int> ticked})>[]
+        : writer.dealsOf(entity);
     if (deals.isEmpty) {
       // A saved part with no outside party opens with the section off; a new
       // row starts as the screen does, ready for one.
@@ -518,7 +529,8 @@ class ItemMasterController extends ChangeNotifier {
   /// Asked before a saved part's Alloy or Thickness is changed (the guard).
   /// Unset — a headless use of the controller — the save goes ahead as it
   /// always did.
-  Future<IdentityChangeChoice> Function(IdentityChange change)? confirmIdentityChange;
+  Future<IdentityChangeChoice> Function(IdentityChange change)?
+  confirmIdentityChange;
 
   /// The identity cells of [draft] that differ from the part it was opened
   /// from, or empty. Only a saved part can change its identity; a new row
@@ -553,19 +565,29 @@ class ItemMasterController extends ChangeNotifier {
     if (cells.isEmpty) return draft;
     final nameColumn = _columnBoundTo(SheetBindsTo.name);
     final codeColumn = _columnBoundTo(SheetBindsTo.partCode);
-    final choice = await ask(IdentityChange(
-      row: groupItemController.indexOfDraft(draft),
-      partName: nameColumn == null ? '' : SheetEngine.cellLabel(draft, nameColumn.id),
-      partCode: codeColumn == null ? '' : SheetEngine.cellLabel(_storedDraftOf(draft) ?? draft, codeColumn.id),
-      cells: cells,
-    ));
+    final choice = await ask(
+      IdentityChange(
+        row: groupItemController.indexOfDraft(draft),
+        partName: nameColumn == null
+            ? ''
+            : SheetEngine.cellLabel(draft, nameColumn.id),
+        partCode: codeColumn == null
+            ? ''
+            : SheetEngine.cellLabel(
+                _storedDraftOf(draft) ?? draft,
+                codeColumn.id,
+              ),
+        cells: cells,
+      ),
+    );
     switch (choice) {
       case IdentityChangeChoice.changeThisPart:
         return draft;
       case IdentityChangeChoice.makeNewPart:
         return _asNewPart(draft);
       case IdentityChangeChoice.cancel:
-        _statusBarMessage = 'Not saved — ${cells.map((c) => c.label).join(' and ')} kept as typed; '
+        _statusBarMessage =
+            'Not saved — ${cells.map((c) => c.label).join(' and ')} kept as typed; '
             'the part on file is unchanged.';
         notifyListeners();
         return null;
@@ -613,8 +635,11 @@ class ItemMasterController extends ChangeNotifier {
       _resetDeal();
     }
     final nameColumn = _columnBoundTo(SheetBindsTo.name);
-    final name = nameColumn == null ? 'part' : SheetEngine.cellLabel(placed, nameColumn.id);
-    _statusBarMessage = 'Making a new $name on row ${at + 1} — the one on file is unchanged.';
+    final name = nameColumn == null
+        ? 'part'
+        : SheetEngine.cellLabel(placed, nameColumn.id);
+    _statusBarMessage =
+        'Making a new $name on row ${at + 1} — the one on file is unchanged.';
     notifyListeners();
     return placed;
   }
@@ -694,7 +719,8 @@ class ItemMasterController extends ChangeNotifier {
     // cell before the end. Such a row stays new; if it is saved still equal
     // to a part on file, the duplicate rule says so and offers that part.
     for (final column in sheet.sheetDef.columns) {
-      if (column.identity && SheetEngine.cellLabel(draft, column.id).isEmpty) return;
+      if (column.identity && SheetEngine.cellLabel(draft, column.id).isEmpty)
+        return;
     }
     final key = SheetEngine.identityKeyOf(sheet.sheetDef, draft, nameColumn.id);
     final wanted = SheetEngine.identityValue(name);
@@ -703,7 +729,9 @@ class ItemMasterController extends ChangeNotifier {
       if (SheetEngine.identityValue(option.label) != wanted) continue;
       final stored = writer.draftForId(option.id);
       if (stored == null) continue;
-      if (SheetEngine.identityKeyOf(sheet.sheetDef, stored, nameColumn.id) != key) continue;
+      if (SheetEngine.identityKeyOf(sheet.sheetDef, stored, nameColumn.id) !=
+          key)
+        continue;
       final entity = writer.entityById(option.id);
       if (entity == null) continue;
       _matching = true;
@@ -943,7 +971,8 @@ class ItemMasterController extends ChangeNotifier {
     final shown = _dealRows;
     var same = deals.length == shown.length;
     for (var i = 0; same && i < deals.length; i += 1) {
-      same = _sameValues(deals[i].deal, shown[i]) &&
+      same =
+          _sameValues(deals[i].deal, shown[i]) &&
           setEquals(deals[i].ticked, _ticksOfDeal(shown[i]));
     }
     if (same) return;
@@ -956,7 +985,10 @@ class ItemMasterController extends ChangeNotifier {
   void _applyDeals(List<({SheetDraft deal, Set<int> ticked})> deals) {
     _ticksByDeal
       ..clear()
-      ..addEntries([for (final d in deals) MapEntry<Object, Set<int>>(d.deal.rowKey, d.ticked)]);
+      ..addEntries([
+        for (final d in deals)
+          MapEntry<Object, Set<int>>(d.deal.rowKey, d.ticked),
+      ]);
     clientVendorController.loadRecords([for (final d in deals) d.deal]);
     for (final draft in clientVendorController.drafts) {
       draft.markClean();
@@ -992,7 +1024,8 @@ class ItemMasterController extends ChangeNotifier {
   /// The company tabs: every deal row that holds something.
   List<SheetDraft> get _dealRows => [
     for (var row = 0; row < clientVendorController.rowCount; row += 1)
-      if (!clientVendorController.isRowBlank(row)) clientVendorController.draftAt(row),
+      if (!clientVendorController.isRowBlank(row))
+        clientVendorController.draftAt(row),
   ];
 
   int get dealTabCount => clientVendorController.rowCount;
@@ -1081,7 +1114,9 @@ class ItemMasterController extends ChangeNotifier {
         final column = clientVendorController.sheetDef.columnBoundTo(
           SheetBindsTo.developedForParty,
         );
-        return column == null ? 'a company' : (draft.get(column.id)?.optionLabel ?? 'a company');
+        return column == null
+            ? 'a company'
+            : (draft.get(column.id)?.optionLabel ?? 'a company');
       }
     }
     return null;
@@ -1255,6 +1290,10 @@ class ItemMasterController extends ChangeNotifier {
     }
     return false;
   }
+
+  /// Whether a person has been typed or changed and not saved — the company's
+  /// one Save then shows even on a saved company line (DealPeopleForm).
+  bool get peopleUnsaved => _peopleDirty;
 
   /// Whether anything in the people table has been typed and not yet saved.
   bool get _peopleDirty {
@@ -1627,7 +1666,8 @@ class ItemMasterController extends ChangeNotifier {
       }
       final twice = dealCompanyTwice;
       if (twice != null) {
-        _rowErrors[draft] = '$twice is on two company tabs — one tab per company.';
+        _rowErrors[draft] =
+            '$twice is on two company tabs — one tab per company.';
         _statusBarMessage = _rowErrors[draft]!;
         notifyListeners();
         return false;
@@ -1821,7 +1861,8 @@ class ItemMasterController extends ChangeNotifier {
         }
         // A row made into a new part may now be a duplicate of another.
         if (!groupItemController.validateAll()) {
-          _statusBarMessage = 'A new part repeats one already on file — change one of its properties.';
+          _statusBarMessage =
+              'A new part repeats one already on file — change one of its properties.';
           notifyListeners();
           return false;
         }

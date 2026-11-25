@@ -38,6 +38,7 @@ class _HeaderCellState extends State<HeaderCell> {
   void _setMenuOpen(bool open) {
     if (mounted && _menuOpen != open) setState(() => _menuOpen = open);
   }
+
   bool _isEditingName = false;
   late final TextEditingController _nameController;
   final FocusNode _focusNode = FocusNode();
@@ -107,7 +108,10 @@ class _HeaderCellState extends State<HeaderCell> {
           color: SoftErpTheme.shellSurface,
           border: Border(
             right: const BorderSide(color: SoftErpTheme.border),
-            bottom: const BorderSide(color: SoftErpTheme.borderStrong, width: 1.5),
+            bottom: const BorderSide(
+              color: SoftErpTheme.borderStrong,
+              width: 1.5,
+            ),
             top: isFocused
                 ? const BorderSide(color: SoftErpTheme.accent, width: 2)
                 : BorderSide.none,
@@ -213,9 +217,7 @@ class _HeaderCellState extends State<HeaderCell> {
                 ? Icons.subdirectory_arrow_right_rounded
                 : Icons.crop_square_rounded,
             size: 14,
-            color: isDependent
-                ? SoftErpTheme.infoText
-                : SoftErpTheme.textMuted,
+            color: isDependent ? SoftErpTheme.infoText : SoftErpTheme.textMuted,
           ),
         ),
       ),

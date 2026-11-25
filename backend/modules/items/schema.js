@@ -111,6 +111,43 @@ async function createSchema({ run, all, get }) {
     )
   `);
 
+  // A raw-material item's spec (a rivet's dimensions …), one row per item;
+  // see modules/items/rivets.js. spec_key makes the same spec twice
+  // impossible; code is the shop's own code for it, unique when given.
+  await run(`
+    CREATE TABLE IF NOT EXISTS raw_material_specs (
+      item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+      form_key TEXT NOT NULL,
+      spec_key TEXT NOT NULL,
+      code TEXT NOT NULL DEFAULT '',
+      values_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_material_specs_spec ON raw_material_specs(form_key, spec_key)',
+  );
+  await run(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_material_specs_code ON raw_material_specs(form_key, code COLLATE NOCASE) WHERE code != ''",
+  );
+
+  // What a vendor charges for an item. Integer micro-rupees, so a rivet at
+  // ₹0.035 a piece is exact; basis is piece, hundred, thousand or kg. The
+  // vendor is asked of the vendors module, not joined.
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_vendor_prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      vendor_id INTEGER NOT NULL,
+      price_micro_rupees INTEGER NOT NULL CHECK (price_micro_rupees >= 0),
+      basis TEXT NOT NULL DEFAULT 'piece',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_id, vendor_id, basis)
+    )
+  `);
+
   await run(`
     CREATE TABLE IF NOT EXISTS item_dies (
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -383,6 +420,7 @@ async function createSchema({ run, all, get }) {
       parent_group_id INTEGER REFERENCES groups(id),
       unit_id INTEGER REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
+      system_key TEXT DEFAULT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -413,6 +451,15 @@ async function createSchema({ run, all, get }) {
   // Per-group override of the item-form section layout (JSON). NULL means the
   // creating user's own default applies.
   await ensureColumnExists('groups', 'item_form_sections', 'TEXT DEFAULT NULL');
+  // A group the app itself ships — Raw Materials and its Rivets / Springs —
+  // carries a stable key. The seed finds it by this key, not its name, so a
+  // wipe brings back the same group and code keyed to it (the rivet form) never
+  // depends on spelling. NULL on every group a user makes. See
+  // modules/items/system-groups.js.
+  await ensureColumnExists('groups', 'system_key', 'TEXT DEFAULT NULL');
+  await run(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_system_key ON groups(system_key) WHERE system_key IS NOT NULL',
+  );
 
   await ensureColumnExists('items', 'photo_url', 'TEXT DEFAULT NULL');
   // Single CAD / drawing file attached to the item master. The S3 object key is

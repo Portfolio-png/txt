@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/domain/part_name.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../data/process_route_service.dart';
 import '../../domain/part_route.dart';
@@ -35,7 +37,18 @@ class RouteCreationPanel extends StatefulWidget {
     this.pendingPartName,
     this.madeHereItemIds = const <int>{},
     this.onDirtyChanged,
+    this.sheetStyle = false,
+    this.onMinimise,
   });
+
+  /// Folds the panel into the host's route card, keeping what is laid out —
+  /// Cancel throws it away, this does not. Null: no Minimise button.
+  final VoidCallback? onMinimise;
+
+  /// Drawn inside the item sheet: its Save is the sheet's own
+  /// ([SheetSaveButton] — "Save Route", outlined) so every Save on the sheet
+  /// looks alike, and Cmd/Ctrl+Enter stays the sheet's Done.
+  final bool sheetStyle;
 
   final ValueChanged<CreatedRecord> onSaved;
   final VoidCallback onCancel;
@@ -204,7 +217,8 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
     final sure = await showConfirmDialog(
       context,
       title: 'Delete the stage “${stage.name}”?',
-      message: 'It leaves the stage list for everyone. Routes already '
+      message:
+          'It leaves the stage list for everyone. Routes already '
           'versioned still read it.',
       confirmLabel: 'Delete',
     );
@@ -214,7 +228,10 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
       if (!mounted) return true;
       setState(() {
         _error = null;
-        _stages = [for (final known in _stages) if (known.id != stage.id) known];
+        _stages = [
+          for (final known in _stages)
+            if (known.id != stage.id) known,
+        ];
       });
       return true;
     } on ProcessRouteException catch (error) {
@@ -336,11 +353,13 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
 
   static String _titleOf(ItemDefinition item) {
     final display = item.displayName.trim();
-    if (display.isNotEmpty) return display;
+    if (display.isNotEmpty) return partNameWithNo(display, item.partNo);
     final name = item.name.trim();
-    if (name.isNotEmpty) return name;
+    if (name.isNotEmpty) return partNameWithNo(name, item.partNo);
     final code = item.partCode.trim();
-    return code.isNotEmpty ? code : 'Part ${item.id}';
+    return code.isNotEmpty
+        ? partNameWithNo(code, item.partNo)
+        : 'Part ${item.id}';
   }
 
   /// The host has a part on screen that is not saved yet.
@@ -387,18 +406,22 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
           ? await service.declareVersion(partId, _steps)
           : await service.save(partId, _steps);
       if (!mounted) return;
-      final saved = routes.where((r) => r.isActive).firstOrNull ??
+      final saved =
+          routes.where((r) => r.isActive).firstOrNull ??
           (routes.isNotEmpty ? routes.first : null);
       final title = _partTitle(partId);
-      widget.onSaved(CreatedRecord(
-        id: '${saved?.id ?? partId}',
-        // The pipeline's own name when the server sent one ("Primary Group
-        // Brackets Patti PGBP1 pipeline v2"), else the part's.
-        title: saved == null
-            ? '$title route'
-            : '${saved.name.trim().isEmpty ? '$title route' : saved.name.trim()} v${saved.version}',
-        subtitle: '${_steps.length} ${_steps.length == 1 ? 'stage' : 'stages'}',
-      ));
+      widget.onSaved(
+        CreatedRecord(
+          id: '${saved?.id ?? partId}',
+          // The pipeline's own name when the server sent one ("Primary Group
+          // Brackets Patti PGBP1 pipeline v2"), else the part's.
+          title: saved == null
+              ? '$title route'
+              : '${saved.name.trim().isEmpty ? '$title route' : saved.name.trim()} v${saved.version}',
+          subtitle:
+              '${_steps.length} ${_steps.length == 1 ? 'stage' : 'stages'}',
+        ),
+      );
       setState(() {
         _saving = false;
         _active = saved;
@@ -507,7 +530,10 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
             '“${widget.pendingPartName!.trim()}” isn’t saved yet. Save the '
             'part and it is picked here — your stages are kept.',
             key: const ValueKey<String>('route_part_pending'),
-            style: const TextStyle(fontSize: 14, color: SoftErpTheme.warningText),
+            style: const TextStyle(
+              fontSize: 14,
+              color: SoftErpTheme.warningText,
+            ),
           ),
         ],
         const SizedBox(height: 18),
@@ -538,27 +564,57 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
             onDeleteStage: _service == null ? null : _deleteStage,
           ),
         const SizedBox(height: 18),
-        Row(
-          children: [
-            AppButton(
-              label: 'Cancel',
-              variant: AppButtonVariant.secondary,
-              onPressed: widget.onCancel,
-            ),
-            const SizedBox(width: 12),
-            // Drawn disabled rather than hidden: a Save that vanishes until a
-            // part is picked reads as a broken card, and the tooltip says what
-            // is missing.
-            Tooltip(
-              message: _saveTooltip,
-              child: AppButton(
-                label: _active == null ? 'Save route' : 'Save as new version',
+        // Inside the sheet: Cancel and Save Route at the sheet's save column,
+        // under Save Part (owner, 2026-11-25). On its own: as it was.
+        if (widget.sheetStyle)
+          SheetSaveRow(
+            children: [
+              if (widget.onMinimise != null) ...[
+                TextButton.icon(
+                  key: const ValueKey<String>('route_minimise'),
+                  onPressed: widget.onMinimise,
+                  icon: const Icon(Icons.unfold_less_rounded, size: 18),
+                  label: const Text('Minimise', style: TextStyle(fontSize: 14)),
+                ),
+                const SizedBox(width: 4),
+              ],
+              TextButton(
+                key: const ValueKey<String>('route_cancel'),
+                onPressed: widget.onCancel,
+                child: const Text('Cancel', style: TextStyle(fontSize: 14)),
+              ),
+              const SizedBox(width: 8),
+              SheetSaveButton(
+                buttonKey: const ValueKey<String>('route_save'),
+                label: _active == null ? 'Save Route' : 'Save as New Version',
+                tooltip: _saveTooltip,
                 isLoading: _saving,
                 onPressed: _canSave ? _save : null,
               ),
-            ),
-          ],
-        ),
+            ],
+          )
+        else
+          Row(
+            children: [
+              AppButton(
+                label: 'Cancel',
+                variant: AppButtonVariant.secondary,
+                onPressed: widget.onCancel,
+              ),
+              const SizedBox(width: 12),
+              // Drawn disabled rather than hidden: a Save that vanishes until
+              // a part is picked reads as a broken card, and the tooltip says
+              // what is missing.
+              Tooltip(
+                message: _saveTooltip,
+                child: AppButton(
+                  label: _active == null ? 'Save route' : 'Save as new version',
+                  isLoading: _saving,
+                  onPressed: _canSave ? _save : null,
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

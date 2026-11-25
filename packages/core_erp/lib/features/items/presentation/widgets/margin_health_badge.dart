@@ -103,7 +103,9 @@ class _MarginHealthBadgeState extends State<MarginHealthBadge> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _known ? Icons.trending_up_rounded : Icons.help_outline_rounded,
+                    _known
+                        ? Icons.trending_up_rounded
+                        : Icons.help_outline_rounded,
                     size: 16,
                     color: _tone,
                   ),
@@ -169,55 +171,55 @@ class _MarginHealthBadgeState extends State<MarginHealthBadge> {
   }
 
   List<Widget> _knownLines() => [
-        const Text(
-          'Development margin',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: SoftErpTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'What was quoted for making this part’s dies, against what that '
-          'cost.',
-          style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
-        ),
-        const SizedBox(height: 12),
-        _line('Quoted', rupeeStamp(widget.quotation!)),
-        _line('Cost', rupeeStamp(widget.cost!)),
-        const Divider(height: 18),
-        _line(
-          _net >= 0 ? 'Made' : 'Lost',
-          rupeeStamp(_net.abs()),
-          tone: _tone,
-          bold: true,
-        ),
-      ];
+    const Text(
+      'Development margin',
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: SoftErpTheme.textPrimary,
+      ),
+    ),
+    const SizedBox(height: 4),
+    const Text(
+      'What was quoted for making this part’s dies, against what that '
+      'cost.',
+      style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+    ),
+    const SizedBox(height: 12),
+    _line('Quoted', rupeeStamp(widget.quotation!)),
+    _line('Cost', rupeeStamp(widget.cost!)),
+    const Divider(height: 18),
+    _line(
+      _net >= 0 ? 'Made' : 'Lost',
+      rupeeStamp(_net.abs()),
+      tone: _tone,
+      bold: true,
+    ),
+  ];
 
   List<Widget> _unknownLines() => [
-        const Text(
-          'Not costed',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: SoftErpTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          widget.quotation == null
-              ? 'No quotation recorded for this part’s development, so '
-                  'there is nothing to measure against.'
-              : widget.quotation! <= 0
-                  ? 'The quotation is zero, so a percentage would divide by '
-                      'nothing.'
-                  : 'A quotation of ${rupeeStamp(widget.quotation!)} is '
-                      'recorded, but what the die making cost has not been '
-                      'entered. An unknown cost is not a cost of nothing.',
-          style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
-        ),
-      ];
+    const Text(
+      'Not costed',
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: SoftErpTheme.textPrimary,
+      ),
+    ),
+    const SizedBox(height: 4),
+    Text(
+      widget.quotation == null
+          ? 'No quotation recorded for this part’s development, so '
+                'there is nothing to measure against.'
+          : widget.quotation! <= 0
+          ? 'The quotation is zero, so a percentage would divide by '
+                'nothing.'
+          : 'A quotation of ${rupeeStamp(widget.quotation!)} is '
+                'recorded, but what the die making cost has not been '
+                'entered. An unknown cost is not a cost of nothing.',
+      style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+    ),
+  ];
 
   Widget _line(String label, String value, {Color? tone, bool bold = false}) {
     return Padding(

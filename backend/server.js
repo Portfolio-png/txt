@@ -255,6 +255,9 @@ desk.register('items', {
     'dies.rows.get',
     'pipelines.templates.row',
     'units.rows.get',
+    // A rivet's vendor prices name the vendor, and a price for a vendor
+    // that does not exist is refused (modules/items/rivets.js).
+    'vendors.rows.get',
     'clients.rows.get',
     'clients.subContractors.row',
     'clients.contacts.byIds',
@@ -2577,9 +2580,10 @@ function moduleOpForRequest(req) {
     module = 'pipelines'; // the pipeline designer is a master
   } else if (['production', 'production-runs', 'pipeline-runs', 'telemetry'].includes(seg)) {
     module = 'production';
-  } else if (['items', 'groups', 'process-stages', 'item-sheet-properties'].includes(seg)) {
+  } else if (['items', 'groups', 'process-stages', 'item-sheet-properties', 'raw-materials'].includes(seg)) {
     // process-stages is the stage master a part's route is built from;
-    // item-sheet-properties are the item sheet's own property columns (061).
+    // item-sheet-properties are the item sheet's own property columns (061);
+    // raw-materials are the rivet (and later spring) forms.
     // Declared here deliberately: an unmapped segment returns null, which
     // skips the per-module CRUD check entirely.
     module = 'items';
@@ -3889,6 +3893,12 @@ async function initDb() {
   const pinsHashed = await pinHasher.migrate({ all, run });
   if (pinsHashed) console.log(`Hashed ${pinsHashed} staff login PIN(s) that were stored as plain text.`);
 
+  // Every changelog and derived trigger the migration files define, made sure
+  // of on every boot (all IF NOT EXISTS). The migration runner applies a file
+  // once, so a trigger added to one later reached an existing database only
+  // after a Clear Data — the items → group count trigger (041) was the case.
+  await restoreChangelogTriggers();
+
   dbReady = true;
 }
 async function ensurePrimaryGroupAndUnit() {
@@ -3901,10 +3911,13 @@ async function ensurePrimaryGroupAndUnit() {
   if (!group) {
     await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Primary Group', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
   }
-  let rawMaterials = await get('SELECT id FROM groups WHERE name = "Raw Materials" AND parent_group_id IS NULL');
-  if (!rawMaterials) {
-    await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Raw Materials', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
-  }
+  // Raw Materials and its default subgroups (Rivets, Springs). They are
+  // looked up by system_key, so they come back the same after a wipe. The
+  // unit ladder goes first: Clear Data and Factory Reset empty `units`, and
+  // the subgroups are counted in Pieces. Both calls are idempotent.
+  await seedStandardUnitFamilies({ run, get, all });
+  const piece = await get("SELECT id FROM units WHERE LOWER(name) = 'piece' OR symbol = 'Pc' ORDER BY is_base DESC, id LIMIT 1");
+  await ensureSystemGroups({ run, get }, { primary: unit.id, piece: piece?.id ?? unit.id });
   let scrapGroup = await get('SELECT id FROM groups WHERE name = "Scrap" AND parent_group_id IS NULL');
   if (!scrapGroup) {
     await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Scrap', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
@@ -10521,6 +10534,7 @@ async function ensureDemoOrderRunLinks() {
 
 const seedEstablishedYear = require('./modules/scenarios/established-year');
 const { seedStandardUnitFamilies } = require('./modules/units/service');
+const { ensureSystemGroups } = require('./modules/items/system-groups');
 const { registerUnitRoutes } = require('./modules/units/routes');
 const runPendingMigrations = require('./modules/kernel/migration-runner');
 
@@ -10767,6 +10781,20 @@ desk.register('items', {
     }),
     materialTypes: require('./modules/items/material-types').createMaterialTypeWork({ get, all, run, logChange }),
     sheetProperties: require('./modules/items/sheet-properties').createSheetPropertyWork({ get, all, run }),
+    rivets: require('./modules/items/rivets').createRivetWork({
+      get,
+      all,
+      run,
+      desk: desk.as('items'),
+      saveItem,
+    }),
+    springs: require('./modules/items/springs').createSpringWork({
+      get,
+      all,
+      run,
+      desk: desk.as('items'),
+      saveItem,
+    }),
   }),
 });
 registerItemsModuleRoutes({
@@ -11254,6 +11282,11 @@ registerDieMakerRoutes({
 // The item sheet's property columns (061) — gated as `items`.
 const registerItemSheetPropertyRoutes = require('./modules/items/sheet-properties');
 registerItemSheetPropertyRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
+
+// The rivet form (Docs/architecture/13-raw-material-forms.md) — gated as `items`.
+require('./modules/items/rivets').registerRivetRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
+// And the spring form, on the same engine (modules/items/raw-forms.js).
+require('./modules/items/springs').registerSpringRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
 
 // --- the routes outside the fifteen business modules ----------------------
 //

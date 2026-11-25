@@ -49,21 +49,24 @@ Future<bool> showDiePhotoGallery(
   BuildContext context, {
   required String dieId,
   required String dieName,
-}) =>
-    showPartPhotoGallery(context, itemId: dieId, partName: dieName, owner: PhotoOwner.die);
+}) => showPartPhotoGallery(
+  context,
+  itemId: dieId,
+  partName: dieName,
+  owner: PhotoOwner.die,
+);
 
 /// A machine's photos — up to [maxPartPhotos], as a part's (2026-11-24).
 Future<bool> showMachinePhotoGallery(
   BuildContext context, {
   required String machineId,
   required String machineName,
-}) =>
-    showPartPhotoGallery(
-      context,
-      itemId: machineId,
-      partName: machineName,
-      owner: PhotoOwner.machine,
-    );
+}) => showPartPhotoGallery(
+  context,
+  itemId: machineId,
+  partName: machineName,
+  owner: PhotoOwner.machine,
+);
 
 class PartPhotoGallery extends StatefulWidget {
   const PartPhotoGallery({
@@ -151,10 +154,18 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         _error = null;
         if (first) {
           _photos = [for (final photo in fresh) StoredGalleryPhoto(photo)];
-          _main = _photos.whereType<StoredGalleryPhoto>().where((p) => p.photo.isPrimary).firstOrNull ??
+          _main =
+              _photos
+                  .whereType<StoredGalleryPhoto>()
+                  .where((p) => p.photo.isPrimary)
+                  .firstOrNull ??
               _photos.firstOrNull;
           _openedMain = _idOf(_main);
-          _shown = _photos.whereType<StoredGalleryPhoto>().where((p) => p.photo.id == widget.openOn).firstOrNull ??
+          _shown =
+              _photos
+                  .whereType<StoredGalleryPhoto>()
+                  .where((p) => p.photo.id == widget.openOn)
+                  .firstOrNull ??
               _main;
           return;
         }
@@ -175,11 +186,13 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
   void _merge(List<PartPhoto> fresh) {
     // Not changed here: the main photo follows the server's (a first photo
     // from the phone becomes the main one there).
-    final mainUntouched = _main is! StagedGalleryPhoto && _idOf(_main) == _openedMain;
+    final mainUntouched =
+        _main is! StagedGalleryPhoto && _idOf(_main) == _openedMain;
     final freshIds = {for (final photo in fresh) photo.id};
     final kept = <GalleryPhoto>[
       for (final photo in _photos)
-        if (photo is! StoredGalleryPhoto || freshIds.contains(photo.photo.id)) photo,
+        if (photo is! StoredGalleryPhoto || freshIds.contains(photo.photo.id))
+          photo,
     ];
     final known = {
       for (final photo in kept)
@@ -193,11 +206,20 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
     _photos = kept;
     final serverMain = fresh.where((p) => p.isPrimary).firstOrNull?.id;
     if (mainUntouched && serverMain != null) {
-      _main = _photos.whereType<StoredGalleryPhoto>().where((p) => p.photo.id == serverMain).firstOrNull ?? _main;
+      _main =
+          _photos
+              .whereType<StoredGalleryPhoto>()
+              .where((p) => p.photo.id == serverMain)
+              .firstOrNull ??
+          _main;
       _openedMain = serverMain;
     }
     if (!_photos.contains(_main)) {
-      _main = _photos.whereType<StoredGalleryPhoto>().where((p) => p.photo.isPrimary).firstOrNull ??
+      _main =
+          _photos
+              .whereType<StoredGalleryPhoto>()
+              .where((p) => p.photo.isPrimary)
+              .firstOrNull ??
           _photos.firstOrNull;
     }
     if (!_photos.contains(_shown)) _shown = _main;
@@ -227,7 +249,9 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
     if (photo is StoredGalleryPhoto) _removed.add(photo.photo.id);
     if (identical(_main, photo)) _main = _photos.firstOrNull;
     if (identical(_shown, photo)) {
-      _shown = _photos.isEmpty ? null : _photos[at.clamp(0, _photos.length - 1)];
+      _shown = _photos.isEmpty
+          ? null
+          : _photos[at.clamp(0, _photos.length - 1)];
     }
   });
 
@@ -247,7 +271,9 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
                 ? 'Phone photos are not set up in this app.'
                 : 'Your phone opens the camera with this ${widget._thing}\'s details. '
                       'The shot appears here as soon as it is taken.',
-            onTap: requests == null ? null : () => Navigator.of(dialogContext).pop('phone'),
+            onTap: requests == null
+                ? null
+                : () => Navigator.of(dialogContext).pop('phone'),
           ),
           PhotoChoiceTile(
             key: const ValueKey<String>('gallery_from_computer'),
@@ -288,13 +314,17 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         // refuse the type group outright.
         : await openFiles(
             acceptedTypeGroups: const [
-              XTypeGroup(label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp']),
+              XTypeGroup(
+                label: 'Images',
+                extensions: ['png', 'jpg', 'jpeg', 'webp'],
+              ),
             ],
           );
     if (files.isEmpty || !mounted) return;
     final taken = files.take(_room).toList();
     final staged = [
-      for (final file in taken) StagedGalleryPhoto(file, await file.readAsBytes()),
+      for (final file in taken)
+        StagedGalleryPhoto(file, await file.readAsBytes()),
     ];
     if (!mounted) return;
     setState(() {
@@ -379,7 +409,9 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         children: [
           InteractiveViewer(
             maxScale: 6,
-            child: Center(child: _picture(photo, big: true, fit: BoxFit.contain)),
+            child: Center(
+              child: _picture(photo, big: true, fit: BoxFit.contain),
+            ),
           ),
           Positioned(
             top: 8,
@@ -395,7 +427,10 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
     ),
   );
 
-  static PhotoRequestsProvider? _requestsOf(BuildContext context, {bool listen = false}) {
+  static PhotoRequestsProvider? _requestsOf(
+    BuildContext context, {
+    bool listen = false,
+  }) {
     try {
       return Provider.of<PhotoRequestsProvider>(context, listen: listen);
     } on ProviderNotFoundException {
@@ -415,7 +450,10 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         autofocus: true,
         child: Dialog(
           key: const ValueKey<String>('part_photo_gallery'),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
           backgroundColor: SoftErpTheme.cardSurface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
@@ -471,7 +509,10 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
             Text(
               'Each view of the ${widget._thing} — front, side, a section. The main one is '
               'shown wherever the ${widget._thing} is.',
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -526,16 +567,27 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.photo_library_outlined, size: 44, color: SoftErpTheme.textMuted),
+                  Icon(
+                    Icons.photo_library_outlined,
+                    size: 44,
+                    color: SoftErpTheme.textMuted,
+                  ),
                   SizedBox(height: 8),
                   Text(
                     'No photos yet',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: SoftErpTheme.textSecondary),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: SoftErpTheme.textSecondary,
+                    ),
                   ),
                   SizedBox(height: 2),
                   Text(
                     'Add one with a + slot',
-                    style: TextStyle(fontSize: 14, color: SoftErpTheme.textMuted),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: SoftErpTheme.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -554,12 +606,23 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
                   left: 10,
                   top: 10,
                   child: isMain
-                      ? _pill('Main photo', Icons.star_rounded, SoftErpTheme.accent, Colors.white)
+                      ? _pill(
+                          'Main photo',
+                          Icons.star_rounded,
+                          SoftErpTheme.accent,
+                          Colors.white,
+                        )
                       : FilledButton.tonalIcon(
                           key: const ValueKey<String>('gallery_make_main'),
                           onPressed: _saving ? null : () => _makeMain(shown),
-                          icon: const Icon(Icons.star_outline_rounded, size: 18),
-                          label: const Text('Make main', style: TextStyle(fontSize: 14)),
+                          icon: const Icon(
+                            Icons.star_outline_rounded,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Make main',
+                            style: TextStyle(fontSize: 14),
+                          ),
                         ),
                 ),
                 if (_tagOf(shown) case final tag?)
@@ -588,7 +651,8 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
           spacing: gap,
           runSpacing: gap,
           children: [
-            for (final cell in cells) SizedBox(width: side, height: side, child: cell),
+            for (final cell in cells)
+              SizedBox(width: side, height: side, child: cell),
           ],
         );
       },
@@ -635,7 +699,9 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
             key: ValueKey<String>('gallery_remove_$index'),
             icon: Icons.close_rounded,
             color: SoftErpTheme.dangerText,
-            tooltip: photo is StagedGalleryPhoto ? 'Take this one out' : 'Remove this view',
+            tooltip: photo is StagedGalleryPhoto
+                ? 'Take this one out'
+                : 'Remove this view',
             onTap: _saving ? null : () => _remove(photo),
           ),
         ),
@@ -648,9 +714,18 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
   /// "New" for a file held here until Save; "From phone" for a shot that
   /// arrived while the gallery was open.
   Widget? _tagOf(GalleryPhoto photo) => switch (photo) {
-    StagedGalleryPhoto() => _pill('New — saved on Save', null, SoftErpTheme.warningBg, SoftErpTheme.warningText),
-    StoredGalleryPhoto(fromPhone: true) =>
-      _pill('From phone', Icons.phone_iphone_rounded, SoftErpTheme.infoBg, SoftErpTheme.infoText),
+    StagedGalleryPhoto() => _pill(
+      'New — saved on Save',
+      null,
+      SoftErpTheme.warningBg,
+      SoftErpTheme.warningText,
+    ),
+    StoredGalleryPhoto(fromPhone: true) => _pill(
+      'From phone',
+      Icons.phone_iphone_rounded,
+      SoftErpTheme.infoBg,
+      SoftErpTheme.infoText,
+    ),
     _ => null,
   };
 
@@ -671,7 +746,11 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
           ),
           onTap: enabled ? _add : null,
           child: const Center(
-            child: Icon(Icons.add_rounded, size: 36, color: SoftErpTheme.accent),
+            child: Icon(
+              Icons.add_rounded,
+              size: 36,
+              color: SoftErpTheme.accent,
+            ),
           ),
         ),
       ),
@@ -692,11 +771,19 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.phone_iphone_rounded, size: 28, color: SoftErpTheme.warningText),
+            Icon(
+              Icons.phone_iphone_rounded,
+              size: 28,
+              color: SoftErpTheme.warningText,
+            ),
             SizedBox(height: 4),
             Text(
               'On phone',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: SoftErpTheme.warningText),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: SoftErpTheme.warningText,
+              ),
             ),
           ],
         ),
@@ -720,7 +807,11 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         children: [
           Text(
             '${_photos.length} of $maxPartPhotos',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: SoftErpTheme.textPrimary),
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
           ),
           const SizedBox(height: 4),
           if (full)
@@ -729,14 +820,21 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_rounded, size: 18, color: SoftErpTheme.textMuted),
+                  Icon(
+                    Icons.add_rounded,
+                    size: 18,
+                    color: SoftErpTheme.textMuted,
+                  ),
                   SizedBox(width: 2),
                   Flexible(
                     child: Text(
                       'Remove one to add',
                       key: ValueKey<String>('gallery_full'),
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: SoftErpTheme.textMuted),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: SoftErpTheme.textMuted,
+                      ),
                     ),
                   ),
                 ],
@@ -761,7 +859,10 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
               ? Text(
                   error,
                   key: const ValueKey<String>('gallery_error'),
-                  style: const TextStyle(fontSize: 14, color: SoftErpTheme.dangerText),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: SoftErpTheme.dangerText,
+                  ),
                 )
               : const Text(
                   'Click a photo to see it big · ★ makes it the main one',
@@ -784,17 +885,28 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   )
                 : const Icon(Icons.check_rounded, size: 18),
-            label: Text(_saving ? 'Saving…' : 'Save', style: const TextStyle(fontSize: 14)),
+            label: Text(
+              _saving ? 'Saving…' : 'Save',
+              style: const TextStyle(fontSize: 14),
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _pill(String text, IconData? icon, Color background, Color foreground) => Container(
+  Widget _pill(
+    String text,
+    IconData? icon,
+    Color background,
+    Color foreground,
+  ) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
       color: background,
@@ -809,7 +921,11 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         ],
         Text(
           text,
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: foreground),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: foreground,
+          ),
         ),
       ],
     ),
@@ -840,12 +956,25 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
 
   /// A photo kept by the part loads its thumbnail in a slot and the photo
   /// big; one picked here is drawn from memory.
-  static Widget _picture(GalleryPhoto photo, {required bool big, required BoxFit fit}) {
-    Widget broken(BuildContext context, Object error, StackTrace? stack) => const Center(
-      child: Icon(Icons.broken_image_outlined, size: 32, color: SoftErpTheme.textMuted),
-    );
+  static Widget _picture(
+    GalleryPhoto photo, {
+    required bool big,
+    required BoxFit fit,
+  }) {
+    Widget broken(BuildContext context, Object error, StackTrace? stack) =>
+        const Center(
+          child: Icon(
+            Icons.broken_image_outlined,
+            size: 32,
+            color: SoftErpTheme.textMuted,
+          ),
+        );
     return switch (photo) {
-      StagedGalleryPhoto(:final bytes) => Image.memory(bytes, fit: fit, errorBuilder: broken),
+      StagedGalleryPhoto(:final bytes) => Image.memory(
+        bytes,
+        fit: fit,
+        errorBuilder: broken,
+      ),
       StoredGalleryPhoto(:final photo) => Image.network(
         big ? photo.viewUrl : photo.thumbUrl,
         fit: fit,
@@ -854,7 +983,11 @@ class _PartPhotoGalleryState extends State<PartPhotoGallery> {
         // photo arrives.
         frameBuilder: big
             ? (context, child, frame, sync) => frame == null && !sync
-                  ? Image.network(photo.thumbUrl, fit: fit, errorBuilder: broken)
+                  ? Image.network(
+                      photo.thumbUrl,
+                      fit: fit,
+                      errorBuilder: broken,
+                    )
                   : child
             : null,
       ),

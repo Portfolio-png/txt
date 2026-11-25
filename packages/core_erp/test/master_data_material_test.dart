@@ -37,7 +37,8 @@ void main() {
                 onPressed: () async {
                   result = await showMasterDataDialog(
                     context,
-                    baseline: baseline,
+                    // A plan whose form was picked.
+                    baseline: baseline.copyWith(formChosen: true),
                     materials: master,
                     pipelineName: 'Shear → Press',
                     itemName: 'MS Bracket',
@@ -105,7 +106,7 @@ void main() {
                 onPressed: () async {
                   saved = await showMasterDataDialog(
                     context,
-                    baseline: planned,
+                    baseline: planned.copyWith(formChosen: true),
                     materials: materials,
                     pipelineName: 'Shear → Press',
                   );
@@ -216,7 +217,10 @@ void main() {
                 onPressed: () async {
                   saved = await showMasterDataDialog(
                     context,
-                    baseline: planned.copyWith(materialName: 'Aluminium'),
+                    baseline: planned.copyWith(
+                      materialName: 'Aluminium',
+                      formChosen: true,
+                    ),
                     materials: materials,
                     pipelineName: 'Shear → Press',
                   );

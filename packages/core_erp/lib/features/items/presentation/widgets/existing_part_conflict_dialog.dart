@@ -61,8 +61,18 @@ class ExistingPartConflictDialog extends StatelessWidget {
     final local = dt.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${two(local.day)} ${months[local.month - 1]} ${local.year}, '
         '${two(local.hour)}:${two(local.minute)}';
@@ -105,20 +115,23 @@ class ExistingPartConflictDialog extends StatelessWidget {
     final partName = (part?.displayName.trim().isNotEmpty ?? false)
         ? part!.displayName.trim()
         : ((part?.name.trim().isNotEmpty ?? false)
-            ? part!.name.trim()
-            : draftTitle);
+              ? part!.name.trim()
+              : draftTitle);
     final partCode = (part?.partCode.trim().isNotEmpty ?? false)
         ? part!.partCode.trim()
         : draftCode;
-    final partNo = part?.partNo ??
+    final partNo =
+        part?.partNo ??
         sheet.sheetDef.columns
             .where((c) => c.kind == ColumnKind.seq)
             .map((c) => draft.get(c.id)?.intValue)
             .firstOrNull;
 
-    final resolvedGroupPath = groupPath ??
+    final resolvedGroupPath =
+        groupPath ??
         (part != null
-            ? (context.read<GroupsProvider?>()?.findById(part!.groupId)?.name ?? '')
+            ? (context.read<GroupsProvider?>()?.findById(part!.groupId)?.name ??
+                  '')
             : '');
 
     var specs = _itemProperties(part);
@@ -130,8 +143,8 @@ class ExistingPartConflictDialog extends StatelessWidget {
     final otherTabDraft = hasTabOpen ? sheet.draftAt(openInTabRow!) : null;
     final otherTabTitle = hasTabOpen
         ? (otherTabDraft != null
-            ? PartTabs.titleOf(sheet, otherTabDraft)
-            : 'Tab ${openInTabRow! + 1}')
+              ? PartTabs.titleOf(sheet, otherTabDraft)
+              : 'Tab ${openInTabRow! + 1}')
         : '';
 
     return Dialog(
@@ -183,14 +196,21 @@ class ExistingPartConflictDialog extends StatelessWidget {
                         Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFFFBEB),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFFDE68A)),
+                                border: Border.all(
+                                  color: const Color(0xFFFDE68A),
+                                ),
                               ),
                               child: Text(
-                                hasTabOpen ? 'TAB ALREADY OPEN' : 'PART ALREADY EXISTS',
+                                hasTabOpen
+                                    ? 'TAB ALREADY OPEN'
+                                    : 'PART ALREADY EXISTS',
                                 style: const TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w800,
@@ -212,7 +232,8 @@ class ExistingPartConflictDialog extends StatelessWidget {
                             color: SoftErpTheme.textPrimary,
                           ),
                         ),
-                        if (conflictMessage != null && conflictMessage!.isNotEmpty) ...[
+                        if (conflictMessage != null &&
+                            conflictMessage!.isNotEmpty) ...[
                           const SizedBox(height: 3),
                           Text(
                             conflictMessage!,
@@ -229,7 +250,9 @@ class ExistingPartConflictDialog extends StatelessWidget {
                     icon: const Icon(Icons.close_rounded, size: 20),
                     tooltip: 'Close',
                     color: const Color(0xFF64748B),
-                    onPressed: () => Navigator.of(context).pop(ExistingPartConflictAction.cancel),
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pop(ExistingPartConflictAction.cancel),
                   ),
                 ],
               ),
@@ -240,7 +263,10 @@ class ExistingPartConflictDialog extends StatelessWidget {
             // Content body
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 18,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -255,7 +281,11 @@ class ExistingPartConflictDialog extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.tab_rounded, color: Color(0xFF4F46E5), size: 22),
+                            const Icon(
+                              Icons.tab_rounded,
+                              color: Color(0xFF4F46E5),
+                              size: 22,
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -286,9 +316,9 @@ class ExistingPartConflictDialog extends StatelessWidget {
                               label: 'Switch to Tab ${openInTabRow! + 1}',
                               icon: Icons.arrow_forward_rounded,
                               dense: true,
-                              onPressed: () => Navigator.of(context).pop(
-                                ExistingPartConflictAction.switchToTab,
-                              ),
+                              onPressed: () => Navigator.of(
+                                context,
+                              ).pop(ExistingPartConflictAction.switchToTab),
                             ),
                           ],
                         ),
@@ -315,20 +345,27 @@ class ExistingPartConflictDialog extends StatelessWidget {
                                   height: 72,
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFF8FAFC),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: (part?.photoUrl.isNotEmpty ?? false)
                                       ? Image.network(
                                           part!.photoUrl,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) => const Center(
-                                            child: Icon(
-                                              Icons.broken_image_outlined,
-                                              size: 28,
-                                              color: Color(0xFF94A3B8),
-                                            ),
-                                          ),
+                                          errorBuilder:
+                                              (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) => const Center(
+                                                child: Icon(
+                                                  Icons.broken_image_outlined,
+                                                  size: 28,
+                                                  color: Color(0xFF94A3B8),
+                                                ),
+                                              ),
                                         )
                                       : const Center(
                                           child: Icon(
@@ -371,15 +408,22 @@ class ExistingPartConflictDialog extends StatelessWidget {
                                     Wrap(
                                       spacing: 8,
                                       runSpacing: 6,
-                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
                                       children: [
                                         if (partCode.isNotEmpty)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFFF3E8FF),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: const Color(0xFFE9D5FF)),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: const Color(0xFFE9D5FF),
+                                              ),
                                             ),
                                             child: Text(
                                               partCode,
@@ -392,11 +436,17 @@ class ExistingPartConflictDialog extends StatelessWidget {
                                           ),
                                         if (partNo != null)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFFEFF6FF),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: const Color(0xFFBFDBFE)),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: const Color(0xFFBFDBFE),
+                                              ),
                                             ),
                                             child: Text(
                                               'Part #$partNo',
@@ -422,7 +472,11 @@ class ExistingPartConflictDialog extends StatelessWidget {
                                     // Creator line
                                     Row(
                                       children: [
-                                        const Icon(Icons.account_circle_outlined, size: 15, color: Color(0xFF64748B)),
+                                        const Icon(
+                                          Icons.account_circle_outlined,
+                                          size: 15,
+                                          color: Color(0xFF64748B),
+                                        ),
                                         const SizedBox(width: 6),
                                         Expanded(
                                           child: Text(
@@ -455,15 +509,23 @@ class ExistingPartConflictDialog extends StatelessWidget {
                               children: [
                                 for (final entry in specs.entries)
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                      border: Border.all(
+                                        color: const Color(0xFFCBD5E1),
+                                      ),
                                     ),
                                     child: Text.rich(
                                       TextSpan(
-                                        style: const TextStyle(fontSize: 12, color: SoftErpTheme.textPrimary),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: SoftErpTheme.textPrimary,
+                                        ),
                                         children: [
                                           TextSpan(
                                             text: '${entry.key}: ',
@@ -474,7 +536,9 @@ class ExistingPartConflictDialog extends StatelessWidget {
                                           ),
                                           TextSpan(
                                             text: entry.value,
-                                            style: const TextStyle(fontWeight: FontWeight.w600),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -497,14 +561,22 @@ class ExistingPartConflictDialog extends StatelessWidget {
                       trailing: part != null
                           ? Text(
                               '${part!.dies.length} ${part!.dies.length == 1 ? 'die' : 'dies'}',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w600,
+                              ),
                             )
                           : null,
                       child: (part != null && part!.dies.isNotEmpty)
                           ? Column(
                               children: [
                                 for (int i = 0; i < part!.dies.length; i++) ...[
-                                  if (i > 0) const Divider(height: 12, color: Color(0xFFE2E8F0)),
+                                  if (i > 0)
+                                    const Divider(
+                                      height: 12,
+                                      color: Color(0xFFE2E8F0),
+                                    ),
                                   _buildDieItem(part!.dies[i]),
                                 ],
                               ],
@@ -532,14 +604,26 @@ class ExistingPartConflictDialog extends StatelessWidget {
                       trailing: part != null
                           ? Text(
                               '${part!.machines.length} ${part!.machines.length == 1 ? 'machine' : 'machines'}',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w600,
+                              ),
                             )
                           : null,
                       child: (part != null && part!.machines.isNotEmpty)
                           ? Column(
                               children: [
-                                for (int i = 0; i < part!.machines.length; i++) ...[
-                                  if (i > 0) const Divider(height: 12, color: Color(0xFFE2E8F0)),
+                                for (
+                                  int i = 0;
+                                  i < part!.machines.length;
+                                  i++
+                                ) ...[
+                                  if (i > 0)
+                                    const Divider(
+                                      height: 12,
+                                      color: Color(0xFFE2E8F0),
+                                    ),
                                   _buildMachineItem(part!.machines[i]),
                                 ],
                               ],
@@ -573,7 +657,9 @@ class ExistingPartConflictDialog extends StatelessWidget {
                     label: 'Cancel',
                     variant: AppButtonVariant.secondary,
                     dense: true,
-                    onPressed: () => Navigator.of(context).pop(ExistingPartConflictAction.cancel),
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pop(ExistingPartConflictAction.cancel),
                   ),
                   const SizedBox(width: 12),
                   // All the room left of Cancel, buttons to the right; they
@@ -581,46 +667,46 @@ class ExistingPartConflictDialog extends StatelessWidget {
                   // (A Spacer beside a Flexible gave them only half the room.)
                   Expanded(
                     child: Wrap(
-                        alignment: WrapAlignment.end,
-                        runSpacing: 8,
-                        children: [
-                          if (part != null && !hasTabOpen) ...[
-                            AppButton(
-                              key: const ValueKey('conflict_open_part_btn'),
-                              label: 'Open in Sheet',
-                              icon: Icons.open_in_new_rounded,
-                              variant: AppButtonVariant.secondary,
-                              dense: true,
-                              onPressed: () => Navigator.of(context).pop(
-                                ExistingPartConflictAction.openExistingPart,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                          if (nextPartNo != null) ...[
-                            AppButton(
-                              key: const ValueKey('conflict_use_next_no_btn'),
-                              label: 'Use Next Part No ($nextPartNo)',
-                              icon: Icons.auto_awesome_rounded,
-                              variant: AppButtonVariant.primary,
-                              dense: true,
-                              onPressed: () => Navigator.of(context).pop(
-                                ExistingPartConflictAction.useNextPartNo,
-                              ),
-                            ),
-                          ] else if (hasTabOpen) ...[
-                            AppButton(
-                              key: const ValueKey('conflict_primary_switch_btn'),
-                              label: 'Switch to Tab ${openInTabRow! + 1}',
-                              icon: Icons.arrow_forward_rounded,
-                              variant: AppButtonVariant.primary,
-                              dense: true,
-                              onPressed: () => Navigator.of(context).pop(
-                                ExistingPartConflictAction.switchToTab,
-                              ),
-                            ),
-                          ],
+                      alignment: WrapAlignment.end,
+                      runSpacing: 8,
+                      children: [
+                        if (part != null && !hasTabOpen) ...[
+                          AppButton(
+                            key: const ValueKey('conflict_open_part_btn'),
+                            label: 'Open in Sheet',
+                            icon: Icons.open_in_new_rounded,
+                            variant: AppButtonVariant.secondary,
+                            dense: true,
+                            onPressed: () => Navigator.of(
+                              context,
+                            ).pop(ExistingPartConflictAction.openExistingPart),
+                          ),
+                          const SizedBox(width: 10),
                         ],
+                        if (nextPartNo != null) ...[
+                          AppButton(
+                            key: const ValueKey('conflict_use_next_no_btn'),
+                            label: 'Use Next Part No ($nextPartNo)',
+                            icon: Icons.auto_awesome_rounded,
+                            variant: AppButtonVariant.primary,
+                            dense: true,
+                            onPressed: () => Navigator.of(
+                              context,
+                            ).pop(ExistingPartConflictAction.useNextPartNo),
+                          ),
+                        ] else if (hasTabOpen) ...[
+                          AppButton(
+                            key: const ValueKey('conflict_primary_switch_btn'),
+                            label: 'Switch to Tab ${openInTabRow! + 1}',
+                            icon: Icons.arrow_forward_rounded,
+                            variant: AppButtonVariant.primary,
+                            dense: true,
+                            onPressed: () => Navigator.of(
+                              context,
+                            ).pop(ExistingPartConflictAction.switchToTab),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -739,7 +825,9 @@ class ExistingPartConflictDialog extends StatelessWidget {
             border: Border.all(color: const Color(0xFFBAE6FD)),
           ),
           child: Text(
-            machine.assetId.isNotEmpty ? machine.assetId : 'Mach #${machine.id}',
+            machine.assetId.isNotEmpty
+                ? machine.assetId
+                : 'Mach #${machine.id}',
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,

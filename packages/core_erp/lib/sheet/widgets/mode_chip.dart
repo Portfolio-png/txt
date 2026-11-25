@@ -22,11 +22,7 @@ class ModeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, bg, fg) = switch (mode) {
-      ValueMode.auto => (
-        'Auto',
-        SoftErpTheme.infoBg,
-        SoftErpTheme.infoText,
-      ),
+      ValueMode.auto => ('Auto', SoftErpTheme.infoBg, SoftErpTheme.infoText),
       ValueMode.edit => (
         'Edit',
         SoftErpTheme.warningBg,

@@ -83,10 +83,9 @@ class MiniTable extends StatelessWidget {
   /// Tabbing into "Set on save" on the way to the next row is a stop nobody
   /// wants.
   List<ColumnDef> get _traversal => [
-        for (final column
-            in traversalColumns.isEmpty ? columns : traversalColumns)
-          if (!column.isStamp) column,
-      ];
+    for (final column in traversalColumns.isEmpty ? columns : traversalColumns)
+      if (!column.isStamp) column,
+  ];
 
   void _advance(ColumnDef from, int row, int step) {
     final order = _traversal;
@@ -142,167 +141,174 @@ class MiniTable extends StatelessWidget {
       child: SizedBox(
         width: _naturalWidth - 2,
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Table Group Title bar
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: const BoxDecoration(
-              color: SoftErpTheme.sectionSurface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(SoftErpTheme.radiusSm - 1)),
-              border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Flexible, so a long heading ellipsises instead of widening
-                // the table. It needs the SizedBox above to have bounded the
-                // width — Flexible under unbounded width throws.
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: SoftErpTheme.textSecondary,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Table Group Title bar
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: const BoxDecoration(
+                color: SoftErpTheme.sectionSurface,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(SoftErpTheme.radiusSm - 1),
                 ),
-                if (onAddHeaderAction != null) ...[
-                  const SizedBox(width: 6),
-                  InkWell(
-                    key: ValueKey(
-                      'mini_table_add_${tableGroup.name}_${controller.sheetDef.key}',
-                    ),
-                    onTap: onAddHeaderAction,
-                    borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: SoftErpTheme.accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-                      ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        size: 13,
-                        color: SoftErpTheme.accent,
+                border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Flexible, so a long heading ellipsises instead of widening
+                  // the table. It needs the SizedBox above to have bounded the
+                  // width — Flexible under unbounded width throws.
+                  Flexible(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: SoftErpTheme.textSecondary,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ),
-                ],
-              ],
-            ),
-          ),
-
-          // Header Row over multiple Value Rows
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (rowStatusBuilder != null)
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: metrics.gutterWidth,
-                      height: metrics.headerHeight,
-                      decoration: const BoxDecoration(
-                        border: Border(
-                          right: BorderSide(color: SoftErpTheme.border),
-                          bottom: BorderSide(color: SoftErpTheme.border),
+                  if (onAddHeaderAction != null) ...[
+                    const SizedBox(width: 6),
+                    InkWell(
+                      key: ValueKey(
+                        'mini_table_add_${tableGroup.name}_${controller.sheetDef.key}',
+                      ),
+                      onTap: onAddHeaderAction,
+                      borderRadius: BorderRadius.circular(
+                        SoftErpTheme.radiusXs,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: SoftErpTheme.accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(
+                            SoftErpTheme.radiusXs,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.add_rounded,
+                          size: 13,
+                          color: SoftErpTheme.accent,
                         ),
                       ),
                     ),
-                    for (
-                      int r = 0;
-                      r <
-                          (rowDrafts.isNotEmpty
-                              ? rowDrafts.length
-                              : controller.rowCount);
-                      r++
-                    )
+                  ],
+                ],
+              ),
+            ),
+
+            // Header Row over multiple Value Rows
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (rowStatusBuilder != null)
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Container(
                         width: metrics.gutterWidth,
-                        height: metrics.rowHeight,
-                        alignment: Alignment.center,
+                        height: metrics.headerHeight,
                         decoration: const BoxDecoration(
                           border: Border(
                             right: BorderSide(color: SoftErpTheme.border),
                             bottom: BorderSide(color: SoftErpTheme.border),
                           ),
                         ),
-                        // The gutter selects its row too — the way onto a saved
-                        // row whose cells are closed. Buttons in it still win
-                        // their own taps.
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            controller.selectRow(r);
-                            onRowSelected?.call(r);
-                          },
-                          child: SizedBox.expand(
-                            child: Center(child: rowStatusBuilder!(r)),
+                      ),
+                      for (
+                        int r = 0;
+                        r <
+                            (rowDrafts.isNotEmpty
+                                ? rowDrafts.length
+                                : controller.rowCount);
+                        r++
+                      )
+                        Container(
+                          width: metrics.gutterWidth,
+                          height: metrics.rowHeight,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              right: BorderSide(color: SoftErpTheme.border),
+                              bottom: BorderSide(color: SoftErpTheme.border),
+                            ),
+                          ),
+                          // The gutter selects its row too — the way onto a saved
+                          // row whose cells are closed. Buttons in it still win
+                          // their own taps.
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              controller.selectRow(r);
+                              onRowSelected?.call(r);
+                            },
+                            child: SizedBox.expand(
+                              child: Center(child: rowStatusBuilder!(r)),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-              ...columns.map((col) {
-                final w = _widthForKind(col.kind);
-                // Rows from the controller. `rowDrafts` stays as an override
-                // for a host rendering a projection, but it is no longer the
-                // only way extra rows exist — and it is no longer read-only.
-                final rowCount = rowDrafts.isNotEmpty
-                    ? rowDrafts.length
-                    : controller.rowCount;
+                    ],
+                  ),
+                ...columns.map((col) {
+                  final w = _widthForKind(col.kind);
+                  // Rows from the controller. `rowDrafts` stays as an override
+                  // for a host rendering a projection, but it is no longer the
+                  // only way extra rows exist — and it is no longer read-only.
+                  final rowCount = rowDrafts.isNotEmpty
+                      ? rowDrafts.length
+                      : controller.rowCount;
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    HeaderCell(
-                      column: col,
-                      sheetDef: sheetDef,
-                      controller: controller,
-                      width: w,
-                      metrics: metrics,
-                    ),
-                    for (int r = 0; r < rowCount; r++)
-                      ValueCell(
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      HeaderCell(
                         column: col,
                         sheetDef: sheetDef,
                         controller: controller,
                         width: w,
-                        cellValue: rowDrafts.isNotEmpty
-                            ? rowDrafts[r][col.id]
-                            : null,
-                        rowIndex: r,
-                        // Without this every cell measured itself against the
-                        // fallback while the status gutter used the real
-                        // metrics, and the icons slid off their rows.
                         metrics: metrics,
-                        isSelected: r == _selectedRow,
-                        isHighlighted:
-                            (highlightedColumnIds?.contains(col.id) ?? false) &&
-                            (r == _selectedRow),
-                        // Selecting a row moves the controller's cursor, so the
-                        // next keystroke lands where the click did.
-                        onTap: () {
-                          controller.selectRow(r);
-                          onRowSelected?.call(r);
-                        },
-                        onAdvance: () => _advance(col, r, 1),
-                        onBack: () => _advance(col, r, -1),
                       ),
-                  ],
-                );
-              }),
-            ],
-          ),
-        ],
+                      for (int r = 0; r < rowCount; r++)
+                        ValueCell(
+                          column: col,
+                          sheetDef: sheetDef,
+                          controller: controller,
+                          width: w,
+                          cellValue: rowDrafts.isNotEmpty
+                              ? rowDrafts[r][col.id]
+                              : null,
+                          rowIndex: r,
+                          // Without this every cell measured itself against the
+                          // fallback while the status gutter used the real
+                          // metrics, and the icons slid off their rows.
+                          metrics: metrics,
+                          isSelected: r == _selectedRow,
+                          isHighlighted:
+                              (highlightedColumnIds?.contains(col.id) ??
+                                  false) &&
+                              (r == _selectedRow),
+                          // Selecting a row moves the controller's cursor, so the
+                          // next keystroke lands where the click did.
+                          onTap: () {
+                            controller.selectRow(r);
+                            onRowSelected?.call(r);
+                          },
+                          onAdvance: () => _advance(col, r, 1),
+                          onBack: () => _advance(col, r, -1),
+                        ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ],
         ),
       ),
     );

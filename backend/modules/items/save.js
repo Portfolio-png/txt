@@ -13,6 +13,7 @@ const partIdentity = require('./part-identity');
 const { buildVariantPartCode, groupLineage, nextPartNo, propertyCodeFor } = partIdentity;
 const { mergeItemPropertySchema, normalizePropertyKey } = require('./property-keys');
 const sectionTree = require('./section-tree');
+const { assertSystemGroupUpdate } = require('./system-groups');
 
 function createSave(deps, api) {
   const { desk } = deps;
@@ -104,11 +105,17 @@ function createSave(deps, api) {
     let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
     let normalizedUnitId = unitId ? Number(unitId) : null;
 
+    // A default group (system_key) keeps the parent it was seeded with; the
+    // name check below only ever matched 'Raw material', which is not what the
+    // seed calls it, so an edit to Raw Materials used to file it under Primary.
+    const existingForSystem = id != null ? await getGroupRowById(id) : null;
     if (
       !isCombination &&
       normalizedParentId == null &&
+      !existingForSystem?.system_key &&
       trimmedName !== 'Primary Group' &&
       trimmedName !== 'Raw material' &&
+      trimmedName !== 'Raw Materials' &&
       trimmedName !== 'Scrap'
     ) {
       const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
@@ -182,6 +189,12 @@ function createSave(deps, api) {
       error.statusCode = 404;
       throw error;
     }
+    assertSystemGroupUpdate(existing, {
+      name: trimmedName,
+      parentGroupId: normalizedParentId,
+      groupType,
+      groupStructure: normalizedStructure,
+    });
     const blockingUsage = await get(
       `
       SELECT

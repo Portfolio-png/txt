@@ -16,19 +16,17 @@ class SheetProperty {
   });
 
   factory SheetProperty.fromJson(Map<String, dynamic> json) => SheetProperty(
-        id: (json['id'] as num).toInt(),
-        key: json['key'] as String? ?? '',
-        propertyName: json['propertyName'] as String? ??
-            json['name'] as String? ??
-            '',
-        name: json['name'] as String? ?? '',
-        kind: json['kind'] as String? ?? 'list',
-        position: (json['position'] as num?)?.toInt() ?? 0,
-        options: [
-          for (final option in (json['options'] as List? ?? const []))
-            '$option',
-        ],
-      );
+    id: (json['id'] as num).toInt(),
+    key: json['key'] as String? ?? '',
+    propertyName:
+        json['propertyName'] as String? ?? json['name'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    kind: json['kind'] as String? ?? 'list',
+    position: (json['position'] as num?)?.toInt() ?? 0,
+    options: [
+      for (final option in (json['options'] as List? ?? const [])) '$option',
+    ],
+  );
 
   final int id;
   final String key;

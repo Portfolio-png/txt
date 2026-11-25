@@ -484,19 +484,21 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// The part's values for the sheet's identity columns, in column order —
   /// the top-level property of that name and its value(s).
   List<String> _identityValuesOf(ItemDefinition item) => [
-        for (final column in _sheet.columns)
-          if (column.identity && SheetBindsTo.isVariation(column.bindsTo))
-            _propertyValueOf(item, SheetBindsTo.variationProperty(column.bindsTo!)),
-      ];
+    for (final column in _sheet.columns)
+      if (column.identity && SheetBindsTo.isVariation(column.bindsTo))
+        _propertyValueOf(item, SheetBindsTo.variationProperty(column.bindsTo!)),
+  ];
 
   String _propertyValueOf(ItemDefinition item, String property) {
     final wanted = _normalize(property);
     for (final node in item.variationTree) {
-      if (node.kind != ItemVariationNodeKind.property || node.isArchived) continue;
+      if (node.kind != ItemVariationNodeKind.property || node.isArchived)
+        continue;
       if (_normalize(node.name) != wanted) continue;
       final values = [
         for (final child in node.children)
-          if (!child.isArchived && child.name.trim().isNotEmpty) child.name.trim(),
+          if (!child.isArchived && child.name.trim().isNotEmpty)
+            child.name.trim(),
       ]..sort();
       return values.join(' / ');
     }
@@ -517,11 +519,13 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
           // not as a Group of its own.
           final parents = {
             for (final group in groups.filableItemGroups)
-              if (group.parentGroupId != null && !group.isArchived) group.parentGroupId,
+              if (group.parentGroupId != null && !group.isArchived)
+                group.parentGroupId,
           };
           for (final group in groups.filableItemGroups) {
             if (group.isArchived) continue;
-            if (group.parentGroupId != null && !parents.contains(group.id)) continue;
+            if (group.parentGroupId != null && !parents.contains(group.id))
+              continue;
             out.add(
               ColumnOption(
                 id: group.id,
@@ -620,11 +624,13 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     final own = stored.where((p) => p.key == wanted).firstOrNull;
     for (final label in own?.options ?? const <String>[]) {
       if (!seen.add(_normalize(label))) continue;
-      out.add(ColumnOption(
-        id: 93000000 + column.id * 1000 + out.length,
-        columnId: column.id,
-        label: label,
-      ));
+      out.add(
+        ColumnOption(
+          id: 93000000 + column.id * 1000 + out.length,
+          columnId: column.id,
+          label: label,
+        ),
+      );
     }
     for (final item in live) {
       final value = _valueOfProperty(item, property);
@@ -773,20 +779,22 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
 
     final stored = row.entityId == null
         ? null
-        : _client(partyId)?.contacts.where((c) => c.id == row.entityId).firstOrNull;
+        : _client(
+            partyId,
+          )?.contacts.where((c) => c.id == row.entityId).firstOrNull;
     // Built on the stored person, so what the sheet does not show (their
     // notes) is sent back as it is — an update writes every key it is given,
     // and a fresh PartyContact would send notes as '' and wipe them.
-    final person = (stored ??
-            PartyContact(id: row.entityId, partyId: partyId, name: ''))
-        .copyWith(
-      id: row.entityId,
-      partyId: partyId,
-      name: text(SheetBindsTo.personName),
-      designation: text(SheetBindsTo.personDesignation),
-      phone: text(SheetBindsTo.personPhone),
-      email: text(SheetBindsTo.personEmail),
-    );
+    final person =
+        (stored ?? PartyContact(id: row.entityId, partyId: partyId, name: ''))
+            .copyWith(
+              id: row.entityId,
+              partyId: partyId,
+              name: text(SheetBindsTo.personName),
+              designation: text(SheetBindsTo.personDesignation),
+              phone: text(SheetBindsTo.personPhone),
+              email: text(SheetBindsTo.personEmail),
+            );
     if (person.name.isEmpty) {
       _lastError = 'Every person needs a name.';
       return null;
@@ -827,7 +835,9 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// still has its one deal, on developedFor.
   @override
   List<({SheetDraft deal, Set<int> ticked})> dealsOf(ItemDefinition entity) {
-    final blocks = entity.deals.isNotEmpty ? entity.deals : [entity.developedFor];
+    final blocks = entity.deals.isNotEmpty
+        ? entity.deals
+        : [entity.developedFor];
     return [
       for (final block in blocks)
         if (_dealRowOf(block) case final row?) row,
@@ -1078,12 +1088,12 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
   /// The shown properties whose cell is in [row] and empty — cleared by the
   /// user, as opposed to never filled.
   Set<String> _clearedProperties(SheetDraft row) => {
-        for (final column in _sheet.columns)
-          if (SheetBindsTo.isVariation(column.bindsTo) &&
-              row.get(column.id) != null &&
-              _label(row, column.bindsTo!).isEmpty)
-            _normalize(SheetBindsTo.variationProperty(column.bindsTo!)),
-      };
+    for (final column in _sheet.columns)
+      if (SheetBindsTo.isVariation(column.bindsTo) &&
+          row.get(column.id) != null &&
+          _label(row, column.bindsTo!).isEmpty)
+        _normalize(SheetBindsTo.variationProperty(column.bindsTo!)),
+  };
 
   List<ItemVariationNodeInput> _variationTree(SheetDraft row) {
     final out = <ItemVariationNodeInput>[];
@@ -1159,7 +1169,8 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     final prior = existing?.developedFor;
     // What the sheet can show of a stored deal. A contractor's deal with no
     // company is not on screen, so the sheet cannot have cleared it.
-    final priorShown = prior != null &&
+    final priorShown =
+        prior != null &&
         (prior.clientId != null ||
             prior.quotationAmount != null ||
             prior.kind == DevelopedForKind.client);
@@ -1238,7 +1249,9 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     if (sheet == null || drafts == null) return null;
     final stored = existing == null
         ? const <DevelopedFor>[]
-        : (existing.deals.isNotEmpty ? existing.deals : [existing.developedFor]);
+        : (existing.deals.isNotEmpty
+              ? existing.deals
+              : [existing.developedFor]);
     final out = <DevelopedFor>[];
     for (final draft in drafts) {
       int? clientId;
@@ -1254,9 +1267,14 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
         }
       }
       if (clientId == null && quotation == null) continue;
-      final prior = stored.where((d) => d.clientId != null && d.clientId == clientId).firstOrNull;
-      final contractor = prior != null && prior.kind == DevelopedForKind.contractor;
-      final kind = contractor ? DevelopedForKind.contractor : DevelopedForKind.client;
+      final prior = stored
+          .where((d) => d.clientId != null && d.clientId == clientId)
+          .firstOrNull;
+      final contractor =
+          prior != null && prior.kind == DevelopedForKind.contractor;
+      final kind = contractor
+          ? DevelopedForKind.contractor
+          : DevelopedForKind.client;
       final unchanged = prior != null && prior.quotationAmount == quotation;
       out.add(
         DevelopedFor(

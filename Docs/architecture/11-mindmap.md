@@ -33,9 +33,18 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c119["⟳ Change 119: e2e builds in its own mirror tree — it was rebuilding the running debug app's bundle and crashing it (B73)"]
-      c121["⟳ Change 121: client diagnostics — Sentry project + key in the app, hang tracking, local paper.log (memory, stalls, errors), no token logging"]
+      c129["⟳ Change 129 (app): raw form guard rail — PenPaperBaseline.formChosen; a new plan opens with no form picked, steps replaced by 'pick the form', Save/Next/Review held, keyboard + leave-time saves refuse; die Liner Size Width lands only on the picked form; legacy plans with lastForm count as picked; tiles Tab-reachable until picked"]
+      c128["⟳ Change 128 (app): Draft beside a ticked person's Email ID → DealMessageDialog (Email / WhatsApp, To/From/Subject/Message prefilled from the deal, Send hands off to mail app via mailto: or WhatsApp via wa.me — no server send)"]
+      c127["Change 127: one save look on the sheet (SheetSaveButton 'Save X', outlined; SheetSaveRow = the Save Part column) for Part, Company, Die, Machine, Route, Raw Sheet; Routing minimised card + Minimise; Springs on a shared raw-forms engine (raw-forms.js; items.springs.*)"]
+      c126["Change 126 (app): Developed For card has ONE save — Save company writes quotation, ticks and every typed/changed person; per-person Save contact removed ('Not saved yet' tag); shown beside Edit when a person waits on a saved company"]
+      c125["Change 125 (app): sheet part line in two lines — Group · Type · Part Name · Part No, then Alloy · Thickness · Grade · Hardness · … · Part Code (last)"]
+      c124["Change 124 (app+api): item editor gets an Item · Rivet · Spring rail; a rivet opens on its drawing form; PUT /api/raw-materials/rivets/:id attaches a spec to a Rivets item that has none"]
+      c123["Change 123: B-fix — a group's item count went stale in every replica (no items → groups derived trigger since itemCount joined the group list); 3 triggers in 041; initDb now re-creates every changelog/derived trigger each boot so a trigger added later reaches existing DBs; test group-count-replication (2)"]
+      c122["Change 122: rivets — /api/raw-materials/rivets (items.rivets.*), raw_material_specs + item_vendor_prices; name built from the spec; same spec or code twice = 409; Add rivet on the Rivets group window with the drawing form"]
+      c121["Change 121 (app): Items master Add Item opens the item editor again (ItemsScreen.openEditor), not the sheet; sheet stays on the sidebar pill and Express edit"]
+      c120["Change 120: default groups Raw Materials › Rivets, Springs (groups.system_key); seeded on boot, Clear Data and Factory Reset; delete, archive, rename, move refused 409"]
       c126["⟳ Change 126 (api): B74 — die/machine save takes a numeric id (String(id).trim()); B69 had made the app send a number and every edit of a saved die or machine answered 500"]
+      c121["⟳ Change 121: client diagnostics — Sentry project + key in the app, hang tracking, local paper.log (memory, stalls, errors), no token logging"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -180,6 +189,11 @@ mindmap
         itClient["asks.js and client.js: describe, selection, stock, groups, reconcile helpers, cascade delete; held by eight callers"]
         itAsk["asks pipelines, clients, units, orders, challans, inventory instead of joining their tables"]
         itLeft["nothing of items is left in server.js but its wiring and seeds"]
+        itSys["⟳ system-groups.js: SYSTEM_GROUPS + ensureSystemGroups (finds by system_key, claims a known name, un-archives); guards in save, deletes (cascade too), archive"]
+          itSys1["⟳ groups.system_key + unique partial index; DTO and egress carry systemKey; unit ladder seeded inside the wipe so Rivets and Springs get Piece"]
+          itSys2["⟳ fixed: the old name checks said 'Raw material', the seed said 'Raw Materials', so an edit filed Raw Materials under Primary Group"]
+          itRiv["⟳ rivets.js: spec → name (exact nm, micro-rupee prices), spec_key + code unique, vendors asked via vendors.rows.get (declared); item delete clears spec + prices; tests rivets-api (3)"]
+          itSys3["next: spring form (Docs/architecture/13-raw-material-forms.md); tests system-groups.test.js (2)"]
         i1["modules/items: routes, ports, contract, master-data, section-tree"]
         i2["items ports grow developedForCount"]
       Units evacuated

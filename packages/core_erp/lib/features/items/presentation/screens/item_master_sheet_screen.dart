@@ -16,6 +16,7 @@ import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../../sheet/sheet.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../materials/presentation/providers/materials_provider.dart';
@@ -31,6 +32,7 @@ import '../../domain/sheet_property.dart';
 import '../providers/sheet_properties_provider.dart';
 import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/part_name.dart';
 import '../providers/items_provider.dart';
 import '../widgets/margin_health_badge.dart';
 import '../widgets/part_die_section.dart';
@@ -124,6 +126,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   };
 
   bool _showRoutePanel = false;
+
+  /// The route panel folded into its card (owner, 2026-11-25: "after
+  /// minimising route or saving the route, there's no minimised version").
+  /// The panel stays mounted, hidden, so stages laid out and not saved yet
+  /// are still there when it is opened again.
+  bool _routeMinimised = false;
 
   /// Sections folded shut. Folding one hides everything nested under it, the
   /// way a closed folder hides its subfolders.
@@ -546,7 +554,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // The flat block is the FIRST company's (the server mirrors it); every
       // company goes in deals.
       dealDraft: () =>
-          _controller.dealDraftsForSave()?.firstOrNull ?? _controller.dealDraftForSave(),
+          _controller.dealDraftsForSave()?.firstOrNull ??
+          _controller.dealDraftForSave(),
       dealContactIds: () {
         final first = _controller.dealDraftsForSave()?.firstOrNull;
         return first == null
@@ -587,13 +596,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// orders refer to.
   Future<IdentityChangeChoice> _askIdentityChange(IdentityChange change) async {
     if (!mounted) return IdentityChangeChoice.cancel;
-    final named = change.partCode.isEmpty ? change.partName : '${change.partName} (${change.partCode})';
+    final named = change.partCode.isEmpty
+        ? change.partName
+        : '${change.partName} (${change.partCode})';
     final choice = await showDialog<IdentityChangeChoice>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         key: const Key('identity_change_dialog'),
-        title: Text('Change $named?', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        title: Text(
+          'Change $named?',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 460),
           child: Column(
@@ -605,7 +619,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Text(
                     '${cell.label}: ${cell.from.isEmpty ? '—' : cell.from}  →  ${cell.to.isEmpty ? '—' : cell.to}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               const SizedBox(height: 8),
@@ -622,18 +639,29 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         actions: [
           TextButton(
             key: const Key('identity_change_cancel'),
-            onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.cancel),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(IdentityChangeChoice.cancel),
             child: const Text('Cancel', style: TextStyle(fontSize: 14)),
           ),
           OutlinedButton(
             key: const Key('identity_change_this_part'),
-            onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.changeThisPart),
-            child: const Text('Change this part', style: TextStyle(fontSize: 14)),
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(IdentityChangeChoice.changeThisPart),
+            child: const Text(
+              'Change this part',
+              style: TextStyle(fontSize: 14),
+            ),
           ),
           FilledButton(
             key: const Key('identity_make_new_part'),
-            onPressed: () => Navigator.of(dialogContext).pop(IdentityChangeChoice.makeNewPart),
-            child: const Text('Make a new part', style: TextStyle(fontSize: 14)),
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(IdentityChangeChoice.makeNewPart),
+            child: const Text(
+              'Make a new part',
+              style: TextStyle(fontSize: 14),
+            ),
           ),
         ],
       ),
@@ -1044,7 +1072,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             LogicalKeyboardKey.tab,
             control: true,
             shift: true,
-          ): () => _stepPart(-1),
+          ): () =>
+              _stepPart(-1),
         },
         child: Focus(
           autofocus: true,
@@ -1064,9 +1093,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                           children: [
                             SheetSidebar(
                               controller: _controller.groupItemController,
-                              sections: [
-                                ..._sections,
-                              ],
+                              sections: [..._sections],
                               activeSection: _controller.activeSection,
                               onSelectSection: _goTo,
                               // The part is pinned above the content now, so the
@@ -1330,7 +1357,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // review are about the part, not whichever row the cursor is on.
       itemName: part == null
           ? _partLabelNow
-          : (part.displayName.trim().isEmpty ? part.name : part.displayName),
+          : partNameWithNo(
+              part.displayName.trim().isEmpty ? part.name : part.displayName,
+              part.partNo,
+            ),
+      partNo: part?.partNo ?? _currentPartNoNow,
       // A new version is a new route id, so a baseline recorded on the old
       // one is flagged to be re-recorded.
       pipelineId: route != null ? 'route:${route.id}' : part?.defaultPipelineId,
@@ -1449,9 +1480,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Widget _rawPanelFrame(ItemDefinition? part, Widget panel) {
     final name = part == null
         ? _partLabelNow
-        : (part.displayName.trim().isEmpty
-              ? part.name
-              : part.displayName.trim());
+        : partNameWithNo(
+            part.displayName.trim().isEmpty
+                ? part.name
+                : part.displayName.trim(),
+            part.partNo,
+          );
     return Container(
       key: const ValueKey<String>('raw_panel'),
       width: _rawPanelWidth,
@@ -1662,6 +1696,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final name = part == null
         ? 'part #$partId'
         : (part.displayName.trim().isEmpty ? part.name : part.displayName);
+    // No form picked: nothing to record — the Sheet it opened on is not one.
+    if (!baseline.formChosen) {
+      _toast(
+        'The raw sheet for $name was not saved: no form was picked.',
+        isError: true,
+      );
+      return;
+    }
     final saved = await items.setItemPenPaperBaseline(partId, baseline);
     if (!mounted) return;
     _toast(
@@ -1677,6 +1719,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final opened = _livePart;
     if (opened == null) return;
     if (_rawSaving) return;
+    // The panel's Save is off until a form is picked; the keyboard's Save
+    // comes here too, and is held the same way (owner, 2026-11-25).
+    if (!baseline.formChosen) {
+      _toast(
+        'Pick the raw material\'s form — Sheet, Strip, Coil or Roll — first.',
+        isError: true,
+      );
+      return;
+    }
     final items = context.read<ItemsProvider>();
     setState(() => _rawSaving = true);
     // A thickness typed in the panel went into the part's row; it is saved
@@ -1692,9 +1743,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         // The row did not save — refused, or the question answered Cancel.
         // The plan belongs to that row's part, so it waits with it.
         setState(() => _rawSaving = false);
-        _toast(_controller.statusBarMessage.isEmpty
-            ? 'The part did not save, so its raw sheet waits.'
-            : _controller.statusBarMessage, isError: true);
+        _toast(
+          _controller.statusBarMessage.isEmpty
+              ? 'The part did not save, so its raw sheet waits.'
+              : _controller.statusBarMessage,
+          isError: true,
+        );
         return;
       }
     }
@@ -1713,8 +1767,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         _rawEditing = false;
         _rawDirty = false;
       });
-      _toast('Made a new ${part.name}. Its raw sheet starts empty — the one '
-          'shown was ${opened.name}\'s and stays with it.');
+      _toast(
+        'Made a new ${part.name}. Its raw sheet starts empty — the one '
+        'shown was ${opened.name}\'s and stays with it.',
+      );
       return;
     }
     final saved = await items.setItemPenPaperBaseline(part.id, baseline);
@@ -2052,12 +2108,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             child: const Text('Undo', style: TextStyle(fontSize: 14)),
           ),
           if (saved)
-            AppButton(
-              key: const ValueKey<String>('tree_save'),
-              label: 'Save section layout',
-              icon: Icons.save_outlined,
-              variant: AppButtonVariant.secondary,
-              dense: true,
+            SheetSaveButton(
+              buttonKey: const ValueKey<String>('tree_save'),
+              label: 'Save Section Layout',
               isLoading: _savingTree,
               onPressed: _saveTree,
             ),
@@ -2199,7 +2252,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     switch (id) {
       case 'client_vendor':
-        if (!_controller.isExternal) return const [(null, 'Developed for: Self')];
+        if (!_controller.isExternal)
+          return const [(null, 'Developed for: Self')];
         final partyColumn = _controller.clientVendorController.sheetDef
             .columnBoundTo(SheetBindsTo.developedForParty);
         String nameOf(SheetDraft deal) => partyColumn == null
@@ -2215,7 +2269,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         // when; the people only for the open one, whose are listed.
         for (final deal in companies) {
           out.add((null, nameOf(deal)));
-          add('Quotation', money(_moneyOf(deal, SheetBindsTo.developedForQuotation)));
+          add(
+            'Quotation',
+            money(_moneyOf(deal, SheetBindsTo.developedForQuotation)),
+          );
           add('Recorded', stamp(_storedDealOf(deal)?.at));
         }
         add('Cost', money(_moneyBoundTo(SheetBindsTo.developedForCost)));
@@ -2296,10 +2353,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         }
         if (unsaved) {
           if (route == null) out.add((null, 'Route not saved yet'));
-          add(
-            route == null ? 'Stages' : 'Unsaved change',
-            laidOut.join(' → '),
-          );
+          add(route == null ? 'Stages' : 'Unsaved change', laidOut.join(' → '));
         }
       default:
         final sheet = _controller.groupItemController;
@@ -2943,7 +2997,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       return RawWidthFromDie(
         nm: typed.nm,
         unit: typed.unit,
-        dieLabel: typed.code.isEmpty ? 'the die being typed' : 'die ${typed.code}',
+        dieLabel: typed.code.isEmpty
+            ? 'the die being typed'
+            : 'die ${typed.code}',
       );
     }
     final dies = [
@@ -2992,13 +3048,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
+  int? get _currentPartNoNow {
+    final sheet = _controller.groupItemController.sheetDef;
+    final seqCol =
+        sheet.columnBoundTo(SheetBindsTo.partNo) ??
+        sheet.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
+    if (seqCol == null) return null;
+    return _controller.groupItemController.draft.get(seqCol.id)?.intValue;
+  }
+
   String get _partLabelNow {
     final sheet = _controller.groupItemController.sheetDef;
     final column = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
     if (column == null) return 'this part';
-    final value = _controller.groupItemController.draft.get(column.id);
+    final draft = _controller.groupItemController.draft;
+    final value = draft.get(column.id);
     final name = value?.optionLabel ?? value?.textValue;
-    return (name == null || name.trim().isEmpty) ? 'this part' : name;
+    if (name == null || name.trim().isEmpty) return 'this part';
+    return partNameWithNo(name, _currentPartNoNow);
   }
 
   /// The floor's die sheet, as it already exists.
@@ -3015,7 +3082,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       framed: false,
       onHeading: (text) => setState(() => _dieHeading = text),
       onLinerTyped: (liner) {
-        if (mounted && liner != _typedLiner) setState(() => _typedLiner = liner);
+        if (mounted && liner != _typedLiner)
+          setState(() => _typedLiner = liner);
       },
       onTypeChanged: (type) {
         if (type.isNotEmpty && type != _dieType) {
@@ -3081,6 +3149,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         if (_showRoutePanel) {
           setState(() {
             _showRoutePanel = false;
+            _routeMinimised = false;
             _routeDirty = false;
           });
         }
@@ -3121,7 +3190,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// The three buttons at a section bar's end (compact icon buttons, 40
   /// each), whose room the part's bar keeps so the chips line up.
   static const double _sectionActionsWidth = 3 * 40;
-
 
   /// When the part under the cursor was saved — the Date and Time its line
   /// leaves out. A part not saved yet shows the time now, muted: its save is
@@ -3171,23 +3239,26 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 'Part code: ',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: SoftErpTheme.textSecondary,
+                ),
               ),
             ),
             Flexible(
               flex: 3,
               child: Text(
-              (code == null || code.isEmpty) ? 'assigned on save' : code,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: (code == null || code.isEmpty)
-                    ? SoftErpTheme.textMuted
-                    : SoftErpTheme.accent,
+                (code == null || code.isEmpty) ? 'assigned on save' : code,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: (code == null || code.isEmpty)
+                      ? SoftErpTheme.textMuted
+                      : SoftErpTheme.accent,
+                ),
               ),
-            ),
             ),
           ],
         ),
@@ -3566,25 +3637,22 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
     // The same button as a person's Save contact, so the Saves on this page
     // look alike.
-    final hasIncompleteErrors = errors.values.any((e) =>
-        e.code == 'required' ||
-        e.code == 'edit_empty' ||
-        e.code == 'parent_first' ||
-        e.code == 'not_in_list' ||
-        e.code == 'not_number');
-    return Tooltip(
-      message: tip,
-      child: AppButton(
-        key: ValueKey<String>(key),
-        label: 'Save part',
-        icon: Icons.save_outlined,
-        variant: AppButtonVariant.secondary,
-        dense: true,
-        isLoading: savingThis,
-        onPressed: !blank && !busy && !hasIncompleteErrors
-            ? () => _onSavePartClicked(row)
-            : null,
-      ),
+    final hasIncompleteErrors = errors.values.any(
+      (e) =>
+          e.code == 'required' ||
+          e.code == 'edit_empty' ||
+          e.code == 'parent_first' ||
+          e.code == 'not_in_list' ||
+          e.code == 'not_number',
+    );
+    return SheetSaveButton(
+      buttonKey: ValueKey<String>(key),
+      label: 'Save Part',
+      tooltip: tip,
+      isLoading: savingThis,
+      onPressed: !blank && !busy && !hasIncompleteErrors
+          ? () => _onSavePartClicked(row)
+          : null,
     );
   }
 
@@ -3622,10 +3690,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     final otherTabRow = _findOtherOpenTabFor(row);
     final conflictError = errors.values
-        .where((e) =>
-            e.code == 'seq_used' ||
-            e.code == 'duplicate_item' ||
-            e.code == 'code_used')
+        .where(
+          (e) =>
+              e.code == 'seq_used' ||
+              e.code == 'duplicate_item' ||
+              e.code == 'code_used',
+        )
         .firstOrNull;
 
     if (otherTabRow == null && conflictError == null) {
@@ -3649,7 +3719,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     // Determine next available Part No if there is a sequence conflict
     int? nextPartNo;
     if (conflictError != null && conflictError.code == 'seq_used') {
-      final match = RegExp(r'The last one is (\d+)').firstMatch(conflictError.message);
+      final match = RegExp(
+        r'The last one is (\d+)',
+      ).firstMatch(conflictError.message);
       if (match != null) {
         final last = int.tryParse(match.group(1) ?? '');
         if (last != null) nextPartNo = last + 1;
@@ -3657,9 +3729,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
     final existNo = existingPart?.partNo;
     if (nextPartNo == null && existNo != null) {
-      final seqCol = sheet.sheetDef.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
+      final seqCol = sheet.sheetDef.columns
+          .where((c) => c.kind == ColumnKind.seq)
+          .firstOrNull;
       if (seqCol != null) {
-        final scope = SheetEngine.groupPathString(sheet.sheetDef, draft, seqCol.id);
+        final scope = SheetEngine.groupPathString(
+          sheet.sheetDef,
+          draft,
+          seqCol.id,
+        );
         final last = sheet.counters[scope] ?? existNo;
         nextPartNo = (last >= existNo ? last : existNo) + 1;
       }
@@ -3672,8 +3750,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       try {
         final auth = _maybeRead<AuthProvider>();
         if (auth != null) {
-          final track = await auth.getEntityTrack('items', '${existingPart.id}');
-          final createEvent = track.where((e) => e.action == 'created').firstOrNull ?? track.firstOrNull;
+          final track = await auth.getEntityTrack(
+            'items',
+            '${existingPart.id}',
+          );
+          final createEvent =
+              track.where((e) => e.action == 'created').firstOrNull ??
+              track.firstOrNull;
           if (createEvent != null) {
             creatorName = createEvent.actorName;
             creatorRole = createEvent.actorRole;
@@ -3689,8 +3772,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     if (!mounted) return true;
 
-    final groupCol = sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ?? sheet.sheetDef.itemColumn;
-    final groupPath = groupCol != null ? SheetEngine.groupPathString(sheet.sheetDef, draft, groupCol.id) : null;
+    final groupCol =
+        sheet.sheetDef.columnBoundTo(SheetBindsTo.name) ??
+        sheet.sheetDef.itemColumn;
+    final groupPath = groupCol != null
+        ? SheetEngine.groupPathString(sheet.sheetDef, draft, groupCol.id)
+        : null;
 
     final action = await showDialog<ExistingPartConflictAction>(
       context: context,
@@ -3708,7 +3795,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       ),
     );
 
-    if (!mounted || action == null || action == ExistingPartConflictAction.cancel) {
+    if (!mounted ||
+        action == null ||
+        action == ExistingPartConflictAction.cancel) {
       return true;
     }
 
@@ -3721,7 +3810,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
       case ExistingPartConflictAction.useNextPartNo:
         if (nextPartNo != null) {
-          final seqCol = sheet.sheetDef.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
+          final seqCol = sheet.sheetDef.columns
+              .where((c) => c.kind == ColumnKind.seq)
+              .firstOrNull;
           if (seqCol != null) {
             sheet.updateValue(
               seqCol.id,
@@ -3778,8 +3869,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     final def = sheet.sheetDef;
     final itemCol = def.columnBoundTo(SheetBindsTo.name) ?? def.itemColumn;
-    final currentPath = itemCol == null ? '' : SheetEngine.groupPathString(def, currentDraft, itemCol.id);
-    final currentIdentity = itemCol == null ? '' : SheetEngine.identityKeyOf(def, currentDraft, itemCol.id);
+    final currentPath = itemCol == null
+        ? ''
+        : SheetEngine.groupPathString(def, currentDraft, itemCol.id);
+    final currentIdentity = itemCol == null
+        ? ''
+        : SheetEngine.identityKeyOf(def, currentDraft, itemCol.id);
 
     for (int i = 0; i < sheet.rowCount; i++) {
       if (i == currentRow) continue;
@@ -3801,8 +3896,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           otherTitle != 'New part' &&
           otherTitle.toLowerCase() == currentTitle.toLowerCase()) {
         if (itemCol != null) {
-          final otherPath = SheetEngine.groupPathString(def, otherDraft, itemCol.id);
-          final otherIdentity = SheetEngine.identityKeyOf(def, otherDraft, itemCol.id);
+          final otherPath = SheetEngine.groupPathString(
+            def,
+            otherDraft,
+            itemCol.id,
+          );
+          final otherIdentity = SheetEngine.identityKeyOf(
+            def,
+            otherDraft,
+            itemCol.id,
+          );
           if (currentPath.isNotEmpty &&
               currentPath.toLowerCase() == otherPath.toLowerCase() &&
               currentIdentity.toLowerCase() == otherIdentity.toLowerCase()) {
@@ -3823,12 +3926,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     final currentTitle = PartTabs.titleOf(sheet, draft).trim();
     final currentCode = PartTabs.codeOf(sheet, draft).trim();
-    final seqCol = sheet.sheetDef.columns.where((c) => c.kind == ColumnKind.seq).firstOrNull;
-    final currentPartNo = seqCol != null ? draft.get(seqCol.id)?.intValue : null;
+    final seqCol = sheet.sheetDef.columns
+        .where((c) => c.kind == ColumnKind.seq)
+        .firstOrNull;
+    final currentPartNo = seqCol != null
+        ? draft.get(seqCol.id)?.intValue
+        : null;
 
     final def = sheet.sheetDef;
     final itemCol = def.columnBoundTo(SheetBindsTo.name) ?? def.itemColumn;
-    final currentIdentity = itemCol == null ? '' : SheetEngine.identityKeyOf(def, draft, itemCol.id);
+    final currentIdentity = itemCol == null
+        ? ''
+        : SheetEngine.identityKeyOf(def, draft, itemCol.id);
 
     if (currentCode.isNotEmpty) {
       for (final item in items) {
@@ -3839,7 +3948,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       }
     }
 
-    if (currentPartNo != null && currentTitle.isNotEmpty && currentTitle != 'New part') {
+    if (currentPartNo != null &&
+        currentTitle.isNotEmpty &&
+        currentTitle != 'New part') {
       for (final item in items) {
         if (item.partNo == currentPartNo &&
             item.name.trim().toLowerCase() == currentTitle.toLowerCase()) {
@@ -3848,7 +3959,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       }
     }
 
-    if (currentIdentity.isNotEmpty && currentTitle.isNotEmpty && currentTitle != 'New part') {
+    if (currentIdentity.isNotEmpty &&
+        currentTitle.isNotEmpty &&
+        currentTitle != 'New part') {
       for (final item in items) {
         if (item.name.trim().toLowerCase() == currentTitle.toLowerCase()) {
           final itemIdent = SheetEngine.identityKey(
@@ -3888,18 +4001,23 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return [
       for (final column in sheetDef.columns)
         if (column.identity && SheetBindsTo.isVariation(column.bindsTo))
-          _propertyValueOfItem(item, SheetBindsTo.variationProperty(column.bindsTo!)),
+          _propertyValueOfItem(
+            item,
+            SheetBindsTo.variationProperty(column.bindsTo!),
+          ),
     ];
   }
 
   String _propertyValueOfItem(ItemDefinition item, String property) {
     final wanted = property.trim().toLowerCase();
     for (final node in item.variationTree) {
-      if (node.kind != ItemVariationNodeKind.property || node.isArchived) continue;
+      if (node.kind != ItemVariationNodeKind.property || node.isArchived)
+        continue;
       if (node.name.trim().toLowerCase() != wanted) continue;
       final values = [
         for (final child in node.children)
-          if (!child.isArchived && child.name.trim().isNotEmpty) child.name.trim(),
+          if (!child.isArchived && child.name.trim().isNotEmpty)
+            child.name.trim(),
       ]..sort();
       return values.join(' / ');
     }
@@ -4052,8 +4170,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final sheet = _controller.groupItemController.sheetDef;
     final column = sheet.columnBoundTo(SheetBindsTo.name) ?? sheet.itemColumn;
     if (column == null) return '';
-    final value = _controller.groupItemController.draft.get(column.id);
-    return value?.optionLabel ?? value?.textValue ?? '';
+    final draft = _controller.groupItemController.draft;
+    final value = draft.get(column.id);
+    final name = value?.optionLabel ?? value?.textValue ?? '';
+    if (name.isEmpty) return '';
+    return partNameWithNo(name, _currentPartNoNow);
   }
 
   /// The stored deal behind company tab [deal], by its company, or null.
@@ -4070,7 +4191,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// When the OPEN company was recorded: each company has its own time.
   Widget _dealStampChip() {
-    final recordedAt = _storedDealOf(_controller.clientVendorController.draft)?.at;
+    final recordedAt = _storedDealOf(
+      _controller.clientVendorController.draft,
+    )?.at;
     if (recordedAt == null) {
       return const _HeadingStamp.now(
         stampKey: ValueKey<String>('deal_heading_stamp'),
@@ -4092,17 +4215,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
         padding: EdgeInsets.symmetric(vertical: 4),
         child: Text(
           'In-house production — tick “External party” above to record customer quotations and contacts.',
-          style: TextStyle(
-            fontSize: 14,
-            color: SoftErpTheme.textSecondary,
-          ),
+          style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
         ),
       );
     }
 
     final controller = _controller;
     final deals = controller.clientVendorController;
-    final partyColumn = deals.sheetDef.columnBoundTo(SheetBindsTo.developedForParty);
+    final partyColumn = deals.sheetDef.columnBoundTo(
+      SheetBindsTo.developedForParty,
+    );
     final blocked = controller.dealTabsBlockedWhy;
     final tabs = <TabSpec>[
       for (var i = 0; i < controller.dealTabCount; i += 1)
@@ -4118,17 +4240,23 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             title: name.isEmpty ? 'New company' : name,
             code: quote == null ? '' : rupeeStamp(quote),
             saved: !deal.isDirtySinceSave && _storedDealOf(deal) != null,
-            closeWhy: blocked ??
+            closeWhy:
+                blocked ??
                 (blank && controller.dealTabCount <= 1
                     ? 'Nothing to close — untick External party for none'
                     : null),
-            closeTip: 'Take this company off the part — written when the part saves',
+            closeTip:
+                'Take this company off the part — written when the part saves',
           );
         }(),
     ];
     final openBlank = deals.isRowBlank(deals.row);
     return ColouredTabs(
-      strip: TabList(tabs: tabs, selected: deals.row, onSelect: controller.selectDeal),
+      strip: TabList(
+        tabs: tabs,
+        selected: deals.row,
+        onSelect: controller.selectDeal,
+      ),
       colors: _companyColors,
       noun: 'company',
       plural: 'companies',
@@ -4157,14 +4285,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final controller = _controller;
     final deals = controller.clientVendorController;
     if (!deals.isRowBlank(i)) {
-      final column = deals.sheetDef.columnBoundTo(SheetBindsTo.developedForParty);
+      final column = deals.sheetDef.columnBoundTo(
+        SheetBindsTo.developedForParty,
+      );
       final name = column == null
           ? 'this company'
-          : (controller.dealTabAt(i).get(column.id)?.optionLabel ?? 'this company');
+          : (controller.dealTabAt(i).get(column.id)?.optionLabel ??
+                'this company');
       final ok = await showConfirmDialog(
         context,
         title: 'Take $name off this part?',
-        message: 'Its quotation and the people ticked come off when the part '
+        message:
+            'Its quotation and the people ticked come off when the part '
             'saves. The company stays in the clients master.',
         confirmLabel: 'Take off',
         cancelLabel: 'Keep',
@@ -4191,9 +4323,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     }
     setState(() {
       _showRoutePanel = false;
+      _routeMinimised = false;
       _routeDirty = false;
     });
   }
+
+  void _openRoutePanel() => setState(() {
+    _showRoutePanel = true;
+    _routeMinimised = false;
+  });
 
   Widget _routing() {
     // The cursor row's own part — not `savedItemId`, which falls back to
@@ -4203,8 +4341,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     if (_showRoutePanel) {
       // Rebuilt with the row's id on every frame, so a save while the panel
       // is open lands in its Part field without closing it.
-      return RouteCreationPanel(
+      final panel = RouteCreationPanel(
         key: _routePanelKey,
+        sheetStyle: true,
         initialPartId: rowPartId,
         pendingPartName: rowPartId == null ? _pinnedPartName() : null,
         madeHereItemIds: _madeHere,
@@ -4213,9 +4352,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             setState(() => _routeDirty = dirty);
           }
         },
+        onMinimise: () => setState(() => _routeMinimised = true),
         onSaved: (record) {
           setState(() {
             _showRoutePanel = false;
+            _routeMinimised = false;
             _routeDirty = false;
           });
           _toast('Saved ${record.title}.');
@@ -4223,6 +4364,48 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           if (id != null) unawaited(_loadRoute(id));
         },
         onCancel: () => unawaited(_cancelRoute()),
+      );
+      if (!_routeMinimised) return panel;
+      // Minimised: the panel kept, hidden, under its card.
+      final onScreen =
+          _routePanelKey.currentState?.stageNamesOnScreen ?? const <String>[];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Visibility(visible: false, maintainState: true, child: panel),
+          _RouteCard(
+            key: const ValueKey<String>('route_card'),
+            title: _route?.title ?? 'Route',
+            detail: _routeDirty ? 'Not saved yet' : null,
+            stages: onScreen.isNotEmpty
+                ? onScreen
+                : [
+                    for (final step in _route?.steps ?? const <RouteStep>[])
+                      step.labelWith(const []),
+                  ],
+            actionLabel: 'Open',
+            onAction: () => setState(() => _routeMinimised = false),
+          ),
+        ],
+      );
+    }
+
+    // A part with a route shows it, minimised: what it is and its stages in
+    // order, one click from its editor.
+    final route = _route;
+    if (route != null) {
+      return _RouteCard(
+        key: const ValueKey<String>('route_card'),
+        title: route.title,
+        detail:
+            'v${route.version} · ${switch (route.status) {
+              RouteStatus.active => 'Active',
+              RouteStatus.draft => 'Draft',
+              RouteStatus.retired => 'Retired',
+            }}',
+        stages: [for (final step in route.steps) step.fullLabelWith(const [])],
+        actionLabel: 'Edit route',
+        onAction: _openRoutePanel,
       );
     }
 
@@ -4251,7 +4434,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             icon: Icons.route_rounded,
             variant: AppButtonVariant.secondary,
             dense: true,
-            onPressed: () => setState(() => _showRoutePanel = true),
+            onPressed: _openRoutePanel,
           ),
         ),
       ],
@@ -4299,6 +4482,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     required Widget child,
     Widget? headingWidget,
     Widget? trailing,
+
     /// At the bar's very end, after [trailing], kept whole while [trailing]
     /// gives way: a date and time.
     Widget? trailingEnd,
@@ -4382,7 +4566,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 // Routing's, which have no buttons, keep their room.
                 Expanded(
                   child: _TitleBar(
-                    title: headingWidget ??
+                    title:
+                        headingWidget ??
                         Text(
                           heading,
                           key: _titleKey(id),
@@ -4864,8 +5049,8 @@ class _HeadingStamp extends StatefulWidget {
     this.stampKey,
   });
   const _HeadingStamp.now({super.key, this.stampKey})
-      : date = null,
-        time = null;
+    : date = null,
+      time = null;
 
   final String? date;
   final String? time;
@@ -4938,12 +5123,34 @@ class _HeadingStampState extends State<_HeadingStamp> {
             children: [
               Icon(Icons.event_rounded, size: 16, color: colour),
               const SizedBox(width: 6),
-              Flexible(child: Text(date, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour))),
+              Flexible(
+                child: Text(
+                  date,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: colour,
+                  ),
+                ),
+              ),
               if (time != null) ...[
                 const SizedBox(width: 10),
                 Icon(Icons.schedule_rounded, size: 16, color: colour),
                 const SizedBox(width: 6),
-                Flexible(child: Text(time, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colour))),
+                Flexible(
+                  child: Text(
+                    time,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colour,
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -5205,7 +5412,6 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
   }
 }
 
-
 /// A section bar's title, its chips and its tail: the title at its natural
 /// width (at most [titleShare] of the bar), the tail (a date) at the far
 /// right at its natural width, the chips right-aligned against it in what is
@@ -5213,8 +5419,11 @@ class _PartPhotosSectionState extends State<_PartPhotosSection> {
 /// All centred on the bar's height. A Row cannot do it: a flexible child
 /// wastes the share it does not use, a rigid one runs the bar past its end.
 class _TitleBar extends MultiChildRenderObjectWidget {
-  _TitleBar({required Widget title, required Widget chips, required Widget tail})
-    : super(children: [title, chips, tail]);
+  _TitleBar({
+    required Widget title,
+    required Widget chips,
+    required Widget tail,
+  }) : super(children: [title, chips, tail]);
 
   static const double gap = 12;
   static const double tailGap = 8;
@@ -5250,7 +5459,8 @@ class _RenderTitleBar extends RenderBox
     );
     var room = math.max(0.0, width - title.size.width - _TitleBar.gap);
     tail.layout(BoxConstraints(maxWidth: room), parentUsesSize: true);
-    if (tail.size.width > 0) room = math.max(0.0, room - tail.size.width - _TitleBar.tailGap);
+    if (tail.size.width > 0)
+      room = math.max(0.0, room - tail.size.width - _TitleBar.tailGap);
     // Too little left for even a chip's icon and padding: left out, not
     // squeezed past its own edges. (Their texts give way with … above this;
     // a min intrinsic width over-states it — a code counts as one long word.)
@@ -5259,15 +5469,23 @@ class _RenderTitleBar extends RenderBox
       _chipsHidden ? const BoxConstraints() : BoxConstraints(maxWidth: room),
       parentUsesSize: true,
     );
-    final height = math.max(title.size.height, math.max(chips.size.height, tail.size.height));
-    Offset centred(RenderBox box, double x) => Offset(x, (height - box.size.height) / 2);
+    final height = math.max(
+      title.size.height,
+      math.max(chips.size.height, tail.size.height),
+    );
+    Offset centred(RenderBox box, double x) =>
+        Offset(x, (height - box.size.height) / 2);
     (title.parentData! as _TitleBarParentData).offset = centred(title, 0);
     final tailLeft = width - tail.size.width;
     (tail.parentData! as _TitleBarParentData).offset = centred(tail, tailLeft);
-    final chipsRight = tail.size.width > 0 ? tailLeft - _TitleBar.tailGap : width;
+    final chipsRight = tail.size.width > 0
+        ? tailLeft - _TitleBar.tailGap
+        : width;
     final shownChips = _chipsHidden ? 0.0 : chips.size.width;
-    (chips.parentData! as _TitleBarParentData).offset =
-        centred(chips, chipsRight - shownChips);
+    (chips.parentData! as _TitleBarParentData).offset = centred(
+      chips,
+      chipsRight - shownChips,
+    );
     size = constraints.constrain(Size(width, height));
   }
 
@@ -5279,7 +5497,8 @@ class _RenderTitleBar extends RenderBox
     var index = 0;
     while (child != null) {
       final data = child.parentData! as _TitleBarParentData;
-      if (!(index == 1 && _chipsHidden)) context.paintChild(child, data.offset + offset);
+      if (!(index == 1 && _chipsHidden))
+        context.paintChild(child, data.offset + offset);
       child = data.nextSibling;
       index += 1;
     }
@@ -5295,7 +5514,8 @@ class _RenderTitleBar extends RenderBox
         final hit = result.addWithPaintOffset(
           offset: data.offset,
           position: position,
-          hitTest: (result, transformed) => child!.hitTest(result, position: transformed),
+          hitTest: (result, transformed) =>
+              child!.hitTest(result, position: transformed),
         );
         if (hit) return true;
       }
@@ -5303,5 +5523,119 @@ class _RenderTitleBar extends RenderBox
       index -= 1;
     }
     return false;
+  }
+}
+
+/// The Routing section minimised: the route's name, its version or that it is
+/// not saved yet, its stages in order — "1 Shearing → 2 Blanking" — and the
+/// way back into the editor.
+class _RouteCard extends StatelessWidget {
+  const _RouteCard({
+    super.key,
+    required this.title,
+    required this.stages,
+    required this.actionLabel,
+    required this.onAction,
+    this.detail,
+  });
+
+  final String title;
+  final String? detail;
+  final List<String> stages;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[];
+    for (var i = 0; i < stages.length; i += 1) {
+      if (i > 0) {
+        chips.add(
+          const Icon(
+            Icons.arrow_forward_rounded,
+            size: 16,
+            color: SoftErpTheme.textSecondary,
+          ),
+        );
+      }
+      chips.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.accentSurface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: SoftErpTheme.border),
+          ),
+          child: Text(
+            '${i + 1}  ${stages[i]}',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+        ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: SoftErpTheme.textPrimary,
+                    ),
+                  ),
+                  if (detail != null)
+                    Text(
+                      detail!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (stages.isEmpty)
+                const Text(
+                  'No stages yet.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: SoftErpTheme.textSecondary,
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: chips,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        AppButton(
+          key: const ValueKey<String>('route_card_open'),
+          label: actionLabel,
+          icon: Icons.route_rounded,
+          variant: AppButtonVariant.secondary,
+          dense: true,
+          onPressed: onAction,
+        ),
+      ],
+    );
   }
 }

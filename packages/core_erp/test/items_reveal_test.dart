@@ -11,11 +11,21 @@ import 'package:core_erp/features/inventory/presentation/providers/inventory_pro
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
+import 'package:core_erp/features/raw_materials/data/rivet_repository.dart';
+import 'package:core_erp/features/raw_materials/domain/rivet.dart';
+import 'package:core_erp/features/raw_materials/presentation/item_kind_switcher.dart';
 import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
 import 'package:core_erp/features/items/presentation/widgets/item_detail_panel.dart';
 import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/core/services/user_preferences_service.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/item_form_sections_provider.dart';
+import 'package:core_erp/features/materials/data/material_repository.dart';
+import 'package:core_erp/features/materials/domain/material_definition.dart';
+import 'package:core_erp/features/materials/presentation/providers/materials_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -181,6 +191,23 @@ class _FakeInventoryRepository implements InventoryRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FakeRivetRepository implements RivetRepository {
+  @override
+  Future<RivetDefinition?> get(int itemId) async => null;
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeMaterialRepository implements MaterialRepository {
+  @override
+  Future<List<MaterialDefinition>> list({bool includeArchived = false}) async =>
+      const <MaterialDefinition>[];
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// The items screen, with the providers its detail panel needs. Hoisted out
 /// of main so the Developed For group below can open the same screen.
 Future<ItemsProvider> _openItems(WidgetTester tester) async {
@@ -204,6 +231,23 @@ Future<ItemsProvider> _openItems(WidgetTester tester) async {
         ChangeNotifierProvider<InventoryProvider>(
           create: (_) =>
               InventoryProvider(repository: _FakeInventoryRepository()),
+        ),
+        Provider<RivetRepository>.value(value: _FakeRivetRepository()),
+        // What the item editor reads, so Add Item can open it here.
+        ChangeNotifierProvider<MaterialsProvider>(
+          create: (_) =>
+              MaterialsProvider(repository: _FakeMaterialRepository()),
+        ),
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => AuthProvider(baseUrl: '', demoMode: true),
+        ),
+        ChangeNotifierProvider<ItemFormSectionsProvider>(
+          create: (_) => ItemFormSectionsProvider(
+            service: UserPreferencesService(
+              baseUrl: '',
+              useMockResponses: true,
+            ),
+          ),
         ),
       ],
       child: const MaterialApp(home: ItemsScreen()),
@@ -283,6 +327,44 @@ void main() {
     expect(tester.widget<SoftActionLink>(express).onTap, isNotNull);
     expect(tester.getRect(express).left, greaterThan(tester.getRect(edit).right),
         reason: 'beside Edit');
+  });
+
+  testWidgets('Add Item opens the item editor, not the sheet', (tester) async {
+    // User, 2026-11-25: "I want the usual item creation model that we had."
+    // Add Item had been pointed at the sheet when Express was removed; the
+    // sheet is still reachable from the sidebar and from Express edit.
+    await _openItems(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('items_screen_add_item_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Item'), findsWidgets);
+    expect(find.byType(ItemMasterSheetScreen), findsNothing);
+    // With the Item / Rivet / Spring rail, on Item; a new item may be a rivet.
+    expect(find.byType(ItemKindSwitcher), findsOneWidget);
+    expect(
+      tester.widget<InkWell>(find.byKey(const ValueKey<String>('item-kind-rivet'))).onTap,
+      isNotNull,
+    );
+  });
+
+  testWidgets('Edit on a part that is not a rivet: Item, and Rivet disabled', (tester) async {
+    final items = await _openItems(tester);
+    items.revealItem(_plug.id);
+    await tester.pumpAndSettle();
+    // The reveal opens the details panel over the row, so the row's Edit is
+    // pressed through its action rather than a tap at its position.
+    tester.widget<SoftActionLink>(find.byKey(ValueKey<String>('edit_item_${_plug.id}'))).onTap!();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ItemKindSwitcher), findsOneWidget);
+    expect(find.text('Edit Item'), findsWidgets, reason: 'the item editor, as before');
+    expect(
+      tester.widget<InkWell>(find.byKey(const ValueKey<String>('item-kind-rivet'))).onTap,
+      isNull,
+    );
   });
 
   testWidgets('the Wizard button opens quick entry', (tester) async {

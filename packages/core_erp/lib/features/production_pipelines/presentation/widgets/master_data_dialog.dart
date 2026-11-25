@@ -10,6 +10,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../sheet/sheet_style.dart';
 import '../../../../sheet/widgets/sheet_step.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/pipeline_stage_node.dart';
@@ -23,6 +24,7 @@ import '../../../materials/domain/material_definition.dart';
 import '../../domain/raw_stock_form.dart';
 import '../../domain/thickness_label.dart';
 import '../../domain/sheet_part.dart';
+import '../../../items/domain/part_name.dart';
 import 'band_form_animation.dart';
 import 'pen_paper_baseline_widget.dart';
 import 'raw_sheet_review.dart';
@@ -42,6 +44,7 @@ Future<PenPaperBaseline?> showMasterDataDialog(
   String? pipelineId,
   String pipelineName = '',
   String itemName = '',
+  int? partNo,
   List<PipelineStageNode> stageNodes = const <PipelineStageNode>[],
   List<SheetPart> parts = const <SheetPart>[],
   List<MaterialDefinition> materials = const <MaterialDefinition>[],
@@ -62,6 +65,7 @@ Future<PenPaperBaseline?> showMasterDataDialog(
         pipelineId: pipelineId,
         pipelineName: pipelineName,
         itemName: itemName,
+        partNo: partNo,
         stageNodes: stageNodes,
         parts: parts,
         materials: materials,
@@ -96,6 +100,7 @@ class MasterDataPanel extends StatefulWidget {
     this.pipelineName = '',
     this.unattachedHint,
     this.itemName = '',
+    this.partNo,
     this.stageNodes = const <PipelineStageNode>[],
     this.parts = const <SheetPart>[],
     this.materials = const <MaterialDefinition>[],
@@ -128,6 +133,7 @@ class MasterDataPanel extends StatefulWidget {
   /// See [PenPaperBaselineWidget.unattachedHint].
   final String? unattachedHint;
   final String itemName;
+  final int? partNo;
   final List<PipelineStageNode> stageNodes;
 
   /// Parts the catalogue already knows the blank size of. Empty when the caller
@@ -152,7 +158,7 @@ class MasterDataPanel extends StatefulWidget {
   /// So the host can still write an unsaved plan the panel is about to lose:
   /// the cursor moving to another part, or Save and close.
   final void Function(PenPaperBaseline Function() read, bool alive)?
-      onDraftSource;
+  onDraftSource;
 
   /// Hands the host the panel's Next, the way [onDraftSource] hands its
   /// draft: `next()` turns to the following step (Sheet planning, Material
@@ -222,6 +228,9 @@ enum _MasterStep {
 }
 
 class _MasterDataPanelState extends State<MasterDataPanel> {
+  String get _resolvedItemName =>
+      partNameWithNo(widget.itemName, widget.partNo);
+
   late PenPaperBaseline _baseline;
   late final TextEditingController _widthController;
   late final TextEditingController _heightController;
@@ -424,15 +433,17 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     final text = widget.thickness;
     if (text == null) return;
     final reading = readThickness(text);
-    _thicknessUnreadable =
-        reading == null && text.trim().isNotEmpty ? text.trim() : null;
+    _thicknessUnreadable = reading == null && text.trim().isNotEmpty
+        ? text.trim()
+        : null;
     final unit = reading?.unit ?? lengthUnitBySymbol(_baseline.gaugeUnit);
     _baseline = _baseline.copyWith(
       gaugeUnit: unit.symbol,
       sheetThicknessMm: reading?.mm ?? 0,
     );
-    _thicknessController.text =
-        reading == null ? '' : _showUnit(reading.mm, unit);
+    _thicknessController.text = reading == null
+        ? ''
+        : _showUnit(reading.mm, unit);
   }
 
   /// Tells the host the thickness typed here, as the part's cell writes it.
@@ -863,7 +874,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   void _reportDirty() {
     final report = widget.onDirtyChanged;
     if (report == null) return;
-    final dirty = !widget.readOnly &&
+    final dirty =
+        !widget.readOnly &&
         !_sameRecord(_withoutSheetPitch(widget.baseline), _baseline);
     if (dirty == _reportedDirty) return;
     _reportedDirty = dirty;
@@ -885,7 +897,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           final width = constraints.hasBoundedWidth
               ? constraints.maxWidth
               : _sideBySideWidth;
-          return ColoredBox(color: SoftErpTheme.cardSurface, child: _body(width));
+          return ColoredBox(
+            color: SoftErpTheme.cardSurface,
+            child: _body(width),
+          );
         },
       );
     }
@@ -917,19 +932,24 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         if (widget.showHeader) _header(),
         // Beside the sheet these are clicked, not Tabbed through: Tab in the
         // panel goes through what is typed, as everywhere on the sheet.
-        _clickOnly(_formBar(width)),
+        // Clicked once a form is picked; until then the pick is the step, so
+        // Tab reaches Sheet, Strip, Coil and Roll (the keyboard can choose).
+        _baseline.formChosen ? _clickOnly(_formBar(width)) : _formBar(width),
         _clickOnly(_stepBar(width)),
         Expanded(
           child: Padding(
             padding: narrow && widget.embedded
                 ? const EdgeInsets.fromLTRB(16, 14, 16, 8)
                 : const EdgeInsets.fromLTRB(20, 14, 20, 8),
-            child: switch (_step) {
-              _MasterStep.sheet => _sheetStep(width),
-              _MasterStep.material when _form.isBand => _bandMaterialStep(),
-              _MasterStep.material => _materialStep(),
-              _MasterStep.review => _reviewStep(),
-            },
+            child: !_baseline.formChosen
+                ? _pickFormFirst()
+                : switch (_step) {
+                    _MasterStep.sheet => _sheetStep(width),
+                    _MasterStep.material when _form.isBand =>
+                      _bandMaterialStep(),
+                    _MasterStep.material => _materialStep(),
+                    _MasterStep.review => _reviewStep(),
+                  },
           ),
         ),
         _clickOnly(_footer(width)),
@@ -1116,7 +1136,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   void _setGrade(String grade) {
     _baseline = _form.isBand
-        ? _baseline.withForm(_form, _baseline.formOf(_form).copyWith(grade: grade))
+        ? _baseline.withForm(
+            _form,
+            _baseline.formOf(_form).copyWith(grade: grade),
+          )
         : _baseline.copyWith(materialGrade: grade);
   }
 
@@ -1127,12 +1150,13 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   }
 
   void _switchForm(RawForm form) {
-    if (form == _form) return;
+    // The form open but never picked is picked by a click on it too.
+    if (form == _form && _baseline.formChosen) return;
     setState(() {
       _form = form;
       _bandErrors.clear();
       // Recorded, so the panel reopens here — none of the four is a default.
-      _baseline = _baseline.copyWith(lastForm: form);
+      _baseline = _baseline.copyWith(lastForm: form, formChosen: true);
       _adoptLinerWidth();
       _writeBandFields();
     });
@@ -1141,12 +1165,18 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   void _writeBandFields() {
     if (!_form.isBand) return;
     final plan = _baseline.formOf(_form);
-    _bandWidthController.text =
-        formatLengthFromNanometres(plan.widthNm, plan.widthUnit);
-    _bandLengthController.text =
-        formatLengthFromNanometres(plan.lengthNm, plan.lengthUnit);
-    _bandPitchController.text =
-        formatLengthFromNanometres(plan.pitchNm, plan.pitchUnit);
+    _bandWidthController.text = formatLengthFromNanometres(
+      plan.widthNm,
+      plan.widthUnit,
+    );
+    _bandLengthController.text = formatLengthFromNanometres(
+      plan.lengthNm,
+      plan.lengthUnit,
+    );
+    _bandPitchController.text = formatLengthFromNanometres(
+      plan.pitchNm,
+      plan.pitchUnit,
+    );
   }
 
   /// A measurement typed into a band field: stored exactly, or refused with
@@ -1168,11 +1198,67 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   /// The four forms, side by side and equal. A dot marks the ones that hold
   /// something; none is marked as the default.
+  static const String _pickFormReason =
+      'Pick the form first — Sheet, Strip, Coil or Roll';
+
+  /// In place of the steps until a form is picked: what to do, and why it is
+  /// asked — the Width the die fills in goes onto whichever is picked.
+  Widget _pickFormFirst() {
+    final liner = widget.linerWidth;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Container(
+          key: const ValueKey<String>('raw-pick-form'),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.warningBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: SoftErpTheme.warningBorder),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Which form does the raw material come in?',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: SoftErpTheme.warningText,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                widget.readOnly
+                    ? 'No form has been picked for this part yet. Edit to pick '
+                          'Sheet, Strip, Coil or Roll.'
+                    : 'Pick Sheet, Strip, Coil or Roll above. Nothing is saved '
+                          'or reviewed until one is picked'
+                          '${liner == null ? '.' : ' — the Width from ${liner.dieLabel} goes onto the form you pick.'}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: SoftErpTheme.warningText,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _formBar(double width) {
     final compact = width < _compactStepBarWidth;
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(compact ? 12 : 22, 10, compact ? 12 : 22, 10),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 22,
+        10,
+        compact ? 12 : 22,
+        10,
+      ),
       decoration: const BoxDecoration(
         color: SoftErpTheme.shellSurface,
         border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
@@ -1185,8 +1271,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
               child: _FormTile(
                 key: ValueKey<String>('raw-form-${form.name}'),
                 form: form,
-                selected: form == _form,
-                hasData: _baseline.hasForm(form),
+                // None is selected until one is picked: the Sheet the panel
+                // starts on is not a choice.
+                selected: form == _form && _baseline.formChosen,
+                hasData: _baseline.formChosen && _baseline.hasForm(form),
                 onTap: () => _switchForm(form),
               ),
             ),
@@ -1234,31 +1322,35 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   Widget _bandWidthField() {
     final plan = _baseline.formOf(_form);
     final fromDie = widget.linerWidth != null;
-    return _fromDieTip(_DimensionField(
-      key: ValueKey<String>('${_form.name}-width'),
-      controller: _bandWidthController,
-      label: 'Width',
-      unit: plan.widthUnit,
-      readOnly: widget.readOnly || fromDie,
-      errorText: _bandErrors['width'],
-      onChanged: () => _onBandLength(
-        'width',
-        _bandWidthController,
-        plan.widthUnit,
-        (p, nm) => p.copyWith(widthNm: nm),
+    return _fromDieTip(
+      _DimensionField(
+        key: ValueKey<String>('${_form.name}-width'),
+        controller: _bandWidthController,
+        label: 'Width',
+        unit: plan.widthUnit,
+        readOnly: widget.readOnly || fromDie,
+        errorText: _bandErrors['width'],
+        onChanged: () => _onBandLength(
+          'width',
+          _bandWidthController,
+          plan.widthUnit,
+          (p, nm) => p.copyWith(widthNm: nm),
+        ),
+        unitWidget: _UnitPicker(
+          symbol: plan.widthUnit,
+          options: faceLengthUnits,
+          onChanged: widget.readOnly || fromDie
+              ? null
+              : (unit) {
+                  _updateBand((p) => p.copyWith(widthUnit: unit.symbol));
+                  _bandWidthController.text = formatLengthFromNanometres(
+                    plan.widthNm,
+                    unit.symbol,
+                  );
+                },
+        ),
       ),
-      unitWidget: _UnitPicker(
-        symbol: plan.widthUnit,
-        options: faceLengthUnits,
-        onChanged: widget.readOnly || fromDie
-            ? null
-            : (unit) {
-                _updateBand((p) => p.copyWith(widthUnit: unit.symbol));
-                _bandWidthController.text =
-                    formatLengthFromNanometres(plan.widthNm, unit.symbol);
-              },
-      ),
-    ));
+    );
   }
 
   /// The Width box when it is the die's Liner Size: says so, and where to
@@ -1357,8 +1449,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 ? null
                 : (unit) {
                     _updateBand((p) => p.copyWith(lengthUnit: unit.symbol));
-                    _bandLengthController.text =
-                        formatLengthFromNanometres(plan.lengthNm, unit.symbol);
+                    _bandLengthController.text = formatLengthFromNanometres(
+                      plan.lengthNm,
+                      unit.symbol,
+                    );
                   },
           ),
           choice,
@@ -1369,8 +1463,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
 
   Future<void> _pickLength(BuildContext anchor) async {
     final box = anchor.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(anchor).context.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(anchor).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) return;
     final at = box.localToGlobal(Offset.zero, ancestor: overlay);
     final picked = await showMenu<bool>(
@@ -1433,8 +1526,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             ? null
             : (unit) {
                 _updateBand((p) => p.copyWith(pitchUnit: unit.symbol));
-                _bandPitchController.text =
-                    formatLengthFromNanometres(plan.pitchNm, unit.symbol);
+                _bandPitchController.text = formatLengthFromNanometres(
+                  plan.pitchNm,
+                  unit.symbol,
+                );
               },
       ),
     );
@@ -1453,7 +1548,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     } else if (parts == null) {
       line = 'One part every $pitch of $noun.';
     } else {
-      line = '≈ $parts parts from '
+      line =
+          '≈ $parts parts from '
           '${_nmLabel(plan.lengthNm, plan.lengthUnit)} of $noun — '
           'one every $pitch.';
     }
@@ -1476,7 +1572,8 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     final bits = <String>[
       if (_alloy.isNotEmpty) _alloy,
       if (grade.isNotEmpty) '$grade grade',
-      if (plan.widthNm != null) '${_nmLabel(plan.widthNm, plan.widthUnit)} wide',
+      if (plan.widthNm != null)
+        '${_nmLabel(plan.widthNm, plan.widthUnit)} wide',
       if (thickness.isNotEmpty) thickness,
     ];
     final noun = _form.label.toLowerCase();
@@ -1516,7 +1613,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 pipelineId: widget.pipelineId,
                 pipelineName: widget.pipelineName,
                 unattachedHint: widget.unattachedHint,
-                itemName: widget.itemName,
+                itemName: _resolvedItemName,
                 sheetLabel: _bandLabel,
                 countFamily: _countFamily,
                 stockNoun: _form.label.toLowerCase(),
@@ -1546,9 +1643,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   Widget _materialStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: _dataPanel()),
-      ],
+      children: [Expanded(child: _dataPanel())],
     );
   }
 
@@ -1589,7 +1684,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       stageReconciliations: [
         baseline.reconciliationFromPlan(
           sheetLabel: _sheetLabel,
-          partName: widget.itemName.trim(),
+          partName: _resolvedItemName.trim(),
           keepFrom: baseline.stageReconciliations.firstOrNull,
         ),
       ],
@@ -1599,7 +1694,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   List<RawSheetReviewSection> _reviewSections(PenPaperBaseline recorded) =>
       rawSheetReviewSections(
         baseline: recorded,
-        partName: widget.itemName,
+        partName: _resolvedItemName,
         sheetLabel: _sheetLabel,
         countFamily: _countFamily,
       );
@@ -1614,10 +1709,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         Row(
           children: [
             const Expanded(
-              child: Text(
-                'AS IT WILL BE RECORDED',
-                style: SheetStyle.eyebrow,
-              ),
+              child: Text('AS IT WILL BE RECORDED', style: SheetStyle.eyebrow),
             ),
             TextButton.icon(
               key: const ValueKey<String>('raw-review-print'),
@@ -1625,7 +1717,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 context,
                 baseline: recorded,
                 sections: sections,
-                partName: widget.itemName,
+                partName: _resolvedItemName,
               ),
               icon: const Icon(Icons.print_outlined, size: 18),
               label: const Text(
@@ -1684,9 +1776,9 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  widget.itemName.trim().isEmpty
+                  _resolvedItemName.trim().isEmpty
                       ? 'Recorded on $on'
-                      : '${widget.itemName.trim()} · on $on',
+                      : '${_resolvedItemName.trim()} · on $on',
                   style: const TextStyle(
                     color: SoftErpTheme.textSecondary,
                     fontSize: 13,
@@ -1725,10 +1817,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'THE SHEET',
-            style: SheetStyle.eyebrow,
-          ),
+          const Text('THE SHEET', style: SheetStyle.eyebrow),
           const SizedBox(height: 8),
           Expanded(
             child: SheetDimensionFigure(
@@ -1838,18 +1927,20 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         Expanded(
           child: _form.isBand
               ? _bandWidthField()
-              : _fromDieTip(_DimensionField(
-                  key: const ValueKey<String>('sheet-width'),
-                  controller: _widthController,
-                  label: 'Width',
-                  // The face is one measurement in two directions, so both
-                  // sides read in the same unit — a sheet quoted 96 in by
-                  // 1219 mm is a mistake waiting to be made.
-                  unit: face.symbol,
-                  readOnly: widget.readOnly || widget.linerWidth != null,
-                  onChanged: _onDimensionChanged,
-                  unitWidget: facePicker(),
-                )),
+              : _fromDieTip(
+                  _DimensionField(
+                    key: const ValueKey<String>('sheet-width'),
+                    controller: _widthController,
+                    label: 'Width',
+                    // The face is one measurement in two directions, so both
+                    // sides read in the same unit — a sheet quoted 96 in by
+                    // 1219 mm is a mistake waiting to be made.
+                    unit: face.symbol,
+                    readOnly: widget.readOnly || widget.linerWidth != null,
+                    onChanged: _onDimensionChanged,
+                    unitWidget: facePicker(),
+                  ),
+                ),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -1923,10 +2014,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         children: [
           Row(
             children: [
-              const Text(
-                'OPERATION',
-                style: SheetStyle.eyebrow,
-              ),
+              const Text('OPERATION', style: SheetStyle.eyebrow),
               const SizedBox(width: 6),
               // The definitions live under a hover rather than on the panel:
               // they are read once and then never again, and left inline they
@@ -1954,14 +2042,14 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                         Text(
                           _form.isBand
                               ? 'How far the ${_form.label.toLowerCase()} '
-                                  'advances for each part — one part comes '
-                                  'off every pitch, the blank and the web '
-                                  'left between blanks together.'
+                                    'advances for each part — one part comes '
+                                    'off every pitch, the blank and the web '
+                                    'left between blanks together.'
                               : 'The strip nobody cuts into — the damaged '
-                                  'mill edge, the machine clamp, the straight '
-                                  'edge you gauge from. Comes off one pair of '
-                                  'sides only: left & right (across the '
-                                  'width) or top & bottom (along the length).',
+                                    'mill edge, the machine clamp, the straight '
+                                    'edge you gauge from. Comes off one pair of '
+                                    'sides only: left & right (across the '
+                                    'width) or top & bottom (along the length).',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
@@ -2021,10 +2109,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       children: [
         const SizedBox(
           width: _labelWidth,
-          child: Text(
-            'PART',
-            style: _rowLabel,
-          ),
+          child: Text('PART', style: _rowLabel),
         ),
         Expanded(
           child: SizedBox(
@@ -2060,11 +2145,15 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
                 filled: true,
                 fillColor: SoftErpTheme.cardSurface,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+                  borderRadius: BorderRadius.circular(
+                    SoftErpTheme.radiusControl,
+                  ),
                   borderSide: const BorderSide(color: SoftErpTheme.border),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+                  borderRadius: BorderRadius.circular(
+                    SoftErpTheme.radiusControl,
+                  ),
                   borderSide: const BorderSide(color: SoftErpTheme.border),
                 ),
               ),
@@ -2182,45 +2271,53 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             unset: 'Not set — add a Grade column in Properties',
           )
         : DropdownButtonFormField<String>(
-      // Per form, so switching forms shows that form's grade.
-      key: ValueKey<String>('${_form.name}-grade'),
-      initialValue: PenPaperBaseline.grades.contains(grade) ? grade : '',
-      isDense: true,
-      isExpanded: true,
-      style: const TextStyle(
-        color: SoftErpTheme.textPrimary,
-        fontSize: 14,
-        fontWeight: FontWeight.w700,
-      ),
-      decoration: InputDecoration(
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 10,
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl)),
-      ),
-      items: [
-        const DropdownMenuItem(value: '', child: Text('Not set')),
-        for (final g in PenPaperBaseline.grades)
-          DropdownMenuItem(value: g, child: Text('$g grade')),
-      ],
-      onChanged: enabled
-          ? (value) => setState(() => _setGrade(value ?? ''))
-          : null,
-    );
+            // Per form, so switching forms shows that form's grade.
+            key: ValueKey<String>('${_form.name}-grade'),
+            initialValue: PenPaperBaseline.grades.contains(grade) ? grade : '',
+            isDense: true,
+            isExpanded: true,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(SoftErpTheme.radiusControl),
+              ),
+            ),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Not set')),
+              for (final g in PenPaperBaseline.grades)
+                DropdownMenuItem(value: g, child: Text('$g grade')),
+            ],
+            onChanged: enabled
+                ? (value) => setState(() => _setGrade(value ?? ''))
+                : null,
+          );
     return Column(
       children: [
         Row(
           children: [
-            const SizedBox(width: _labelWidth, child: Text('ALLOY', style: _rowLabel)),
+            const SizedBox(
+              width: _labelWidth,
+              child: Text('ALLOY', style: _rowLabel),
+            ),
             Expanded(child: alloyField),
           ],
         ),
         const SizedBox(height: 8),
         Row(
           children: [
-            const SizedBox(width: _labelWidth, child: Text('GRADE', style: _rowLabel)),
+            const SizedBox(
+              width: _labelWidth,
+              child: Text('GRADE', style: _rowLabel),
+            ),
             Expanded(child: gradeField),
           ],
         ),
@@ -2241,7 +2338,10 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     final enabled = !widget.readOnly;
     return Row(
       children: [
-        const SizedBox(width: _labelWidth, child: Text('VENDOR', style: _rowLabel)),
+        const SizedBox(
+          width: _labelWidth,
+          child: Text('VENDOR', style: _rowLabel),
+        ),
         Expanded(
           child: SearchableSelectField<int>(
             key: ValueKey<String>('${_form.name}-vendor'),
@@ -2337,10 +2437,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           children: [
             const SizedBox(
               width: _labelWidth,
-              child: Text(
-                'EDGE TRIM',
-                style: _rowLabel,
-              ),
+              child: Text('EDGE TRIM', style: _rowLabel),
             ),
             Expanded(
               child: _PlainNumberField(
@@ -2373,10 +2470,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           children: [
             const SizedBox(
               width: _labelWidth,
-              child: Text(
-                'TRIM SIDES',
-                style: _rowLabel,
-              ),
+              child: Text('TRIM SIDES', style: _rowLabel),
             ),
             _AxisChoice(
               axis: _baseline.edgeTrimAxis,
@@ -2407,10 +2501,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
       children: [
         Row(
           children: [
-            const Text(
-              'SHEAR INTO',
-              style: SheetStyle.subHeading,
-            ),
+            const Text('SHEAR INTO', style: SheetStyle.subHeading),
             const Spacer(),
             _UnitPicker(
               symbol: _unitFor(_primaryRegion).symbol,
@@ -2488,10 +2579,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         const SizedBox(height: 12),
         const Divider(height: 1, color: SoftErpTheme.border),
         const SizedBox(height: 10),
-        const Text(
-          'THEN CUT A REGION',
-          style: SheetStyle.eyebrow,
-        ),
+        const Text('THEN CUT A REGION', style: SheetStyle.eyebrow),
         const SizedBox(height: 8),
         for (final region in regions) _regionRow(region),
       ],
@@ -2742,10 +2830,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
         const SizedBox(height: 10),
         const Divider(height: 1, color: SoftErpTheme.border),
         const SizedBox(height: 8),
-        const Text(
-          'THIS SHEET YIELDS',
-          style: SheetStyle.eyebrow,
-        ),
+        const Text('THIS SHEET YIELDS', style: SheetStyle.eyebrow),
         const SizedBox(height: 6),
         for (final entry in parts) _yieldRow(entry),
         for (final entry in waste) _yieldRow(entry),
@@ -2822,7 +2907,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           pipelineName: widget.pipelineName,
           unattachedHint: widget.unattachedHint,
           stageNodes: widget.stageNodes,
-          itemName: widget.itemName,
+          itemName: _resolvedItemName,
           sheetLabel: _sheetLabel,
           countFamily: _countFamily,
           followsSheetPlan: true,
@@ -2837,13 +2922,17 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   /// The step after this one, or null on the last.
   _MasterStep? get _nextStep {
     final at = _MasterStep.values.indexOf(_step);
-    return at + 1 < _MasterStep.values.length ? _MasterStep.values[at + 1] : null;
+    return at + 1 < _MasterStep.values.length
+        ? _MasterStep.values[at + 1]
+        : null;
   }
 
   Widget _nextButton() {
-    final next = _nextStep;
+    final next = _baseline.formChosen ? _nextStep : null;
     return Tooltip(
-      message: next == null
+      message: !_baseline.formChosen
+          ? _pickFormReason
+          : next == null
           ? 'Review is the last step'
           : 'On to ${next.title}',
       child: AppButton(
@@ -2874,16 +2963,32 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           icon: Icons.edit_outlined,
           onPressed: widget.onEdit,
         )
-      else
-        AppButton(
-          key: const ValueKey<String>('master-data-save'),
-          label: 'Save raw sheet',
-          icon: Icons.check_rounded,
+      // Inside the item sheet, the sheet's own Save ("Save Raw Sheet",
+      // outlined) so every Save there looks alike and Cmd/Ctrl+Enter stays
+      // the sheet's Done; on its own, the dialog's filled one.
+      else if (widget.embedded)
+        SheetSaveButton(
+          buttonKey: const ValueKey<String>('master-data-save'),
+          label: 'Save Raw Sheet',
+          tooltip: _baseline.formChosen ? null : _pickFormReason,
           isLoading: widget.saving,
-          onPressed: widget.readOnly || widget.saving
+          onPressed: widget.readOnly || widget.saving || !_baseline.formChosen
               ? null
-              // Without the blank rows the editor keeps for typing into.
               : () => widget.onSave(_recorded),
+        )
+      else
+        Tooltip(
+          message: _baseline.formChosen ? '' : _pickFormReason,
+          child: AppButton(
+            key: const ValueKey<String>('master-data-save'),
+            label: 'Save raw sheet',
+            icon: Icons.check_rounded,
+            isLoading: widget.saving,
+            onPressed: widget.readOnly || widget.saving || !_baseline.formChosen
+                ? null
+                // Without the blank rows the editor keeps for typing into.
+                : () => widget.onSave(_recorded),
+          ),
         ),
       // The workflow's own way forward, beside Edit: Sheet planning, then
       // Material data, then Review. On Review it is drawn off, saying why.
@@ -3012,10 +3117,7 @@ class _DimensionField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label.toUpperCase(),
-          style: SheetStyle.label,
-        ),
+        Text(label.toUpperCase(), style: SheetStyle.label),
         const SizedBox(height: 5),
         SizedBox(
           height: 44,
@@ -3238,7 +3340,9 @@ class _FormTile extends StatelessWidget {
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: selected ? SoftErpTheme.accentSurface : SoftErpTheme.cardSurface,
+              color: selected
+                  ? SoftErpTheme.accentSurface
+                  : SoftErpTheme.cardSurface,
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
               border: Border.all(
                 color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
@@ -3275,7 +3379,10 @@ class _FormTile extends StatelessWidget {
                     key: ValueKey<String>('raw-form-dot-${form.name}'),
                     width: 7,
                     height: 7,
-                    decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                      color: tone,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ],
               ],

@@ -25,8 +25,11 @@ class ProcessRouteException implements Exception {
 /// Carries the route to version, because "declare a new version" is only a
 /// reasonable thing to ask of someone who can see which one.
 class RouteActiveException extends ProcessRouteException {
-  RouteActiveException(super.message, {required this.routeId, required this.version})
-      : super(code: 'route_active');
+  RouteActiveException(
+    super.message, {
+    required this.routeId,
+    required this.version,
+  }) : super(code: 'route_active');
 
   final int routeId;
   final int version;
@@ -86,17 +89,23 @@ class ProcessRouteService {
   Future<ProcessStage> createStage(String name) async {
     final clean = name.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (clean.isEmpty) {
-      throw ProcessRouteException('A stage needs a name.', code: 'stage_name_required');
+      throw ProcessRouteException(
+        'A stage needs a name.',
+        code: 'stage_name_required',
+      );
     }
     if (useMockResponses) {
       for (final stage in _mockStageList) {
         if (stage.name.toLowerCase() == clean.toLowerCase()) return stage;
       }
       final made = ProcessStage(
-        id: _mockStageList.fold<int>(0, (max, s) => s.id > max ? s.id : max) + 1,
+        id:
+            _mockStageList.fold<int>(0, (max, s) => s.id > max ? s.id : max) +
+            1,
         code: clean.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
         name: clean,
-        position: _mockStageList.fold<int>(
+        position:
+            _mockStageList.fold<int>(
               0,
               (max, s) => s.position > max ? s.position : max,
             ) +
@@ -107,7 +116,9 @@ class ProcessRouteService {
     }
     final payload = await _post('/api/process-stages', {'name': clean});
     final raw = payload['stage'];
-    final stage = raw is Map<String, dynamic> ? ProcessStage.fromJson(raw) : null;
+    final stage = raw is Map<String, dynamic>
+        ? ProcessStage.fromJson(raw)
+        : null;
     if (stage == null) {
       throw ProcessRouteException('The server did not send the stage back.');
     }
@@ -152,7 +163,8 @@ class ProcessRouteService {
     String status = 'active',
     String note = '',
   }) async {
-    if (useMockResponses) return _mockSave(partId, steps, status: status, note: note);
+    if (useMockResponses)
+      return _mockSave(partId, steps, status: status, note: note);
     final payload = await _post('/api/items/$partId/routes', {
       'steps': [for (final step in steps) step.toJson()],
       'status': status,
@@ -194,9 +206,9 @@ class ProcessRouteService {
   }
 
   List<PartRoute> _readRoutes(Map<String, dynamic> payload) => [
-        for (final entry in (payload['routes'] as List?) ?? const [])
-          if (entry is Map<String, dynamic>) ?PartRoute.fromJson(entry),
-      ];
+    for (final entry in (payload['routes'] as List?) ?? const [])
+      if (entry is Map<String, dynamic>) ?PartRoute.fromJson(entry),
+  ];
 
   List<PartRoute> _mockSave(
     int partId,
@@ -213,40 +225,46 @@ class ProcessRouteService {
         version: live.version,
       );
     }
-    final version = existing.fold<int>(0, (max, r) => r.version > max ? r.version : max) + 1;
-    existing.add(PartRoute(
-      id: _mockSeq++,
-      partId: partId,
-      version: version,
-      status: RouteStatus.parse(status),
-      note: note,
-      steps: [
-        for (var i = 0; i < steps.length; i += 1)
-          RouteStep(
-            stageId: steps[i].stageId,
-            seq: i + 1,
-            stageCode: _mockStageList
-                .where((s) => s.id == steps[i].stageId)
-                .map((s) => s.code)
-                .firstOrNull ??
-                '',
-            stageName: _mockStageList
-                .where((s) => s.id == steps[i].stageId)
-                .map((s) => s.name)
-                .firstOrNull ??
-                '',
-            notes: steps[i].notes,
-            machineId: steps[i].machineId,
-            dieId: steps[i].dieId,
-          ),
-      ],
-    ));
+    final version =
+        existing.fold<int>(0, (max, r) => r.version > max ? r.version : max) +
+        1;
+    existing.add(
+      PartRoute(
+        id: _mockSeq++,
+        partId: partId,
+        version: version,
+        status: RouteStatus.parse(status),
+        note: note,
+        steps: [
+          for (var i = 0; i < steps.length; i += 1)
+            RouteStep(
+              stageId: steps[i].stageId,
+              seq: i + 1,
+              stageCode:
+                  _mockStageList
+                      .where((s) => s.id == steps[i].stageId)
+                      .map((s) => s.code)
+                      .firstOrNull ??
+                  '',
+              stageName:
+                  _mockStageList
+                      .where((s) => s.id == steps[i].stageId)
+                      .map((s) => s.name)
+                      .firstOrNull ??
+                  '',
+              notes: steps[i].notes,
+              machineId: steps[i].machineId,
+              dieId: steps[i].dieId,
+            ),
+        ],
+      ),
+    );
     existing.sort((a, b) {
       int rank(PartRoute r) => switch (r.status) {
-            RouteStatus.active => 0,
-            RouteStatus.draft => 1,
-            RouteStatus.retired => 2,
-          };
+        RouteStatus.active => 0,
+        RouteStatus.draft => 1,
+        RouteStatus.retired => 2,
+      };
       final byStatus = rank(a).compareTo(rank(b));
       return byStatus != 0 ? byStatus : b.version.compareTo(a.version);
     });

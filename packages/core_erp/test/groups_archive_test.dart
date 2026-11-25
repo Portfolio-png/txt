@@ -51,10 +51,12 @@ GroupDefinition _group(
   int? parentGroupId,
   bool isArchived = false,
   int itemCount = 0,
+  String? systemKey,
 }) {
   return GroupDefinition(
     id: id,
     name: name,
+    systemKey: systemKey,
     groupStructure: 'hierarchical',
     parentGroupId: parentGroupId,
     unitId: 1,
@@ -67,13 +69,16 @@ GroupDefinition _group(
 }
 
 class _ArchivingGroupRepository implements GroupRepository {
-  _ArchivingGroupRepository();
+  _ArchivingGroupRepository([List<GroupDefinition>? initial])
+    : groups =
+          initial ??
+          <GroupDefinition>[
+            _group(1, 'Primary Group'),
+            _group(2, 'Spare Parts', parentGroupId: 1),
+            _group(3, 'Discontinued', parentGroupId: 1, isArchived: true),
+          ];
 
-  List<GroupDefinition> groups = <GroupDefinition>[
-    _group(1, 'Primary Group'),
-    _group(2, 'Spare Parts', parentGroupId: 1),
-    _group(3, 'Discontinued', parentGroupId: 1, isArchived: true),
-  ];
+  List<GroupDefinition> groups;
 
   final List<int> archived = <int>[];
   final List<int> restored = <int>[];
@@ -168,12 +173,15 @@ class _FakeInventoryRepository implements InventoryRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<_ArchivingGroupRepository> _openGroups(WidgetTester tester) async {
+Future<_ArchivingGroupRepository> _openGroups(
+  WidgetTester tester, {
+  List<GroupDefinition>? groups,
+}) async {
   tester.view.physicalSize = const Size(1700, 1300);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
-  final repository = _ArchivingGroupRepository();
+  final repository = _ArchivingGroupRepository(groups);
   final groupsProvider = GroupsProvider(repository: repository);
   final itemsProvider = ItemsProvider(repository: _FakeItemRepository());
   final unitsProvider = UnitsProvider(repository: _FakeUnitRepository());
@@ -314,6 +322,55 @@ void main() {
       // The server's sentence, which names the thing to go and fix.
       expect(find.textContaining('still holds 2 active items'), findsOneWidget);
       expect(find.text('Spare Parts'), findsWidgets, reason: 'and it stayed');
+    });
+  });
+
+  group('a default group (Raw Materials)', () {
+    testWidgets('draws Archive and Delete disabled, with the reason', (
+      tester,
+    ) async {
+      final repository = await _openGroups(
+        tester,
+        groups: <GroupDefinition>[
+          _group(10, 'Raw Materials', systemKey: 'raw_materials'),
+          _group(
+            11,
+            'Rivets',
+            parentGroupId: 10,
+            systemKey: 'raw_materials.rivets',
+          ),
+        ],
+      );
+      // The root row is a default group itself; no need to unfold (tapping
+      // a non-Primary name opens its overview sheet, which this fake lacks).
+      expect(find.text('Raw Materials'), findsOneWidget);
+
+      for (final label in const <String>['Archive', 'Delete']) {
+        final links = find.widgetWithText(SoftActionLink, label);
+        expect(links, findsWidgets, reason: 'drawn, not hidden');
+        for (final link in links.evaluate()) {
+          expect(
+            (link.widget as SoftActionLink).onTap,
+            isNull,
+            reason: '$label on a default group is refused by the server',
+          );
+        }
+      }
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Tooltip &&
+              (w.message ?? '').contains('comes back after Clear Data'),
+        ),
+        findsWidgets,
+      );
+
+      final archive = find.widgetWithText(SoftActionLink, 'Archive').last;
+      await tester.ensureVisible(archive);
+      await tester.tap(archive, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(repository.archived, isEmpty);
+      expect(find.textContaining('Archive "Raw Materials"?'), findsNothing);
     });
   });
 }

@@ -12,7 +12,6 @@ import '../../../clients/presentation/widgets/company_view_dialog.dart';
 import '../../../links/domain/entity_link.dart';
 import '../../../links/presentation/widgets/ecosystem_inspector.dart';
 
-
 import '../../../../core/services/company_documents.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/utils/stamp_format.dart';
@@ -23,6 +22,7 @@ import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../process_routes/data/process_route_service.dart';
 import '../../../process_routes/domain/part_route.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../domain/part_name.dart';
 import '../../../production_pipelines/presentation/widgets/raw_sheet_review.dart';
 import '../../../units/data/unit_family_service.dart';
 import '../../../units/domain/unit_family.dart';
@@ -52,7 +52,10 @@ List<ReportLine> dieLines(ItemDieLink die, {bool held = false}) {
     if (text.isNotEmpty) out.add((label, text));
   }
 
-  add(null, '${die.toolCode.isEmpty ? 'Die' : die.toolCode}${held ? ' (not saved yet)' : ''}');
+  add(
+    null,
+    '${die.toolCode.isEmpty ? 'Die' : die.toolCode}${held ? ' (not saved yet)' : ''}',
+  );
   add('Type', DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label);
   add('Made by', die.madeBy);
   add('Ordered', die.poAt == null ? null : partStamp(die.poAt!));
@@ -78,19 +81,29 @@ List<ReportLine> machineLines(ItemMachineLink machine, {bool held = false}) {
   }
 
   final number = machine.assetId.isNotEmpty ? machine.assetId : machine.name;
-  add(null, '${number.isEmpty ? 'Machine' : number}${held ? ' (not saved yet)' : ''}');
+  add(
+    null,
+    '${number.isEmpty ? 'Machine' : number}${held ? ' (not saved yet)' : ''}',
+  );
   if (machine.assetId.isNotEmpty) add('Name', machine.name);
   add('Type', machine.machineType);
   add('Make', machine.machineMake);
   add(
     'Capacity',
-    capacityLabel(CapacityKind.fromWire(machine.capacityKind), machine.capacityKgf, 'Ton'),
+    capacityLabel(
+      CapacityKind.fromWire(machine.capacityKind),
+      machine.capacityKgf,
+      'Ton',
+    ),
   );
   add('Strokes/min', machine.strokesPerMinute);
   add('Feed', machine.dieFeedType);
   add('Feeder', machine.feederMake);
   add('Built', machine.manufacturedYear);
-  add('Running', machine.runningHours == null ? null : '${machine.runningHours} h');
+  add(
+    'Running',
+    machine.runningHours == null ? null : '${machine.runningHours} h',
+  );
   return out;
 }
 
@@ -102,7 +115,10 @@ String routeLine(PartRoute route) =>
 /// "Patti — PGBP1 · saved 03/11/2026 02.45 PM": the part, its code, and
 /// when it was last saved.
 String itemReportHeading(ItemDefinition item) {
-  final name = item.displayName.trim().isEmpty ? item.name : item.displayName.trim();
+  final name = partNameWithNo(
+    item.displayName.trim().isEmpty ? item.name : item.displayName.trim(),
+    item.partNo,
+  );
   final code = item.partCode.trim();
   return [
     code.isEmpty ? name : '$name — $code',
@@ -128,40 +144,51 @@ List<RawSheetReviewSection> itemReportSections({
     return text.isEmpty ? otherwise : text;
   }
 
-  final name = item.displayName.trim().isEmpty ? item.name : item.displayName.trim();
+  final name = partNameWithNo(
+    item.displayName.trim().isEmpty ? item.name : item.displayName.trim(),
+    item.partNo,
+  );
   final sections = <RawSheetReviewSection>[];
 
   // --- the part --------------------------------------------------------------
   final properties = <(String, String)>[
     for (final node in item.variationTree)
-      if (node.kind == ItemVariationNodeKind.property && node.children.isNotEmpty)
+      if (node.kind == ItemVariationNodeKind.property &&
+          node.children.isNotEmpty)
         (
           propertyLabels[node.name.trim().toLowerCase()] ?? node.name,
-          node.children.map((value) => value.displayName.isEmpty ? value.name : value.displayName).join(', '),
+          node.children
+              .map(
+                (value) =>
+                    value.displayName.isEmpty ? value.name : value.displayName,
+              )
+              .join(', '),
         ),
   ];
-  sections.add(RawSheetReviewSection('Part', [
-    ('Part', name),
-    ('Part code', said(item.partCode, 'No code yet')),
-    if (item.partNo != null) ('Part No', '${item.partNo}'),
-    ('Filed under', said(groupPath, '—')),
-    ...properties,
-    ('Created', partStamp(item.createdAt)),
-    ('Last saved', partStamp(item.updatedAt)),
-  ]));
+  sections.add(
+    RawSheetReviewSection('Part', [
+      ('Part', name),
+      ('Part code', said(item.partCode, 'No code yet')),
+      if (item.partNo != null) ('Part No', '${item.partNo}'),
+      ('Filed under', said(groupPath, '—')),
+      ...properties,
+      ('Created', partStamp(item.createdAt)),
+      ('Last saved', partStamp(item.updatedAt)),
+    ]),
+  );
 
   // --- who it was made for -----------------------------------------------------
   final deal = item.developedFor;
-  final company = deal.companyName.trim().isNotEmpty ? deal.companyName : deal.clientName;
+  final company = deal.companyName.trim().isNotEmpty
+      ? deal.companyName
+      : deal.clientName;
   final people = deal.contacts.isNotEmpty
       ? [
           for (final person in deal.contacts)
-            [
-              person.name,
-              person.designation,
-              person.phone,
-              person.email,
-            ].map((part) => part.trim()).where((part) => part.isNotEmpty).join(' · '),
+            [person.name, person.designation, person.phone, person.email]
+                .map((part) => part.trim())
+                .where((part) => part.isNotEmpty)
+                .join(' · '),
         ]
       : [
           if (deal.contactName.trim().isNotEmpty)
@@ -170,66 +197,82 @@ List<RawSheetReviewSection> itemReportSections({
                 .where((part) => part.isNotEmpty)
                 .join(' · '),
         ];
-  sections.add(RawSheetReviewSection('Company', [
-    if (deal.kind == DevelopedForKind.self && company.trim().isEmpty)
-      ('Made for', 'Ourselves (in-house)')
-    else if (deal.kind == DevelopedForKind.none && company.trim().isEmpty)
-      ('Made for', 'No company recorded')
-    else ...[
-      ('Made for', said(company)),
-      if (deal.kind == DevelopedForKind.contractor)
-        ('Contractor', said(deal.subContractorName)),
-    ],
-    if (deal.quotationAmount != null) ('Quotation', rupeeStamp(deal.quotationAmount!)),
-    if (deal.costAmount != null) ('Development cost', rupeeStamp(deal.costAmount!)),
-    if (deal.at != null) ('Recorded', partStamp(deal.at!)),
-    for (final person in people) ('Dealt with', person),
-    if (documents.isNotEmpty) ('Documents', documents.join(', ')),
-  ]));
+  sections.add(
+    RawSheetReviewSection('Company', [
+      if (deal.kind == DevelopedForKind.self && company.trim().isEmpty)
+        ('Made for', 'Ourselves (in-house)')
+      else if (deal.kind == DevelopedForKind.none && company.trim().isEmpty)
+        ('Made for', 'No company recorded')
+      else ...[
+        ('Made for', said(company)),
+        if (deal.kind == DevelopedForKind.contractor)
+          ('Contractor', said(deal.subContractorName)),
+      ],
+      if (deal.quotationAmount != null)
+        ('Quotation', rupeeStamp(deal.quotationAmount!)),
+      if (deal.costAmount != null)
+        ('Development cost', rupeeStamp(deal.costAmount!)),
+      if (deal.at != null) ('Recorded', partStamp(deal.at!)),
+      for (final person in people) ('Dealt with', person),
+      if (documents.isNotEmpty) ('Documents', documents.join(', ')),
+    ]),
+  );
 
   // --- dies and machines -------------------------------------------------------
   List<(String, String)> asRows(List<ReportLine> lines) => [
-        for (final (label, value) in lines) (label ?? '', value),
-      ];
-  sections.add(RawSheetReviewSection(
-    'Dies',
-    item.dies.isEmpty
-        ? const [('', 'No dies on this part')]
-        : [for (final die in item.dies) ...asRows(dieLines(die))],
-  ));
-  sections.add(RawSheetReviewSection(
-    'Machines',
-    item.machines.isEmpty
-        ? const [('', 'No machines on this part')]
-        : [for (final machine in item.machines) ...asRows(machineLines(machine))],
-  ));
+    for (final (label, value) in lines) (label ?? '', value),
+  ];
+  sections.add(
+    RawSheetReviewSection(
+      'Dies',
+      item.dies.isEmpty
+          ? const [('', 'No dies on this part')]
+          : [for (final die in item.dies) ...asRows(dieLines(die))],
+    ),
+  );
+  sections.add(
+    RawSheetReviewSection(
+      'Machines',
+      item.machines.isEmpty
+          ? const [('', 'No machines on this part')]
+          : [
+              for (final machine in item.machines)
+                ...asRows(machineLines(machine)),
+            ],
+    ),
+  );
 
   // --- the route: the pipeline at a glance --------------------------------------
   final route = routes.firstOrNull;
-  sections.add(RawSheetReviewSection(
-    'Route (pipeline)',
-    route == null
-        ? const [('', 'No route yet')]
-        : [
-            ('Pipeline', route.title),
-            ('Version', 'v${route.version} · ${route.status.wire}'),
-            (
-              'Stages',
-              route.steps.isEmpty
-                  ? 'None'
-                  : route.steps.map((step) => step.stageName).join(' → '),
-            ),
-            if (route.note.trim().isNotEmpty) ('Note', route.note.trim()),
-          ],
-  ));
+  sections.add(
+    RawSheetReviewSection(
+      'Route (pipeline)',
+      route == null
+          ? const [('', 'No route yet')]
+          : [
+              ('Pipeline', route.title),
+              ('Version', 'v${route.version} · ${route.status.wire}'),
+              (
+                'Stages',
+                route.steps.isEmpty
+                    ? 'None'
+                    : route.steps.map((step) => step.stageName).join(' → '),
+              ),
+              if (route.note.trim().isNotEmpty) ('Note', route.note.trim()),
+            ],
+    ),
+  );
 
   // --- the raw sheet ------------------------------------------------------------
   final baseline = item.penPaperBaseline;
   if (baseline == null) {
-    sections.add(const RawSheetReviewSection('Raw sheet', [('', 'No raw sheet recorded')]));
+    sections.add(
+      const RawSheetReviewSection('Raw sheet', [('', 'No raw sheet recorded')]),
+    );
   } else {
     final recorded = _withoutMadeUpWeights(baseline);
-    final weightsMadeUp = recorded.stageReconciliations.isEmpty &&
+    final weightsMadeUp =
+        recorded.stageReconciliations.isEmpty &&
         baseline.stageReconciliations.isNotEmpty;
     final raw = rawSheetReviewSections(
       baseline: recorded,
@@ -240,10 +283,11 @@ List<RawSheetReviewSection> itemReportSections({
     // Its own "Part" heading repeats the one above.
     sections.addAll(raw.where((section) => section.title != 'Part'));
     if (weightsMadeUp) {
-      sections.add(const RawSheetReviewSection(
-        'Material in and out',
-        [('', 'Not recorded')],
-      ));
+      sections.add(
+        const RawSheetReviewSection('Material in and out', [
+          ('', 'Not recorded'),
+        ]),
+      );
     }
   }
   return sections;
@@ -259,10 +303,12 @@ PenPaperBaseline _withoutMadeUpWeights(PenPaperBaseline baseline) {
   final madeUpNote = const PenPaperBaseline().notes;
   if (baseline.notes == madeUpNote) baseline = baseline.copyWith(notes: '');
   if (baseline.stageReconciliations.any((row) => row.notes == madeUpNote)) {
-    baseline = baseline.copyWith(stageReconciliations: [
-      for (final row in baseline.stageReconciliations)
-        row.notes == madeUpNote ? row.copyWith(notes: '') : row,
-    ]);
+    baseline = baseline.copyWith(
+      stageReconciliations: [
+        for (final row in baseline.stageReconciliations)
+          row.notes == madeUpNote ? row.copyWith(notes: '') : row,
+      ],
+    );
   }
   final made = PenPaperBaseline.createDefaultForStages().stageReconciliations;
   final rows = baseline.stageReconciliations;
@@ -283,12 +329,16 @@ PenPaperBaseline _withoutMadeUpWeights(PenPaperBaseline baseline) {
 /// "MS sheet · 48 × 96 in · 1.2 mm" — stamped on the record when it was
 /// saved; rebuilt from its sizes when an older record has none.
 String _sheetLabelOf(PenPaperBaseline baseline) {
-  final stamped = baseline.stageReconciliations.firstOrNull?.inputLabel.trim() ?? '';
+  final stamped =
+      baseline.stageReconciliations.firstOrNull?.inputLabel.trim() ?? '';
   if (stamped.isNotEmpty) return stamped;
-  String size(double inches) =>
-      inches == inches.roundToDouble() ? inches.toStringAsFixed(0) : inches.toString();
+  String size(double inches) => inches == inches.roundToDouble()
+      ? inches.toStringAsFixed(0)
+      : inches.toString();
   return [
-    baseline.materialName.trim().isEmpty ? 'Sheet' : baseline.materialName.trim(),
+    baseline.materialName.trim().isEmpty
+        ? 'Sheet'
+        : baseline.materialName.trim(),
     if (baseline.sheetWidthInches > 0 && baseline.sheetHeightInches > 0)
       '${size(baseline.sheetWidthInches)} × ${size(baseline.sheetHeightInches)} in',
   ].join(' · ');
@@ -402,7 +452,9 @@ class _ItemReportViewState extends State<ItemReportView> {
     }
     final group = groups.findById(item.groupId);
     if (group == null) return '';
-    final parent = group.parentGroupId == null ? null : groups.findById(group.parentGroupId);
+    final parent = group.parentGroupId == null
+        ? null
+        : groups.findById(group.parentGroupId);
     return parent == null ? group.name : '${parent.name} › ${group.name}';
   }
 
@@ -427,8 +479,12 @@ class _ItemReportViewState extends State<ItemReportView> {
       final provider = context.watch<CompanyDocumentsProvider>()
         ..request('client', '$clientId');
       return [
-        for (final document in provider.documentsOf('client', '$clientId') ?? const <CompanyDocument>[])
-          document.title.trim().isEmpty ? document.fileName : document.title.trim(),
+        for (final document
+            in provider.documentsOf('client', '$clientId') ??
+                const <CompanyDocument>[])
+          document.title.trim().isEmpty
+              ? document.fileName
+              : document.title.trim(),
       ];
     } catch (_) {
       return const [];
@@ -459,11 +515,16 @@ class _ItemReportViewState extends State<ItemReportView> {
     final labels = _propertyLabels();
     final properties = <(String, String)>[
       for (final node in item.variationTree)
-        if (node.kind == ItemVariationNodeKind.property && node.children.isNotEmpty)
+        if (node.kind == ItemVariationNodeKind.property &&
+            node.children.isNotEmpty)
           (
             labels[node.name.trim().toLowerCase()] ?? node.name,
             node.children
-                .map((value) => value.displayName.isEmpty ? value.name : value.displayName)
+                .map(
+                  (value) => value.displayName.isEmpty
+                      ? value.name
+                      : value.displayName,
+                )
                 .join(', '),
           ),
     ];
@@ -524,7 +585,9 @@ class _ItemReportViewState extends State<ItemReportView> {
                 ),
                 _FigureTile(
                   icon: Icons.route_rounded,
-                  value: route == null ? null : _count(route.steps.length, 'stage'),
+                  value: route == null
+                      ? null
+                      : _count(route.steps.length, 'stage'),
                   label: route == null ? 'Route' : 'Route v${route.version}',
                   onTap: () => _scrollTo(_routeKey),
                 ),
@@ -566,10 +629,16 @@ class _ItemReportViewState extends State<ItemReportView> {
             _RawSheetCard(
               key: _rawKey,
               baseline: raw,
-              madeUp: raw != null &&
+              madeUp:
+                  raw != null &&
                   raw.stageReconciliations.isEmpty &&
                   item.penPaperBaseline!.stageReconciliations.isNotEmpty,
-              partName: item.displayName.trim().isEmpty ? item.name : item.displayName.trim(),
+              partName: partNameWithNo(
+                item.displayName.trim().isEmpty
+                    ? item.name
+                    : item.displayName.trim(),
+                item.partNo,
+              ),
               countFamily: _countFamily,
             ),
           ],
@@ -599,7 +668,8 @@ String? _rawLadder(PenPaperBaseline? raw, UnitFamily? family) {
   return pieces == null ? null : piecesLadder(pieces, family);
 }
 
-String _count(int n, String one) => n == 0 ? '0 ${one}s' : '$n $one${n == 1 ? '' : 's'}';
+String _count(int n, String one) =>
+    n == 0 ? '0 ${one}s' : '$n $one${n == 1 ? '' : 's'}';
 
 String _kgText(double value) {
   final text = value.toStringAsFixed(2);
@@ -668,7 +738,10 @@ class _ReportHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = item.displayName.trim().isEmpty ? item.name : item.displayName.trim();
+    final name = partNameWithNo(
+      item.displayName.trim().isEmpty ? item.name : item.displayName.trim(),
+      item.partNo,
+    );
     final code = item.partCode.trim();
     return _Card(
       padding: const EdgeInsets.all(18),
@@ -682,7 +755,11 @@ class _ReportHeader extends StatelessWidget {
               size: 72,
               what: 'part photo',
               fallbackUrl: item.photoUrl,
-              onOpen: () => showPartPhotoGallery(context, itemId: '${item.id}', partName: name),
+              onOpen: () => showPartPhotoGallery(
+                context,
+                itemId: '${item.id}',
+                partName: name,
+              ),
             ),
             const SizedBox(width: 16),
           ],
@@ -720,11 +797,17 @@ class _ReportHeader extends StatelessWidget {
                   runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (code.isNotEmpty) _CodePill(code: code) else const _Muted('No code yet'),
+                    if (code.isNotEmpty)
+                      _CodePill(code: code)
+                    else
+                      const _Muted('No code yet'),
                     if (groupPath.isNotEmpty)
                       _IconText(icon: Icons.folder_outlined, text: groupPath),
                     if (item.partNo != null)
-                      _IconText(icon: Icons.tag_rounded, text: 'Part No ${item.partNo}'),
+                      _IconText(
+                        icon: Icons.tag_rounded,
+                        text: 'Part No ${item.partNo}',
+                      ),
                     _IconText(
                       icon: Icons.history_rounded,
                       text: 'Created ${partStamp(item.createdAt)}',
@@ -773,7 +856,9 @@ class _CodePill extends StatelessWidget {
           decoration: BoxDecoration(
             color: SoftErpTheme.accentSoft,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: SoftErpTheme.accent.withValues(alpha: 0.25)),
+            border: Border.all(
+              color: SoftErpTheme.accent.withValues(alpha: 0.25),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -788,7 +873,11 @@ class _CodePill extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.copy_rounded, size: 15, color: SoftErpTheme.accent),
+              const Icon(
+                Icons.copy_rounded,
+                size: 15,
+                color: SoftErpTheme.accent,
+              ),
             ],
           ),
         ),
@@ -816,7 +905,13 @@ class _PropertyChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
           const SizedBox(width: 8),
           Text(
             value,
@@ -922,19 +1017,28 @@ class _FigureTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
-                        color: value == null ? SoftErpTheme.textMuted : SoftErpTheme.textPrimary,
+                        color: value == null
+                            ? SoftErpTheme.textMuted
+                            : SoftErpTheme.textPrimary,
                       ),
                     ),
                     Text(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, size: 18, color: SoftErpTheme.textMuted),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: SoftErpTheme.textMuted,
+              ),
             ],
           ),
         ),
@@ -1025,7 +1129,11 @@ class _Badge extends StatelessWidget {
           ],
           Text(
             label,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: foreground),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: foreground,
+            ),
           ),
         ],
       ),
@@ -1046,7 +1154,13 @@ class _IconText extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: SoftErpTheme.textSecondary),
         const SizedBox(width: 5),
-        Text(text, style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary)),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 14,
+            color: SoftErpTheme.textSecondary,
+          ),
+        ),
       ],
     );
   }
@@ -1058,8 +1172,10 @@ class _Muted extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) =>
-      Text(text, style: const TextStyle(fontSize: 14, color: SoftErpTheme.textMuted));
+  Widget build(BuildContext context) => Text(
+    text,
+    style: const TextStyle(fontSize: 14, color: SoftErpTheme.textMuted),
+  );
 }
 
 /// "No dies on this part" — an icon and a sentence, where a card has nothing.
@@ -1083,7 +1199,13 @@ class _Empty extends StatelessWidget {
           Icon(icon, size: 20, color: SoftErpTheme.textMuted),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary)),
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
@@ -1135,12 +1257,12 @@ class _ReportTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final clickable = rows.any((row) => row.onTap != null);
     Widget cells(List<Widget> children) => Row(
-          children: [
-            for (final (i, child) in children.indexed)
-              Expanded(flex: columns[i].$2, child: child),
-            if (clickable) const SizedBox(width: 24),
-          ],
-        );
+      children: [
+        for (final (i, child) in children.indexed)
+          Expanded(flex: columns[i].$2, child: child),
+        if (clickable) const SizedBox(width: 24),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1174,9 +1296,14 @@ class _ReportTable extends StatelessWidget {
               hoverColor: SoftErpTheme.accentSoft.withValues(alpha: 0.6),
               onTap: row.onTap,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
                 decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+                  border: Border(
+                    bottom: BorderSide(color: SoftErpTheme.border),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -1187,7 +1314,11 @@ class _ReportTable extends StatelessWidget {
                         width: 24,
                         child: row.onTap == null
                             ? null
-                            : const Icon(Icons.chevron_right_rounded, size: 20, color: SoftErpTheme.accent),
+                            : const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 20,
+                                color: SoftErpTheme.accent,
+                              ),
                       ),
                   ],
                 ),
@@ -1208,16 +1339,31 @@ class _ReportRow {
 }
 
 /// One cell: the text, or a quiet dash. [strong] for the row's identity.
-Widget _cell(String? text, {bool strong = false, bool selectable = false, int maxLines = 1}) {
+Widget _cell(
+  String? text, {
+  bool strong = false,
+  bool selectable = false,
+  int maxLines = 1,
+}) {
   final value = text?.trim() ?? '';
-  if (value.isEmpty) return const Text('—', style: TextStyle(fontSize: 14, color: SoftErpTheme.textMuted));
+  if (value.isEmpty)
+    return const Text(
+      '—',
+      style: TextStyle(fontSize: 14, color: SoftErpTheme.textMuted),
+    );
   final style = TextStyle(
     fontSize: 14,
     fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
     color: SoftErpTheme.textPrimary,
   );
-  if (selectable) return SelectableText(value, style: style, maxLines: maxLines);
-  return Text(value, maxLines: maxLines, overflow: TextOverflow.ellipsis, style: style);
+  if (selectable)
+    return SelectableText(value, style: style, maxLines: maxLines);
+  return Text(
+    value,
+    maxLines: maxLines,
+    overflow: TextOverflow.ellipsis,
+    style: style,
+  );
 }
 
 /// Who it was made for: the company (opens its view), the quotation, who
@@ -1230,7 +1376,9 @@ class _CompanyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final company = deal.companyName.trim().isNotEmpty ? deal.companyName.trim() : deal.clientName.trim();
+    final company = deal.companyName.trim().isNotEmpty
+        ? deal.companyName.trim()
+        : deal.clientName.trim();
     final clientId = deal.clientId;
     final kind = switch (deal.kind) {
       DevelopedForKind.client => 'Client',
@@ -1244,7 +1392,9 @@ class _CompanyCard extends StatelessWidget {
         icon: Icons.storefront_rounded,
         child: _Empty(
           icon: Icons.home_work_outlined,
-          text: deal.kind == DevelopedForKind.self ? 'Made for ourselves (in-house)' : 'No company recorded',
+          text: deal.kind == DevelopedForKind.self
+              ? 'Made for ourselves (in-house)'
+              : 'No company recorded',
         ),
       );
     }
@@ -1254,14 +1404,23 @@ class _CompanyCard extends StatelessWidget {
       icon: Icons.storefront_rounded,
       trailing: kind == null
           ? null
-          : _Badge(label: kind, foreground: SoftErpTheme.infoText, background: SoftErpTheme.infoBg),
+          : _Badge(
+              label: kind,
+              foreground: SoftErpTheme.infoText,
+              background: SoftErpTheme.infoBg,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               if (MiniPhoto.isAvailable(context) && clientId != null) ...[
-                MiniPhoto(owner: PhotoOwner.client, id: '$clientId', size: 48, what: 'company logo'),
+                MiniPhoto(
+                  owner: PhotoOwner.client,
+                  id: '$clientId',
+                  size: 48,
+                  what: 'company logo',
+                ),
                 const SizedBox(width: 12),
               ],
               Expanded(
@@ -1272,8 +1431,12 @@ class _CompanyCard extends StatelessWidget {
                       message: clientId == null ? '' : 'Open the company',
                       child: InkWell(
                         key: const ValueKey<String>('item_report_company'),
-                        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-                        onTap: clientId == null ? null : () => CompanyView.openClient(context, clientId),
+                        borderRadius: BorderRadius.circular(
+                          SoftErpTheme.radiusXs,
+                        ),
+                        onTap: clientId == null
+                            ? null
+                            : () => CompanyView.openClient(context, clientId),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1289,7 +1452,11 @@ class _CompanyCard extends StatelessWidget {
                             ),
                             if (clientId != null) ...[
                               const SizedBox(width: 6),
-                              const Icon(Icons.open_in_new_rounded, size: 16, color: SoftErpTheme.accent),
+                              const Icon(
+                                Icons.open_in_new_rounded,
+                                size: 16,
+                                color: SoftErpTheme.accent,
+                              ),
                             ],
                           ],
                         ),
@@ -1298,7 +1465,10 @@ class _CompanyCard extends StatelessWidget {
                     if (deal.at != null)
                       Text(
                         'Recorded ${partStamp(deal.at!)}',
-                        style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: SoftErpTheme.textSecondary,
+                        ),
                       ),
                   ],
                 ),
@@ -1312,32 +1482,52 @@ class _CompanyCard extends StatelessWidget {
             children: [
               _Fact(
                 label: 'Quotation',
-                value: deal.quotationAmount == null ? '' : rupeeStamp(deal.quotationAmount!),
+                value: deal.quotationAmount == null
+                    ? ''
+                    : rupeeStamp(deal.quotationAmount!),
                 width: 180,
               ),
               if (deal.costAmount != null)
-                _Fact(label: 'Development cost', value: rupeeStamp(deal.costAmount!), width: 180),
+                _Fact(
+                  label: 'Development cost',
+                  value: rupeeStamp(deal.costAmount!),
+                  width: 180,
+                ),
               if (deal.kind == DevelopedForKind.contractor)
-                _Fact(label: 'Contractor', value: deal.subContractorName, width: 220),
+                _Fact(
+                  label: 'Contractor',
+                  value: deal.subContractorName,
+                  width: 220,
+                ),
             ],
           ),
           const SizedBox(height: 16),
           Text('Dealt with', style: SheetStyle.label),
           const SizedBox(height: 8),
           if (people.isEmpty)
-            const _Empty(icon: Icons.person_outline_rounded, text: 'Nobody ticked on this deal')
+            const _Empty(
+              icon: Icons.person_outline_rounded,
+              text: 'Nobody ticked on this deal',
+            )
           else
             _ReportTable(
-              columns: const [('Name', 5), ('Designation', 4), ('Phone', 4), ('Email', 6)],
+              columns: const [
+                ('Name', 5),
+                ('Designation', 4),
+                ('Phone', 4),
+                ('Email', 6),
+              ],
               rows: [
                 for (final person in people)
                   // Names and emails run long: two lines, not an ellipsis.
-                  _ReportRow(cells: [
-                    _cell(person.name, strong: true, maxLines: 2),
-                    _cell(person.designation, maxLines: 2),
-                    _cell(person.phone, selectable: true),
-                    _cell(person.email, selectable: true, maxLines: 2),
-                  ]),
+                  _ReportRow(
+                    cells: [
+                      _cell(person.name, strong: true, maxLines: 2),
+                      _cell(person.designation, maxLines: 2),
+                      _cell(person.phone, selectable: true),
+                      _cell(person.email, selectable: true, maxLines: 2),
+                    ],
+                  ),
               ],
             ),
           if (documents.isNotEmpty) ...[
@@ -1383,18 +1573,29 @@ class _RouteCard extends StatelessWidget {
     final (fg, bg) = switch (route.status) {
       RouteStatus.active => (SoftErpTheme.successText, SoftErpTheme.successBg),
       RouteStatus.draft => (SoftErpTheme.warningText, SoftErpTheme.warningBg),
-      RouteStatus.retired => (SoftErpTheme.textSecondary, SoftErpTheme.cardSurfaceAlt),
+      RouteStatus.retired => (
+        SoftErpTheme.textSecondary,
+        SoftErpTheme.cardSurfaceAlt,
+      ),
     };
     return _Card(
       title: 'Route (pipeline)',
       icon: Icons.route_rounded,
-      trailing: _Badge(label: 'v${route.version} · ${route.status.wire}', foreground: fg, background: bg),
+      trailing: _Badge(
+        label: 'v${route.version} · ${route.status.wire}',
+        foreground: fg,
+        background: bg,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             route.title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: SoftErpTheme.textPrimary),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
           ),
           const SizedBox(height: 14),
           if (route.steps.isEmpty)
@@ -1406,7 +1607,12 @@ class _RouteCard extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 for (final (i, step) in route.steps.indexed) ...[
-                  if (i > 0) const Icon(Icons.arrow_forward_rounded, size: 16, color: SoftErpTheme.textMuted),
+                  if (i > 0)
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 16,
+                      color: SoftErpTheme.textMuted,
+                    ),
                   _StageChip(number: i + 1, name: step.stageName),
                 ],
               ],
@@ -1439,16 +1645,27 @@ class _StageChip extends StatelessWidget {
             width: 22,
             height: 22,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: SoftErpTheme.accent, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: SoftErpTheme.accent,
+              shape: BoxShape.circle,
+            ),
             child: Text(
               '$number',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
             ),
           ),
           const SizedBox(width: 7),
           Text(
             name,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: SoftErpTheme.textPrimary),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: SoftErpTheme.textPrimary,
+            ),
           ),
         ],
       ),
@@ -1474,7 +1691,10 @@ class _DiesCard extends StatelessWidget {
         background: SoftErpTheme.accentSoft,
       ),
       child: dies.isEmpty
-          ? const _Empty(icon: Icons.precision_manufacturing_outlined, text: 'No dies on this part')
+          ? const _Empty(
+              icon: Icons.precision_manufacturing_outlined,
+              text: 'No dies on this part',
+            )
           : _ReportTable(
               columns: const [
                 ('Code', 26),
@@ -1492,9 +1712,13 @@ class _DiesCard extends StatelessWidget {
                     key: ValueKey<String>('item_report_die_${die.id}'),
                     onTap: canOpen
                         ? () => showEcosystemInspector(
-                              context,
-                              subject: LinkRef(type: 'die', id: die.id, label: die.toolCode),
-                            )
+                            context,
+                            subject: LinkRef(
+                              type: 'die',
+                              id: die.id,
+                              label: die.toolCode,
+                            ),
+                          )
                         : null,
                     cells: [
                       Row(
@@ -1512,13 +1736,24 @@ class _DiesCard extends StatelessWidget {
                           Expanded(child: _cell(die.toolCode, strong: true)),
                         ],
                       ),
-                      _cell(DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label),
+                      _cell(
+                        DieTypeChoice.fromStored(
+                          die.dieType,
+                          die.dieTypeLabel,
+                        )?.label,
+                      ),
                       _cell(die.madeBy),
                       _cell(die.poAt == null ? null : partStampDate(die.poAt!)),
-                      _cell(die.dateInAt == null ? null : partStampDate(die.dateInAt!)),
-                      _cell(die.linerSizeNm == null
-                          ? null
-                          : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} ${die.linerSizeUnit}'),
+                      _cell(
+                        die.dateInAt == null
+                            ? null
+                            : partStampDate(die.dateInAt!),
+                      ),
+                      _cell(
+                        die.linerSizeNm == null
+                            ? null
+                            : '${formatLengthFromNanometres(die.linerSizeNm, die.linerSizeUnit)} ${die.linerSizeUnit}',
+                      ),
                       _cell(die.noOfSet?.toString()),
                       _cell(die.whereKept),
                     ],
@@ -1547,7 +1782,10 @@ class _MachinesCard extends StatelessWidget {
         background: SoftErpTheme.accentSoft,
       ),
       child: machines.isEmpty
-          ? const _Empty(icon: Icons.settings_suggest_outlined, text: 'No machines on this part')
+          ? const _Empty(
+              icon: Icons.settings_suggest_outlined,
+              text: 'No machines on this part',
+            )
           : _ReportTable(
               columns: const [
                 ('Machine No', 16),
@@ -1564,13 +1802,15 @@ class _MachinesCard extends StatelessWidget {
                     key: ValueKey<String>('item_report_machine_${machine.id}'),
                     onTap: canOpen
                         ? () => showEcosystemInspector(
-                              context,
-                              subject: LinkRef(
-                                type: 'machine',
-                                id: machine.id,
-                                label: machine.assetId.isEmpty ? machine.name : machine.assetId,
-                              ),
-                            )
+                            context,
+                            subject: LinkRef(
+                              type: 'machine',
+                              id: machine.id,
+                              label: machine.assetId.isEmpty
+                                  ? machine.name
+                                  : machine.assetId,
+                            ),
+                          )
                         : null,
                     cells: [
                       Row(
@@ -1587,7 +1827,9 @@ class _MachinesCard extends StatelessWidget {
                           ],
                           Expanded(
                             child: _cell(
-                              machine.assetId.isEmpty ? machine.name : machine.assetId,
+                              machine.assetId.isEmpty
+                                  ? machine.name
+                                  : machine.assetId,
                               strong: true,
                             ),
                           ),
@@ -1596,11 +1838,13 @@ class _MachinesCard extends StatelessWidget {
                       _cell(machine.name),
                       _cell(machine.machineType),
                       _cell(machine.machineMake),
-                      _cell(capacityLabel(
-                        CapacityKind.fromWire(machine.capacityKind),
-                        machine.capacityKgf,
-                        'Ton',
-                      )),
+                      _cell(
+                        capacityLabel(
+                          CapacityKind.fromWire(machine.capacityKind),
+                          machine.capacityKgf,
+                          'Ton',
+                        ),
+                      ),
                       _cell(machine.strokesPerMinute?.toString()),
                       _cell(machine.manufacturedYear?.toString()),
                     ],
@@ -1636,10 +1880,15 @@ class _RawSheetCard extends StatelessWidget {
       return const _Card(
         title: 'Raw sheet',
         icon: Icons.grid_on_rounded,
-        child: _Empty(icon: Icons.grid_off_rounded, text: 'No raw sheet recorded'),
+        child: _Empty(
+          icon: Icons.grid_off_rounded,
+          text: 'No raw sheet recorded',
+        ),
       );
     }
-    final row = baseline.isGranular ? null : baseline.stageReconciliations.firstOrNull;
+    final row = baseline.isGranular
+        ? null
+        : baseline.stageReconciliations.firstOrNull;
     final sections = rawSheetReviewSections(
       baseline: baseline,
       partName: partName,
@@ -1648,7 +1897,12 @@ class _RawSheetCard extends StatelessWidget {
     );
     // What the tiles and facts above do not already say.
     final more = sections
-        .where((s) => s.title != 'Part' && s.title != 'Sheet' && s.title != 'Material in and out')
+        .where(
+          (s) =>
+              s.title != 'Part' &&
+              s.title != 'Sheet' &&
+              s.title != 'Material in and out',
+        )
         .toList();
     final delta = row?.balanceDeltaKg ?? 0;
     final balances = delta.abs() < 0.05;
@@ -1674,7 +1928,9 @@ class _RawSheetCard extends StatelessWidget {
               _Fact(label: 'Alloy', value: baseline.materialName, width: 140),
               _Fact(
                 label: 'Grade',
-                value: baseline.materialGrade.isEmpty ? '' : '${baseline.materialGrade} grade',
+                value: baseline.materialGrade.isEmpty
+                    ? ''
+                    : '${baseline.materialGrade} grade',
                 width: 140,
               ),
               _Fact(label: 'Vendor', value: baseline.vendorName, width: 240),
@@ -1699,18 +1955,28 @@ class _RawSheetCard extends StatelessWidget {
                     value: piecesCount(row.piecesOut, countFamily),
                     detail: piecesLadder(row.piecesOut, countFamily),
                   ),
-                if (row.recordScrap) _StatTile(label: 'Scrap', value: _kgText(row.scrapKg)),
+                if (row.recordScrap)
+                  _StatTile(label: 'Scrap', value: _kgText(row.scrapKg)),
                 if (row.recordRejection && row.rejectionKg > 0)
-                  _StatTile(label: 'Rejection', value: _kgText(row.rejectionKg)),
+                  _StatTile(
+                    label: 'Rejection',
+                    value: _kgText(row.rejectionKg),
+                  ),
                 if (row.recordWeightLoss && row.weightLossKg > 0)
                   _StatTile(label: 'Loss', value: _kgText(row.weightLossKg)),
                 _Badge(
-                  icon: balances ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+                  icon: balances
+                      ? Icons.check_circle_rounded
+                      : Icons.warning_amber_rounded,
                   label: balances
                       ? 'Balances'
                       : '${_kgText(delta.abs())} ${delta > 0 ? 'unaccounted' : 'over'}',
-                  foreground: balances ? SoftErpTheme.successText : SoftErpTheme.warningText,
-                  background: balances ? SoftErpTheme.successBg : SoftErpTheme.warningBg,
+                  foreground: balances
+                      ? SoftErpTheme.successText
+                      : SoftErpTheme.warningText,
+                  background: balances
+                      ? SoftErpTheme.successBg
+                      : SoftErpTheme.warningBg,
                 ),
               ],
             ),
@@ -1720,21 +1986,30 @@ class _RawSheetCard extends StatelessWidget {
             const SizedBox(height: 8),
             // Nothing laid out: one line saying so, not "0 pcs · 0.0%".
             if (section.title == 'Cut plan' && baseline.pieceCount <= 0)
-              const _Empty(icon: Icons.grid_4x4_rounded, text: 'Nothing laid out on the sheet yet')
+              const _Empty(
+                icon: Icons.grid_4x4_rounded,
+                text: 'Nothing laid out on the sheet yet',
+              )
             else
-            Wrap(
-              spacing: 24,
-              runSpacing: 12,
-              children: [
-                for (final (label, value) in section.rows)
-                  label.isEmpty
-                      ? SizedBox(
-                          width: double.infinity,
-                          child: Text(value, style: const TextStyle(fontSize: 14, color: SoftErpTheme.textPrimary)),
-                        )
-                      : _Fact(label: label, value: value, width: 180),
-              ],
-            ),
+              Wrap(
+                spacing: 24,
+                runSpacing: 12,
+                children: [
+                  for (final (label, value) in section.rows)
+                    label.isEmpty
+                        ? SizedBox(
+                            width: double.infinity,
+                            child: Text(
+                              value,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: SoftErpTheme.textPrimary,
+                              ),
+                            ),
+                          )
+                        : _Fact(label: label, value: value, width: 180),
+                ],
+              ),
           ],
         ],
       ),
@@ -1744,7 +2019,12 @@ class _RawSheetCard extends StatelessWidget {
 
 /// A figure in a box: the value large, its name small above it.
 class _StatTile extends StatelessWidget {
-  const _StatTile({super.key, required this.label, required this.value, this.detail});
+  const _StatTile({
+    super.key,
+    required this.label,
+    required this.value,
+    this.detail,
+  });
 
   final String label;
   final String value;
@@ -1766,14 +2046,30 @@ class _StatTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: SoftErpTheme.textPrimary),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textPrimary,
+            ),
           ),
           if (detail != null)
-            Text(detail!, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
+            Text(
+              detail!,
+              style: const TextStyle(
+                fontSize: 13,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
         ],
       ),
     );

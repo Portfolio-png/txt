@@ -249,8 +249,7 @@ class ItemExpression {
   static ItemExpressionPlan parse(
     String text, {
     int? itemId,
-    List<ExpressionProperty> existingProperties =
-        const <ExpressionProperty>[],
+    List<ExpressionProperty> existingProperties = const <ExpressionProperty>[],
   }) {
     final rawParts = text.split(separator);
     final headText = rawParts.isEmpty ? '' : rawParts.first.trim();

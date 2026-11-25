@@ -98,20 +98,18 @@ class PartRowsForm extends StatelessWidget {
     for (final cells in lineGrid(def)) ...cells.whereType<ColumnDef>(),
   ];
 
-  /// A line's fields in reading order, as four to a row once were:
+  /// A line's fields, in two lines (user, 2026-11-25):
   ///
   ///     Group | Type      | Part Name | Part No
-  ///     Alloy | Thickness | Grade     | Part Code
+  ///     Alloy | Thickness | Grade     | Hardness | … | Part Code
   ///
-  /// Drawn as a wrap of fields each as wide as what it holds (2026-11-24),
-  /// so this is their ORDER, which Tab follows, not their columns.
-  ///
-  /// The last column holds the part's two numbers; the properties fill the
-  /// three before it, a row at a time, however many have been added. A null
-  /// is an empty cell. The stamp columns (Date, Time) are left out: the save
-  /// fills them, nobody types them — the heading shows them.
-  static const int gridColumns = 4;
-
+  /// The second line always starts on a line of its own, holds every
+  /// property — the two built in, then each one added with the + — and ends
+  /// with the Part Code, which is built from them. Each line is a wrap of
+  /// fields as wide as what they hold, so a long second line wraps within
+  /// itself; this is also the order Tab follows. The stamp columns (Date,
+  /// Time) are left out: the save fills them, nobody types them — the
+  /// heading shows them.
   static List<List<ColumnDef?>> lineGrid(SheetDef def) {
     final columns = [
       for (final group in const [
@@ -135,15 +133,11 @@ class PartRowsForm extends StatelessWidget {
         if (column != null) column.id,
     };
     final rest = columns.where((c) => !placed.contains(c.id)).toList();
-    // Part No ends the first line, beside the name; the code it is part of
-    // comes after the properties it is built from (user, 2026-11-24).
+    // Part No ends the first line, beside the name; the properties make the
+    // second line, and the code they build ends it.
     final rows = <List<ColumnDef?>>[
       [...identity, number],
-      for (var i = 0; i == 0 || i < rest.length; i += 3)
-        [
-          for (var j = i; j < i + 3; j += 1) j < rest.length ? rest[j] : null,
-          i == 0 ? code : null,
-        ],
+      [...rest, code],
     ];
     return [
       for (final cells in rows)
@@ -400,24 +394,36 @@ class _PartLine extends StatelessWidget {
   /// Keyed globally to the line: it switches between its two layouts (small
   /// photo, big photo) the moment one of its fields takes focus, and without
   /// the key the fields were rebuilt in the new layout and lost that focus.
-  Widget _fields() => Wrap(
+  ///
+  /// One wrap per line of [PartRowsForm.lineGrid], so the properties always
+  /// start a line of their own instead of following the name on whatever
+  /// room is left.
+  Widget _fields() => Column(
     key: _LineFieldsKey(sheet.draftAt(row).rowKey),
-    spacing: 10,
-    runSpacing: 8,
-    crossAxisAlignment: WrapCrossAlignment.end,
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      for (final cells in grid)
-        for (final column in cells)
-          if (column != null)
-            _PartField(
-              key: ValueKey<String>(
-                'cell_${sheet.sheetDef.key}_${row}_${column.id}',
-              ),
-              sheet: sheet,
-              row: row,
-              column: column,
-              showShortcuts: showShortcuts,
-            ),
+      for (var i = 0; i < grid.length; i += 1) ...[
+        if (i > 0) const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: [
+            for (final column in grid[i])
+              if (column != null)
+                _PartField(
+                  key: ValueKey<String>(
+                    'cell_${sheet.sheetDef.key}_${row}_${column.id}',
+                  ),
+                  sheet: sheet,
+                  row: row,
+                  column: column,
+                  showShortcuts: showShortcuts,
+                ),
+          ],
+        ),
+      ],
     ],
   );
 
@@ -653,12 +659,17 @@ class _PartFieldState extends State<_PartField> {
   static const TextStyle _valueStyle = TextStyle(fontSize: 14);
 
   /// A picked value, measured a shade heavy so it never comes up short.
-  static const TextStyle _pickedStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w600);
+  static const TextStyle _pickedStyle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+  );
 
   /// The theme's font, which the fields draw in: measured in another, a
   /// box came out short for its own text.
   TextStyle _themed(TextStyle style) =>
-      (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(style);
+      (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(
+        style,
+      );
 
   double _measure(String text, TextStyle style, TextScaler scaler) {
     if (text.isEmpty) return 0;
@@ -678,7 +689,11 @@ class _PartFieldState extends State<_PartField> {
   /// box's padding, its arrow, its × or New, the Auto pill, the unit picker.
   double _fitWidth(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
-    var heading = _measure(SheetStyle.titleCase(_column.label), SheetStyle.label, scaler);
+    var heading = _measure(
+      SheetStyle.titleCase(_column.label),
+      SheetStyle.label,
+      scaler,
+    );
     if (_isProperty || _isThickness) heading += 4 + 2 * 24;
     if (widget.showShortcuts && _shortcutKey != null) heading += 34;
 
@@ -687,7 +702,9 @@ class _PartFieldState extends State<_PartField> {
     final double inBox;
     if (_isThickness) {
       final unit = _thicknessUnit;
-      final typed = _text.text.isEmpty ? (unit == 'ga' ? 'Gauge' : unit) : _text.text;
+      final typed = _text.text.isEmpty
+          ? (unit == 'ga' ? 'Gauge' : unit)
+          : _text.text;
       inBox = _measure(typed, _valueStyle, scaler) + box + 6 + 118;
     } else if (_isList) {
       final label = _shown;
@@ -700,7 +717,8 @@ class _PartFieldState extends State<_PartField> {
       inBox = _measure(shown, _pickedStyle, scaler) + box + extra;
     } else {
       final derived = _isDerived && !_locked;
-      inBox = _measure(_text.text, _pickedStyle, scaler) + box + (derived ? 80 : 0);
+      inBox =
+          _measure(_text.text, _pickedStyle, scaler) + box + (derived ? 80 : 0);
     }
     final widest = heading > inBox ? heading : inBox;
     return widest.clamp(minFieldWidth, maxFieldWidth).toDouble();

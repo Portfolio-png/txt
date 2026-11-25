@@ -87,11 +87,11 @@ class RouteStep {
   /// `seq` is deliberately NOT sent — the server numbers from list order, so
   /// two sources of ordering truth never arise.
   Map<String, dynamic> toJson() => {
-        'stageId': stageId,
-        if (notes.trim().isNotEmpty) 'notes': notes.trim(),
-        if (machineId != null) 'machineId': machineId,
-        if (dieId != null) 'dieId': dieId,
-      };
+    'stageId': stageId,
+    if (notes.trim().isNotEmpty) 'notes': notes.trim(),
+    if (machineId != null) 'machineId': machineId,
+    if (dieId != null) 'dieId': dieId,
+  };
 
   /// The user-defined custom stage name (stored in notes).
   String get customName => notes.trim();

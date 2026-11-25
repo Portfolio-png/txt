@@ -230,10 +230,7 @@ class _Board extends StatelessWidget {
             caption: 'Each keeps its own pipeline',
             children: [
               for (final member in members)
-                _MemberCard(
-                  member: member,
-                  onEdit: () => onEditMember(member),
-                ),
+                _MemberCard(member: member, onEdit: () => onEditMember(member)),
             ],
           ),
           const _BoardArrow(),
@@ -607,7 +604,8 @@ class _PipelineCard extends StatelessWidget {
               children: [
                 _Tag(
                   icon: Icons.inventory_2_outlined,
-                  label: '${group.members.length} member'
+                  label:
+                      '${group.members.length} member'
                       '${group.members.length == 1 ? '' : 's'}',
                   muted: true,
                 ),
@@ -658,10 +656,7 @@ class _MemberCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: SoftErpTheme.sectionSurface,
                   borderRadius: BorderRadius.circular(6),

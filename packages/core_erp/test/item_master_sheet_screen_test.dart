@@ -19,6 +19,7 @@ import 'package:core_erp/features/items/presentation/widgets/deal_people_form.da
 import 'package:core_erp/features/items/presentation/widgets/part_rows_form.dart';
 import 'package:core_erp/features/process_routes/data/process_route_service.dart';
 import 'package:core_erp/features/process_routes/domain/part_route.dart';
+import 'package:core_erp/features/process_routes/presentation/widgets/route_creation_panel.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/screens/item_master_sheet_screen.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -303,6 +304,17 @@ Future<void> _pickOrType(
   final use = find.text('Use "$value"');
   await tester.tap(use.evaluate().isNotEmpty ? use : find.text(value).last);
   await settle();
+}
+
+/// The raw panel asks which form the material comes in before anything is
+/// typed, saved or reviewed (owner, 2026-11-25). These tests are about a plan
+/// whose form is picked, so they pick Sheet as a person would.
+Future<void> _pickSheetForm(WidgetTester tester) async {
+  if (find.byKey(const ValueKey('raw-pick-form')).evaluate().isEmpty) return;
+  final sheet = find.byKey(const ValueKey('raw-form-sheet'));
+  await tester.ensureVisible(sheet);
+  await tester.tap(sheet);
+  await tester.pump();
 }
 
 void main() {
@@ -736,7 +748,7 @@ void main() {
           size: const Size(1700, 3200),
         );
         expect(
-          find.text('Patti · SADP48'),
+          find.text('Patti No. 48 · SADP48'),
           findsOneWidget,
           reason: 'a saved part used to read "New part"',
         );
@@ -852,6 +864,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('master-data-edit')));
       await tester.pump();
+      await _pickSheetForm(tester);
       final before = tester.state(find.byType(MasterDataPanel));
 
       await tester.tap(find.byKey(const ValueKey('raw_panel_close')));
@@ -1173,13 +1186,15 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('master-data-edit')));
         await tester.pump();
+        await _pickSheetForm(tester);
         final panel = tester.widget<MasterDataPanel>(
           find.byType(MasterDataPanel),
         );
         expect(panel.readOnly, isFalse);
 
         await tester.runAsync(() async {
-          panel.onSave(panel.baseline);
+          // The record as Save sends it once a form is picked (2026-11-25).
+          panel.onSave(panel.baseline.copyWith(formChosen: true));
           await Future<void>.delayed(const Duration(milliseconds: 50));
         });
         await tester.pump();
@@ -1206,10 +1221,11 @@ void main() {
       expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing);
       await tester.tap(find.byKey(const ValueKey('master-data-edit')));
       await tester.pump();
+      await _pickSheetForm(tester);
       final panel = tester.widget<MasterDataPanel>(
         find.byType(MasterDataPanel),
       );
-      expect(find.text('Save raw sheet'), findsOneWidget);
+      expect(find.text('Save Raw Sheet'), findsOneWidget);
 
       // The panel reports a working copy that differs from the record.
       panel.onDirtyChanged!(true);
@@ -1217,7 +1233,8 @@ void main() {
       expect(find.byKey(const ValueKey('raw_unsaved')), findsOneWidget);
 
       await tester.runAsync(() async {
-        panel.onSave(panel.baseline);
+        // The record as Save sends it once a form is picked (2026-11-25).
+          panel.onSave(panel.baseline.copyWith(formChosen: true));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pump();
@@ -1264,6 +1281,62 @@ void main() {
         expect(panel.stageNodes.map((node) => node.name), ['Die', 'Shearing']);
       },
     );
+
+    // Owner, 2026-11-25: "after minimising route or saving the route,
+    // there's no minimised version for routes, show that too".
+    testWidgets('a routed part shows its route minimised, stages in order', (
+      tester,
+    ) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      final routes = ProcessRouteService(baseUrl: '', useMockResponses: true);
+      await routes.save(500, const [
+        // The mock names stages from its own master: 1 is Die, 2 Shearing.
+        RouteStep(stageId: 1, seq: 1, stageCode: 'die', stageName: 'Die'),
+        RouteStep(stageId: 2, seq: 2, stageCode: 'shearing', stageName: 'Shearing'),
+      ]);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+        routes: routes,
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+
+      final card = find.byKey(const ValueKey<String>('route_card'));
+      expect(card, findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('1  Die')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('2  Shearing')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('v1 · Active')), findsOneWidget);
+      expect(find.text('This part can be routed through the process stages.'), findsNothing);
+
+      // Edit route opens the editor; Minimise folds it back to the card.
+      await tester.ensureVisible(find.byKey(const ValueKey<String>('route_card_open')));
+      await tester.tap(find.byKey(const ValueKey<String>('route_card_open')));
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+      expect(find.byType(RouteCreationPanel), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('route_card')), findsNothing);
+      expect(find.byKey(const ValueKey<String>('route_save')), findsOneWidget,
+          reason: 'the sheet\'s Save Route');
+
+      await tester.ensureVisible(find.byKey(const ValueKey<String>('route_minimise')));
+      await tester.tap(find.byKey(const ValueKey<String>('route_minimise')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey<String>('route_card')), findsOneWidget);
+      expect(
+        find.byType(RouteCreationPanel, skipOffstage: false),
+        findsOneWidget,
+        reason: 'kept, hidden, so what is laid out survives',
+      );
+      expect(find.text('1  Die'), findsOneWidget);
+    });
 
     testWidgets(
       'an unrouted part says to author a route, not to pick a pipeline',
@@ -1437,13 +1510,15 @@ void main() {
         );
         expect(
           tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).itemName,
-          'Patti',
+          // With its Part No (owner, 2026-11-25: "Patti No. 1").
+          'Patti No. 48',
           reason: 'the part, not a guess from the cursor row',
         );
 
         // Read only, the footer offers the way in where the Save would be.
         await tester.tap(find.byKey(const ValueKey('master-data-edit')));
         await tester.pump();
+        await _pickSheetForm(tester);
         expect(
           tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
           isFalse,
@@ -1467,7 +1542,8 @@ void main() {
         final row =
             repo.updated.single.penPaperBaseline!.stageReconciliations.single;
         expect(row.outputPieces, 2900);
-        expect(row.outputLabel, 'Patti');
+        // The part as the review names it: with its Part No.
+        expect(row.outputLabel, 'Patti No. 48');
         expect(
           tester.widget<MasterDataPanel>(find.byType(MasterDataPanel)).readOnly,
           isTrue,
@@ -1672,6 +1748,7 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('master-data-edit')));
         await tester.pump();
+        await _pickSheetForm(tester);
         // Typed in the panel: the part's cell takes it, in its own words.
         panel().onThicknessChanged!('1.2 mm');
         await tester.pump();
@@ -1756,6 +1833,7 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('master-data-edit')));
         await tester.pump();
+        await _pickSheetForm(tester);
         panel().onThicknessChanged!('20 Gauge');
         await tester.pump();
         await tester.runAsync(() async {
@@ -1833,6 +1911,7 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('master-data-edit')));
         await tester.pump();
+        await _pickSheetForm(tester);
         panel().onThicknessChanged!('20 Gauge');
         await tester.pump();
         await tester.runAsync(() async {
@@ -1881,13 +1960,13 @@ void main() {
       );
       PartDieSection dies() =>
           tester.widget<PartDieSection>(find.byType(PartDieSection));
-      expect(panel().itemName, 'Patti');
+      expect(panel().itemName, 'Patti No. 48');
       expect(find.textContaining('SAVED #500'), findsOneWidget);
 
       // A saved row is closed, but a tap still selects it.
       await tester.tap(find.text('Strip').first);
       await tester.pump();
-      expect(panel().itemName, 'Strip');
+      expect(panel().itemName, 'Strip No. 48');
       expect(dies().part?.id, 501);
       expect(find.textContaining('SAVED #501'), findsOneWidget);
     });
@@ -2338,7 +2417,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('die_held_save_0')),
-          matching: find.text('Save part'),
+          matching: find.text('Save Part'),
         ),
         findsOneWidget,
       );
@@ -2671,6 +2750,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.byKey(const ValueKey('master-data-edit')));
       await tester.pump();
+      await _pickSheetForm(tester);
       await tester.enterText(
         find.descendant(
           of: find.byKey(const ValueKey('sheet-width')),
@@ -3119,7 +3199,7 @@ void main() {
         expect(
           find.descendant(
             of: find.byKey(const ValueKey('row_save_0')),
-            matching: find.text('Save part'),
+            matching: find.text('Save Part'),
           ),
           findsOneWidget,
         );

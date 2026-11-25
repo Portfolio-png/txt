@@ -40,6 +40,9 @@ function createDto(deps, api) {
         }
       })(),
       isArchived: Boolean(row.is_archived),
+      // Set only on a group the app ships (Raw Materials, Rivets, Springs):
+      // cannot be deleted, archived, renamed or moved. See system-groups.js.
+      systemKey: row.system_key || null,
       usageCount: row.usage_count || 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

@@ -204,7 +204,9 @@ class SheetSidebar extends StatelessWidget {
                       color: badgeIsPositive
                           ? SoftErpTheme.successBg
                           : SoftErpTheme.warningBg,
-                      borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+                      borderRadius: BorderRadius.circular(
+                        SoftErpTheme.radiusXs,
+                      ),
                     ),
                     child: Text(
                       badgeText!,
@@ -330,7 +332,10 @@ class SheetSidebar extends StatelessWidget {
           section.subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
+          style: const TextStyle(
+            fontSize: 13,
+            color: SoftErpTheme.textSecondary,
+          ),
         ),
         onTap: () => onSelectSection(section.id),
       ),

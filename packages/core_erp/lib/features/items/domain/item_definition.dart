@@ -496,9 +496,8 @@ class ItemDieLink {
   /// Null until both ends are known; negative is left as it is rather than
   /// clamped, because a die recorded as arriving before it was ordered is a
   /// data problem to see, not to hide.
-  Duration? get leadTime => (poAt == null || dateInAt == null)
-      ? null
-      : dateInAt!.difference(poAt!);
+  Duration? get leadTime =>
+      (poAt == null || dateInAt == null) ? null : dateInAt!.difference(poAt!);
 
   /// An integer count of nanometres; the unit beside it is how it was read.
   final int? linerSizeNm;

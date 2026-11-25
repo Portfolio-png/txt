@@ -412,6 +412,7 @@ class PenPaperBaseline {
     this.vendorName = '',
     this.forms = const <RawForm, RawStockForm>{},
     this.lastForm = RawForm.sheet,
+    this.formChosen = false,
   });
 
   /// The units the sheet's own measurements are read in, by symbol.
@@ -449,6 +450,14 @@ class PenPaperBaseline {
 
   /// The form last worked on, so the panel reopens on it.
   final RawForm lastForm;
+
+  /// Whether somebody PICKED [lastForm]. Until they do, no form is the
+  /// form: [lastForm]'s Sheet is only where the field starts, and the die's
+  /// Liner Size filling its Width must not make it look chosen (owner,
+  /// 2026-11-25: the sheet "takes the saving and review shows sheet as the
+  /// form even if user wants other forms"). Nothing is saved, and the
+  /// review says to pick, until this is true.
+  final bool formChosen;
 
   /// [form]'s plan, or an empty one. Never asked for the sheet.
   RawStockForm formOf(RawForm form) => forms[form] ?? RawStockForm.empty;
@@ -1232,6 +1241,7 @@ class PenPaperBaseline {
     String? vendorName,
     Map<RawForm, RawStockForm>? forms,
     RawForm? lastForm,
+    bool? formChosen,
   }) {
     return PenPaperBaseline(
       isGranular: isGranular ?? this.isGranular,
@@ -1263,6 +1273,7 @@ class PenPaperBaseline {
       vendorName: vendorName ?? this.vendorName,
       forms: forms ?? this.forms,
       lastForm: lastForm ?? this.lastForm,
+      formChosen: formChosen ?? this.formChosen,
     );
   }
 
@@ -1305,6 +1316,7 @@ class PenPaperBaseline {
             entry.key.name: entry.value.toJson(),
         },
       'lastForm': lastForm.name,
+      'formChosen': formChosen,
     };
   }
 
@@ -1320,6 +1332,11 @@ class PenPaperBaseline {
       legacyPitchMm: (json['kerfMm'] as num?)?.toDouble() ?? 0,
     );
     final lastForm = RawForm.fromName(json['lastForm']?.toString()) ?? RawForm.sheet;
+    // A plan saved before the pick was asked for kept its lastForm only by
+    // being saved: taken as chosen, so a saved part does not lose its form.
+    final formChosen = json['formChosen'] is bool
+        ? json['formChosen'] as bool
+        : json.containsKey('lastForm');
     var materialFromPlan = json['materialFromPlan'] as bool? ?? false;
 
     // Material in and out is one record for every form. A plan saved while
@@ -1387,6 +1404,7 @@ class PenPaperBaseline {
       // Absent on every plan from before strip, coil and roll: none of them.
       forms: forms,
       lastForm: lastForm,
+      formChosen: formChosen,
     );
   }
 

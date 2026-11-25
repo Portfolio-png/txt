@@ -505,7 +505,23 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
     assert.equal(ordersAfterClear.count, 0);
     assert.equal(scanHistoryAfterClear.count, 0);
     assert.equal(materialActivityAfterClear.count, 0);
-    assert.equal(unitGroupsAfterClear.count, 0);
+    // The standard unit families are the units contract, not workspace data:
+    // boot re-seeds them, and the clear now does too, because the default
+    // Rivets / Springs groups it puts back are counted in Pieces.
+    assert.ok(unitGroupsAfterClear.count > 0);
+    const systemGroups = await backend.all(
+      `SELECT g.system_key AS key, g.name, p.system_key AS parent_key, u.name AS unit
+         FROM groups g
+         LEFT JOIN groups p ON p.id = g.parent_group_id
+         LEFT JOIN units u ON u.id = g.unit_id
+        WHERE g.system_key IS NOT NULL
+        ORDER BY g.system_key`,
+    );
+    assert.deepEqual(systemGroups, [
+      { key: 'raw_materials', name: 'Raw Materials', parent_key: null, unit: 'Primary Unit' },
+      { key: 'raw_materials.rivets', name: 'Rivets', parent_key: 'raw_materials', unit: 'Piece' },
+      { key: 'raw_materials.springs', name: 'Springs', parent_key: 'raw_materials', unit: 'Piece' },
+    ]);
 
     const primaryUnit = await backend.get(
       "SELECT * FROM units WHERE name = 'Primary Unit' AND symbol = '-'",

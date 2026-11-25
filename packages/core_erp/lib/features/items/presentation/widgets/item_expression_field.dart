@@ -19,10 +19,7 @@ class ItemsProviderExpressionSink implements ItemExpressionSink {
   String? get lastError => _provider.errorMessage;
 
   @override
-  Future<int?> findProperty({
-    required int itemId,
-    required String name,
-  }) async {
+  Future<int?> findProperty({required int itemId, required String name}) async {
     final needle = name.trim().toLowerCase();
     final item = _provider.items
         .where((candidate) => candidate.id == itemId)
@@ -77,9 +74,7 @@ List<ExpressionItem> expressionCatalogFrom(List<ItemDefinition> items) {
       if (!item.isArchived)
         ExpressionItem(
           id: item.id,
-          name: item.displayName.trim().isEmpty
-              ? item.name
-              : item.displayName,
+          name: item.displayName.trim().isEmpty ? item.name : item.displayName,
           properties: [
             for (final property in item.topLevelProperties)
               ExpressionProperty(

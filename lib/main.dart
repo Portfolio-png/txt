@@ -41,6 +41,8 @@ import 'package:core_erp/features/clients/presentation/providers/sub_contractors
 import 'package:core_erp/features/die_makers/data/die_maker_repository.dart';
 import 'package:core_erp/features/die_makers/presentation/providers/die_makers_provider.dart';
 import 'package:core_erp/features/items/data/sheet_property_repository.dart';
+import 'package:core_erp/features/raw_materials/data/rivet_repository.dart';
+import 'package:core_erp/features/raw_materials/data/spring_repository.dart';
 import 'package:core_erp/features/items/presentation/providers/sheet_properties_provider.dart';
 import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
@@ -873,6 +875,22 @@ class MyApp extends StatelessWidget {
         // window; above the Navigator so the pushed sheet can read them.
         Provider<SheetPropertyRepository>(
           create: (context) => ApiSheetPropertyRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // Raw Materials › Rivets: the rivet form's server calls.
+        Provider<RivetRepository>(
+          create: (context) => ApiRivetRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
+        // Raw Materials › Springs: the spring form's.
+        Provider<SpringRepository>(
+          create: (context) => ApiSpringRepository(
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: _apiBaseUrl,
             useMockResponses: _effectiveDemoMode,

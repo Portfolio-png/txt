@@ -31,6 +31,7 @@ import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/part_name.dart';
 import '../../domain/item_master_data.dart';
 import '../../domain/item_inputs.dart';
 import '../../data/services/item_link_options_service.dart';
@@ -56,6 +57,10 @@ import 'package:core_erp/features/production_pipelines/presentation/widgets/mast
 import 'package:core_erp/features/production_pipelines/presentation/widgets/pen_paper_baseline_widget.dart';
 
 import '../providers/items_provider.dart';
+import '../../../raw_materials/data/rivet_repository.dart';
+import '../../../raw_materials/domain/rivet.dart';
+import '../../../raw_materials/domain/spring.dart';
+import '../../../raw_materials/presentation/item_kind_switcher.dart';
 import '../../../../core/widgets/boarding_pass_card.dart';
 import '../../domain/item_asset.dart';
 import '../widgets/developed_for_form.dart';
@@ -159,7 +164,7 @@ class ItemsScreen extends StatefulWidget {
     Future<String?> Function()? onCreatePipeline,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
-    final body = SubmitFormShortcuts(
+    final editor = SubmitFormShortcuts(
       child: _FullItemRecord(
         item: item,
         onClose: (context) => Navigator.of(context).maybePop(),
@@ -171,6 +176,38 @@ class ItemsScreen extends StatefulWidget {
         ),
       ),
     );
+    // Item, Rivet, Spring down the left: a rivet opens on its drawing form.
+    // Which group is Rivets is read from its system key, never its name.
+    final groups = _maybeRead<GroupsProvider>(context);
+    final rivetsGroupIds = <int>{
+      for (final g in groups?.groups ?? const <GroupDefinition>[])
+        if (g.systemKey == rivetsGroupSystemKey) g.id,
+    };
+    final springsGroupIds = <int>{
+      for (final g in groups?.groups ?? const <GroupDefinition>[])
+        if (g.systemKey == springsGroupSystemKey) g.id,
+    };
+    Widget body(BuildContext hostContext) {
+      // Outside the app shell (a test, a window without the rivet API) the
+      // editor is the plain one, as before.
+      if (_maybeRead<RivetRepository>(hostContext) == null) return editor;
+      return ItemKindSwitcher(
+        itemEditor: editor,
+        itemId: item?.id,
+        isRivet: item != null && rivetsGroupIds.contains(item.groupId),
+        isSpring: item != null && springsGroupIds.contains(item.groupId),
+        onClose: () => Navigator.of(hostContext).maybePop(),
+        onRivetSaved: (_) {
+          _maybeRead<ItemsProvider>(hostContext)?.refresh();
+          Navigator.of(hostContext).maybePop();
+        },
+        onSpringSaved: (_) {
+          _maybeRead<ItemsProvider>(hostContext)?.refresh();
+          Navigator.of(hostContext).maybePop();
+        },
+      );
+    }
+
     if (isNarrow) {
       return showModalBottomSheet<ItemDefinition?>(
         context: context,
@@ -180,7 +217,7 @@ class ItemsScreen extends StatefulWidget {
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
-          child: body,
+          child: body(context),
         ),
       );
     }
@@ -203,9 +240,10 @@ class ItemsScreen extends StatefulWidget {
           shape: const RoundedRectangleBorder(side: BorderSide.none),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: available >= 1700 ? 1680 : 1380,
+              // Plus the rail's column, so the editor keeps the width it had.
+              maxWidth: (available >= 1700 ? 1680 : 1380) + 162,
             ),
-            child: body,
+            child: body(context),
           ),
         );
       },
@@ -352,12 +390,13 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   label: 'Add Item',
                   icon: Icons.add,
                   isLoading: items.isSaving,
-                  // The item master as a sheet: the identity chain and the
-                  // recipe columns across, a rail beside it, several parts down
-                  // the rows. This replaced the Express creation window and the
-                  // Factory Sheet wizard, which were two doors onto the same
-                  // in-memory prototype.
-                  onPressed: () => ItemMasterSheetScreen.open(context),
+                  // The item editor — the same dialog a row's Edit opens. The
+                  // sheet stays one click away: the Sheet pill under Masters,
+                  // and Express edit on each part.
+                  onPressed: () => ItemsScreen.openEditor(
+                    context,
+                    onCreatePipeline: widget.onCreatePipeline,
+                  ),
                 ),
               ],
             ),
@@ -2279,6 +2318,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _availableForPurchase = false;
   late final TextEditingController _blankWidthController;
   late final TextEditingController _blankHeightController;
+
   /// Who the part was developed for. The whole block, not just the client id
   /// it replaces: the kind, the party, the stamp and the quotation are one
   /// fact and travel together.
@@ -3768,7 +3808,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     // step — two writers to one set would race, since a save replaces the whole
     // line list.
     final showSets = sections.sets && _item != null && !widget.embedded;
-    final setsSection = showSets ? _buildSetsSection() : const SizedBox.shrink();
+    final setsSection = showSets
+        ? _buildSetsSection()
+        : const SizedBox.shrink();
     // Its own card rather than another row inside Item Details: details is
     // already the heaviest card the packer places, and this is nine values.
     //
@@ -4066,506 +4108,499 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final bodyColumn = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final wideComposer = constraints.maxWidth >= 1140;
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final wideComposer = constraints.maxWidth >= 1140;
 
-              final namingFormatSection = _SectionCard(
-                title: 'Naming Format',
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFDCE2F0)),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Drag and drop properties to set the variation display name sequence. Drag blocks to the trash zone or click "x" to exclude them.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Wraps rather than overflows: the label plus the
-                      // widest option exceeds a narrow section column.
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            'Display Format: ',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          DropdownButton<String>(
-                            value: _namingFormat.contains('__format:detailed')
-                                ? 'detailed'
-                                : _namingFormat.contains('__format:dimensions')
-                                ? 'dimensions'
-                                : 'default',
-                            isDense: true,
-                            underline: const SizedBox.shrink(),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'default',
-                                child: Text('Default (Val1 Val2)'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'detailed',
-                                child: Text('Detailed (Prop: Val)'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'dimensions',
-                                child: Text('Dimensions (Val1 x Val2)'),
-                              ),
-                            ],
-                            onChanged: _isReadOnly
-                                ? null
-                                : (val) {
-                                    setState(() {
-                                      _namingFormat.removeWhere(
-                                        (t) => t.startsWith('__format:'),
-                                      );
-                                      if (val != 'default' && val != null) {
-                                        _namingFormat.add('__format:$val');
-                                      }
-                                      _handleChange();
-                                    });
-                                  },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildActiveNamingFormatArea(context),
-                      _buildInactiveNamingFormatArea(context),
-                    ],
-                  ),
+            final namingFormatSection = _SectionCard(
+              title: 'Naming Format',
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFDCE2F0)),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              );
-
-              final isRawMaterialGroup =
-                  selectedGroup?.name.toLowerCase().contains('raw material') ==
-                  true;
-
-              final defaultPipelineSection = _SectionCard(
-                title: 'Default Pipeline',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // A variant is only seeded with its base item's
-                    // route. How it is actually made can differ, so the
-                    // pipeline is the variant's own field — this strip
-                    // says what the base uses and whether this one has
-                    // departed from it.
-                    if (_isBasicItem) ...[
-                      _buildBasePipelineStrip(context),
-                      const SizedBox(height: 12),
-                    ],
-                    Builder(
-                      builder: (context) {
-                        final pipelineOptions = _availablePipelines
-                            .map(
-                              (p) => SearchableSelectOption<String>(
-                                value: p['id']!,
-                                label: p['name']!,
-                                searchText: p['name']!,
-                              ),
-                            )
-                            .toList();
-                        if (_defaultPipelineId != null &&
-                            _defaultPipelineId!.isNotEmpty &&
-                            !pipelineOptions.any(
-                              (p) => p.value == _defaultPipelineId,
-                            )) {
-                          final label =
-                              _item?.defaultPipelineName ?? _defaultPipelineId!;
-                          pipelineOptions.insert(
-                            0,
-                            SearchableSelectOption<String>(
-                              value: _defaultPipelineId!,
-                              label: label,
-                              searchText: label,
-                            ),
-                          );
-                        }
-                        return SearchableSelectField<String>(
-                          options: pipelineOptions,
-                          value: _defaultPipelineId,
-                          fieldEnabled: !_isReadOnly,
-                          onChanged: (val) {
-                            setState(() {
-                              _defaultPipelineId = val;
-                              _handleChange();
-                            });
-                            // A different pipeline is a different pair, so the
-                            // card's claim about where its numbers came from
-                            // has to be asked again.
-                            _resolveMasterData();
-                          },
-                          decoration: const InputDecoration(
-                            hintText: 'Select a pipeline',
-                          ),
-                          searchHintText: 'Search pipelines',
-                        );
-                      },
-                    ),
-                    if (!_isReadOnly && widget.onCreatePipeline != null) ...[
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          if (widget.onCreatePipeline != null) {
-                            final newPipelineId =
-                                await widget.onCreatePipeline!();
-                            if (mounted) {
-                              await _fetchPipelines();
-                              if (newPipelineId != null) {
-                                setState(() {
-                                  _defaultPipelineId = newPipelineId;
-                                  _handleChange();
-                                });
-                              }
-                            }
-                          }
-                        },
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Create New Pipeline'),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-
-              // Master Data used to be nested inside the pipeline
-              // card, which meant the raw-material rule that hides the
-              // pipeline picker also hid recorded sample weights. A
-              // measured sample is worth keeping for a raw material, so
-              // it stands on its own now.
-              final sampleDataSection = _SectionCard(
-                title: 'Master Data',
+                padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Text(
+                      'Drag and drop properties to set the variation display name sequence. Drag blocks to the trash zone or click "x" to exclude them.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 12),
+                    // Wraps rather than overflows: the label plus the
+                    // widest option exceeds a narrow section column.
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        if (_penPaperBaseline.hasSheetDimensions)
-                          Expanded(
-                            child: Text(
-                              _sheetDimensionLine(),
-                              style: const TextStyle(
-                                color: SoftErpTheme.textSecondary,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                        else
-                          const Spacer(),
-                        if (_hasPenPaperBaseline)
-                          TextButton.icon(
-                            onPressed: () =>
-                                _openMasterDataDialog(_penPaperBaseline),
-                            icon: const Icon(
-                              Icons.open_in_full_rounded,
-                              size: 15,
-                            ),
-                            label: Text(
-                              _isReadOnly ? 'Open' : 'Edit in window',
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: SoftErpTheme.accent,
-                              textStyle: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                            ),
+                        Text(
+                          'Display Format: ',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
                           ),
-                        if (_hasPenPaperBaseline && !_isReadOnly)
-                          TextButton.icon(
-                            onPressed: _clearSampleData,
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: 15,
+                        ),
+                        DropdownButton<String>(
+                          value: _namingFormat.contains('__format:detailed')
+                              ? 'detailed'
+                              : _namingFormat.contains('__format:dimensions')
+                              ? 'dimensions'
+                              : 'default',
+                          isDense: true,
+                          underline: const SizedBox.shrink(),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'default',
+                              child: Text('Default (Val1 Val2)'),
                             ),
-                            label: const Text('Remove'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: SoftErpTheme.dangerText,
-                              textStyle: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              visualDensity: VisualDensity.compact,
+                            DropdownMenuItem(
+                              value: 'detailed',
+                              child: Text('Detailed (Prop: Val)'),
                             ),
-                          ),
+                            DropdownMenuItem(
+                              value: 'dimensions',
+                              child: Text('Dimensions (Val1 x Val2)'),
+                            ),
+                          ],
+                          onChanged: _isReadOnly
+                              ? null
+                              : (val) {
+                                  setState(() {
+                                    _namingFormat.removeWhere(
+                                      (t) => t.startsWith('__format:'),
+                                    );
+                                    if (val != 'default' && val != null) {
+                                      _namingFormat.add('__format:$val');
+                                    }
+                                    _handleChange();
+                                  });
+                                },
+                        ),
                       ],
                     ),
-                    if (_masterDataResolution != null ||
-                        _resolvingMasterData) ...[
-                      _MasterDataSourceBanner(
-                        resolution: _masterDataResolution,
-                        loading: _resolvingMasterData,
-                        pipelineName: _selectedPipelineName,
-                        recordCount: _masterDataRecordCount,
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    const SizedBox(height: 10),
-                    if (_hasPenPaperBaseline)
-                      PenPaperBaselineWidget(
-                        baseline: _penPaperBaseline,
-                        readOnly: _isReadOnly,
-                        showChrome: false,
-                        pipelineId: _defaultPipelineId,
-                        pipelineName: _selectedPipelineName,
-                        stageNodes: _selectedPipelineStageNodes,
-                        // The material type is read off the name, so
-                        // the table can say what was weighed.
-                        itemName: _nameController.text.trim().isEmpty
-                            ? (_item?.displayName ?? '')
-                            : _nameController.text.trim(),
-                        onChanged: (updated) {
+                    const SizedBox(height: 12),
+                    _buildActiveNamingFormatArea(context),
+                    _buildInactiveNamingFormatArea(context),
+                  ],
+                ),
+              ),
+            );
+
+            final isRawMaterialGroup =
+                selectedGroup?.name.toLowerCase().contains('raw material') ==
+                true;
+
+            final defaultPipelineSection = _SectionCard(
+              title: 'Default Pipeline',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // A variant is only seeded with its base item's
+                  // route. How it is actually made can differ, so the
+                  // pipeline is the variant's own field — this strip
+                  // says what the base uses and whether this one has
+                  // departed from it.
+                  if (_isBasicItem) ...[
+                    _buildBasePipelineStrip(context),
+                    const SizedBox(height: 12),
+                  ],
+                  Builder(
+                    builder: (context) {
+                      final pipelineOptions = _availablePipelines
+                          .map(
+                            (p) => SearchableSelectOption<String>(
+                              value: p['id']!,
+                              label: p['name']!,
+                              searchText: p['name']!,
+                            ),
+                          )
+                          .toList();
+                      if (_defaultPipelineId != null &&
+                          _defaultPipelineId!.isNotEmpty &&
+                          !pipelineOptions.any(
+                            (p) => p.value == _defaultPipelineId,
+                          )) {
+                        final label =
+                            _item?.defaultPipelineName ?? _defaultPipelineId!;
+                        pipelineOptions.insert(
+                          0,
+                          SearchableSelectOption<String>(
+                            value: _defaultPipelineId!,
+                            label: label,
+                            searchText: label,
+                          ),
+                        );
+                      }
+                      return SearchableSelectField<String>(
+                        options: pipelineOptions,
+                        value: _defaultPipelineId,
+                        fieldEnabled: !_isReadOnly,
+                        onChanged: (val) {
                           setState(() {
-                            _penPaperBaseline = updated;
-                            _hasPenPaperBaseline = true;
+                            _defaultPipelineId = val;
                             _handleChange();
                           });
+                          // A different pipeline is a different pair, so the
+                          // card's claim about where its numbers came from
+                          // has to be asked again.
+                          _resolveMasterData();
                         },
-                      )
-                    else
-                      _EmptySampleDataPrompt(
-                        onAdd: _isReadOnly ? null : _addSampleData,
-                      ),
-                  ],
-                ),
-              );
-
-              // Section visibility is the user's saved item-form
-              // layout, so the same choice applies everywhere the
-              // editor opens.
-              final showPipeline =
-                  sections.defaultPipeline &&
-                  !isRawMaterialGroup &&
-                  !(widget.paged && _hasRegisteredTooling == false);
-              // Sample data is not a pipeline setting — a raw material
-              // has no pipeline but can still have a weighed sample.
-              final showSampleData = sections.defaultPipeline;
-
-              // Sections are packed by estimated height rather than
-              // assigned to fixed columns: turning sections on and off
-              // otherwise leaves one column long and the other empty,
-              // which is what forces scrolling on a wide screen.
-              final entries = <_SectionEntry>[
-                _SectionEntry(
-                  detailsSection,
-                  // Both carry the part identity pair and its stamp line now.
-                  _isBasicItem
-                      ? 5.1
-                      : 6.1 + _secondaryUnitConversions.length * 0.6,
-                  id: 'details',
-                  label: 'Details',
-                ),
-                if (sections.variationTree)
-                  _SectionEntry(
-                    variationTreeSection,
-                    3.0 + _rootNodes.length * 1.6,
-                    id: _variationsPageId,
-                    label: 'Variations',
-                  ),
-                // A basic item's name comes from its base item and its
-                // variation values, so there is no format to arrange.
-                // The naming format is built out of the variation values, so
-                // it belongs with them rather than on a page of its own.
-                if (!_isBasicItem)
-                  _SectionEntry(
-                    namingFormatSection,
-                    3.6,
-                    id: sections.variationTree ? _variationsPageId : 'naming',
-                    label: sections.variationTree ? 'Variations' : 'Naming',
-                  ),
-                if (sections.itemImage)
-                  _SectionEntry(photoSection, 2.2, id: 'files', label: 'Files'),
-                if (sections.cadFile)
-                  _SectionEntry(
-                    cadFileSection,
-                    2.2,
-                    id: 'files',
-                    label: 'Files',
-                  ),
-                if (sections.additionalFiles)
-                  _SectionEntry(
-                    additionalFilesSection,
-                    1.8 + _attachments.length * 0.7,
-                    id: 'files',
-                    label: 'Files',
-                  ),
-                if (sections.machines)
-                  _SectionEntry(
-                    machinesSection,
-                    2.0,
-                    id: 'machines',
-                    label: 'Machines',
-                  ),
-                if (sections.dies)
-                  _SectionEntry(diesSection, 2.0, id: 'dies', label: 'Dies'),
-                if (showSets)
-                  _SectionEntry(
-                    setsSection,
-                    2.0 + (_membership?.length ?? 0) * 0.8,
-                    id: 'sets',
-                    label: 'Sets',
-                  ),
-                if (sections.developedFor || _developedFor.isNotEmpty)
-                  _SectionEntry(
-                    developedForSection,
-                    // Grows once a party is picked: the person block appears
-                    // under it, and the stamp and quotation under that.
-                    _developedFor.kind == DevelopedForKind.none
-                        ? 2.0
-                        : (_developedFor.needsParty ? 4.0 : 7.0),
-                    id: 'developed_for',
-                    label: 'Developed For',
-                  ),
-                if (showPipeline)
-                  _SectionEntry(
-                    defaultPipelineSection,
-                    _hasSelectedPipeline ? 3.2 : 2.0,
-                    // A pipeline is what the sample figures are measured
-                    // against, so the two read as one page.
-                    id: 'master_data',
-                    label: 'Master data',
-                  ),
-                if (showSampleData)
-                  _SectionEntry(
-                    sampleDataSection,
-                    _hasPenPaperBaseline ? 7.0 : 2.0,
-                    id: 'master_data',
-                    label: 'Master data',
-                  ),
-              ];
-
-              if (widget.paged) {
-                // Sections that share an id are one page, shown together.
-                final pages = <_FormPage>[];
-                for (final entry in entries) {
-                  if (pages.any((page) => page.id == entry.id)) continue;
-                  pages.add((id: entry.id, label: entry.label));
-                }
-                if (_item != null) pages.add((id: 'track', label: 'Track'));
-                _publishPages(pages);
-                final active = _activePageId(pages);
-                final byPage = <String, List<Widget>>{};
-                for (final entry in entries) {
-                  (byPage[entry.id] ??= <Widget>[]).add(entry.child);
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final page in byPage.keys)
-                      Offstage(
-                        offstage: page != active,
-                        child: KeyedSubtree(
-                          key: _pageKeys.putIfAbsent(page, GlobalKey.new),
-                          child: TickerMode(
-                            enabled: page == active,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: _withSectionGaps(byPage[page]!),
-                            ),
-                          ),
+                        decoration: const InputDecoration(
+                          hintText: 'Select a pipeline',
                         ),
-                      ),
-                  ],
-                );
-              }
-
-              // A third column is only worth it when each one still
-              // clears ~600px. The variation tree packs a name field
-              // and eight controls into a row; below that width the
-              // name becomes unreadable.
-              final columnCount = constraints.maxWidth >= 1860
-                  ? 3
-                  : (wideComposer ? 2 : 1);
-              if (columnCount == 1) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _withSectionGaps(
-                    entries.map((entry) => entry.child).toList(growable: false),
+                        searchHintText: 'Search pipelines',
+                      );
+                    },
                   ),
-                );
-              }
-
-              final columns = _packSections(entries, columnCount);
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var index = 0; index < columns.length; index++) ...[
-                    if (index > 0) const SizedBox(width: 18),
-                    Expanded(
-                      child: Column(children: _withSectionGaps(columns[index])),
+                  if (!_isReadOnly && widget.onCreatePipeline != null) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        if (widget.onCreatePipeline != null) {
+                          final newPipelineId =
+                              await widget.onCreatePipeline!();
+                          if (mounted) {
+                            await _fetchPipelines();
+                            if (newPipelineId != null) {
+                              setState(() {
+                                _defaultPipelineId = newPipelineId;
+                                _handleChange();
+                              });
+                            }
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Create New Pipeline'),
                     ),
                   ],
                 ],
-              );
-            },
-          ),
-          if (_item != null &&
-              (!widget.paged || _activePageId(_publishedPages) == 'track')) ...[
-            const SizedBox(height: 16),
-            _SectionCard(
-              title: 'Track',
-              child: TrackPanel.entity(
-                entityType: 'items',
-                entityId: '${_item!.id}',
-                showHeader: false,
               ),
+            );
+
+            // Master Data used to be nested inside the pipeline
+            // card, which meant the raw-material rule that hides the
+            // pipeline picker also hid recorded sample weights. A
+            // measured sample is worth keeping for a raw material, so
+            // it stands on its own now.
+            final sampleDataSection = _SectionCard(
+              title: 'Master Data',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (_penPaperBaseline.hasSheetDimensions)
+                        Expanded(
+                          child: Text(
+                            _sheetDimensionLine(),
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                      if (_hasPenPaperBaseline)
+                        TextButton.icon(
+                          onPressed: () =>
+                              _openMasterDataDialog(_penPaperBaseline),
+                          icon: const Icon(
+                            Icons.open_in_full_rounded,
+                            size: 15,
+                          ),
+                          label: Text(_isReadOnly ? 'Open' : 'Edit in window'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: SoftErpTheme.accent,
+                            textStyle: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      if (_hasPenPaperBaseline && !_isReadOnly)
+                        TextButton.icon(
+                          onPressed: _clearSampleData,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 15,
+                          ),
+                          label: const Text('Remove'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: SoftErpTheme.dangerText,
+                            textStyle: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (_masterDataResolution != null ||
+                      _resolvingMasterData) ...[
+                    _MasterDataSourceBanner(
+                      resolution: _masterDataResolution,
+                      loading: _resolvingMasterData,
+                      pipelineName: _selectedPipelineName,
+                      recordCount: _masterDataRecordCount,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  const SizedBox(height: 10),
+                  if (_hasPenPaperBaseline)
+                    PenPaperBaselineWidget(
+                      baseline: _penPaperBaseline,
+                      readOnly: _isReadOnly,
+                      showChrome: false,
+                      pipelineId: _defaultPipelineId,
+                      pipelineName: _selectedPipelineName,
+                      stageNodes: _selectedPipelineStageNodes,
+                      // The material type is read off the name, so
+                      // the table can say what was weighed.
+                      itemName: _nameController.text.trim().isEmpty
+                          ? (_item?.displayName ?? '')
+                          : _nameController.text.trim(),
+                      onChanged: (updated) {
+                        setState(() {
+                          _penPaperBaseline = updated;
+                          _hasPenPaperBaseline = true;
+                          _handleChange();
+                        });
+                      },
+                    )
+                  else
+                    _EmptySampleDataPrompt(
+                      onAdd: _isReadOnly ? null : _addSampleData,
+                    ),
+                ],
+              ),
+            );
+
+            // Section visibility is the user's saved item-form
+            // layout, so the same choice applies everywhere the
+            // editor opens.
+            final showPipeline =
+                sections.defaultPipeline &&
+                !isRawMaterialGroup &&
+                !(widget.paged && _hasRegisteredTooling == false);
+            // Sample data is not a pipeline setting — a raw material
+            // has no pipeline but can still have a weighed sample.
+            final showSampleData = sections.defaultPipeline;
+
+            // Sections are packed by estimated height rather than
+            // assigned to fixed columns: turning sections on and off
+            // otherwise leaves one column long and the other empty,
+            // which is what forces scrolling on a wide screen.
+            final entries = <_SectionEntry>[
+              _SectionEntry(
+                detailsSection,
+                // Both carry the part identity pair and its stamp line now.
+                _isBasicItem
+                    ? 5.1
+                    : 6.1 + _secondaryUnitConversions.length * 0.6,
+                id: 'details',
+                label: 'Details',
+              ),
+              if (sections.variationTree)
+                _SectionEntry(
+                  variationTreeSection,
+                  3.0 + _rootNodes.length * 1.6,
+                  id: _variationsPageId,
+                  label: 'Variations',
+                ),
+              // A basic item's name comes from its base item and its
+              // variation values, so there is no format to arrange.
+              // The naming format is built out of the variation values, so
+              // it belongs with them rather than on a page of its own.
+              if (!_isBasicItem)
+                _SectionEntry(
+                  namingFormatSection,
+                  3.6,
+                  id: sections.variationTree ? _variationsPageId : 'naming',
+                  label: sections.variationTree ? 'Variations' : 'Naming',
+                ),
+              if (sections.itemImage)
+                _SectionEntry(photoSection, 2.2, id: 'files', label: 'Files'),
+              if (sections.cadFile)
+                _SectionEntry(cadFileSection, 2.2, id: 'files', label: 'Files'),
+              if (sections.additionalFiles)
+                _SectionEntry(
+                  additionalFilesSection,
+                  1.8 + _attachments.length * 0.7,
+                  id: 'files',
+                  label: 'Files',
+                ),
+              if (sections.machines)
+                _SectionEntry(
+                  machinesSection,
+                  2.0,
+                  id: 'machines',
+                  label: 'Machines',
+                ),
+              if (sections.dies)
+                _SectionEntry(diesSection, 2.0, id: 'dies', label: 'Dies'),
+              if (showSets)
+                _SectionEntry(
+                  setsSection,
+                  2.0 + (_membership?.length ?? 0) * 0.8,
+                  id: 'sets',
+                  label: 'Sets',
+                ),
+              if (sections.developedFor || _developedFor.isNotEmpty)
+                _SectionEntry(
+                  developedForSection,
+                  // Grows once a party is picked: the person block appears
+                  // under it, and the stamp and quotation under that.
+                  _developedFor.kind == DevelopedForKind.none
+                      ? 2.0
+                      : (_developedFor.needsParty ? 4.0 : 7.0),
+                  id: 'developed_for',
+                  label: 'Developed For',
+                ),
+              if (showPipeline)
+                _SectionEntry(
+                  defaultPipelineSection,
+                  _hasSelectedPipeline ? 3.2 : 2.0,
+                  // A pipeline is what the sample figures are measured
+                  // against, so the two read as one page.
+                  id: 'master_data',
+                  label: 'Master data',
+                ),
+              if (showSampleData)
+                _SectionEntry(
+                  sampleDataSection,
+                  _hasPenPaperBaseline ? 7.0 : 2.0,
+                  id: 'master_data',
+                  label: 'Master data',
+                ),
+            ];
+
+            if (widget.paged) {
+              // Sections that share an id are one page, shown together.
+              final pages = <_FormPage>[];
+              for (final entry in entries) {
+                if (pages.any((page) => page.id == entry.id)) continue;
+                pages.add((id: entry.id, label: entry.label));
+              }
+              if (_item != null) pages.add((id: 'track', label: 'Track'));
+              _publishPages(pages);
+              final active = _activePageId(pages);
+              final byPage = <String, List<Widget>>{};
+              for (final entry in entries) {
+                (byPage[entry.id] ??= <Widget>[]).add(entry.child);
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final page in byPage.keys)
+                    Offstage(
+                      offstage: page != active,
+                      child: KeyedSubtree(
+                        key: _pageKeys.putIfAbsent(page, GlobalKey.new),
+                        child: TickerMode(
+                          enabled: page == active,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: _withSectionGaps(byPage[page]!),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }
+
+            // A third column is only worth it when each one still
+            // clears ~600px. The variation tree packs a name field
+            // and eight controls into a row; below that width the
+            // name becomes unreadable.
+            final columnCount = constraints.maxWidth >= 1860
+                ? 3
+                : (wideComposer ? 2 : 1);
+            if (columnCount == 1) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _withSectionGaps(
+                  entries.map((entry) => entry.child).toList(growable: false),
+                ),
+              );
+            }
+
+            final columns = _packSections(entries, columnCount);
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < columns.length; index++) ...[
+                  if (index > 0) const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(children: _withSectionGaps(columns[index])),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+        if (_item != null &&
+            (!widget.paged || _activePageId(_publishedPages) == 'track')) ...[
+          const SizedBox(height: 16),
+          _SectionCard(
+            title: 'Track',
+            child: TrackPanel.entity(
+              entityType: 'items',
+              entityId: '${_item!.id}',
+              showHeader: false,
             ),
-          ],
+          ),
+        ],
       ],
     );
 
     final actions = Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                if (!_isReadOnly)
-                  AppButton(
-                    label: _item == null ? 'Create Item' : 'Save Changes',
-                    isLoading: _isSubmitting,
-                    onPressed: () => _submit(context),
-                  ),
-                if (_item != null)
-                  AppButton(
-                    label: 'Delete',
-                    variant: AppButtonVariant.secondary,
-                    isLoading: itemsProvider.isSaving,
-                    onPressed: () async {
-                      final ok = await showConfirmDialog(
-                        context,
-                        title: 'Delete item?',
-                        message:
-                            'Permanently delete "${_item!.displayName}"? You can restore it later from the Action Center.',
-                      );
-                      if (!ok) return;
-                      await itemsProvider.deleteItem(_item!.id);
-                      if (!context.mounted) return;
-                      if (itemsProvider.errorMessage == null) {
-                        _finish(null);
-                      } else {
-                        showGlobalToast(
-                          itemsProvider.errorMessage!,
-                          kind: AppToastKind.error,
-                        );
-                      }
-                    },
-                  ),
-              ],
-            );
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        if (!_isReadOnly)
+          AppButton(
+            label: _item == null ? 'Create Item' : 'Save Changes',
+            isLoading: _isSubmitting,
+            onPressed: () => _submit(context),
+          ),
+        if (_item != null)
+          AppButton(
+            label: 'Delete',
+            variant: AppButtonVariant.secondary,
+            isLoading: itemsProvider.isSaving,
+            onPressed: () async {
+              final ok = await showConfirmDialog(
+                context,
+                title: 'Delete item?',
+                message:
+                    'Permanently delete "${_item!.displayName}"? You can restore it later from the Action Center.',
+              );
+              if (!ok) return;
+              await itemsProvider.deleteItem(_item!.id);
+              if (!context.mounted) return;
+              if (itemsProvider.errorMessage == null) {
+                _finish(null);
+              } else {
+                showGlobalToast(
+                  itemsProvider.errorMessage!,
+                  kind: AppToastKind.error,
+                );
+              }
+            },
+          ),
+      ],
+    );
 
     // Embedded: the host owns the surface, the scrolling, the header and the
     // footer, so the form is returned bare.
@@ -5313,9 +5348,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       readOnly: _isReadOnly,
       // The material type is read off the name, so the sheet and the table can
       // both say what was weighed.
-      itemName: _nameController.text.trim().isEmpty
-          ? (_item?.displayName ?? '')
-          : _nameController.text.trim(),
+      itemName: partNameWithNo(
+        _nameController.text.trim().isEmpty
+            ? (_item?.displayName ?? '')
+            : _nameController.text.trim(),
+        _partNoController.text.trim().isEmpty
+            ? _item?.partNo
+            : int.tryParse(_partNoController.text.trim()) ?? _item?.partNo,
+      ),
+      partNo: _partNoController.text.trim().isEmpty
+          ? _item?.partNo
+          : int.tryParse(_partNoController.text.trim()) ?? _item?.partNo,
     );
     if (saved == null || !mounted) return;
     setState(() {
@@ -6133,10 +6176,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
   }
 
-  _NodeDraft _draftFromVariationNode(
-    VariationNode node,
-    _NodeDraft? parent,
-  ) {
+  _NodeDraft _draftFromVariationNode(VariationNode node, _NodeDraft? parent) {
     final kind = node.kind == 'property'
         ? ItemVariationNodeKind.property
         : ItemVariationNodeKind.value;
@@ -6757,7 +6797,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             SizedBox(
               width: 74,
               child: _SetQuantityField(
-                key: ValueKey<String>('set-qty-${row.setId}-${row.variationLeafNodeId}'),
+                key: ValueKey<String>(
+                  'set-qty-${row.setId}-${row.variationLeafNodeId}',
+                ),
                 initial: row.quantity,
                 enabled: canEdit && !_setWriteInFlight,
                 onCommitted: (value) => _changeSetQuantity(row, value),
@@ -6906,10 +6948,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     // nothing about the group, and a card that can show a cross-group
     // membership but not create one is harder to explain than one that does
     // both.
-    final candidates = inventory.sets
-        .where((set) => !set.isTemporary && !set.groupIsArchived)
-        .toList(growable: false)
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final candidates =
+        inventory.sets
+            .where((set) => !set.isTemporary && !set.groupIsArchived)
+            .toList(growable: false)
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
     if (candidates.isEmpty) {
       setState(() => _setsError = 'There are no sets to file this part into.');
       return;
@@ -7089,7 +7134,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (membership == null || _membershipFailed) return;
     if (membership.length > 1) return;
 
-    final groupName = context.read<GroupsProvider>().findById(_selectedGroupId)?.name;
+    final groupName = context
+        .read<GroupsProvider>()
+        .findById(_selectedGroupId)
+        ?.name;
     final derived = buildPartCode(
       groupName: groupName,
       setName: membership.length == 1 ? membership.first.setName : '',
@@ -8477,15 +8525,20 @@ class _BlankSizeField extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'for sheet planning',
-              style: TextStyle(
-                color: SoftErpTheme.textSecondary,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
+            // Shrinks first when the editor is narrow (the Item / Rivet /
+            // Spring rail takes a column), rather than overflowing the row.
+            const Expanded(
+              child: Text(
+                'for sheet planning',
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-            const Spacer(),
             if (onImport != null)
               TextButton.icon(
                 onPressed: importing ? null : () => onImport!(),
@@ -8920,9 +8973,8 @@ class _FileIntoSetDialogState extends State<_FileIntoSetDialog> {
     if (widget.references.length == 1) _reference = widget.references.single;
   }
 
-  int get _leafId => widget.references.isEmpty
-      ? 0
-      : (_reference?.variationLeafNodeId ?? -1);
+  int get _leafId =>
+      widget.references.isEmpty ? 0 : (_reference?.variationLeafNodeId ?? -1);
 
   bool get _canFile {
     final set = _set;
@@ -9019,11 +9071,9 @@ class _FileIntoSetDialogState extends State<_FileIntoSetDialog> {
         ),
         FilledButton(
           onPressed: _canFile
-              ? () => Navigator.of(context).pop((
-                  _set!,
-                  _leafId,
-                  _reference?.variationPathLabel ?? '',
-                ))
+              ? () => Navigator.of(
+                  context,
+                ).pop((_set!, _leafId, _reference?.variationPathLabel ?? ''))
               : null,
           child: const Text('File'),
         ),
@@ -13548,34 +13598,34 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
         item: widget.item,
         onClose: (_) => _close(),
         builder: (full) => _ItemEditorSheet(
-        key: _baseEditorKey,
-        item: full,
-        initialName: widget.initialName,
-        initialGroupId: widget.initialGroupId,
-        onCreatePipeline: widget.onCreatePipeline,
-        embedded: true,
-        keyScope: '',
-        paged: widget.controller != null,
-        page: _detailsPage,
-        onPagesChanged: (pages) => setState(() => _detailsPages = pages),
-        overrideSections: widget.overrideSections,
-        identityOnly: widget.identityOnly,
-        onCreateVariant: _isAdvancing ? null : _enterVariantFlow,
-        onRequestClose: _close,
-        onFinished: (result) {
-          if (result != null) setState(() => _savedItem = result);
-        },
-        onSummaryChanged: (summary) {
-          if (!mounted) return;
-          setState(() {
-            if (_summary?.propertyNames.join(' ') !=
-                summary.propertyNames.join(' ')) {
-              _treeGeneration++;
-            }
-            _summary = summary;
-          });
-        },
-      ),
+          key: _baseEditorKey,
+          item: full,
+          initialName: widget.initialName,
+          initialGroupId: widget.initialGroupId,
+          onCreatePipeline: widget.onCreatePipeline,
+          embedded: true,
+          keyScope: '',
+          paged: widget.controller != null,
+          page: _detailsPage,
+          onPagesChanged: (pages) => setState(() => _detailsPages = pages),
+          overrideSections: widget.overrideSections,
+          identityOnly: widget.identityOnly,
+          onCreateVariant: _isAdvancing ? null : _enterVariantFlow,
+          onRequestClose: _close,
+          onFinished: (result) {
+            if (result != null) setState(() => _savedItem = result);
+          },
+          onSummaryChanged: (summary) {
+            if (!mounted) return;
+            setState(() {
+              if (_summary?.propertyNames.join(' ') !=
+                  summary.propertyNames.join(' ')) {
+                _treeGeneration++;
+              }
+              _summary = summary;
+            });
+          },
+        ),
       ),
     );
   }
@@ -14347,7 +14397,10 @@ class _FullItemRecordState extends State<_FullItemRecord> {
               SizedBox(height: 16),
               Text(
                 'Opening the part…',
-                style: TextStyle(fontSize: 15, color: SoftErpTheme.textSecondary),
+                style: TextStyle(
+                  fontSize: 15,
+                  color: SoftErpTheme.textSecondary,
+                ),
               ),
             ],
           );
@@ -14358,7 +14411,9 @@ class _FullItemRecordState extends State<_FullItemRecord> {
           return _panel(
             children: <Widget>[
               Text(
-                gone ? 'This part no longer exists.' : 'The part could not be opened.',
+                gone
+                    ? 'This part no longer exists.'
+                    : 'The part could not be opened.',
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
@@ -14370,8 +14425,8 @@ class _FullItemRecordState extends State<_FullItemRecord> {
                 gone
                     ? 'It was deleted after this list was loaded.'
                     : 'Editing needs the full part from the server, and the '
-                        'server could not be reached. Editing the copy on this '
-                        'screen could undo changes made elsewhere.',
+                          'server could not be reached. Editing the copy on this '
+                          'screen could undo changes made elsewhere.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 14,
@@ -14420,5 +14475,14 @@ class _FullItemRecordState extends State<_FullItemRecord> {
         ),
       ),
     );
+  }
+}
+
+/// A provider when this window has one; null outside the app shell.
+T? _maybeRead<T>(BuildContext context) {
+  try {
+    return Provider.of<T>(context, listen: false);
+  } on ProviderNotFoundException {
+    return null;
   }
 }

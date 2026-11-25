@@ -44,7 +44,12 @@ void showColumnOptionPicker(
   } catch (_) {
     return;
   }
-  if (box == null || overlayBox == null || !box.hasSize || !box.attached || !overlayBox.attached) return;
+  if (box == null ||
+      overlayBox == null ||
+      !box.hasSize ||
+      !box.attached ||
+      !overlayBox.attached)
+    return;
   Rect anchor;
   try {
     anchor = box.localToGlobal(Offset.zero, ancestor: overlayBox) & box.size;
@@ -67,109 +72,83 @@ void showColumnOptionPicker(
       anchor: anchor,
       overlaySize: overlayBox!.size,
       child: _OptionsPickerSheet(
-      column: column,
-      sheetDef: sheetDef,
-      controller: controller,
-      rowIndex: row,
-      initialQuery: initialQuery,
-      onTabOut: onTabOut == null
-          ? null
-          : (back) {
-              Navigator.of(ctx).pop();
-              onTabOut(back);
-            },
-      onSelectOption: (opt) {
-        Navigator.of(ctx).pop();
-        // The value the cell already has, taken again (Enter on a list opened
-        // by Tab): nothing to do. Setting it again would clear what hangs
-        // under it, or load a part picked by its name.
-        if (current()?.optionId == opt.id && !opt.isNew) {
+        column: column,
+        sheetDef: sheetDef,
+        controller: controller,
+        rowIndex: row,
+        initialQuery: initialQuery,
+        onTabOut: onTabOut == null
+            ? null
+            : (back) {
+                Navigator.of(ctx).pop();
+                onTabOut(back);
+              },
+        onSelectOption: (opt) {
+          Navigator.of(ctx).pop();
+          // The value the cell already has, taken again (Enter on a list opened
+          // by Tab): nothing to do. Setting it again would clear what hangs
+          // under it, or load a part picked by its name.
+          if (current()?.optionId == opt.id && !opt.isNew) {
+            onDone?.call();
+            return;
+          }
+          controller.setOption(column.id, opt, row: row);
           onDone?.call();
-          return;
-        }
-        controller.setOption(
-          column.id,
-          opt,
-          row: row,
-        );
-        onDone?.call();
-      },
-      onAddNew: (newLabel) {
-        Navigator.of(ctx).pop();
-        controller.addNewOption(
-          column.id,
-          newLabel,
-          row: row,
-        );
-        onDone?.call();
-      },
-      onSelectParty: (p) {
-        Navigator.of(ctx).pop();
-        if (current()?.refId == p.id) {
+        },
+        onAddNew: (newLabel) {
+          Navigator.of(ctx).pop();
+          controller.addNewOption(column.id, newLabel, row: row);
           onDone?.call();
-          return;
-        }
-        controller.updateValue(
-          column.id,
-          CellValue(
-            columnId: column.id,
-            refId: p.id,
-            optionLabel: p.name,
-          ),
-          row: row,
-        );
-        onDone?.call();
-      },
-      onSelectContact: (c) {
-        Navigator.of(ctx).pop();
-        // Taken again, it would write its phone and email over edited ones.
-        if (current()?.refId == c.id) {
+        },
+        onSelectParty: (p) {
+          Navigator.of(ctx).pop();
+          if (current()?.refId == p.id) {
+            onDone?.call();
+            return;
+          }
+          controller.updateValue(
+            column.id,
+            CellValue(columnId: column.id, refId: p.id, optionLabel: p.name),
+            row: row,
+          );
           onDone?.call();
-          return;
-        }
-        // Fills this cell AND the designation, phone and email columns beside
-        // it. `updateValue` alone wrote only the name, so choosing a contact
-        // left its three projection columns blank — the one method that
-        // filled them, `ItemMasterController.pickContact`, had no caller in
-        // the app at all.
-        controller.applyContact(
-          column.id,
-          c,
-          row: row,
-        );
-        onDone?.call();
-      },
-      onAddContact: controller.onAddContact == null
-          ? null
-          : (typed) async {
-              // The company this contact column hangs under. Read here
-              // rather than taken from the picker, which has its own copy.
-              final parentId = column.parentId;
-              final partyId = parentId == null
-                  ? null
-                  : controller
-                      .draftAt(row)
-                      .get(parentId)
-                      ?.refId;
-              if (partyId == null) return;
-              final made = await controller.onAddContact!(
-                partyId,
-                typed,
-              );
-              if (!ctx.mounted) return;
-              Navigator.of(ctx).pop();
-              if (made == null) return;
-              // Selected straight away: the picker's list was built before
-              // this person existed, so waiting for a refresh would close on
-              // nothing.
-              controller.applyContact(
-                column.id,
-                made,
-                row: row,
-              );
-              onDone?.call();
-            },
-    ),
+        },
+        onSelectContact: (c) {
+          Navigator.of(ctx).pop();
+          // Taken again, it would write its phone and email over edited ones.
+          if (current()?.refId == c.id) {
+            onDone?.call();
+            return;
+          }
+          // Fills this cell AND the designation, phone and email columns beside
+          // it. `updateValue` alone wrote only the name, so choosing a contact
+          // left its three projection columns blank — the one method that
+          // filled them, `ItemMasterController.pickContact`, had no caller in
+          // the app at all.
+          controller.applyContact(column.id, c, row: row);
+          onDone?.call();
+        },
+        onAddContact: controller.onAddContact == null
+            ? null
+            : (typed) async {
+                // The company this contact column hangs under. Read here
+                // rather than taken from the picker, which has its own copy.
+                final parentId = column.parentId;
+                final partyId = parentId == null
+                    ? null
+                    : controller.draftAt(row).get(parentId)?.refId;
+                if (partyId == null) return;
+                final made = await controller.onAddContact!(partyId, typed);
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+                if (made == null) return;
+                // Selected straight away: the picker's list was built before
+                // this person existed, so waiting for a refresh would close on
+                // nothing.
+                controller.applyContact(column.id, made, row: row);
+                onDone?.call();
+              },
+      ),
     ),
   ).then((_) => onClosed?.call());
 }
@@ -220,10 +199,7 @@ class _AnchoredPicker extends StatelessWidget {
             // The picker's TextField and ListTiles need a Material ancestor;
             // `showModalBottomSheet` used to supply one and `showDialog` over a
             // bare Stack does not.
-            child: Material(
-              type: MaterialType.transparency,
-              child: child,
-            ),
+            child: Material(type: MaterialType.transparency, child: child),
           ),
         ),
       ],
@@ -325,10 +301,12 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
     final key = event.logicalKey;
     final tabOut = widget.onTabOut;
     if (key == LogicalKeyboardKey.tab && tabOut != null) {
-      if (event is KeyDownEvent) tabOut(HardwareKeyboard.instance.isShiftPressed);
+      if (event is KeyDownEvent)
+        tabOut(HardwareKeyboard.instance.isShiftPressed);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowUp) {
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowUp) {
       if (rows.isEmpty) return KeyEventResult.handled;
       final from = _highlight ?? _bestRow(rows);
       final step = key == LogicalKeyboardKey.arrowDown ? 1 : -1;
@@ -346,7 +324,8 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       });
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
       if (event is KeyDownEvent) _submit();
       return KeyEventResult.handled;
     }
@@ -506,7 +485,9 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
             padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
             decoration: const BoxDecoration(
               color: SoftErpTheme.shellSurface,
-              border: Border(bottom: BorderSide(color: SoftErpTheme.sectionSurface)),
+              border: Border(
+                bottom: BorderSide(color: SoftErpTheme.sectionSurface),
+              ),
             ),
             child: Row(
               children: [
@@ -552,8 +533,9 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
                   prefixIcon: const Icon(Icons.search_rounded, size: 20),
                   isDense: true,
                   border: OutlineInputBorder(
-                    borderRadius:
-                        BorderRadius.circular(SoftErpTheme.radiusControl),
+                    borderRadius: BorderRadius.circular(
+                      SoftErpTheme.radiusControl,
+                    ),
                   ),
                 ),
               ),
@@ -594,32 +576,31 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
       Widget? trailing,
       Key? key,
       required VoidCallback onTap,
-    }) =>
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          decoration: BoxDecoration(
-            color: highlighted
-                ? SoftErpTheme.accentSoft.withValues(alpha: 0.75)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
-            border: Border(
-              left: BorderSide(
-                color: highlighted ? SoftErpTheme.accent : Colors.transparent,
-                width: 3.5,
-              ),
-            ),
+    }) => Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? SoftErpTheme.accentSoft.withValues(alpha: 0.75)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusXs),
+        border: Border(
+          left: BorderSide(
+            color: highlighted ? SoftErpTheme.accent : Colors.transparent,
+            width: 3.5,
           ),
-          child: ListTile(
-            key: key,
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-            title: title,
-            subtitle: subtitle,
-            leading: leading,
-            trailing: trailing,
-            onTap: onTap,
-          ),
-        );
+        ),
+      ),
+      child: ListTile(
+        key: key,
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        title: title,
+        subtitle: subtitle,
+        leading: leading,
+        trailing: trailing,
+        onTap: onTap,
+      ),
+    );
 
     if (parties.isNotEmpty) {
       return [
@@ -630,9 +611,19 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
             take: () => widget.onSelectParty(p),
             build: (on) => tile(
               highlighted: on,
-              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text('Type: ${p.type.toUpperCase()}', style: const TextStyle(fontSize: 14)),
-              trailing: const Icon(Icons.business_rounded, size: 16, color: SoftErpTheme.textMuted),
+              title: Text(
+                p.name,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Type: ${p.type.toUpperCase()}',
+                style: const TextStyle(fontSize: 14),
+              ),
+              trailing: const Icon(
+                Icons.business_rounded,
+                size: 16,
+                color: SoftErpTheme.textMuted,
+              ),
               onTap: () => widget.onSelectParty(p),
             ),
           ),
@@ -647,9 +638,19 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
             take: () => widget.onSelectContact(c),
             build: (on) => tile(
               highlighted: on,
-              title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text('${c.designation ?? ""} · ${c.phone ?? ""}', style: const TextStyle(fontSize: 14)),
-              trailing: const Icon(Icons.person_outline_rounded, size: 16, color: SoftErpTheme.textMuted),
+              title: Text(
+                c.name,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                '${c.designation ?? ""} · ${c.phone ?? ""}',
+                style: const TextStyle(fontSize: 14),
+              ),
+              trailing: const Icon(
+                Icons.person_outline_rounded,
+                size: 16,
+                color: SoftErpTheme.textMuted,
+              ),
               onTap: () => widget.onSelectContact(c),
             ),
           ),
@@ -664,10 +665,16 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
             build: (on) => tile(
               key: const ValueKey<String>('sheet_add_contact'),
               highlighted: on,
-              leading: const Icon(Icons.person_add_alt_1_rounded, color: SoftErpTheme.accent),
+              leading: const Icon(
+                Icons.person_add_alt_1_rounded,
+                color: SoftErpTheme.accent,
+              ),
               title: Text(
                 'Add "$_typed" at this company',
-                style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  color: SoftErpTheme.accent,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               onTap: () => widget.onAddContact!(_typed),
             ),
@@ -682,23 +689,39 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           take: () => widget.onSelectOption(opt),
           build: (on) => tile(
             highlighted: on,
-            title: Text(opt.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            title: Text(
+              opt.label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
             subtitle: opt.detail.isEmpty
                 ? null
-                : Text(opt.detail, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary)),
+                : Text(
+                    opt.detail,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
             trailing: _trailingFor(opt),
             onTap: () => widget.onSelectOption(opt),
           ),
         ),
-      if (_query.isNotEmpty && !filteredOptions.any((o) => o.label.toLowerCase() == _query))
+      if (_query.isNotEmpty &&
+          !filteredOptions.any((o) => o.label.toLowerCase() == _query))
         _PickerRow(
           take: () => widget.onAddNew(_typed),
           build: (on) => tile(
             highlighted: on,
-            leading: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
+            leading: const Icon(
+              Icons.add_circle_outline_rounded,
+              color: SoftErpTheme.accent,
+            ),
             title: Text(
               'Add "$_typed" under current path',
-              style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: SoftErpTheme.accent,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             onTap: () => widget.onAddNew(_typed),
           ),
@@ -733,7 +756,8 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
         // comes and goes reads as broken.
         IconButton(
           key: ValueKey<String>('sheet_option_delete_${opt.label}'),
-          tooltip: removal.blockedBecause ?? 'Delete “${opt.label}” from this list',
+          tooltip:
+              removal.blockedBecause ?? 'Delete “${opt.label}” from this list',
           visualDensity: VisualDensity.compact,
           icon: const Icon(Icons.delete_outline_rounded, size: 20),
           color: SoftErpTheme.dangerText,
@@ -786,7 +810,10 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
           ),
         ],

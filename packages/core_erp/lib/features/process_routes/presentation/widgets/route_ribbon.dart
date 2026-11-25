@@ -89,7 +89,10 @@ class _VersionPill extends StatelessWidget {
     final (label, colour) = switch (route.status) {
       RouteStatus.active => ('v${route.version}', SoftErpTheme.textSecondary),
       RouteStatus.draft => ('v${route.version} draft', Colors.orange.shade700),
-      RouteStatus.retired => ('v${route.version} retired', SoftErpTheme.textSecondary),
+      RouteStatus.retired => (
+        'v${route.version} retired',
+        SoftErpTheme.textSecondary,
+      ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -99,7 +102,11 @@ class _VersionPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: colour),
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: colour,
+        ),
       ),
     );
   }

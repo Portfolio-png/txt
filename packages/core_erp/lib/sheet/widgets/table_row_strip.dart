@@ -92,7 +92,9 @@ class _TableRowStripState extends State<TableRowStrip> {
       builder: (context, constraints) {
         final plain = SheetMetrics.forWidth(constraints.maxWidth);
         final base = widget.rowStatusBuilder != null && widget.gutterExtra > 0
-            ? plain.copyWith(gutterWidth: plain.gutterWidth + widget.gutterExtra)
+            ? plain.copyWith(
+                gutterWidth: plain.gutterWidth + widget.gutterExtra,
+              )
             : plain;
 
         // Everything that must not scale. Counted off the tables that actually
@@ -100,10 +102,14 @@ class _TableRowStripState extends State<TableRowStrip> {
         // when only two are drawn, then added 24px of its own padding on top of
         // the host's — about 36px of demand for nothing, which is most of what
         // a first added property needs.
-        final rendered = [groupCols, propertyCols, independentCols, createdCols]
-            .where((c) => c.isNotEmpty)
-            .length;
-        final fixed = rendered * 2 +
+        final rendered = [
+          groupCols,
+          propertyCols,
+          independentCols,
+          createdCols,
+        ].where((c) => c.isNotEmpty).length;
+        final fixed =
+            rendered * 2 +
             (widget.rowStatusBuilder != null ? base.gutterWidth : 0) +
             base.tableGap * (rendered - 1).clamp(0, 3);
 

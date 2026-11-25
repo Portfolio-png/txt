@@ -13,6 +13,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../domain/pen_paper_baseline.dart';
 import '../../domain/raw_stock_form.dart';
+import '../../../items/domain/part_name.dart';
 
 /// One block of the Raw sheet review: a heading and its label–value lines.
 class RawSheetReviewSection {
@@ -32,8 +33,10 @@ List<RawSheetReviewSection> rawSheetReviewSections({
   required PenPaperBaseline baseline,
   required String partName,
   required String sheetLabel,
+  int? partNo,
   UnitFamily? countFamily,
 }) {
+  final resolvedPart = partNameWithNo(partName, partNo);
   String kg(double value) => '${_kg(value)} kg';
   String mm(double value) => '${_trim(value)} mm';
 
@@ -55,7 +58,7 @@ List<RawSheetReviewSection> rawSheetReviewSections({
 
   final sections = <RawSheetReviewSection>[
     RawSheetReviewSection('Part', [
-      ('Part', partName.trim().isEmpty ? '—' : partName.trim()),
+      ('Part', resolvedPart.trim().isEmpty ? '—' : resolvedPart.trim()),
       if (baseline.pipelineName.trim().isNotEmpty)
         ('Pipeline', baseline.pipelineName.trim()),
     ]),

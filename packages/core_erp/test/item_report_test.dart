@@ -283,7 +283,7 @@ void main() {
     ));
 
     expect(lines, containsAll([
-      'Part | Part | Patti',
+      'Part | Part | Patti No. 1',
       'Part | Part code | PGBP1',
       'Part | Filed under | Primary Group › Brackets',
       'Part | Alloy | MS',
@@ -305,7 +305,7 @@ void main() {
     expect(lines.where((line) => line.startsWith('Part |')).length,
         greaterThan(5),
         reason: "the raw sheet's own Part heading is not repeated");
-    expect(itemReportHeading(part), startsWith('Patti — PGBP1 · saved '));
+    expect(itemReportHeading(part), startsWith('Patti No. 1 — PGBP1 · saved '));
   });
 
   test('a part with nothing else says so, in words', () {
@@ -419,7 +419,7 @@ void main() {
     expect(repo.fresh, contains(500), reason: 'read from the server, not the replica');
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('item_report_heading'))).data,
-      'Patti',
+      'Patti No. 1',
       reason: 'the part, large, on its own',
     );
     expect(find.text('PGBP1'), findsOneWidget, reason: 'its code as a pill');
@@ -601,7 +601,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     final heading = tester.widget<Text>(find.byKey(const ValueKey<String>('item_report_heading')));
-    expect(heading.data, 'Strip');
+    expect(heading.data, 'Strip No. 1');
   });
 
   testWidgets('property columns that cannot be read are asked for once, not in a loop',

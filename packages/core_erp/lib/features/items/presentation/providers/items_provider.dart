@@ -67,8 +67,10 @@ class ItemsProvider extends ChangeNotifier {
   /// holds the change, so the re-read cannot see the row as it was. The phone
   /// follows item changes this way (B50); the desktop uses [initialize]'s
   /// socket events.
-  ItemsProvider({required ItemRepository repository, Stream<Set<String>>? replicaChanges})
-    : _repository = repository {
+  ItemsProvider({
+    required ItemRepository repository,
+    Stream<Set<String>>? replicaChanges,
+  }) : _repository = repository {
     _replicaSub = replicaChanges?.listen((tables) {
       if (tables.contains(kItemsReplicaTable)) _refreshForReplica();
     });
@@ -129,6 +131,7 @@ class ItemsProvider extends ChangeNotifier {
     _saveIdle = null;
     idle?.complete();
   }
+
   bool _isAssetUploading = false;
   String? _errorMessage;
   String? _errorCode;
@@ -742,7 +745,8 @@ class ItemsProvider extends ChangeNotifier {
   }) async {
     final current = await _currentForSave(itemId);
     if (current == null) {
-      _errorMessage = _saveReadFailure ?? 'Item not found. Please select the item again.';
+      _errorMessage =
+          _saveReadFailure ?? 'Item not found. Please select the item again.';
       notifyListeners();
       return null;
     }
@@ -1145,8 +1149,9 @@ class ItemsProvider extends ChangeNotifier {
       if (fresh != null) _recordWrite(fresh);
       return true;
     } catch (error) {
-      _errorMessage =
-          error is ItemApiException ? error.message : error.toString();
+      _errorMessage = error is ItemApiException
+          ? error.message
+          : error.toString();
       return false;
     } finally {
       _endSave();
@@ -1247,7 +1252,10 @@ class ItemsProvider extends ChangeNotifier {
   /// Saves how the part's item sheet is nested. The server re-links the
   /// part's client, dies and machines to match, so this is a data write, not
   /// a layout preference.
-  Future<ItemDefinition?> saveSectionTree(int itemId, Map<String, String> tree) {
+  Future<ItemDefinition?> saveSectionTree(
+    int itemId,
+    Map<String, String> tree,
+  ) {
     return _save(() => _repository.saveSectionTree(itemId, tree));
   }
 

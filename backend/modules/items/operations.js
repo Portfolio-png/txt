@@ -67,15 +67,15 @@ const OLD_WRITE_GATE = {
   anyPermission: ['config.write', 'inventory.update'],
 };
 
-module.exports = function itemsOperations({ all, get, run, ports, core, masterData, materialTypes, sheetProperties }) {
+module.exports = function itemsOperations({ all, get, run, ports, core, masterData, materialTypes, sheetProperties, rivets, springs }) {
   return joinOperations(
     operationsFromAsks('items', ASKS, ports),
     internalOperations({ all, get, run }),
-    userOperations({ core, masterData, materialTypes, sheetProperties }),
+    userOperations({ core, masterData, materialTypes, sheetProperties, rivets, springs }),
   );
 };
 
-function userOperations({ core, masterData, materialTypes, sheetProperties }) {
+function userOperations({ core, masterData, materialTypes, sheetProperties, rivets, springs }) {
   return {
     'items.groups.list': {
       permission: 'items.read',
@@ -369,6 +369,62 @@ function userOperations({ core, masterData, materialTypes, sheetProperties }) {
       summary: 'Remove a value no saved part carries.',
       input: { fields: { id: F.id, query: F.obj({ label: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(sheetProperties.removeSheetPropertyOption, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'items.rivets.list': {
+      permission: 'items.read',
+      summary: 'Every rivet, with its spec and vendor prices.',
+      input: { fields: { query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(rivets.listRivets, ctx, { query: input.query || {}, body: input.data }),
+    },
+
+    'items.rivets.get': {
+      permission: 'items.read',
+      summary: 'One rivet, by its item id.',
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(rivets.getRivet, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'items.rivets.create': {
+      permission: 'items.create',
+      summary: 'Make a rivet from its spec; the name is built from it.',
+      input: { fields: { query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(rivets.createRivet, ctx, { query: input.query || {}, body: input.data }),
+    },
+
+    'items.rivets.update': {
+      permission: 'items.update',
+      summary: 'Change a rivet’s spec, code or vendor prices.',
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(rivets.updateRivet, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'items.springs.list': {
+      permission: 'items.read',
+      summary: 'Every spring, with its spec and vendor prices.',
+      input: { fields: { query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(springs.listSprings, ctx, { query: input.query || {}, body: input.data }),
+    },
+
+    'items.springs.get': {
+      permission: 'items.read',
+      summary: 'One spring, by its item id.',
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(springs.getSpring, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'items.springs.create': {
+      permission: 'items.create',
+      summary: 'Make a spring from its spec; the name is built from it.',
+      input: { fields: { query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(springs.createSpring, ctx, { query: input.query || {}, body: input.data }),
+    },
+
+    'items.springs.update': {
+      permission: 'items.update',
+      summary: 'Change a spring’s spec, code or vendor prices.',
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(springs.updateSpring, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.delete': {

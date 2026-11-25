@@ -29,11 +29,11 @@ EmbeddedEditorBuilder routeEditorPanel({
   Set<int> madeHereItemIds = const <int>{},
 }) {
   return (context, {required onSaved, required onCancel}) => RouteCreationPanel(
-        onSaved: onSaved,
-        onCancel: onCancel,
-        initialPartId: initialPartId,
-        madeHereItemIds: madeHereItemIds,
-      );
+    onSaved: onSaved,
+    onCancel: onCancel,
+    initialPartId: initialPartId,
+    madeHereItemIds: madeHereItemIds,
+  );
 }
 
 enum RouteLens {
@@ -48,8 +48,8 @@ enum RouteLens {
 
   static RouteLens fromFlags() =>
       FeatureFlags.isEnabled(FeatureKeys.routesListLens)
-          ? RouteLens.list
-          : RouteLens.classic;
+      ? RouteLens.list
+      : RouteLens.classic;
 }
 
 /// Edits the ordered stage list for one part.
@@ -179,27 +179,31 @@ class _RouteEditorState extends State<RouteEditor> {
   }
 
   Widget _newStageBox() => _NewStageBox(
-        enabled: _editable,
-        disabledReason: widget.locked
-            ? 'This route is active — declare a new version to change it'
-            : 'Pick a part first',
-        available: _available(),
-        allStages: widget.stages,
-        onCreate: widget.onCreateStage,
-        onDelete: widget.onDeleteStage,
-        inRoute: {for (final step in _steps) step.stageId},
-        onPick: (stage) {
-          // A stage the server handed back for a name it already had may be
-          // one this route goes through; adding it twice is only refused later.
-          if (!stage.repeatable && _steps.any((s) => s.stageId == stage.id)) {
-            return;
-          }
-          _emit([
-            ..._steps,
-            RouteStep(stageId: stage.id, stageCode: stage.code, stageName: stage.name),
-          ]);
-        },
-      );
+    enabled: _editable,
+    disabledReason: widget.locked
+        ? 'This route is active — declare a new version to change it'
+        : 'Pick a part first',
+    available: _available(),
+    allStages: widget.stages,
+    onCreate: widget.onCreateStage,
+    onDelete: widget.onDeleteStage,
+    inRoute: {for (final step in _steps) step.stageId},
+    onPick: (stage) {
+      // A stage the server handed back for a name it already had may be
+      // one this route goes through; adding it twice is only refused later.
+      if (!stage.repeatable && _steps.any((s) => s.stageId == stage.id)) {
+        return;
+      }
+      _emit([
+        ..._steps,
+        RouteStep(
+          stageId: stage.id,
+          stageCode: stage.code,
+          stageName: stage.name,
+        ),
+      ]);
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -207,31 +211,32 @@ class _RouteEditorState extends State<RouteEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.locked) _LockedBar(
-          version: widget.lockedVersion,
-          onDeclareVersion: widget.onDeclareVersion,
-        ),
+        if (widget.locked)
+          _LockedBar(
+            version: widget.lockedVersion,
+            onDeclareVersion: widget.onDeclareVersion,
+          ),
         if (widget.locked) const SizedBox(height: 12),
         switch (lens) {
           RouteLens.classic => _ClassicLens(
-              steps: _steps,
-              optionsFor: (id) => _available(keepStageId: id),
-              editable: _editable,
-              onEmit: _emit,
-              canAdd: _available().isNotEmpty,
-              newStage: _newStageBox(),
-              allStages: widget.stages,
-              onCreate: widget.onCreateStage,
-              onDelete: widget.onDeleteStage,
-            ),
+            steps: _steps,
+            optionsFor: (id) => _available(keepStageId: id),
+            editable: _editable,
+            onEmit: _emit,
+            canAdd: _available().isNotEmpty,
+            newStage: _newStageBox(),
+            allStages: widget.stages,
+            onCreate: widget.onCreateStage,
+            onDelete: widget.onDeleteStage,
+          ),
           RouteLens.list => _ListLens(
-              steps: _steps,
-              palette: _available(),
-              stageOf: _stage,
-              editable: _editable,
-              onEmit: _emit,
-              newStage: _newStageBox(),
-            ),
+            steps: _steps,
+            palette: _available(),
+            stageOf: _stage,
+            editable: _editable,
+            onEmit: _emit,
+            newStage: _newStageBox(),
+          ),
         },
       ],
     );
@@ -290,7 +295,8 @@ class _ClassicLens extends StatelessWidget {
               // A stage the server handed back for a name it already had may
               // be one another step goes through.
               if (stage.id == steps[i].stageId) return;
-              if (!stage.repeatable && steps.any((s) => s.stageId == stage.id)) {
+              if (!stage.repeatable &&
+                  steps.any((s) => s.stageId == stage.id)) {
                 return;
               }
               final next = [...steps];
@@ -491,7 +497,10 @@ class _StepBoxState extends State<_StepBox> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 82),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -525,7 +534,8 @@ class _StepBoxState extends State<_StepBox> {
           // Scratch block style custom stage name capsule input
           Expanded(
             child: Tooltip(
-              message: 'Custom stage name (e.g. Front Panel Riveting, Spot Welding)',
+              message:
+                  'Custom stage name (e.g. Front Panel Riveting, Spot Welding)',
               child: Container(
                 height: 32,
                 decoration: BoxDecoration(
@@ -559,12 +569,16 @@ class _StepBoxState extends State<_StepBox> {
                     decoration: InputDecoration(
                       isDense: true,
                       border: InputBorder.none,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                       hintText: 'Custom name...',
                       hintStyle: TextStyle(
                         fontSize: 12,
-                        color: SoftErpTheme.textSecondary.withValues(alpha: 0.6),
+                        color: SoftErpTheme.textSecondary.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                     onChanged: widget.onCustomNameChanged,
@@ -642,7 +656,10 @@ Future<ProcessStage?> _pickStage(
             final stage = await onCreate(query);
             if (stage == null) return null; // the host has said why
             created = stage;
-            return SearchableSelectOption<int>(value: stage.id, label: stage.name);
+            return SearchableSelectOption<int>(
+              value: stage.id,
+              label: stage.name,
+            );
           },
     createOptionLabelBuilder: (query) => 'Add “${query.trim()}” as a new stage',
     // A stage something still stands on stays, and the button says why.
@@ -732,7 +749,10 @@ class _NewStageBox extends StatelessWidget {
             style: _boxButtonStyle,
             onPressed: enabled ? () => _open(anchor) : null,
             icon: const Icon(Icons.search, size: 18),
-            label: const Text('Find or add stage', style: TextStyle(fontSize: 14)),
+            label: const Text(
+              'Find or add stage',
+              style: TextStyle(fontSize: 14),
+            ),
           ),
         ),
       ),
@@ -803,9 +823,9 @@ class _ListLens extends StatelessWidget {
                   title: Row(
                     children: [
                       Text(
-                        steps[i].labelWith(
-                          [for (final stage in palette) stage],
-                        ),
+                        steps[i].labelWith([
+                          for (final stage in palette) stage,
+                        ]),
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -815,7 +835,10 @@ class _ListLens extends StatelessWidget {
                       if (steps[i].notes.trim().isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(10),
@@ -838,8 +861,9 @@ class _ListLens extends StatelessWidget {
                     tooltip: editable
                         ? 'Remove this step'
                         : 'This route is active — declare a new version to change it',
-                    onPressed:
-                        editable ? () => onEmit([...steps]..removeAt(i)) : null,
+                    onPressed: editable
+                        ? () => onEmit([...steps]..removeAt(i))
+                        : null,
                     icon: const Icon(Icons.close, size: 18),
                   ),
                 ),
@@ -856,13 +880,13 @@ class _ListLens extends StatelessWidget {
                 label: Text(stage.name, style: const TextStyle(fontSize: 14)),
                 onPressed: editable
                     ? () => onEmit([
-                          ...steps,
-                          RouteStep(
-                            stageId: stage.id,
-                            stageCode: stage.code,
-                            stageName: stage.name,
-                          ),
-                        ])
+                        ...steps,
+                        RouteStep(
+                          stageId: stage.id,
+                          stageCode: stage.code,
+                          stageName: stage.name,
+                        ),
+                      ])
                     : null,
               ),
             newStage,
@@ -892,14 +916,21 @@ class _LockedBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.lock_outline, size: 18, color: SoftErpTheme.textSecondary),
+          const Icon(
+            Icons.lock_outline,
+            size: 18,
+            color: SoftErpTheme.textSecondary,
+          ),
           const SizedBox(width: 9),
           Expanded(
             child: Text(
               version == null
                   ? 'This route is active. Changes need a new version, so jobs already run keep their history.'
                   : 'Version $version is active. Changes need a new version, so jobs already run keep their history.',
-              style: const TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
           ),
           if (onDeclareVersion != null)

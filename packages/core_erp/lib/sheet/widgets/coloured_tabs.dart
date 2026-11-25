@@ -234,8 +234,9 @@ class _ColouredTabsState extends State<ColouredTabs>
   late final Animation<double> _focusOpacity;
   late final Animation<Offset> _focusSlide;
 
-  String get _nounTitle =>
-      widget.noun.isEmpty ? '' : widget.noun[0].toUpperCase() + widget.noun.substring(1);
+  String get _nounTitle => widget.noun.isEmpty
+      ? ''
+      : widget.noun[0].toUpperCase() + widget.noun.substring(1);
 
   @override
   void initState() {
@@ -252,10 +253,10 @@ class _ColouredTabsState extends State<ColouredTabs>
     _focusOpacity = Tween<double>(begin: 0.70, end: 1.0).animate(
       CurvedAnimation(parent: _shiftController, curve: Curves.easeOutCubic),
     );
-    _focusSlide = Tween<Offset>(
-      begin: const Offset(0, 0.008),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _shiftController, curve: Curves.easeOutCubic));
+    _focusSlide = Tween<Offset>(begin: const Offset(0, 0.008), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _shiftController, curve: Curves.easeOutCubic),
+        );
     _shiftController.value = 1.0;
     widget.strip.addListener(_onStripChanged);
   }
@@ -297,7 +298,10 @@ class _ColouredTabsState extends State<ColouredTabs>
       final position = _scroll.position;
       final start = i * (tabWidth + _gap);
       final isLast = i >= total - 1;
-      final end = start + tabWidth + (isLast ? (widget.showShortcuts ? 84.0 : 44.0) : 0.0);
+      final end =
+          start +
+          tabWidth +
+          (isLast ? (widget.showShortcuts ? 84.0 : 44.0) : 0.0);
       double? to;
       if (start < position.pixels) {
         to = start;
@@ -337,7 +341,10 @@ class _ColouredTabsState extends State<ColouredTabs>
               ),
               child: FadeTransition(
                 opacity: _focusOpacity,
-                child: SlideTransition(position: _focusSlide, child: widget.child),
+                child: SlideTransition(
+                  position: _focusSlide,
+                  child: widget.child,
+                ),
               ),
             ),
           ),
@@ -355,7 +362,9 @@ class _ColouredTabsState extends State<ColouredTabs>
                 paintKey: _paintKey,
                 frameKey: _frameKey,
                 tabKey: _tabKeyFor(_active),
-                previousTabKey: _previous != null ? _tabKeyFor(_previous!) : null,
+                previousTabKey: _previous != null
+                    ? _tabKeyFor(_previous!)
+                    : null,
                 shiftProgress: _shiftAnimation.value,
                 viewportKey: _viewportKey,
                 trail: _trail,
@@ -366,10 +375,14 @@ class _ColouredTabsState extends State<ColouredTabs>
           ),
           child: Column(
             key: _paintKey,
-            mainAxisSize: widget.fillHeight ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisSize: widget.fillHeight
+                ? MainAxisSize.max
+                : MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SheetStep.noTab(SizedBox(height: _tabHeight + 8, child: _strip())),
+              SheetStep.noTab(
+                SizedBox(height: _tabHeight + 8, child: _strip()),
+              ),
               if (widget.fillHeight) Expanded(child: content) else content,
             ],
           ),
@@ -450,13 +463,21 @@ class _ColouredTabsState extends State<ColouredTabs>
             onPressed: why == null ? widget.onAdd : null,
             style: IconButton.styleFrom(
               backgroundColor: SoftErpTheme.cardSurface.withValues(alpha: 0.85),
-              side: BorderSide(color: SoftErpTheme.border.withValues(alpha: 0.7)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              side: BorderSide(
+                color: SoftErpTheme.border.withValues(alpha: 0.7),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
               padding: EdgeInsets.zero,
               minimumSize: const Size(32, 32),
               fixedSize: const Size(32, 32),
             ),
-            icon: const Icon(Icons.add_rounded, size: 20, color: SoftErpTheme.textSecondary),
+            icon: const Icon(
+              Icons.add_rounded,
+              size: 20,
+              color: SoftErpTheme.textSecondary,
+            ),
           ),
         ),
         if (widget.showShortcuts && widget.addShortcut != null) ...[
@@ -519,7 +540,11 @@ class _ColouredTabsState extends State<ColouredTabs>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.more_vert_rounded, size: 18, color: SoftErpTheme.textSecondary),
+            const Icon(
+              Icons.more_vert_rounded,
+              size: 18,
+              color: SoftErpTheme.textSecondary,
+            ),
             const SizedBox(width: 4),
             Text(
               '$count',
@@ -548,7 +573,10 @@ class _ColouredTabsState extends State<ColouredTabs>
           Container(
             width: 10,
             height: 10,
-            decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: gradient,
+            ),
           ),
           const SizedBox(width: 8),
           Text(
@@ -556,7 +584,9 @@ class _ColouredTabsState extends State<ColouredTabs>
             style: TextStyle(
               fontSize: 13,
               fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+              color: selected
+                  ? SoftErpTheme.accent
+                  : SoftErpTheme.textSecondary,
             ),
           ),
           const SizedBox(width: 6),
@@ -568,7 +598,9 @@ class _ColouredTabsState extends State<ColouredTabs>
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
+                color: selected
+                    ? SoftErpTheme.textPrimary
+                    : SoftErpTheme.textSecondary,
               ),
             ),
           ),
@@ -634,7 +666,9 @@ class _ColouredTabsState extends State<ColouredTabs>
           child: Icon(
             saved ? Icons.check_circle_rounded : Icons.edit_rounded,
             size: 15,
-            color: saved ? SoftErpTheme.successText : SoftErpTheme.textMuted.withValues(alpha: 0.7),
+            color: saved
+                ? SoftErpTheme.successText
+                : SoftErpTheme.textMuted.withValues(alpha: 0.7),
           ),
         ),
         const SizedBox(width: 6),
@@ -651,7 +685,9 @@ class _ColouredTabsState extends State<ColouredTabs>
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
+                    color: selected
+                        ? SoftErpTheme.textPrimary
+                        : SoftErpTheme.textSecondary,
                   ),
                 ),
               ),
@@ -661,33 +697,41 @@ class _ColouredTabsState extends State<ColouredTabs>
                 // long type ("Power Press") never pushes past the tab's edge.
                 Flexible(
                   child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? SoftErpTheme.accentSoft.withValues(alpha: 0.5)
-                        : SoftErpTheme.cardSurfaceAlt.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    code,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? SoftErpTheme.accentSoft.withValues(alpha: 0.5)
+                          : SoftErpTheme.cardSurfaceAlt.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      code,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: selected
+                            ? SoftErpTheme.accent
+                            : SoftErpTheme.textSecondary,
+                      ),
                     ),
                   ),
-                ),
                 ),
               ],
             ],
           ),
         ),
         Tooltip(
-          message: closeWhy ?? strip.closeTipAt(i) ?? 'Close this ${widget.noun}',
+          message:
+              closeWhy ?? strip.closeTipAt(i) ?? 'Close this ${widget.noun}',
           child: InkResponse(
-            key: ValueKey<String>(named == null ? '${p}_tab_close_$i' : '${named}_close'),
+            key: ValueKey<String>(
+              named == null ? '${p}_tab_close_$i' : '${named}_close',
+            ),
             radius: 14,
             onTap: closeWhy == null ? () => widget.onClose(i) : null,
             child: Padding(
@@ -696,7 +740,9 @@ class _ColouredTabsState extends State<ColouredTabs>
                 Icons.close_rounded,
                 size: 15,
                 color: closeWhy == null
-                    ? (selected ? SoftErpTheme.textSecondary : SoftErpTheme.textMuted)
+                    ? (selected
+                          ? SoftErpTheme.textSecondary
+                          : SoftErpTheme.textMuted)
                     : SoftErpTheme.border,
               ),
             ),
@@ -714,14 +760,21 @@ class _ColouredTabsState extends State<ColouredTabs>
           ? const EdgeInsets.fromLTRB(16, 2, 10, 0)
           : const EdgeInsets.fromLTRB(12, 0, 8, 0),
       decoration: BoxDecoration(
-        color: selected ? Colors.transparent : SoftErpTheme.cardSurface.withValues(alpha: 0.65),
+        color: selected
+            ? Colors.transparent
+            : SoftErpTheme.cardSurface.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: selected ? Colors.transparent : SoftErpTheme.border.withValues(alpha: 0.55),
+          color: selected
+              ? Colors.transparent
+              : SoftErpTheme.border.withValues(alpha: 0.55),
         ),
       ),
       child: selected
-          ? KeyedSubtree(key: ValueKey<String>('${p}_tab_selected'), child: inside)
+          ? KeyedSubtree(
+              key: ValueKey<String>('${p}_tab_selected'),
+              child: inside,
+            )
           : inside,
     );
 
@@ -803,7 +856,10 @@ class PartFramePainter extends CustomPainter {
     if (context == null || !context.mounted) return null;
     try {
       final box = context.findRenderObject();
-      if (box is! RenderBox || !box.hasSize || !box.attached || !within.attached) {
+      if (box is! RenderBox ||
+          !box.hasSize ||
+          !box.attached ||
+          !within.attached) {
         return null;
       }
       return box.localToGlobal(Offset.zero, ancestor: within) & box.size;
@@ -825,16 +881,26 @@ class PartFramePainter extends CustomPainter {
       final frame = frameBox.deflate((_ring + _coat) / 2);
 
       final current = _rectOf(tabKey, within);
-      final before = previousTabKey != null ? _rectOf(previousTabKey!, within) : null;
+      final before = previousTabKey != null
+          ? _rectOf(previousTabKey!, within)
+          : null;
       final Rect? tab;
       if (current != null && shiftProgress < 1.0) {
-        tab = Rect.lerp(before ?? trail.lastTab ?? current, current, shiftProgress);
+        tab = Rect.lerp(
+          before ?? trail.lastTab ?? current,
+          current,
+          shiftProgress,
+        );
       } else {
         tab = current;
       }
       if (tab != null) trail.lastTab = tab;
 
-      final path = outline(frame: frame, tab: tab, viewport: _rectOf(viewportKey, within));
+      final path = outline(
+        frame: frame,
+        tab: tab,
+        viewport: _rectOf(viewportKey, within),
+      );
       final shader = gradient.createShader(path.getBounds());
 
       // A soft halo in the middle colour.
@@ -891,29 +957,65 @@ class PartFramePainter extends CustomPainter {
       if (right - left >= 2 * _tabRadius + 24 && frame.top - top > _tabRadius) {
         path
           ..lineTo(left - _flare, frame.top)
-          ..cubicTo(left - _flare * 0.45, frame.top, left, frame.top - _flare * 0.45,
-              left + _taper * 0.25, frame.top - _flare)
+          ..cubicTo(
+            left - _flare * 0.45,
+            frame.top,
+            left,
+            frame.top - _flare * 0.45,
+            left + _taper * 0.25,
+            frame.top - _flare,
+          )
           ..lineTo(left + _taper, top + _tabRadius)
-          ..cubicTo(left + _taper, top + _tabRadius * 0.45, left + _taper + _tabRadius * 0.45,
-              top, left + _taper + _tabRadius, top)
+          ..cubicTo(
+            left + _taper,
+            top + _tabRadius * 0.45,
+            left + _taper + _tabRadius * 0.45,
+            top,
+            left + _taper + _tabRadius,
+            top,
+          )
           ..lineTo(right - _taper - _tabRadius, top)
-          ..cubicTo(right - _taper - _tabRadius * 0.45, top, right - _taper,
-              top + _tabRadius * 0.45, right - _taper, top + _tabRadius)
+          ..cubicTo(
+            right - _taper - _tabRadius * 0.45,
+            top,
+            right - _taper,
+            top + _tabRadius * 0.45,
+            right - _taper,
+            top + _tabRadius,
+          )
           ..lineTo(right - _taper * 0.25, frame.top - _flare)
-          ..cubicTo(right, frame.top - _flare * 0.45, right + _flare * 0.45, frame.top,
-              right + _flare, frame.top);
+          ..cubicTo(
+            right,
+            frame.top - _flare * 0.45,
+            right + _flare * 0.45,
+            frame.top,
+            right + _flare,
+            frame.top,
+          );
       }
     }
 
     path
       ..lineTo(frame.right - r, frame.top)
-      ..arcToPoint(Offset(frame.right, frame.top + r), radius: const Radius.circular(r))
+      ..arcToPoint(
+        Offset(frame.right, frame.top + r),
+        radius: const Radius.circular(r),
+      )
       ..lineTo(frame.right, frame.bottom - r)
-      ..arcToPoint(Offset(frame.right - r, frame.bottom), radius: const Radius.circular(r))
+      ..arcToPoint(
+        Offset(frame.right - r, frame.bottom),
+        radius: const Radius.circular(r),
+      )
       ..lineTo(frame.left + r, frame.bottom)
-      ..arcToPoint(Offset(frame.left, frame.bottom - r), radius: const Radius.circular(r))
+      ..arcToPoint(
+        Offset(frame.left, frame.bottom - r),
+        radius: const Radius.circular(r),
+      )
       ..lineTo(frame.left, frame.top + r)
-      ..arcToPoint(Offset(frame.left + r, frame.top), radius: const Radius.circular(r))
+      ..arcToPoint(
+        Offset(frame.left + r, frame.top),
+        radius: const Radius.circular(r),
+      )
       ..close();
     return path;
   }

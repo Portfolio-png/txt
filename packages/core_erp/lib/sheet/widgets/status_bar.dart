@@ -112,7 +112,7 @@ class SheetStatusBar extends StatelessWidget {
               // What the keys do on the sheet. "Esc: restore" was here, and
               // nothing restored anything.
               'Tab / Enter: next   Type to search   ↑↓: choose   Enter: pick / add   '
-                  'Esc: close   Alt: shortcuts   Ctrl+Enter: save & add another   Ctrl+S: save all',
+              'Esc: close   Alt: shortcuts   Ctrl+Enter: save & add another   Ctrl+S: save all',
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,

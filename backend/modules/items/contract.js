@@ -134,7 +134,7 @@ const groupEgress = {
   entity: 'group',
   fields: [
     'id', 'name', 'groupType', 'groupStructure', 'description',
-    'parentGroupId', 'unitId', 'isArchived', 'usageCount',
+    'parentGroupId', 'unitId', 'isArchived', 'systemKey', 'usageCount',
     'createdAt', 'updatedAt',
   ],
 };

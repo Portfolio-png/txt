@@ -84,7 +84,9 @@ String buildVariantPartCode({
       : letters.substring(0, kMaxPartCodeLetters);
   if (capped.isEmpty) return '';
   final values = valueCodes
-      .map((code) => code.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toUpperCase())
+      .map(
+        (code) => code.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toUpperCase(),
+      )
       .where((code) => code.isNotEmpty)
       .join();
   return '$capped$values${partNo ?? ''}';
@@ -110,7 +112,9 @@ String variantCodeFromPartCode(
   final base = (basePartCode ?? '').trim().toUpperCase();
   if (base.isEmpty) return '';
   final values = valueCodes
-      .map((code) => code.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toUpperCase())
+      .map(
+        (code) => code.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '').toUpperCase(),
+      )
       .where((code) => code.isNotEmpty)
       .join();
   if (values.isEmpty) return base;
@@ -134,10 +138,9 @@ String variantCodeFromPartCode(
 /// Code field; `BRAS` is the guess made when nobody did. "Mild Steel" derives
 /// `MS` on its own, because two words become their initials.
 String variationValueCode(String? value) {
-  final words = RegExp(r'[A-Za-z0-9]+')
-      .allMatches(value ?? '')
-      .map((match) => match.group(0)!)
-      .toList();
+  final words = RegExp(
+    r'[A-Za-z0-9]+',
+  ).allMatches(value ?? '').map((match) => match.group(0)!).toList();
   if (words.isEmpty) return (value ?? '').trim();
   if (words.length == 1) {
     final word = words.single.toUpperCase();
@@ -170,10 +173,9 @@ String partPropertyCode(String? value) {
   // first character — giving 2, exactly what this rule exists to prevent, and
   // colliding with 24G. A gauge cell takes typed values verbatim, so that
   // spelling is the normal one.
-  final tokens = RegExp(r'\d+|[A-Za-z]+')
-      .allMatches(value ?? '')
-      .map((match) => match.group(0)!)
-      .toList();
+  final tokens = RegExp(
+    r'\d+|[A-Za-z]+',
+  ).allMatches(value ?? '').map((match) => match.group(0)!).toList();
   if (tokens.isEmpty) return '';
   return tokens
       .map((token) => RegExp(r'^\d+$').hasMatch(token) ? token : token[0])

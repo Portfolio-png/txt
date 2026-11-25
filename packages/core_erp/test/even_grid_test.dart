@@ -23,43 +23,61 @@ List<List<String?>> _labels(List<ColumnDef> columns) => [
 
 void main() {
   group('a part line', () {
-    test('reads Group, Type, Part Name, Part Code over the properties and Part No', () {
-      expect(_labels([...itemSheetColumns, _property(40, 'Grade', 9)]), [
-        ['Group', 'Type', 'Part Name', 'Part No'],
-        ['Alloy', 'Thickness', 'Grade', 'Part Code'],
-      ]);
+    // User, 2026-11-25: alloy, thickness, grade and hardness on the second
+    // line, and the part code at the end.
+    test('reads the identity, then every property with Part Code last', () {
+      expect(
+        _labels([
+          ...itemSheetColumns,
+          _property(40, 'Grade', 9),
+          _property(41, 'Hardness', 10),
+        ]),
+        [
+          ['Group', 'Type', 'Part Name', 'Part No'],
+          ['Alloy', 'Thickness', 'Grade', 'Hardness', 'Part Code'],
+        ],
+      );
     });
 
-    test('keeps Part No under Part Code however few properties there are', () {
+    test('with no properties the second line is the code alone', () {
       final noProperties = itemSheetColumns
           .where((c) => !SheetBindsTo.isVariation(c.bindsTo))
           .toList();
       expect(_labels(noProperties), [
         ['Group', 'Type', 'Part Name', 'Part No'],
-        [null, null, null, 'Part Code'],
+        ['Part Code'],
       ]);
     });
 
-    test('runs more properties onto rows of their own, three to a row', () {
+    test('more properties stay on the second line, still before the code', () {
       expect(
         _labels([
           ...itemSheetColumns,
           _property(40, 'Grade', 9),
-          _property(41, 'Finish', 10),
+          _property(41, 'Hardness', 10),
+          _property(42, 'Finish', 11),
         ]),
         [
           ['Group', 'Type', 'Part Name', 'Part No'],
-          ['Alloy', 'Thickness', 'Grade', 'Part Code'],
-          ['Finish', null, null, null],
+          ['Alloy', 'Thickness', 'Grade', 'Hardness', 'Finish', 'Part Code'],
         ],
       );
     });
 
     test('is visited by Tab in the order it reads', () {
-      final def = SheetDef(id: 1, key: 'item', title: 'Item', columns: itemSheetColumns);
+      final def = SheetDef(
+        id: 1,
+        key: 'item',
+        title: 'Item',
+        columns: [
+          ...itemSheetColumns,
+          _property(40, 'Grade', 9),
+          _property(41, 'Hardness', 10),
+        ],
+      );
       expect(
         [for (final c in PartRowsForm.lineColumns(def)) c.label],
-        ['Group', 'Type', 'Part Name', 'Part No', 'Alloy', 'Thickness', 'Part Code'],
+        ['Group', 'Type', 'Part Name', 'Part No', 'Alloy', 'Thickness', 'Grade', 'Hardness', 'Part Code'],
       );
     });
   });

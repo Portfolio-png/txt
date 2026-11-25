@@ -126,6 +126,14 @@ class _StructuredGroupEditorDialogState
   final Set<String> _discardedInheritedPropertyKeys = <String>{};
 
   bool get _isEditMode => widget.group != null;
+
+  /// A group the app ships (Raw Materials, Rivets, Springs). The server refuses
+  /// a rename, a move or a delete, so those controls are drawn disabled with
+  /// the reason rather than offered and then refused.
+  bool get _isSystemGroup => widget.group?.isSystem ?? false;
+  static const String _systemGroupReason =
+      'A default group: it cannot be renamed, moved or deleted, and it comes '
+      'back after Clear Data.';
   bool get _isLegacyUnlinkedEdit => _isEditMode && _linkedMaterial == null;
 
   /// Whether the hierarchical/combination structure toggle is offered. Only on
@@ -150,9 +158,10 @@ class _StructuredGroupEditorDialogState
   /// did. Both were consequences of building the list here instead of asking
   /// for one.
   Widget _buildParentGroupField() {
-    return KeyedSubtree(
+    final field = KeyedSubtree(
       key: const ValueKey<String>('groups-parent-field'),
       child: GroupPickerField(
+        fieldEnabled: !_isSystemGroup,
         tapTargetKey: const ValueKey<String>('masters-group-parent'),
         value: _selectedParentGroupId,
         onChanged: _setSelectedParentGroup,
@@ -169,6 +178,8 @@ class _StructuredGroupEditorDialogState
         excludeDescendantsOfSelf: true,
       ),
     );
+    if (!_isSystemGroup) return field;
+    return Tooltip(message: _systemGroupReason, child: field);
   }
 
   /// Component groups share every field and code path with item groups; only
@@ -418,16 +429,20 @@ class _StructuredGroupEditorDialogState
                     final isCompact = constraints.maxWidth < 940;
                     final detailsCard = _CreateGroupSurfaceCard(
                       title: 'Group Details',
-                      headerActions: _combinationToggleVisible ? GroupTypeIcons(
-                        isCombination: _isCombination,
-                        isComponent: false,
-                        onTypeChanged: (isCombination, _) => setState(() {
-                          _groupStructure = isCombination ? 'combination' : 'hierarchical';
-                          if (isCombination) {
-                            _selectedParentGroupId = null;
-                          }
-                        }),
-                      ) : null,
+                      headerActions: _combinationToggleVisible
+                          ? GroupTypeIcons(
+                              isCombination: _isCombination,
+                              isComponent: false,
+                              onTypeChanged: (isCombination, _) => setState(() {
+                                _groupStructure = isCombination
+                                    ? 'combination'
+                                    : 'hierarchical';
+                                if (isCombination) {
+                                  _selectedParentGroupId = null;
+                                }
+                              }),
+                            )
+                          : null,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -436,6 +451,7 @@ class _StructuredGroupEditorDialogState
                             child: TextFormField(
                               controller: _nameController,
                               focusNode: _nameFocus,
+                              readOnly: _isSystemGroup,
                               decoration: const InputDecoration(
                                 hintText: 'Enter group name',
                                 border: InputBorder.none,
@@ -977,8 +993,7 @@ class _StructuredGroupEditorDialogState
                     // inherit their structure from the item form, so neither
                     // gets a structure/properties panel.
                     final compositionCard =
-                        supportsStructuredGovernance &&
-                            !_isCombination
+                        supportsStructuredGovernance && !_isCombination
                         ? _CreateGroupSurfaceCard(
                             title: 'Structure & Properties',
                             child: compositionBody,
@@ -988,9 +1003,7 @@ class _StructuredGroupEditorDialogState
                     // Components take the second column instead, so the dialog
                     // stays two-column rather than collapsing into one tall
                     // stack.
-                    final sideCard =
-                        compositionCard ??
-                        null;
+                    final sideCard = compositionCard ?? null;
 
                     return SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
@@ -1034,21 +1047,30 @@ class _StructuredGroupEditorDialogState
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     if (_isEditMode) ...[
-                      TextButton.icon(
-                        onPressed: provider.isSaving
-                            ? null
-                            : () => _handleDelete(context),
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                          color: Color(0xFFDC2626),
-                        ),
-                        label: Text(
-                          'Delete group',
-                          style: _inventoryInterStyle(
-                            color: const Color(0xFFDC2626),
-                            size: 14,
-                            weight: FontWeight.w500,
+                      // Drawn disabled, never hidden, on a default group: the
+                      // tooltip says why it cannot go.
+                      Tooltip(
+                        message: _isSystemGroup ? _systemGroupReason : '',
+                        child: TextButton.icon(
+                          onPressed: provider.isSaving || _isSystemGroup
+                              ? null
+                              : () => _handleDelete(context),
+                          icon: Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                            color: _isSystemGroup
+                                ? const Color(0xFF9CA3AF)
+                                : const Color(0xFFDC2626),
+                          ),
+                          label: Text(
+                            'Delete group',
+                            style: _inventoryInterStyle(
+                              color: _isSystemGroup
+                                  ? const Color(0xFF9CA3AF)
+                                  : const Color(0xFFDC2626),
+                              size: 14,
+                              weight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ),
@@ -1123,8 +1145,6 @@ class _StructuredGroupEditorDialogState
   List<governance.GroupPropertyDraft> get _retiredDrafts =>
       _ownSchema?.retiredPropertyDrafts ??
       const <governance.GroupPropertyDraft>[];
-
-
 
   /// Persists a combination group. Unit and structured properties do not apply,
   /// so this bypasses the inventory-backed material path — but the parent does
@@ -1311,8 +1331,6 @@ class _StructuredGroupEditorDialogState
               .where((group) => !groupIdsBeforeCreate.contains(group.id))
               .lastOrNull ??
           matchingGroups.lastOrNull;
-
-
     } else {
       final group = widget.group!;
       savedGroup = await groupsProvider.updateGroup(

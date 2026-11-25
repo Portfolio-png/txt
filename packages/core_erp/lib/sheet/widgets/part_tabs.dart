@@ -83,7 +83,8 @@ class _SheetParts implements TabStrip {
   @override
   String? closeWhyAt(int i) {
     // The line's own rule: a saved part is not taken off the sheet by an ×.
-    if (savedAt(i)) return 'Saved parts stay in the catalogue — use Archive part';
+    if (savedAt(i))
+      return 'Saved parts stay in the catalogue — use Archive part';
     if (sheet.rowCount <= 1) return 'A sheet always keeps one part';
     return null;
   }
@@ -102,7 +103,8 @@ class _SheetParts implements TabStrip {
   // A fresh adapter is made each build; equal over the same sheet, so the
   // strip does not re-subscribe every frame.
   @override
-  bool operator ==(Object other) => other is _SheetParts && identical(other.sheet, sheet);
+  bool operator ==(Object other) =>
+      other is _SheetParts && identical(other.sheet, sheet);
   @override
   int get hashCode => identityHashCode(sheet);
 }

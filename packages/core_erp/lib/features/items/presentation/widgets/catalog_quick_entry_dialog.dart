@@ -19,6 +19,7 @@ import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/developed_for.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/part_name.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/part_code.dart';
 import '../providers/items_provider.dart';
@@ -306,7 +307,10 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
   /// The code for what is on screen right now, derived locally so the field
   /// keeps up with typing. The number comes from the server; the letters do
   /// not need to.
-  String _derivedPartCode({required GroupsProvider groups, required InventoryProvider inventory}) {
+  String _derivedPartCode({
+    required GroupsProvider groups,
+    required InventoryProvider inventory,
+  }) {
     final group = _selectedGroup(groups);
     final pending = _visiblePendingSet;
     final set = pending == null ? _selectedSet(inventory) : null;
@@ -446,7 +450,9 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       sticky: _groupRowUnitId,
     );
     if (unitId == null) {
-      setState(() => _error = 'No active unit exists — create one in Units first.');
+      setState(
+        () => _error = 'No active unit exists — create one in Units first.',
+      );
       return null;
     }
 
@@ -455,9 +461,7 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
     // server, and it is not a container in the sense this column means, so a
     // new group never nests under one.
     final nests =
-        _nestUnderSelection &&
-        selected != null &&
-        !selected.isCombination;
+        _nestUnderSelection && selected != null && !selected.isCombination;
     final parentGroupId = nests ? selected.id : null;
 
     // The server auto-parents a new top-level hierarchical group under Primary
@@ -562,7 +566,9 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       sticky: _itemRowUnitId,
     );
     if (unitId == null) {
-      setState(() => _error = 'No active unit exists — create one in Units first.');
+      setState(
+        () => _error = 'No active unit exists — create one in Units first.',
+      );
       return;
     }
 
@@ -625,7 +631,8 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
           setId: pendingAtCreate != null || _selectedSetId == kPendingSetId
               ? null
               : _selectedSetId,
-          setName: pendingAtCreate?.name ??
+          setName:
+              pendingAtCreate?.name ??
               _selectedSet(context.read<InventoryProvider>())?.name ??
               '',
           partLabel: created.displayName.trim().isEmpty
@@ -693,9 +700,10 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
           storeArea: draft.storeArea,
           rackNo: draft.rackNo,
           partCode: part.partCode,
-          partName: part.displayName.trim().isEmpty
-              ? part.name
-              : part.displayName,
+          partName: partNameWithNo(
+            part.displayName.trim().isEmpty ? part.name : part.displayName,
+            part.partNo,
+          ),
         ),
       );
       if (!mounted) return;
@@ -867,7 +875,8 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       (line) => line.itemId == item.id && line.variationLeafNodeId == 0,
     )) {
       setState(
-        () => _notice = '"${item.displayName}" is already in "${existing.name}".',
+        () =>
+            _notice = '"${item.displayName}" is already in "${existing.name}".',
       );
       return;
     }
@@ -1177,7 +1186,8 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
 
   String _scopeLine(GroupsProvider groups, InventoryProvider inventory) {
     final group = _selectedGroup(groups);
-    if (group == null) return 'Pick a group to start — or type a new name into it.';
+    if (group == null)
+      return 'Pick a group to start — or type a new name into it.';
     final set = _selectedSet(inventory);
     final pending = _visiblePendingSet;
     if (set != null) return 'Goes into ${group.name} · line of ${set.name}';
@@ -1205,10 +1215,7 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
             const Text(
               'Nothing yet. What you create here is listed so you can go back '
               'to it and keep filling it in.',
-              style: TextStyle(
-                fontSize: 13,
-                color: SoftErpTheme.textSecondary,
-              ),
+              style: TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary),
             )
           else
             ConstrainedBox(
@@ -1273,13 +1280,17 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
   /// or a part that already exists, which is written by Save. Keeping them
   /// apart is what stops a look at an old part rewriting what the next tick
   /// stamps.
-  Widget _buildDevelopedForPanel(ItemsProvider items, {required bool scrollable}) {
+  Widget _buildDevelopedForPanel(
+    ItemsProvider items, {
+    required bool scrollable,
+  }) {
     final selected = _selectedItem(items);
     final stored = selected?.developedFor ?? DevelopedFor.empty;
     final value = selected == null
         ? _draftDevelopedFor
         : (_editedDevelopedFor ?? stored);
-    final dirty = selected != null &&
+    final dirty =
+        selected != null &&
         _editedDevelopedFor != null &&
         _editedDevelopedFor != stored;
     final name = selected == null
@@ -1437,7 +1448,8 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       _busy = false;
       if (saved == null) {
         // Keep the staged edit: clearing it on failure throws away the typing.
-        _error = context.read<ItemsProvider>().errorMessage ?? _kConcurrentWrite;
+        _error =
+            context.read<ItemsProvider>().errorMessage ?? _kConcurrentWrite;
         return;
       }
       // Spent — the part now carries it, and the panel re-seeds from the row.
@@ -1445,7 +1457,6 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       _notice = 'Saved who that part was developed for.';
     });
   }
-
 
   // ---------------------------------------------------------------------------
   // The three dropdowns
@@ -1482,7 +1493,8 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       // Withheld rather than offered-and-refused: the panel below says why,
       // and an enabled Create that cannot work is worse than no Create.
       canCreateOption: (query, _) =>
-          query.trim().isNotEmpty && _newGroupBlockedReason(groups, query) == null,
+          query.trim().isNotEmpty &&
+          _newGroupBlockedReason(groups, query) == null,
       createOptionLabelBuilder: (query) => 'Create group "$query"',
       onCreateOption: (query) async {
         final created = await _createGroup(query);
@@ -1634,9 +1646,9 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
     if (name.isEmpty) return null;
     if (_selectedGroupId == null) return 'Pick a group first.';
     final clashes =
-        _setsInGroup(inventory).any(
-          (set) => set.name.toLowerCase() == name.toLowerCase(),
-        ) ||
+        _setsInGroup(
+          inventory,
+        ).any((set) => set.name.toLowerCase() == name.toLowerCase()) ||
         (_visiblePendingSet?.name.toLowerCase() == name.toLowerCase());
     return clashes ? 'A set called "$name" is already filed here.' : null;
   }
@@ -1689,19 +1701,19 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
           label: 'New part…',
           searchText: 'new part create',
         ),
-        ...inGroup
-          .map(
-            (item) => SearchableSelectOption<int?>(
-              value: item.id,
-              label: item.displayName.trim().isEmpty
-                  ? item.name
-                  : item.displayName,
-              subtitle: subtitleFor(item),
-              searchText:
-                  '${item.name} ${item.displayName} ${item.partCode} '
-                  '${subtitleFor(item)}',
+        ...inGroup.map(
+          (item) => SearchableSelectOption<int?>(
+            value: item.id,
+            label: partNameWithNo(
+              item.displayName.trim().isEmpty ? item.name : item.displayName,
+              item.partNo,
             ),
+            subtitle: subtitleFor(item),
+            searchText:
+                '${item.name} ${item.displayName} ${item.partCode} '
+                '${subtitleFor(item)}',
           ),
+        ),
       ],
       value: _selectedItemId,
       fieldEnabled: !_busy && _selectedGroupId != null,
@@ -1801,9 +1813,7 @@ class _CatalogQuickEntryDialogState extends State<CatalogQuickEntryDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SectionHeading(
-            label: name == null ? 'New part' : 'Part · $name',
-          ),
+          _SectionHeading(label: name == null ? 'New part' : 'Part · $name'),
           const SizedBox(height: 10),
           if (selected == null)
             ..._newPartFields(groups, inventory, units)

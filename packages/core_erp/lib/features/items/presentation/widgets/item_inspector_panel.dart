@@ -114,8 +114,9 @@ class _ItemInspectorPanelState extends State<ItemInspectorPanel> {
         missing: true,
       );
     }
-    final rawTitle =
-        item.displayName.trim().isEmpty ? item.name : item.displayName;
+    final rawTitle = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
     final title = rawTitle.trim().isEmpty
         ? (item.partCode.trim().isEmpty ? 'Part ${item.id}' : item.partCode)
         : rawTitle;
@@ -187,7 +188,9 @@ class _RouteSectionState extends State<_RouteSection> {
     }
     try {
       final route = await service.activeRoute(widget.partId);
-      final stages = route == null ? const <ProcessStage>[] : await service.stages();
+      final stages = route == null
+          ? const <ProcessStage>[]
+          : await service.stages();
       if (!mounted) return;
       setState(() {
         _route = route;
@@ -199,12 +202,11 @@ class _RouteSectionState extends State<_RouteSection> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      RouteRibbon(
-        route: _route,
-        stages: _stages,
-        heading: _route == null || _route!.name.trim().isEmpty
-            ? 'Goes through'
-            : _route!.name.trim(),
-      );
+  Widget build(BuildContext context) => RouteRibbon(
+    route: _route,
+    stages: _stages,
+    heading: _route == null || _route!.name.trim().isEmpty
+        ? 'Goes through'
+        : _route!.name.trim(),
+  );
 }

@@ -1,5 +1,7 @@
 'use strict';
 
+const { assertSystemGroupDeletable } = require('./system-groups');
+
 // Removing an item or a group with everything that hangs off it.
 //
 // A factory: `deps` is what server.js still owns (the database helpers and
@@ -11,7 +13,7 @@
 function createDeletes(deps, api) {
   const inventoryPorts = deps.inventory;
   const { desk } = deps;
-  const { all, markEntityAssetsDeleted, run, trashAndDelete } = deps;
+  const { all, get, markEntityAssetsDeleted, run, trashAndDelete } = deps;
   const purgeEntityLinks = (...args) => deps.purgeEntityLinks()(...args);
   const purgeEntityVariations = (...args) => deps.purgeEntityVariations()(...args);
 
@@ -36,6 +38,8 @@ function createDeletes(deps, api) {
     await run('DELETE FROM item_machines WHERE item_id = ?', [id]);
     await run('DELETE FROM item_dies WHERE item_id = ?', [id]);
     await run('DELETE FROM item_property_schema WHERE item_id = ?', [id]);
+    await run('DELETE FROM raw_material_specs WHERE item_id = ?', [id]);
+    await run('DELETE FROM item_vendor_prices WHERE item_id = ?', [id]);
     await run('DELETE FROM item_bom_lines WHERE item_id = ?', [id]);
     // The part's sheet nesting (057) is client↔die and die↔machine links that
     // carry the part only in their relation, so the purge below — which matches
@@ -51,6 +55,9 @@ function createDeletes(deps, api) {
   }
 
   async function deleteGroupWithCascade(id, req) {
+    // Checked here, not only at the route, so a cascade from a parent or a
+    // delete request approved later cannot take a default group with it.
+    assertSystemGroupDeletable(await get('SELECT id, name, system_key FROM groups WHERE id = ?', [id]));
     const items = await all('SELECT id FROM items WHERE group_id = ?', [id]);
     for (const row of items) {
       await deleteItemWithCascade(row.id, req);

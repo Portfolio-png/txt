@@ -3,11 +3,7 @@ import 'package:flutter/material.dart';
 /// KeyTip badge overlay — displayed beside buttons and field labels when Alt
 /// or a modifier key is pressed/held to announce quick keyboard jump shortcuts.
 class KeyTipBadge extends StatelessWidget {
-  const KeyTipBadge({
-    super.key,
-    required this.label,
-    this.visible = true,
-  });
+  const KeyTipBadge({super.key, required this.label, this.visible = true});
 
   final String label;
   final bool visible;

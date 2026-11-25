@@ -193,7 +193,8 @@ void main() {
                   onPressed: () async {
                     result = await showMasterDataDialog(
                       context,
-                      baseline: baseline,
+                      // A plan whose form was picked.
+                      baseline: baseline.copyWith(formChosen: true),
                       pipelineName: 'Cut → Punch',
                       itemName: 'Alloy - 16A - MS Sheet',
                     );
@@ -283,7 +284,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: MasterDataPanel(baseline: baseline, onSave: (_) {}),
+          body: MasterDataPanel(baseline: baseline.copyWith(formChosen: true), onSave: (_) {}),
         ),
       ));
       await tester.pumpAndSettle();
@@ -309,7 +310,7 @@ void main() {
                   onPressed: () async {
                     saved = await showMasterDataDialog(
                       context,
-                      baseline: const PenPaperBaseline(),
+                      baseline: const PenPaperBaseline(formChosen: true),
                       pipelineName: 'Cut → Punch',
                       itemName: 'Alloy - 16A - MS Sheet',
                     );
@@ -356,7 +357,7 @@ void main() {
                   onPressed: () async {
                     saved = await showMasterDataDialog(
                       context,
-                      baseline: const PenPaperBaseline(),
+                      baseline: const PenPaperBaseline(formChosen: true),
                       itemName: 'Alloy Sheet',
                     );
                   },
@@ -392,6 +393,7 @@ void main() {
                   onPressed: () => showMasterDataDialog(
                     context,
                     baseline: const PenPaperBaseline(
+                      formChosen: true,
                       sheetWidthInches: 48,
                       sheetHeightInches: 96,
                     ),
@@ -1004,7 +1006,7 @@ void cutTests() {
                 child: ElevatedButton(
                   onPressed: () => showMasterDataDialog(
                     context,
-                    baseline: baseline,
+                    baseline: baseline.copyWith(formChosen: true),
                     pipelineName: 'Cut → Punch',
                     itemName: 'Alloy - 16A - MS Sheet',
                   ),
@@ -1142,7 +1144,7 @@ void cutTests() {
                   onPressed: () async {
                     saved = await showMasterDataDialog(
                       context,
-                      baseline: sheet,
+                      baseline: sheet.copyWith(formChosen: true),
                       itemName: 'Alloy Sheet',
                     );
                   },

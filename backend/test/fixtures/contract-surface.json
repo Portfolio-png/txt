@@ -7420,6 +7420,92 @@
       ]
     },
     {
+      "name": "items.rivets.create",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make a rivet from its spec; the name is built from it.",
+      "input": {
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.rivets.get",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One rivet, by its item id.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.rivets.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every rivet, with its spec and vendor prices.",
+      "input": {
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.rivets.update",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a rivet’s spec, code or vendor prices.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
       "name": "items.rowById",
       "module": "items",
       "permission": null,
@@ -7826,6 +7912,92 @@
               }
             }
           }
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.springs.create",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make a spring from its spec; the name is built from it.",
+      "input": {
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.springs.get",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One spring, by its item id.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.springs.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every spring, with its spec and vendor prices.",
+      "input": {
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.springs.update",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a spring’s spec, code or vendor prices.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -11902,7 +12074,8 @@
         }
       },
       "usedBy": [
-        "challans"
+        "challans",
+        "items"
       ]
     },
     {
@@ -12059,7 +12232,8 @@
       "orders.items.usageRows",
       "pipelines.templates.row",
       "units.rows.first",
-      "units.rows.get"
+      "units.rows.get",
+      "vendors.rows.get"
     ],
     "action_center": [
       "challans.templates.remove",

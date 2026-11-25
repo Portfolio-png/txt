@@ -131,7 +131,6 @@ class CreateItemInput {
   /// Null says nothing and the server keeps them; [] clears them.
   final List<DevelopedFor>? deals;
 
-
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.
   final PenPaperBaseline? penPaperBaseline;
@@ -223,7 +222,6 @@ class UpdateItemInput {
   /// Every company, in order (each without the cost, which is the part's).
   /// Null says nothing and the server keeps them; [] clears them.
   final List<DevelopedFor>? deals;
-
 
   /// Sample run recorded on this item. Null leaves whatever is already stored
   /// untouched — the server preserves the column when the field is absent.

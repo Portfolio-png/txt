@@ -18,18 +18,17 @@ class ItemMasterSidebar extends StatelessWidget {
     final groupDraft = controller.groupItemController.draft;
     final groupSheet = controller.groupItemController.sheetDef;
 
-    final itemName = groupDraft.get(3)?.optionLabel ??
+    final itemName =
+        groupDraft.get(3)?.optionLabel ??
         groupDraft.get(3)?.textValue ??
         'New Item';
 
-    final groupPath = SheetEngine.groupPathString(
-      groupSheet,
-      groupDraft,
-      3,
-    );
+    final groupPath = SheetEngine.groupPathString(groupSheet, groupDraft, 3);
 
     final partCode = groupDraft.get(5)?.textValue ?? '—';
-    final clientName = controller.clientVendorController.draft.get(20)?.optionLabel ?? 'Gold Medal';
+    final clientName =
+        controller.clientVendorController.draft.get(20)?.optionLabel ??
+        'Gold Medal';
     final developedFor = controller.isExternal
         ? 'Developed for: $clientName'
         : 'Developed for: Self';
@@ -56,7 +55,9 @@ class ItemMasterSidebar extends StatelessWidget {
                   const Color(0xFFFFFFFF),
                 ],
               ),
-              border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              border: const Border(
+                bottom: BorderSide(color: Color(0xFFE2E8F0)),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,7 +66,10 @@ class ItemMasterSidebar extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: controller.isSaved
                             ? const Color(0xFFD1FAE5)
@@ -121,7 +125,9 @@ class ItemMasterSidebar extends StatelessWidget {
                 Row(
                   children: [
                     Icon(
-                      controller.isExternal ? Icons.business_rounded : Icons.home_work_rounded,
+                      controller.isExternal
+                          ? Icons.business_rounded
+                          : Icons.home_work_rounded,
                       size: 13,
                       color: const Color(0xFF64748B),
                     ),
@@ -205,7 +211,10 @@ class ItemMasterSidebar extends StatelessWidget {
                 ),
                 Text(
                   '${groupSheet.columns.length} columns',
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF94A3B8),
+                  ),
                 ),
               ],
             ),
@@ -267,7 +276,9 @@ class ItemMasterSidebar extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: isSelected ? SoftErpTheme.accent.withValues(alpha: 0.1) : Colors.transparent,
+        color: isSelected
+            ? SoftErpTheme.accent.withValues(alpha: 0.1)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
       ),
       child: ListTile(
@@ -307,7 +318,9 @@ class ItemMasterSidebar extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            depth == 0 ? Icons.folder_open_rounded : Icons.subdirectory_arrow_right_rounded,
+            depth == 0
+                ? Icons.folder_open_rounded
+                : Icons.subdirectory_arrow_right_rounded,
             size: 13,
             color: color ?? const Color(0xFF94A3B8),
           ),

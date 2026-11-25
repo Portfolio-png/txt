@@ -85,9 +85,8 @@ class _ItemExpressionValuesDialogState
 
   /// Every declared property has to be answered — a property with no value is
   /// the half-made state this whole flow exists to avoid.
-  bool get _isComplete => _pending.every(
-    (entry) => (_values[entry.key] ?? '').trim().isNotEmpty,
-  );
+  bool get _isComplete =>
+      _pending.every((entry) => (_values[entry.key] ?? '').trim().isNotEmpty);
 
   @override
   Widget build(BuildContext context) {
@@ -152,7 +151,9 @@ class _ItemExpressionValuesDialogState
                 label: 'Confirm values',
                 icon: Icons.check,
                 onPressed: _isComplete
-                    ? () => Navigator.of(context).pop(Map<int, String>.from(_values))
+                    ? () => Navigator.of(
+                        context,
+                      ).pop(Map<int, String>.from(_values))
                     : null,
               ),
             ],
@@ -212,11 +213,7 @@ class _ItemExpressionValuesDialogState
             index: entry.key,
             optionLabel: (value) => 'SWG $value',
           ),
-          'Numeric' => _text(
-            index: entry.key,
-            hint: 'A number',
-            numeric: true,
-          ),
+          'Numeric' => _text(index: entry.key, hint: 'A number', numeric: true),
           _ => _text(index: entry.key, hint: 'A value'),
         },
       ],

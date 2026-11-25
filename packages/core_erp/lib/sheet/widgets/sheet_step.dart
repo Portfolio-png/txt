@@ -310,7 +310,10 @@ class SheetStepState extends State<SheetStep> {
     // Enter in a one-line text box: the first keeps the place (it no longer
     // drops the cursor or jumps), a second straight after moves on, as Tab
     // does (user, 2026-11-24). A dropdown handles its own Enter the same way.
-    if (enter && !keyboard.isShiftPressed && !keyboard.isAltPressed && _inOneLineText(primary)) {
+    if (enter &&
+        !keyboard.isShiftPressed &&
+        !keyboard.isAltPressed &&
+        _inOneLineText(primary)) {
       if (EnterTwice.isSecond(event)) {
         _tabFrom(primary, back: false);
         EnterTwice.reset();

@@ -119,7 +119,8 @@ class _ValueCellState extends State<ValueCell> {
   /// ordinary text fields, every keystroke in one of them rebuilt the screen
   /// and the cursor cell snatched focus after a single letter.
   void _syncFocus() {
-    final wanted = widget.isSelected &&
+    final wanted =
+        widget.isSelected &&
         !widget.controller.isHeaderFocused &&
         widget.controller.focusedColumnId == widget.column.id;
     if (wanted && !_wasWanted && !_focusNode.hasFocus) {
@@ -144,7 +145,9 @@ class _ValueCellState extends State<ValueCell> {
   Widget build(BuildContext context) {
     final cellVal = _currentVal;
     final error = widget.isSelected
-        ? widget.controller.visibleErrors(row: widget.rowIndex)[widget.column.id]
+        ? widget.controller.visibleErrors(
+            row: widget.rowIndex,
+          )[widget.column.id]
         : null;
     final isFocused =
         widget.isSelected &&
@@ -195,12 +198,16 @@ class _ValueCellState extends State<ValueCell> {
         // Ctrl+D / Cmd+D — the spreadsheet idiom for "same as the one above".
         if (widget.isSelected)
           const SingleActivator(LogicalKeyboardKey.keyD, control: true): () =>
-              widget.controller
-                  .fillDown(widget.column.id, row: widget.rowIndex),
+              widget.controller.fillDown(
+                widget.column.id,
+                row: widget.rowIndex,
+              ),
         if (widget.isSelected)
           const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () =>
-              widget.controller
-                  .fillDown(widget.column.id, row: widget.rowIndex),
+              widget.controller.fillDown(
+                widget.column.id,
+                row: widget.rowIndex,
+              ),
       },
       child: InkWell(
         // Addressable by (sheet, row, column) so a driver can reach one cell.
@@ -231,7 +238,10 @@ class _ValueCellState extends State<ValueCell> {
                         ? const BorderSide(color: SoftErpTheme.accent, width: 2)
                         : BorderSide.none,
                     left: error != null
-                        ? const BorderSide(color: SoftErpTheme.dangerText, width: 3)
+                        ? const BorderSide(
+                            color: SoftErpTheme.dangerText,
+                            width: 3,
+                          )
                         : (widget.isSelected && widget.column.position == 0
                               ? const BorderSide(
                                   color: SoftErpTheme.accent,
@@ -296,7 +306,9 @@ class _ValueCellState extends State<ValueCell> {
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: text.isEmpty ? SoftErpTheme.textMuted : SoftErpTheme.textPrimary,
+          color: text.isEmpty
+              ? SoftErpTheme.textMuted
+              : SoftErpTheme.textPrimary,
         ),
       ),
     );
@@ -342,12 +354,12 @@ class _ValueCellState extends State<ValueCell> {
       child: Checkbox(
         value: ticked,
         onChanged: (next) => widget.controller.updateValue(
-                  widget.column.id,
-                  next == true
-                      ? CellValue(columnId: widget.column.id, intValue: 1)
-                      : CellValue(columnId: widget.column.id),
-                  row: widget.rowIndex,
-                ),
+          widget.column.id,
+          next == true
+              ? CellValue(columnId: widget.column.id, intValue: 1)
+              : CellValue(columnId: widget.column.id),
+          row: widget.rowIndex,
+        ),
       ),
     );
   }
@@ -465,7 +477,11 @@ class _ValueCellState extends State<ValueCell> {
               ),
             ),
           ),
-          const Icon(Icons.arrow_drop_down, size: 18, color: SoftErpTheme.borderStrong),
+          const Icon(
+            Icons.arrow_drop_down,
+            size: 18,
+            color: SoftErpTheme.borderStrong,
+          ),
         ],
       );
     }
@@ -507,7 +523,11 @@ class _ValueCellState extends State<ValueCell> {
                 ),
               ),
             ),
-          const Icon(Icons.arrow_drop_down, size: 18, color: SoftErpTheme.textMuted),
+          const Icon(
+            Icons.arrow_drop_down,
+            size: 18,
+            color: SoftErpTheme.textMuted,
+          ),
         ],
       ),
     );
@@ -555,7 +575,10 @@ class _ValueCellState extends State<ValueCell> {
           hintText: widget.column.kind == ColumnKind.money
               ? '0.00'
               : 'Type here...',
-          hintStyle: const TextStyle(fontSize: 14, color: SoftErpTheme.borderStrong),
+          hintStyle: const TextStyle(
+            fontSize: 14,
+            color: SoftErpTheme.borderStrong,
+          ),
         ),
         onChanged: (val) {
           widget.controller.updateTextValue(
@@ -570,13 +593,13 @@ class _ValueCellState extends State<ValueCell> {
   }
 
   void _showOptionsPopup(BuildContext context) => showColumnOptionPicker(
-        context,
-        column: widget.column,
-        sheetDef: widget.sheetDef,
-        controller: widget.controller,
-        row: widget.rowIndex,
-        onDone: widget.onAdvance,
-      );
+    context,
+    column: widget.column,
+    sheetDef: widget.sheetDef,
+    controller: widget.controller,
+    row: widget.rowIndex,
+    onDone: widget.onAdvance,
+  );
 }
 
 class _ErrorCornerPainter extends CustomPainter {

@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/services/entity_photos.dart';
-import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/company_documents_box.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import '../../domain/part_name.dart';
+import 'deal_message_dialog.dart';
 import '../../../clients/presentation/widgets/company_view_dialog.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
@@ -21,6 +24,7 @@ import '../../../../sheet/sheet_binding.dart';
 import '../../../../sheet/sheet_controller.dart';
 import '../../../../sheet/sheet_draft.dart';
 import '../../../../sheet/sheet_style.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../../sheet/widgets/sheet_step.dart';
 
 /// The Client section as an ordinary form: the deal (company,
@@ -95,6 +99,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.lineKey != widget.lineKey) _dealEditing = false;
   }
+
   bool _savingDeal = false;
 
   /// A company just added from the dropdown, in case the pickers have not
@@ -126,6 +131,7 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           value.trim(),
     ];
   }
+
   SheetController get _people => widget.controller.peopleController;
 
   @override
@@ -174,16 +180,18 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
         // its line (user, 2026-11-24). Kept on the company: every part for
         // it shows the same one.
         final photo = MiniPhoto.isAvailable(context)
-            ? SheetStep.noTab(MiniPhoto(
-                owner: PhotoOwner.client,
-                id: partyId?.toString(),
-                size: 132,
-                label: 'Company photo',
-                what: 'company photo',
-                // The logo set on the Clients screen, until one is uploaded here.
-                fallbackUrl: _companyLogo(partyId),
-                disabledReason: 'Pick the company first to add its photo',
-              ))
+            ? SheetStep.noTab(
+                MiniPhoto(
+                  owner: PhotoOwner.client,
+                  id: partyId?.toString(),
+                  size: 132,
+                  label: 'Company photo',
+                  what: 'company photo',
+                  // The logo set on the Clients screen, until one is uploaded here.
+                  fallbackUrl: _companyLogo(partyId),
+                  disabledReason: 'Pick the company first to add its photo',
+                ),
+              )
             : null;
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,38 +206,61 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
                 child: ExcludeFocus(
                   excluding: !hasCompany,
                   child: Opacity(
-                  opacity: hasCompany ? 1 : 0.45,
-                  child: _peopleList(hasCompany),
-                ),
+                    opacity: hasCompany ? 1 : 0.45,
+                    child: _peopleList(hasCompany),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 18),
-            // The company's own papers — kept on the company, so every part for
-            // it shows the same ones, and its view lists them too. Under the
-            // people. Added with the mouse; Tab goes on past them.
-            SizedBox(
-              key: const ValueKey<String>('deal_documents'),
-              width: double.infinity,
-              child: SheetStep.noTab(CompanyDocumentsBox(
-                owner: PhotoOwner.client,
-                id: widget.controller.dealPartyId?.toString(),
-                compact: true,
-                disabledReason: 'Pick the company first to keep its documents',
-                note: widget.controller.dealPartyName.trim().isEmpty
-                    ? null
-                    : 'for ${widget.controller.dealPartyName.trim()}',
-              )),
-            ),
           ],
         );
-        if (photo == null) return content;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // The company's own papers — kept on the company, so every part for
+        // it shows the same ones, and its view lists them too. Under the
+        // people. Added with the mouse; Tab goes on past them.
+        final documents = SizedBox(
+          key: const ValueKey<String>('deal_documents'),
+          width: double.infinity,
+          child: SheetStep.noTab(
+            CompanyDocumentsBox(
+              owner: PhotoOwner.client,
+              id: widget.controller.dealPartyId?.toString(),
+              compact: true,
+              disabledReason: 'Pick the company first to keep its documents',
+              note: widget.controller.dealPartyName.trim().isEmpty
+                  ? null
+                  : 'for ${widget.controller.dealPartyName.trim()}',
+            ),
+          ),
+        );
+        // Edit / Save Company in the card's bottom-right corner, level with
+        // Documents (owner, 2026-11-25, marked on the screen), at the sheet's
+        // save column — the same right edge as Save Part.
+        final actions = SheetStep.noTab(
+          SheetSaveRow(children: [_dealAction(_dealLocked)]),
+        );
+        final top = photo == null
+            ? content
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: content),
+                  const SizedBox(width: 16),
+                  photo,
+                ],
+              );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: content),
-            const SizedBox(width: 16),
-            photo,
+            top,
+            const SizedBox(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: documents),
+                const SizedBox(width: 16),
+                actions,
+              ],
+            ),
           ],
         );
       },
@@ -255,7 +286,10 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     final partyColumn = _column(_deal, SheetBindsTo.developedForParty);
     final quotationColumn = _column(_deal, SheetBindsTo.developedForQuotation);
     final partyId = widget.controller.dealPartyId;
-    final quotation = _field('deal:quotation', _text(_deal, SheetBindsTo.developedForQuotation));
+    final quotation = _field(
+      'deal:quotation',
+      _text(_deal, SheetBindsTo.developedForQuotation),
+    );
 
     // Before the part exists everything is open; after, a chosen deal is
     // closed until its Edit.
@@ -272,125 +306,147 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 12,
       crossAxisAlignment: WrapCrossAlignment.start,
       children: [
-    if (widget.leading != null)
-      Padding(
-        padding: const EdgeInsets.only(top: _boxTop),
-        child: widget.leading,
-      ),
-    _companyStep(dealLocked, Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.start,
-      children: [
-        SheetStyle.labelled(
-          label: 'Company',
-          child: FitToText(
-            dropdown: true,
-          heading: 'Company',
-          texts: [widget.controller.dealPartyName],
-          minWidth: 160,
-          chrome: 84, // padding, the arrow (48), the border
-          child: SearchableSelectField<int>(
-            key: const ValueKey<String>('deal_company'),
-            tapTargetKey: const ValueKey<String>('deal_company_tap'),
-            value: partyId,
-            fieldEnabled: !dealLocked,
-            dialogTitle: 'Company',
-            searchHintText: 'Search companies',
-            options: [
-              for (final party in _deal.parties)
-                SearchableSelectOption<int>(value: party.id, label: party.name),
+        if (widget.leading != null)
+          Padding(
+            padding: const EdgeInsets.only(top: _boxTop),
+            child: widget.leading,
+          ),
+        _companyStep(
+          dealLocked,
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.start,
+            children: [
+              SheetStyle.labelled(
+                label: 'Company',
+                child: FitToText(
+                  dropdown: true,
+                  heading: 'Company',
+                  texts: [widget.controller.dealPartyName],
+                  minWidth: 160,
+                  chrome: 84, // padding, the arrow (48), the border
+                  child: SearchableSelectField<int>(
+                    key: const ValueKey<String>('deal_company'),
+                    tapTargetKey: const ValueKey<String>('deal_company_tap'),
+                    value: partyId,
+                    fieldEnabled: !dealLocked,
+                    dialogTitle: 'Company',
+                    searchHintText: 'Search companies',
+                    options: [
+                      for (final party in _deal.parties)
+                        SearchableSelectOption<int>(
+                          value: party.id,
+                          label: party.name,
+                        ),
+                    ],
+                    decoration: SheetStyle.field(),
+                    // A part for a new customer should not need a trip to the
+                    // Clients screen. A name the master already has is that company.
+                    canCreateOption: (query, _) {
+                      final wanted = query.trim().toLowerCase();
+                      return wanted.isNotEmpty &&
+                          !_deal.parties.any(
+                            (p) => p.name.trim().toLowerCase() == wanted,
+                          );
+                    },
+                    createOptionLabelBuilder: (query) =>
+                        'Add company “${query.trim()}”',
+                    onCreateOption: (query) async {
+                      final party = await widget.controller.addParty(query);
+                      if (party == null) return null;
+                      _created = party;
+                      return SearchableSelectOption<int>(
+                        value: party.id,
+                        label: party.name,
+                      );
+                    },
+                    onChanged: (id) {
+                      if (partyColumn == null) return;
+                      final party =
+                          _deal.parties.where((p) => p.id == id).firstOrNull ??
+                          (_created?.id == id ? _created : null);
+                      _deal.updateValue(
+                        partyColumn,
+                        party == null
+                            ? CellValue(columnId: partyColumn)
+                            : CellValue(
+                                columnId: partyColumn,
+                                refId: party.id,
+                                optionLabel: party.name,
+                              ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              SheetStyle.labelled(
+                label: 'Quotation (₹)',
+                child: FitToText(
+                  controller: quotation,
+                  heading: 'Quotation (₹)',
+                  texts: const ['One figure for the part'],
+                  helper: 'One figure for the part',
+                  minWidth: 140,
+                  child: TextField(
+                    key: const ValueKey<String>('deal_quotation'),
+                    controller: quotation,
+                    focusNode: _focus['deal:quotation'],
+                    readOnly: dealLocked,
+                    // Paise allowed, letters not — "12.50" is a quotation, and the
+                    // sheet used to keep only its digits and store ₹1250.
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,₹ ]')),
+                    ],
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    decoration: SheetStyle.field(
+                      helper: 'One figure for the part',
+                      error: quotationColumn == null
+                          ? null
+                          : _deal.errors[quotationColumn]?.message,
+                    ),
+                    onChanged: (text) {
+                      if (quotationColumn != null) {
+                        _deal.updateTextValue(quotationColumn, text);
+                      }
+                    },
+                  ),
+                ),
+              ),
             ],
-            decoration: SheetStyle.field(),
-            // A part for a new customer should not need a trip to the
-            // Clients screen. A name the master already has is that company.
-            canCreateOption: (query, _) {
-              final wanted = query.trim().toLowerCase();
-              return wanted.isNotEmpty &&
-                  !_deal.parties.any((p) => p.name.trim().toLowerCase() == wanted);
-            },
-            createOptionLabelBuilder: (query) => 'Add company “${query.trim()}”',
-            onCreateOption: (query) async {
-              final party = await widget.controller.addParty(query);
-              if (party == null) return null;
-              _created = party;
-              return SearchableSelectOption<int>(value: party.id, label: party.name);
-            },
-            onChanged: (id) {
-              if (partyColumn == null) return;
-              final party = _deal.parties.where((p) => p.id == id).firstOrNull ??
-                  (_created?.id == id ? _created : null);
-              _deal.updateValue(
-                partyColumn,
-                party == null
-                    ? CellValue(columnId: partyColumn)
-                    : CellValue(
-                        columnId: partyColumn,
-                        refId: party.id,
-                        optionLabel: party.name,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: _boxTop),
+          child: SheetStep.noTab(
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (partyId != null)
+                  TextButton.icon(
+                    key: const ValueKey<String>('deal_view_company'),
+                    onPressed: () => CompanyView.openClient(context, partyId),
+                    icon: const Icon(Icons.business_outlined, size: 18),
+                    label: const Text(
+                      'View company',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
-              );
-            },
-          ),
-        ),
-        ),
-        SheetStyle.labelled(
-          label: 'Quotation (₹)',
-          child: FitToText(
-          controller: quotation,
-          heading: 'Quotation (₹)',
-          texts: const ['One figure for the part'],
-          helper: 'One figure for the part',
-          minWidth: 140,
-          child: TextField(
-            key: const ValueKey<String>('deal_quotation'),
-            controller: quotation,
-            focusNode: _focus['deal:quotation'],
-            readOnly: dealLocked,
-            // Paise allowed, letters not — "12.50" is a quotation, and the
-            // sheet used to keep only its digits and store ₹1250.
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,₹ ]')),
-            ],
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            decoration: SheetStyle.field(
-              helper: 'One figure for the part',
-              error: quotationColumn == null
-                  ? null
-                  : _deal.errors[quotationColumn]?.message,
-            ),
-            onChanged: (text) {
-              if (quotationColumn != null) {
-                _deal.updateTextValue(quotationColumn, text);
-              }
-            },
-          ),
-        ),
-        ),
-      ],
-    )),
-    Padding(
-      padding: const EdgeInsets.only(top: _boxTop),
-      child: SheetStep.noTab(Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        _dealAction(dealLocked),
-        if (partyId != null)
-          TextButton.icon(
-            key: const ValueKey<String>('deal_view_company'),
-            onPressed: () => CompanyView.openClient(context, partyId),
-            icon: const Icon(Icons.business_outlined, size: 18),
-            label: const Text(
-              'View company',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
             ),
           ),
-      ],
-    )),
-    ),
+        ),
       ],
     );
   }
@@ -398,26 +454,26 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   /// The company line as one keyboard step: Company, Quotation, then "Save
   /// Gold Medal?".
   Widget _companyStep(bool locked, Widget fields) => SheetStep(
-        flow: widget.flow,
-        id: DealPeopleForm.companyStep,
-        actions: SheetStepActions(
-          title: () {
-            final name = widget.controller.dealPartyName.trim();
-            return name.isEmpty ? 'Save the company?' : 'Save $name?';
-          },
-          isDirty: () =>
-              widget.controller.isExternal && _deal.draft.isDirtySinceSave,
-          blockedReason: _dealBlockedReason,
-          save: _saveDealNow,
-          discard: () {
-            widget.controller.discardDeal();
-            setState(() => _dealEditing = false);
-          },
-          isLocked: () => locked,
-          unlock: () => setState(() => _dealEditing = true),
-        ),
-        child: fields,
-      );
+    flow: widget.flow,
+    id: DealPeopleForm.companyStep,
+    actions: SheetStepActions(
+      title: () {
+        final name = widget.controller.dealPartyName.trim();
+        return name.isEmpty ? 'Save the company?' : 'Save $name?';
+      },
+      isDirty: () =>
+          widget.controller.isExternal && _deal.draft.isDirtySinceSave,
+      blockedReason: _dealBlockedReason,
+      save: _saveDealNow,
+      discard: () {
+        widget.controller.discardDeal();
+        setState(() => _dealEditing = false);
+      },
+      isLocked: () => locked,
+      unlock: () => setState(() => _dealEditing = true),
+    ),
+    child: fields,
+  );
 
   /// Why the company line cannot be saved now, or null.
   ///
@@ -429,8 +485,9 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     final sheet = widget.controller.groupItemController;
     final partyId = widget.controller.dealPartyId;
     final quotationCol = _column(_deal, SheetBindsTo.developedForQuotation);
-    final quotationError =
-        quotationCol == null ? null : _deal.errors[quotationCol];
+    final quotationError = quotationCol == null
+        ? null
+        : _deal.errors[quotationCol];
     final activeRow = widget.controller.dealRow ?? sheet.row;
     if (partyId == null) return 'Pick a company first';
     if (sheet.isRowBlank(activeRow)) return 'Type the part name first';
@@ -456,36 +513,40 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
     return ok;
   }
 
-  /// The deal line's own Save, or its Edit once saved.
+  /// The company's ONE Save (user, 2026-11-25: "just give one button to
+  /// save whole company at once"): the quotation, who it was dealt with and
+  /// every person typed or changed below, together. The people's own Save
+  /// contact buttons are gone. A saved company line shows its Edit; it shows
+  /// this Save beside it too when a person waits to be saved, so a person
+  /// added later is never left with no way to save them.
   Widget _dealAction(bool locked) {
-    // The same Edit and Save a person's line has, so the page's Saves look
-    // alike.
-    if (locked) {
-      return OutlinedButton.icon(
-        key: const ValueKey<String>('deal_edit'),
-        onPressed: () => setState(() => _dealEditing = true),
-        icon: const Icon(Icons.edit_outlined, size: 18),
-        label: const Text('Edit', style: TextStyle(fontSize: 14)),
-      );
-    }
+    final edit = OutlinedButton.icon(
+      key: const ValueKey<String>('deal_edit'),
+      onPressed: () => setState(() => _dealEditing = true),
+      icon: const Icon(Icons.edit_outlined, size: 18),
+      label: const Text('Edit', style: TextStyle(fontSize: 14)),
+    );
+    if (locked && !widget.controller.peopleUnsaved) return edit;
+    final save = _saveCompanyButton();
+    if (!locked) return save;
+    return Wrap(spacing: 12, children: [edit, save]);
+  }
 
+  Widget _saveCompanyButton() {
     final why = _dealBlockedReason();
     final isSaving = _savingDeal || widget.controller.isSavingNow;
     final canSave = why == null;
     final tooltipMessage =
-        why ?? 'Saves the part with its company details (Ctrl+S)';
+        why ??
+        'Saves the company with the part: the quotation, who it was dealt '
+            'with, and everyone below (Ctrl+S)';
 
-    return Tooltip(
-      message: tooltipMessage,
-      child: AppButton(
-        key: const ValueKey<String>('deal_save'),
-        label: 'Save company',
-        icon: Icons.save_outlined,
-        variant: AppButtonVariant.secondary,
-        dense: true,
-        isLoading: isSaving,
-        onPressed: canSave ? () => unawaited(_saveDealNow()) : null,
-      ),
+    return SheetSaveButton(
+      buttonKey: const ValueKey<String>('deal_save'),
+      label: 'Save Company',
+      tooltip: tooltipMessage,
+      isLoading: isSaving,
+      onPressed: canSave ? () => unawaited(_saveDealNow()) : null,
     );
   }
 
@@ -511,12 +572,14 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           _personStep(row, _personRow(row)),
           const SizedBox(height: 10),
         ],
-        SheetStep.noTab(TextButton.icon(
-          key: const ValueKey<String>('deal_add_person'),
-          onPressed: () => _people.addRow(),
-          icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
-          label: const Text('Add person', style: TextStyle(fontSize: 14)),
-        )),
+        SheetStep.noTab(
+          TextButton.icon(
+            key: const ValueKey<String>('deal_add_person'),
+            onPressed: () => _people.addRow(),
+            icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+            label: const Text('Add person', style: TextStyle(fontSize: 14)),
+          ),
+        ),
       ],
     );
   }
@@ -527,7 +590,12 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   Widget _personStep(int row, Widget fields) {
     final rowKey = _people.draftAt(row).rowKey;
     int at() => _people.indexOfRowKey(rowKey);
+    // One save for the whole company: the line's prompt saves it all, as the
+    // company's button does. Before the part exists there is no company save
+    // yet (the part row's Save carries the people), so the person alone.
+    bool wholeCompany() => widget.onSaveDeal != null;
     Future<bool> save() async {
+      if (wholeCompany()) return _saveDealNow();
       final i = at();
       return i >= 0 && await widget.controller.savePersonRow(i);
     }
@@ -538,22 +606,34 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       id: DealPeopleForm.personStep(rowKey),
       actions: SheetStepActions(
         title: () {
+          if (wholeCompany()) {
+            final company = widget.controller.dealPartyName.trim();
+            return company.isEmpty ? 'Save the company?' : 'Save $company?';
+          }
           final i = at();
-          final name = i < 0 ? '' : _text(_people, SheetBindsTo.personName, row: i).trim();
+          final name = i < 0
+              ? ''
+              : _text(_people, SheetBindsTo.personName, row: i).trim();
           return name.isEmpty ? 'Save this contact?' : 'Save $name?';
         },
         isDirty: () {
           final i = at();
-          if (i < 0 || _people.isRowLocked(i) || _people.isRowBlank(i)) return false;
+          if (i < 0 || _people.isRowLocked(i) || _people.isRowBlank(i)) {
+            return false;
+          }
           final draft = _people.draftAt(i);
           return draft.entityId == null || draft.isDirtySinceSave;
         },
         blockedReason: () {
           final i = at();
-          if (widget.controller.dealPartyId == null) return 'Pick a company first';
-          if (i < 0) return null;
-          final errors = _people.errorsForRow(i);
-          return errors.isEmpty ? null : errors.values.first.message;
+          if (widget.controller.dealPartyId == null) {
+            return 'Pick a company first';
+          }
+          if (i >= 0) {
+            final errors = _people.errorsForRow(i);
+            if (errors.isNotEmpty) return errors.values.first.message;
+          }
+          return wholeCompany() ? _dealBlockedReason() : null;
         },
         save: save,
         discard: () {
@@ -609,49 +689,51 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           label: label,
           child: FitToText(
             dropdown: true,
-          controller: text,
-          heading: label,
-          minWidth: min,
-          chrome: 84, // padding, the arrow (48), the border
-          child: PickOrTypeField(
-            fieldKey: ValueKey<String>('deal_person_${row}_$binds'),
             controller: text,
-            label: label,
-            floatLabel: false,
-            options: options,
-            enabled: !locked,
-            errorText: column == null ? null : errors[column]?.message,
-            decoration: SheetStyle.field(),
-            onChanged: () {
-              if (column != null) {
-                _people.updateTextValue(column, text.text, row: row);
-              }
-            },
+            heading: label,
+            minWidth: min,
+            chrome: 84, // padding, the arrow (48), the border
+            child: PickOrTypeField(
+              fieldKey: ValueKey<String>('deal_person_${row}_$binds'),
+              controller: text,
+              label: label,
+              floatLabel: false,
+              options: options,
+              enabled: !locked,
+              errorText: column == null ? null : errors[column]?.message,
+              decoration: SheetStyle.field(),
+              onChanged: () {
+                if (column != null) {
+                  _people.updateTextValue(column, text.text, row: row);
+                }
+              },
+            ),
           ),
-        ),
         );
       }
       return SheetStyle.labelled(
         label: label,
         child: FitToText(
-        controller: text,
-        heading: label,
-        minWidth: min,
-        child: TextField(
-          key: ValueKey<String>('deal_person_${row}_$binds'),
           controller: text,
-          focusNode: _focus[key],
-          readOnly: locked,
-          keyboardType: keyboard,
-          style: const TextStyle(fontSize: 14),
-          decoration: SheetStyle.field(
-            error: column == null ? null : errors[column]?.message,
+          heading: label,
+          minWidth: min,
+          child: TextField(
+            key: ValueKey<String>('deal_person_${row}_$binds'),
+            controller: text,
+            focusNode: _focus[key],
+            readOnly: locked,
+            keyboardType: keyboard,
+            style: const TextStyle(fontSize: 14),
+            decoration: SheetStyle.field(
+              error: column == null ? null : errors[column]?.message,
+            ),
+            onChanged: (value) {
+              if (column != null) {
+                _people.updateTextValue(column, value, row: row);
+              }
+            },
           ),
-          onChanged: (value) {
-            if (column != null) _people.updateTextValue(column, value, row: row);
-          },
         ),
-      ),
       );
     }
 
@@ -662,42 +744,46 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.start,
       children: [
-        SheetStep.noTab(Padding(
-          padding: const EdgeInsets.only(top: _boxTop),
-          child: MiniPhoto(
-          owner: PhotoOwner.person,
-          id: _people.draftAt(row).entityId?.toString(),
-          size: 40,
-          what: 'photo',
-          disabledReason: 'Save this person first to add a photo',
-        ),
-        )),
-        // Ticked with the mouse (or Space once clicked): Tab goes Name,
-        // Designation, Contact No, Email ID.
-        SheetStep.noTab(SheetStyle.labelled(
-          label: 'Dealt with',
-          child: SizedBox(
-          height: 40,
-          child: Tooltip(
-          message: dealLocked
-              ? 'Edit the company line to change who it was dealt with'
-              : 'Dealt with on this part',
-          child: Checkbox(
-            key: ValueKey<String>('deal_person_${row}_tick'),
-            value: ticked,
-            onChanged: tickColumn == null || dealLocked
-                ? null
-                : (value) => _people.updateValue(
-                      tickColumn,
-                      value == true
-                          ? CellValue(columnId: tickColumn, intValue: 1)
-                          : CellValue(columnId: tickColumn),
-                      row: row,
-                    ),
+        SheetStep.noTab(
+          Padding(
+            padding: const EdgeInsets.only(top: _boxTop),
+            child: MiniPhoto(
+              owner: PhotoOwner.person,
+              id: _people.draftAt(row).entityId?.toString(),
+              size: 40,
+              what: 'photo',
+              disabledReason: 'Save this person first to add a photo',
+            ),
           ),
         ),
+        // Ticked with the mouse (or Space once clicked): Tab goes Name,
+        // Designation, Contact No, Email ID.
+        SheetStep.noTab(
+          SheetStyle.labelled(
+            label: 'Dealt with',
+            child: SizedBox(
+              height: 40,
+              child: Tooltip(
+                message: dealLocked
+                    ? 'Edit the company line to change who it was dealt with'
+                    : 'Dealt with on this part',
+                child: Checkbox(
+                  key: ValueKey<String>('deal_person_${row}_tick'),
+                  value: ticked,
+                  onChanged: tickColumn == null || dealLocked
+                      ? null
+                      : (value) => _people.updateValue(
+                          tickColumn,
+                          value == true
+                              ? CellValue(columnId: tickColumn, intValue: 1)
+                              : CellValue(columnId: tickColumn),
+                          row: row,
+                        ),
+                ),
+              ),
+            ),
+          ),
         ),
-        )),
         field(SheetBindsTo.personName, 'Name', min: 180),
         field(
           SheetBindsTo.personDesignation,
@@ -705,59 +791,140 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
           min: 170,
           options: _designations(),
         ),
-        field(SheetBindsTo.personPhone, 'Contact No', keyboard: TextInputType.phone),
-        field(SheetBindsTo.personEmail, 'Email ID',
-            keyboard: TextInputType.emailAddress, min: 200),
-        if (locked)
-          _beside(OutlinedButton.icon(
-            key: ValueKey<String>('deal_person_${row}_edit'),
-            onPressed: () => _people.setRowLocked(row, false),
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: const Text('Edit', style: TextStyle(fontSize: 14)),
-          ))
-        else
-          // Writes the person to the company's file now. The tick is the
-          // deal's, so it waits for the part's save.
-          _beside(Tooltip(
-            message: blank
-                ? 'Type a name first'
-                : 'Saves this person to '
-                    '${widget.controller.dealPartyName.trim().isEmpty ? 'the company' : widget.controller.dealPartyName.trim()} '
-                    'now. Whether they’re ticked for this part is saved with the part.',
-            child: AppButton(
-              key: ValueKey<String>('deal_person_${row}_save'),
-              label: 'Save contact',
-              icon: Icons.save_outlined,
-              variant: AppButtonVariant.secondary,
-              dense: true,
-              // Off while that person is saving: a second click added them twice.
-              isLoading: widget.controller.isSavingPerson(row),
-              onPressed: blank ? null : () => widget.controller.savePersonRow(row),
+        field(
+          SheetBindsTo.personPhone,
+          'Contact No',
+          keyboard: TextInputType.phone,
+        ),
+        field(
+          SheetBindsTo.personEmail,
+          'Email ID',
+          keyboard: TextInputType.emailAddress,
+          min: 200,
+        ),
+        // A draft to whoever the deal was done with (owner, 2026-11-25): by
+        // email or on WhatsApp. Drawn always, off until they are ticked.
+        _beside(
+          Tooltip(
+            message: ticked
+                ? 'Draft an email or WhatsApp message to this person'
+                : 'Tick Dealt with to draft a message to this person',
+            child: OutlinedButton.icon(
+              key: ValueKey<String>('deal_person_${row}_draft'),
+              onPressed: ticked ? () => _openDraft(row) : null,
+              icon: const Icon(Icons.forward_to_inbox_outlined, size: 18),
+              label: const Text('Draft', style: TextStyle(fontSize: 14)),
             ),
-          )),
-        _beside(Tooltip(
-          message: saved
-              ? 'Saved people stay on the company’s file — untick instead'
-              : 'Remove this row',
-          child: IconButton(
-            key: ValueKey<String>('deal_person_${row}_remove'),
-            onPressed: saved || _people.rowCount <= 1
-                ? null
-                : () => _people.removeRow(row),
-            icon: const Icon(Icons.close, size: 18),
           ),
-        )),
+        ),
+        if (locked)
+          _beside(
+            OutlinedButton.icon(
+              key: ValueKey<String>('deal_person_${row}_edit'),
+              onPressed: () => _people.setRowLocked(row, false),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Edit', style: TextStyle(fontSize: 14)),
+            ),
+          )
+        else if (!blank && (!saved || _people.draftAt(row).isDirtySinceSave))
+          // No Save of its own: the company's Save writes every person.
+          _beside(
+            Tooltip(
+              message: 'Saved with the company — use Save company above.',
+              child: Container(
+                key: ValueKey<String>('deal_person_${row}_unsaved'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF6E9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'Not saved yet',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF946200),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        _beside(
+          Tooltip(
+            message: saved
+                ? 'Saved people stay on the company’s file — untick instead'
+                : 'Remove this row',
+            child: IconButton(
+              key: ValueKey<String>('deal_person_${row}_remove'),
+              onPressed: saved || _people.rowCount <= 1
+                  ? null
+                  : () => _people.removeRow(row),
+              icon: const Icon(Icons.close, size: 18),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  /// The draft to person [row]: their email and number, the part, its
+  /// quotation, and who it is from — the signed-in user and our company.
+  void _openDraft(int row) {
+    String? read<T>(String? Function(T value) pick) {
+      try {
+        return pick(Provider.of<T>(context, listen: false));
+      } on ProviderNotFoundException {
+        return null;
+      }
+    }
+
+    final part = widget.controller.groupItemController;
+    String partCell(String binds) {
+      final column = part.sheetDef.columnBoundTo(binds);
+      if (column == null) return '';
+      final value = part.draft.get(column.id);
+      return (value?.optionLabel ?? value?.textValue ?? '').trim();
+    }
+
+    final partNo = () {
+      final column = part.sheetDef.columnBoundTo(SheetBindsTo.partNo);
+      final value = column == null ? null : part.draft.get(column.id);
+      return value?.intValue ?? int.tryParse((value?.textValue ?? '').trim());
+    }();
+    final user = read<AuthProvider>((auth) => auth.user?.name);
+    final userEmail = read<AuthProvider>((auth) => auth.user?.email);
+    final ourCompany = read<DeliveryChallanProvider>(
+      (challans) => challans.companyProfile?.companyName,
+    );
+    DealMessageDialog.open(
+      context,
+      message: DealMessageContext(
+        personName: _text(_people, SheetBindsTo.personName, row: row),
+        email: _text(_people, SheetBindsTo.personEmail, row: row),
+        phone: _text(_people, SheetBindsTo.personPhone, row: row),
+        theirCompany: widget.controller.dealPartyName.trim(),
+        partName: partNameWithNo(partCell(SheetBindsTo.name), partNo),
+        partCode: partCell(SheetBindsTo.partCode),
+        quotation: _text(_deal, SheetBindsTo.developedForQuotation).trim(),
+        fromName: user ?? '',
+        fromEmail: userEmail ?? '',
+        ourCompany: ourCompany ?? '',
+      ),
     );
   }
 
   /// What has no heading, moved down to sit beside the headed boxes — and
   /// left out of Tab: a person's Save, Edit and × are clicked, or answered
   /// in the prompt Tab shows.
-  static Widget _beside(Widget child) => SheetStep.noTab(Padding(
-        padding: const EdgeInsets.only(top: _boxTop),
-        child: child,
-      ));
+  static Widget _beside(Widget child) => SheetStep.noTab(
+    Padding(
+      padding: const EdgeInsets.only(top: _boxTop),
+      child: child,
+    ),
+  );
 }
 
 /// How far a field's box sits below the top of its heading

@@ -52,7 +52,9 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
   SheetProperty _read(http.Response response) {
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
-      throw const SheetPropertyException('The server answered something unexpected.');
+      throw const SheetPropertyException(
+        'The server answered something unexpected.',
+      );
     }
     final property = decoded['property'];
     if (response.statusCode < 200 ||
@@ -88,7 +90,8 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
         decoded['success'] != true) {
       throw SheetPropertyException(
         decoded is Map<String, dynamic>
-            ? (decoded['error'] as String? ?? 'Could not load the sheet columns.')
+            ? (decoded['error'] as String? ??
+                  'Could not load the sheet columns.')
             : 'Could not load the sheet columns.',
       );
     }
@@ -126,64 +129,83 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
       _mock.add(made);
       return made;
     }
-    return _read(await _client.post(
-      _uri(''),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'kind': kind, 'options': options}),
-    ));
+    return _read(
+      await _client.post(
+        _uri(''),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({'name': name, 'kind': kind, 'options': options}),
+      ),
+    );
   }
 
   @override
-  Future<SheetProperty> update(int id, {String? name, List<String>? options}) async {
+  Future<SheetProperty> update(
+    int id, {
+    String? name,
+    List<String>? options,
+  }) async {
     if (useMockResponses) {
       final at = _mock.indexWhere((p) => p.id == id);
-      if (at < 0) throw const SheetPropertyException('No such property column.');
+      if (at < 0)
+        throw const SheetPropertyException('No such property column.');
       _mock[at] = _mock[at].copyWith(
         name: name?.trim(),
         options: options == null ? null : _clean(options),
       );
       return _mock[at];
     }
-    return _read(await _client.patch(
-      _uri('/$id'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        if (name != null) 'displayName': name,
-        if (options != null) 'options': options,
-      }),
-    ));
+    return _read(
+      await _client.patch(
+        _uri('/$id'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          if (name != null) 'displayName': name,
+          if (options != null) 'options': options,
+        }),
+      ),
+    );
   }
 
   @override
   Future<SheetProperty> addOption(int id, String label) async {
     if (useMockResponses) {
       final at = _mock.indexWhere((p) => p.id == id);
-      if (at < 0) throw const SheetPropertyException('No such property column.');
-      _mock[at] = _mock[at].copyWith(options: _clean([..._mock[at].options, label]));
+      if (at < 0)
+        throw const SheetPropertyException('No such property column.');
+      _mock[at] = _mock[at].copyWith(
+        options: _clean([..._mock[at].options, label]),
+      );
       return _mock[at];
     }
-    return _read(await _client.post(
-      _uri('/$id/options'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'label': label}),
-    ));
+    return _read(
+      await _client.post(
+        _uri('/$id/options'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({'label': label}),
+      ),
+    );
   }
 
   @override
   Future<SheetProperty> removeOption(int id, String label) async {
     if (useMockResponses) {
       final at = _mock.indexWhere((p) => p.id == id);
-      if (at < 0) throw const SheetPropertyException('No such property column.');
+      if (at < 0)
+        throw const SheetPropertyException('No such property column.');
       final drop = label.trim().toLowerCase();
-      _mock[at] = _mock[at].copyWith(options: [
-        for (final option in _mock[at].options)
-          if (option.toLowerCase() != drop) option,
-      ]);
+      _mock[at] = _mock[at].copyWith(
+        options: [
+          for (final option in _mock[at].options)
+            if (option.toLowerCase() != drop) option,
+        ],
+      );
       return _mock[at];
     }
-    return _read(await _client.delete(
-      _uri('/$id/options').replace(queryParameters: {'label': label}),
-    ));
+    return _read(
+      await _client.delete(
+        _uri('/$id/options').replace(queryParameters: {'label': label}),
+      ),
+    );
   }
 
   @override

@@ -133,9 +133,16 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
   Future<void> _openGallery() async {
     if (!MiniPhoto.isAvailable(context)) return;
     final item = widget.item;
-    final name = item.displayName.trim().isEmpty ? item.name : item.displayName.trim();
-    final saved = await showPartPhotoGallery(context, itemId: '${item.id}', partName: name);
-    if (saved && mounted) await context.read<ItemsProvider>().loadItemAssets(item.id);
+    final name = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName.trim();
+    final saved = await showPartPhotoGallery(
+      context,
+      itemId: '${item.id}',
+      partName: name,
+    );
+    if (saved && mounted)
+      await context.read<ItemsProvider>().loadItemAssets(item.id);
   }
 
   /// Walks to a neighbour in the cluster.
@@ -307,8 +314,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                     child: ItemReportView(item: item),
                   )
                 : _activeTab == 1 &&
-                    item.defaultPipelineId != null &&
-                    item.defaultPipelineId!.isNotEmpty
+                      item.defaultPipelineId != null &&
+                      item.defaultPipelineId!.isNotEmpty
                 ? SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
                     child: ItemPipelineMetricsCard(item: item),
@@ -414,7 +421,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                         child: SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            icon: const Icon(Icons.handshake_outlined, size: 18),
+                            icon: const Icon(
+                              Icons.handshake_outlined,
+                              size: 18,
+                            ),
                             label: const Text(
                               'Developed for',
                               style: TextStyle(

@@ -62,7 +62,10 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final photo = tester.getRect(find.byKey(const ValueKey<String>('big_photo_0')));
-    final fields = tester.getRect(find.descendant(of: find.byKey(const ValueKey('part_line_0')), matching: find.byType(Wrap)).first);
+    // The fields are two lines now (identity, then properties + code), one
+    // wrap each, in a column: measure the column, not its first line.
+    final firstLine = find.descendant(of: find.byKey(const ValueKey('part_line_0')), matching: find.byType(Wrap)).first;
+    final fields = tester.getRect(find.ancestor(of: firstLine, matching: find.byType(Column)).first);
     expect(photo.width, closeTo(photo.height, 0.5), reason: 'a square');
     // As tall as the fields, and never under 120: sized to their text, a
     // line's fields often fit one row, shorter than a photo can usefully be.
@@ -99,7 +102,10 @@ void main() {
     await _pump(tester, showcaseRow: 0, width: 760);
     expect(tester.takeException(), isNull);
     final photo = tester.getRect(find.byKey(const ValueKey<String>('big_photo_0')));
-    final fields = tester.getRect(find.descendant(of: find.byKey(const ValueKey('part_line_0')), matching: find.byType(Wrap)).first);
+    // The fields are two lines now (identity, then properties + code), one
+    // wrap each, in a column: measure the column, not its first line.
+    final firstLine = find.descendant(of: find.byKey(const ValueKey('part_line_0')), matching: find.byType(Wrap)).first;
+    final fields = tester.getRect(find.ancestor(of: firstLine, matching: find.byType(Column)).first);
     expect(photo.width, closeTo(photo.height, 0.5));
     expect(photo.width, lessThanOrEqualTo(760 * 0.38 + 0.5), reason: 'it never crowds the fields out');
     expect(photo.left, greaterThan(fields.right));

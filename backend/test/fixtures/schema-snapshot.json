@@ -284,6 +284,12 @@
     },
     {
       "type": "index",
+      "name": "idx_groups_system_key",
+      "table": "groups",
+      "sql": "CREATE UNIQUE INDEX idx_groups_system_key ON groups(system_key) WHERE system_key IS NOT NULL"
+    },
+    {
+      "type": "index",
       "name": "idx_idempotency_log_created",
       "table": "idempotency_log",
       "sql": "CREATE INDEX idx_idempotency_log_created ON idempotency_log(created_at)"
@@ -698,6 +704,18 @@
     },
     {
       "type": "index",
+      "name": "idx_raw_material_specs_code",
+      "table": "raw_material_specs",
+      "sql": "CREATE UNIQUE INDEX idx_raw_material_specs_code ON raw_material_specs(form_key, code COLLATE NOCASE) WHERE code != ''"
+    },
+    {
+      "type": "index",
+      "name": "idx_raw_material_specs_spec",
+      "table": "raw_material_specs",
+      "sql": "CREATE UNIQUE INDEX idx_raw_material_specs_spec ON raw_material_specs(form_key, spec_key)"
+    },
+    {
+      "type": "index",
       "name": "idx_reconciliation_conversion_item",
       "table": "reconciliation_conversion_overrides",
       "sql": "CREATE INDEX idx_reconciliation_conversion_item ON reconciliation_conversion_overrides(item_id, variation_leaf_node_id)"
@@ -1006,7 +1024,7 @@
       "type": "table",
       "name": "groups",
       "table": "groups",
-      "sql": "CREATE TABLE groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, group_type TEXT NOT NULL DEFAULT 'item', parent_group_id INTEGER REFERENCES groups(id), unit_id INTEGER REFERENCES units(id), is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , group_structure TEXT NOT NULL DEFAULT 'hierarchical', description TEXT NOT NULL DEFAULT '', item_form_sections TEXT DEFAULT NULL)"
+      "sql": "CREATE TABLE groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, group_type TEXT NOT NULL DEFAULT 'item', parent_group_id INTEGER REFERENCES groups(id), unit_id INTEGER REFERENCES units(id), is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , group_structure TEXT NOT NULL DEFAULT 'hierarchical', description TEXT NOT NULL DEFAULT '', item_form_sections TEXT DEFAULT NULL, system_key TEXT DEFAULT NULL)"
     },
     {
       "type": "table",
@@ -1151,6 +1169,12 @@
       "name": "item_variations",
       "table": "item_variations",
       "sql": "CREATE TABLE item_variations ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, name TEXT NOT NULL, alias TEXT DEFAULT '', display_name TEXT NOT NULL, is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "item_vendor_prices",
+      "table": "item_vendor_prices",
+      "sql": "CREATE TABLE item_vendor_prices ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, vendor_id INTEGER NOT NULL, price_micro_rupees INTEGER NOT NULL CHECK (price_micro_rupees >= 0), basis TEXT NOT NULL DEFAULT 'piece', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(item_id, vendor_id, basis) )"
     },
     {
       "type": "table",
@@ -1439,6 +1463,12 @@
       "name": "production_scrap",
       "table": "production_scrap",
       "sql": "CREATE TABLE production_scrap ( id INTEGER PRIMARY KEY AUTOINCREMENT, pipeline_run_id TEXT NOT NULL REFERENCES pipeline_runs(id), node_id TEXT NOT NULL, order_no TEXT, material_barcode TEXT NOT NULL, scrap_qty REAL NOT NULL DEFAULT 0, logged_by TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')) )"
+    },
+    {
+      "type": "table",
+      "name": "raw_material_specs",
+      "table": "raw_material_specs",
+      "sql": "CREATE TABLE raw_material_specs ( item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, form_key TEXT NOT NULL, spec_key TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', values_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )"
     },
     {
       "type": "table",
@@ -2282,6 +2312,24 @@
     },
     {
       "type": "trigger",
+      "name": "trg_derived_items_groups_ad",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_derived_items_groups_ad AFTER DELETE ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', OLD.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_items_groups_ai",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_derived_items_groups_ai AFTER INSERT ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_items_groups_au",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_derived_items_groups_au AFTER UPDATE OF group_id, is_archived ON items WHEN OLD.group_id IS NOT NEW.group_id OR OLD.is_archived IS NOT NEW.is_archived BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now')); INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'groups', OLD.group_id, 'UPDATE', datetime('now') WHERE OLD.group_id IS NOT NEW.group_id; END"
+    },
+    {
+      "type": "trigger",
       "name": "trg_derived_machines_items_au",
       "table": "machines",
       "sql": "CREATE TRIGGER trg_derived_machines_items_au AFTER UPDATE ON machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'items', item_id, 'UPDATE', datetime('now') FROM item_machines WHERE machine_id = NEW.id; END"
@@ -2509,6 +2557,12 @@
       "name": "idx_group_item_memberships_item",
       "table": "group_item_memberships",
       "sql": "CREATE INDEX idx_group_item_memberships_item ON group_item_memberships(item_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_groups_system_key",
+      "table": "groups",
+      "sql": "CREATE UNIQUE INDEX idx_groups_system_key ON groups(system_key) WHERE system_key IS NOT NULL"
     },
     {
       "type": "index",
@@ -2794,6 +2848,18 @@
     },
     {
       "type": "index",
+      "name": "idx_raw_material_specs_code",
+      "table": "raw_material_specs",
+      "sql": "CREATE UNIQUE INDEX idx_raw_material_specs_code ON raw_material_specs(form_key, code COLLATE NOCASE) WHERE code != ''"
+    },
+    {
+      "type": "index",
+      "name": "idx_raw_material_specs_spec",
+      "table": "raw_material_specs",
+      "sql": "CREATE UNIQUE INDEX idx_raw_material_specs_spec ON raw_material_specs(form_key, spec_key)"
+    },
+    {
+      "type": "index",
       "name": "idx_reconciliation_conversion_item",
       "table": "reconciliation_conversion_overrides",
       "sql": "CREATE INDEX idx_reconciliation_conversion_item ON reconciliation_conversion_overrides(item_id, variation_leaf_node_id)"
@@ -3018,7 +3084,7 @@
       "type": "table",
       "name": "groups",
       "table": "groups",
-      "sql": "CREATE TABLE groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, group_type TEXT NOT NULL DEFAULT 'item', parent_group_id INTEGER REFERENCES groups(id), unit_id INTEGER REFERENCES units(id), is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , group_structure TEXT NOT NULL DEFAULT 'hierarchical', description TEXT NOT NULL DEFAULT '', item_form_sections TEXT DEFAULT NULL)"
+      "sql": "CREATE TABLE groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, group_type TEXT NOT NULL DEFAULT 'item', parent_group_id INTEGER REFERENCES groups(id), unit_id INTEGER REFERENCES units(id), is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , group_structure TEXT NOT NULL DEFAULT 'hierarchical', description TEXT NOT NULL DEFAULT '', item_form_sections TEXT DEFAULT NULL, system_key TEXT DEFAULT NULL)"
     },
     {
       "type": "table",
@@ -3145,6 +3211,12 @@
       "name": "item_variations",
       "table": "item_variations",
       "sql": "CREATE TABLE item_variations ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, name TEXT NOT NULL, alias TEXT DEFAULT '', display_name TEXT NOT NULL, is_archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "item_vendor_prices",
+      "table": "item_vendor_prices",
+      "sql": "CREATE TABLE item_vendor_prices ( id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE, vendor_id INTEGER NOT NULL, price_micro_rupees INTEGER NOT NULL CHECK (price_micro_rupees >= 0), basis TEXT NOT NULL DEFAULT 'piece', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(item_id, vendor_id, basis) )"
     },
     {
       "type": "table",
@@ -3319,6 +3391,12 @@
       "name": "production_scrap",
       "table": "production_scrap",
       "sql": "CREATE TABLE production_scrap ( id INTEGER PRIMARY KEY AUTOINCREMENT, pipeline_run_id TEXT NOT NULL REFERENCES pipeline_runs(id), node_id TEXT NOT NULL, order_no TEXT, material_barcode TEXT NOT NULL, scrap_qty REAL NOT NULL DEFAULT 0, logged_by TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')) )"
+    },
+    {
+      "type": "table",
+      "name": "raw_material_specs",
+      "table": "raw_material_specs",
+      "sql": "CREATE TABLE raw_material_specs ( item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, form_key TEXT NOT NULL, spec_key TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', values_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL )"
     },
     {
       "type": "table",
@@ -3502,6 +3580,312 @@
     },
     {
       "type": "trigger",
+      "name": "trg_changelog_clients_ad",
+      "table": "clients",
+      "sql": "CREATE TRIGGER trg_changelog_clients_ad AFTER DELETE ON clients BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('clients', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_clients_ai",
+      "table": "clients",
+      "sql": "CREATE TRIGGER trg_changelog_clients_ai AFTER INSERT ON clients BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('clients', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_clients_au",
+      "table": "clients",
+      "sql": "CREATE TRIGGER trg_changelog_clients_au AFTER UPDATE ON clients BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('clients', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_delivery_challan_items_ad",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_changelog_delivery_challan_items_ad AFTER DELETE ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challan_items', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_delivery_challan_items_ai",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_changelog_delivery_challan_items_ai AFTER INSERT ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challan_items', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_delivery_challan_items_au",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_changelog_delivery_challan_items_au AFTER UPDATE ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challan_items', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_delivery_challans_ad",
+      "table": "delivery_challans",
+      "sql": "CREATE TRIGGER trg_changelog_delivery_challans_ad AFTER DELETE ON delivery_challans BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challans', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_delivery_challans_ai",
+      "table": "delivery_challans",
+      "sql": "CREATE TRIGGER trg_changelog_delivery_challans_ai AFTER INSERT ON delivery_challans BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challans', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_delivery_challans_au",
+      "table": "delivery_challans",
+      "sql": "CREATE TRIGGER trg_changelog_delivery_challans_au AFTER UPDATE ON delivery_challans BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challans', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_departments_ad",
+      "table": "departments",
+      "sql": "CREATE TRIGGER trg_changelog_departments_ad AFTER DELETE ON departments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('departments', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_departments_ai",
+      "table": "departments",
+      "sql": "CREATE TRIGGER trg_changelog_departments_ai AFTER INSERT ON departments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('departments', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_departments_au",
+      "table": "departments",
+      "sql": "CREATE TRIGGER trg_changelog_departments_au AFTER UPDATE ON departments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('departments', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_dies_ad",
+      "table": "dies",
+      "sql": "CREATE TRIGGER trg_changelog_dies_ad AFTER DELETE ON dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('dies', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_dies_ai",
+      "table": "dies",
+      "sql": "CREATE TRIGGER trg_changelog_dies_ai AFTER INSERT ON dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('dies', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_dies_au",
+      "table": "dies",
+      "sql": "CREATE TRIGGER trg_changelog_dies_au AFTER UPDATE ON dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('dies', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_groups_ad",
+      "table": "groups",
+      "sql": "CREATE TRIGGER trg_changelog_groups_ad AFTER DELETE ON groups BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_groups_ai",
+      "table": "groups",
+      "sql": "CREATE TRIGGER trg_changelog_groups_ai AFTER INSERT ON groups BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_groups_au",
+      "table": "groups",
+      "sql": "CREATE TRIGGER trg_changelog_groups_au AFTER UPDATE ON groups BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_inventory_stock_positions_ad",
+      "table": "inventory_stock_positions",
+      "sql": "CREATE TRIGGER trg_changelog_inventory_stock_positions_ad AFTER DELETE ON inventory_stock_positions BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('inventory_stock_positions', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_inventory_stock_positions_ai",
+      "table": "inventory_stock_positions",
+      "sql": "CREATE TRIGGER trg_changelog_inventory_stock_positions_ai AFTER INSERT ON inventory_stock_positions BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('inventory_stock_positions', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_inventory_stock_positions_au",
+      "table": "inventory_stock_positions",
+      "sql": "CREATE TRIGGER trg_changelog_inventory_stock_positions_au AFTER UPDATE ON inventory_stock_positions BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('inventory_stock_positions', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_item_variation_nodes_ad",
+      "table": "item_variation_nodes",
+      "sql": "CREATE TRIGGER trg_changelog_item_variation_nodes_ad AFTER DELETE ON item_variation_nodes BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('item_variation_nodes', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_item_variation_nodes_ai",
+      "table": "item_variation_nodes",
+      "sql": "CREATE TRIGGER trg_changelog_item_variation_nodes_ai AFTER INSERT ON item_variation_nodes BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('item_variation_nodes', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_item_variation_nodes_au",
+      "table": "item_variation_nodes",
+      "sql": "CREATE TRIGGER trg_changelog_item_variation_nodes_au AFTER UPDATE ON item_variation_nodes BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('item_variation_nodes', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_items_ad",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_changelog_items_ad AFTER DELETE ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_items_ai",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_changelog_items_ai AFTER INSERT ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_items_au",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_changelog_items_au AFTER UPDATE ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_machines_ad",
+      "table": "machines",
+      "sql": "CREATE TRIGGER trg_changelog_machines_ad AFTER DELETE ON machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('machines', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_machines_ai",
+      "table": "machines",
+      "sql": "CREATE TRIGGER trg_changelog_machines_ai AFTER INSERT ON machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('machines', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_machines_au",
+      "table": "machines",
+      "sql": "CREATE TRIGGER trg_changelog_machines_au AFTER UPDATE ON machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('machines', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_materials_ad",
+      "table": "materials",
+      "sql": "CREATE TRIGGER trg_changelog_materials_ad AFTER DELETE ON materials BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('materials', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_materials_ai",
+      "table": "materials",
+      "sql": "CREATE TRIGGER trg_changelog_materials_ai AFTER INSERT ON materials BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('materials', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_materials_au",
+      "table": "materials",
+      "sql": "CREATE TRIGGER trg_changelog_materials_au AFTER UPDATE ON materials BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('materials', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_order_headers_ad",
+      "table": "order_headers",
+      "sql": "CREATE TRIGGER trg_changelog_order_headers_ad AFTER DELETE ON order_headers BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_headers', OLD.order_no, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_order_headers_ai",
+      "table": "order_headers",
+      "sql": "CREATE TRIGGER trg_changelog_order_headers_ai AFTER INSERT ON order_headers BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_headers', NEW.order_no, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_order_headers_au",
+      "table": "order_headers",
+      "sql": "CREATE TRIGGER trg_changelog_order_headers_au AFTER UPDATE ON order_headers BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_headers', NEW.order_no, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_order_items_ad",
+      "table": "order_items",
+      "sql": "CREATE TRIGGER trg_changelog_order_items_ad AFTER DELETE ON order_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_items', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_order_items_ai",
+      "table": "order_items",
+      "sql": "CREATE TRIGGER trg_changelog_order_items_ai AFTER INSERT ON order_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_items', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_order_items_au",
+      "table": "order_items",
+      "sql": "CREATE TRIGGER trg_changelog_order_items_au AFTER UPDATE ON order_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_items', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_pipeline_runs_ad",
+      "table": "pipeline_runs",
+      "sql": "CREATE TRIGGER trg_changelog_pipeline_runs_ad AFTER DELETE ON pipeline_runs BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('pipeline_runs', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_pipeline_runs_ai",
+      "table": "pipeline_runs",
+      "sql": "CREATE TRIGGER trg_changelog_pipeline_runs_ai AFTER INSERT ON pipeline_runs BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('pipeline_runs', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_pipeline_runs_au",
+      "table": "pipeline_runs",
+      "sql": "CREATE TRIGGER trg_changelog_pipeline_runs_au AFTER UPDATE ON pipeline_runs BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('pipeline_runs', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_pipeline_templates_ad",
+      "table": "pipeline_templates",
+      "sql": "CREATE TRIGGER trg_changelog_pipeline_templates_ad AFTER DELETE ON pipeline_templates BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('pipeline_templates', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_pipeline_templates_ai",
+      "table": "pipeline_templates",
+      "sql": "CREATE TRIGGER trg_changelog_pipeline_templates_ai AFTER INSERT ON pipeline_templates BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('pipeline_templates', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_pipeline_templates_au",
+      "table": "pipeline_templates",
+      "sql": "CREATE TRIGGER trg_changelog_pipeline_templates_au AFTER UPDATE ON pipeline_templates BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('pipeline_templates', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_units_ad",
+      "table": "units",
+      "sql": "CREATE TRIGGER trg_changelog_units_ad AFTER DELETE ON units BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('units', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_units_ai",
+      "table": "units",
+      "sql": "CREATE TRIGGER trg_changelog_units_ai AFTER INSERT ON units BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('units', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_units_au",
+      "table": "units",
+      "sql": "CREATE TRIGGER trg_changelog_units_au AFTER UPDATE ON units BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('units', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_vendors_ad",
+      "table": "vendors",
+      "sql": "CREATE TRIGGER trg_changelog_vendors_ad AFTER DELETE ON vendors BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('vendors', OLD.id, 'DELETE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_vendors_ai",
+      "table": "vendors",
+      "sql": "CREATE TRIGGER trg_changelog_vendors_ai AFTER INSERT ON vendors BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('vendors', NEW.id, 'INSERT', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_changelog_vendors_au",
+      "table": "vendors",
+      "sql": "CREATE TRIGGER trg_changelog_vendors_au AFTER UPDATE ON vendors BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('vendors', NEW.id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
       "name": "trg_delivery_challan_items_leaf_nonneg_ins",
       "table": "delivery_challan_items",
       "sql": "CREATE TRIGGER trg_delivery_challan_items_leaf_nonneg_ins BEFORE INSERT ON delivery_challan_items WHEN NEW.variation_leaf_node_id < 0 BEGIN SELECT RAISE(ABORT, 'delivery_challan_items.variation_leaf_node_id must reference a real node (>= 0)'); END"
@@ -3511,6 +3895,228 @@
       "name": "trg_delivery_challan_items_leaf_nonneg_upd",
       "table": "delivery_challan_items",
       "sql": "CREATE TRIGGER trg_delivery_challan_items_leaf_nonneg_upd BEFORE UPDATE OF variation_leaf_node_id ON delivery_challan_items WHEN NEW.variation_leaf_node_id < 0 BEGIN SELECT RAISE(ABORT, 'delivery_challan_items.variation_leaf_node_id must reference a real node (>= 0)'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_assignments_order_items_ad",
+      "table": "order_pipeline_assignments",
+      "sql": "CREATE TRIGGER trg_derived_assignments_order_items_ad AFTER DELETE ON order_pipeline_assignments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_items', OLD.order_item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_assignments_order_items_ai",
+      "table": "order_pipeline_assignments",
+      "sql": "CREATE TRIGGER trg_derived_assignments_order_items_ai AFTER INSERT ON order_pipeline_assignments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('order_items', NEW.order_item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_challan_items_order_items_ad",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_derived_challan_items_order_items_ad AFTER DELETE ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'order_items', OLD.order_item_id, 'UPDATE', datetime('now') WHERE OLD.order_item_id IS NOT NULL; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_challan_items_order_items_ai",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_derived_challan_items_order_items_ai AFTER INSERT ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'order_items', NEW.order_item_id, 'UPDATE', datetime('now') WHERE NEW.order_item_id IS NOT NULL; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_challan_items_order_items_au",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_derived_challan_items_order_items_au AFTER UPDATE ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'order_items', NEW.order_item_id, 'UPDATE', datetime('now') WHERE NEW.order_item_id IS NOT NULL; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_challans_order_items_au",
+      "table": "delivery_challans",
+      "sql": "CREATE TRIGGER trg_derived_challans_order_items_au AFTER UPDATE ON delivery_challans BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT DISTINCT 'order_items', dci.order_item_id, 'UPDATE', datetime('now') FROM delivery_challan_items dci WHERE dci.challan_id = NEW.id AND dci.order_item_id IS NOT NULL; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_delivery_challan_items_delivery_challans_ad",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_derived_delivery_challan_items_delivery_challans_ad AFTER DELETE ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challans', OLD.challan_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_delivery_challan_items_delivery_challans_ai",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_derived_delivery_challan_items_delivery_challans_ai AFTER INSERT ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challans', NEW.challan_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_delivery_challan_items_delivery_challans_au",
+      "table": "delivery_challan_items",
+      "sql": "CREATE TRIGGER trg_derived_delivery_challan_items_delivery_challans_au AFTER UPDATE ON delivery_challan_items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('delivery_challans', NEW.challan_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_dies_items_au",
+      "table": "dies",
+      "sql": "CREATE TRIGGER trg_derived_dies_items_au AFTER UPDATE ON dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'items', item_id, 'UPDATE', datetime('now') FROM item_dies WHERE die_id = NEW.id; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_group_item_memberships_groups_ad",
+      "table": "group_item_memberships",
+      "sql": "CREATE TRIGGER trg_derived_group_item_memberships_groups_ad AFTER DELETE ON group_item_memberships BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', OLD.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_group_item_memberships_groups_ai",
+      "table": "group_item_memberships",
+      "sql": "CREATE TRIGGER trg_derived_group_item_memberships_groups_ai AFTER INSERT ON group_item_memberships BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_group_item_memberships_groups_au",
+      "table": "group_item_memberships",
+      "sql": "CREATE TRIGGER trg_derived_group_item_memberships_groups_au AFTER UPDATE ON group_item_memberships BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_group_item_memberships_items_ad",
+      "table": "group_item_memberships",
+      "sql": "CREATE TRIGGER trg_derived_group_item_memberships_items_ad AFTER DELETE ON group_item_memberships BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_group_item_memberships_items_ai",
+      "table": "group_item_memberships",
+      "sql": "CREATE TRIGGER trg_derived_group_item_memberships_items_ai AFTER INSERT ON group_item_memberships BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_group_item_memberships_items_au",
+      "table": "group_item_memberships",
+      "sql": "CREATE TRIGGER trg_derived_group_item_memberships_items_au AFTER UPDATE ON group_item_memberships BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_attachments_items_ad",
+      "table": "item_attachments",
+      "sql": "CREATE TRIGGER trg_derived_item_attachments_items_ad AFTER DELETE ON item_attachments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_attachments_items_ai",
+      "table": "item_attachments",
+      "sql": "CREATE TRIGGER trg_derived_item_attachments_items_ai AFTER INSERT ON item_attachments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_attachments_items_au",
+      "table": "item_attachments",
+      "sql": "CREATE TRIGGER trg_derived_item_attachments_items_au AFTER UPDATE ON item_attachments BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_dies_items_ad",
+      "table": "item_dies",
+      "sql": "CREATE TRIGGER trg_derived_item_dies_items_ad AFTER DELETE ON item_dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_dies_items_ai",
+      "table": "item_dies",
+      "sql": "CREATE TRIGGER trg_derived_item_dies_items_ai AFTER INSERT ON item_dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_dies_items_au",
+      "table": "item_dies",
+      "sql": "CREATE TRIGGER trg_derived_item_dies_items_au AFTER UPDATE ON item_dies BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_machines_items_ad",
+      "table": "item_machines",
+      "sql": "CREATE TRIGGER trg_derived_item_machines_items_ad AFTER DELETE ON item_machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_machines_items_ai",
+      "table": "item_machines",
+      "sql": "CREATE TRIGGER trg_derived_item_machines_items_ai AFTER INSERT ON item_machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_machines_items_au",
+      "table": "item_machines",
+      "sql": "CREATE TRIGGER trg_derived_item_machines_items_au AFTER UPDATE ON item_machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_unit_conversions_items_ad",
+      "table": "item_unit_conversions",
+      "sql": "CREATE TRIGGER trg_derived_item_unit_conversions_items_ad AFTER DELETE ON item_unit_conversions BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_unit_conversions_items_ai",
+      "table": "item_unit_conversions",
+      "sql": "CREATE TRIGGER trg_derived_item_unit_conversions_items_ai AFTER INSERT ON item_unit_conversions BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_unit_conversions_items_au",
+      "table": "item_unit_conversions",
+      "sql": "CREATE TRIGGER trg_derived_item_unit_conversions_items_au AFTER UPDATE ON item_unit_conversions BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_variation_nodes_items_ad",
+      "table": "item_variation_nodes",
+      "sql": "CREATE TRIGGER trg_derived_item_variation_nodes_items_ad AFTER DELETE ON item_variation_nodes BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', OLD.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_variation_nodes_items_ai",
+      "table": "item_variation_nodes",
+      "sql": "CREATE TRIGGER trg_derived_item_variation_nodes_items_ai AFTER INSERT ON item_variation_nodes BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_item_variation_nodes_items_au",
+      "table": "item_variation_nodes",
+      "sql": "CREATE TRIGGER trg_derived_item_variation_nodes_items_au AFTER UPDATE ON item_variation_nodes BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('items', NEW.item_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_items_groups_ad",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_derived_items_groups_ad AFTER DELETE ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', OLD.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_items_groups_ai",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_derived_items_groups_ai AFTER INSERT ON items BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now')); END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_items_groups_au",
+      "table": "items",
+      "sql": "CREATE TRIGGER trg_derived_items_groups_au AFTER UPDATE OF group_id, is_archived ON items WHEN OLD.group_id IS NOT NEW.group_id OR OLD.is_archived IS NOT NEW.is_archived BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES ('groups', NEW.group_id, 'UPDATE', datetime('now')); INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'groups', OLD.group_id, 'UPDATE', datetime('now') WHERE OLD.group_id IS NOT NEW.group_id; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_machines_items_au",
+      "table": "machines",
+      "sql": "CREATE TRIGGER trg_derived_machines_items_au AFTER UPDATE ON machines BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'items', item_id, 'UPDATE', datetime('now') FROM item_machines WHERE machine_id = NEW.id; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_pipeline_runs_order_items_ad",
+      "table": "pipeline_runs",
+      "sql": "CREATE TRIGGER trg_derived_pipeline_runs_order_items_ad AFTER DELETE ON pipeline_runs BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'order_items', opa.order_item_id, 'UPDATE', datetime('now') FROM order_pipeline_assignments opa WHERE opa.pipeline_run_id = OLD.id; END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_derived_pipeline_runs_order_items_au",
+      "table": "pipeline_runs",
+      "sql": "CREATE TRIGGER trg_derived_pipeline_runs_order_items_au AFTER UPDATE ON pipeline_runs BEGIN INSERT INTO changelog (table_name, record_id, event_type, timestamp) SELECT 'order_items', opa.order_item_id, 'UPDATE', datetime('now') FROM order_pipeline_assignments opa WHERE opa.pipeline_run_id = NEW.id; END"
     },
     {
       "type": "trigger",

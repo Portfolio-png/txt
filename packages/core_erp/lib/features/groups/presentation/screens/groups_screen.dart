@@ -922,6 +922,12 @@ class _GroupRow extends StatelessWidget {
                       ? null
                       : () => groupsProvider.restoreGroup(group.id),
                 )
+              else if (group.isSystem)
+                // A default group is always there: drawn disabled, with why.
+                const Tooltip(
+                  message: _systemGroupReason,
+                  child: SoftActionLink(label: 'Archive'),
+                )
               else
                 SoftActionLink(
                   label: 'Archive',
@@ -942,20 +948,26 @@ class _GroupRow extends StatelessWidget {
                         },
                 ),
 
-              SoftActionLink(
-                label: 'Delete',
-                onTap: groupsProvider.isSaving
-                    ? null
-                    : () async {
-                        final ok = await showConfirmDialog(
-                          context,
-                          title: 'Delete group?',
-                          message:
-                              'Permanently delete "${group.name}"? Items and sub-groups under it will need reassignment — check the Action Center afterward. You can restore the group from there too.',
-                        );
-                        if (ok) groupsProvider.deleteGroup(group.id);
-                      },
-              ),
+              if (group.isSystem)
+                const Tooltip(
+                  message: _systemGroupReason,
+                  child: SoftActionLink(label: 'Delete'),
+                )
+              else
+                SoftActionLink(
+                  label: 'Delete',
+                  onTap: groupsProvider.isSaving
+                      ? null
+                      : () async {
+                          final ok = await showConfirmDialog(
+                            context,
+                            title: 'Delete group?',
+                            message:
+                                'Permanently delete "${group.name}"? Items and sub-groups under it will need reassignment — check the Action Center afterward. You can restore the group from there too.',
+                          );
+                          if (ok) groupsProvider.deleteGroup(group.id);
+                        },
+                ),
             ],
           ),
         ),
@@ -969,6 +981,11 @@ class _GroupRow extends StatelessWidget {
     return unit?.displayLabel;
   }
 }
+
+/// Why Archive and Delete are greyed out on Raw Materials, Rivets and Springs.
+const String _systemGroupReason =
+    'A default group: it cannot be archived or deleted, and it comes back '
+    'after Clear Data.';
 
 /// The "N items" / "N sub-groups" tallies on a group row — the same shape the
 /// items list uses for its own group headers, so the two read as one screen.

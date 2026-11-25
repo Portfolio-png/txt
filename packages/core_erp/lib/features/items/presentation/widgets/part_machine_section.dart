@@ -13,7 +13,7 @@ import '../../../../core/app_flow_hooks.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/mini_photo.dart';
-import '../../../../core/widgets/app_button.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../../core/widgets/force_capacity_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/fit_to_text.dart';
@@ -185,26 +185,25 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   String? _builtOn;
 
   String _snapshot() => [
-        '$_builtOn',
-        _noPinned ? _noController.text : '',
-        _nameController.text,
-        _makeController.text,
-        _yearController.text,
-        _feederController.text,
-        _hoursController.text,
-        _strokesController.text,
-        _capacityController.text,
-        _feedTypeController.text,
-        '$_groupId',
-        _capacityUnit,
-        _capacityKind.wire,
-      ].join('|');
+    '$_builtOn',
+    _noPinned ? _noController.text : '',
+    _nameController.text,
+    _makeController.text,
+    _yearController.text,
+    _feederController.text,
+    _hoursController.text,
+    _strokesController.text,
+    _capacityController.text,
+    _feedTypeController.text,
+    '$_groupId',
+    _capacityUnit,
+    _capacityKind.wire,
+  ].join('|');
 
   /// Anything typed or picked since the form was last cleared, or a machine
   /// open for correcting.
   bool get _hasTyped =>
-      _unlinkedMachineId != null ||
-      _snapshot() != (_clean ??= _snapshot());
+      _unlinkedMachineId != null || _snapshot() != (_clean ??= _snapshot());
 
   /// Everything off the form, the repeating fields too — the prompt's
   /// Discard.
@@ -275,7 +274,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       // it stays. Only moving to another part clears the sheet.
       // (Same line only: from a new, unsaved line onto another part is not
       // that part being saved, and what was typed stayed for the wrong one.)
-      if (oldWidget.part == null && isDirty && oldWidget.lineKey == widget.lineKey) {
+      if (oldWidget.part == null &&
+          isDirty &&
+          oldWidget.lineKey == widget.lineKey) {
         _rederiveNo();
         return;
       }
@@ -765,242 +766,262 @@ class _PartMachineSectionState extends State<PartMachineSection> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-            // Each field as wide as what it holds, side by side, wrapping only
-            // when the row is full — a stack of page-wide bars for answers
-            // like "2011" and "60" was most of this card's height.
-            _formStep(Wrap(
-              spacing: 10,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.start,
-              children: [
-                // Every field a dropdown of what this shop has used before,
-                // which also takes a new answer — the same makes, years and
-                // figures recur across its machines. No helper lines: the
-                // labels say enough.
-                SheetStyle.labelled(
-                  label: 'Machine Type',
-                  child: FitToText(
-                    dropdown: true,
-                  heading: 'Machine Type',
-                  texts: [_typeNameFor(_groupId)],
-                  minWidth: 120,
-                  chrome: 84, // padding, the arrow (48), the border
-                  child: GroupPickerField(
-                    key: const ValueKey<String>(
-                      'quick-entry-machine-type-field',
-                    ),
-                    value: _groupId,
-                    groupType: 'machine',
-                    scope: GroupPickerScope.all,
-                    fieldEnabled: enabled,
-                    dialogTitle: 'Machine Type',
-                    searchHintText: 'Search or type a new machine type',
-                    decoration: SheetStyle.field(),
-                    onChanged: (id) => setState(() {
-                      _groupId = id;
-                      _rederiveNo();
-                    }),
-                    // There are no machine types on a fresh system, so typing
-                    // a new one is the only way the list ever fills.
-                    canCreateOption: (query, _) => query.trim().isNotEmpty,
-                    createOptionLabelBuilder: (query) => 'Add type "$query"',
-                    onCreateOption: (query) async {
-                      final groups = context.read<GroupsProvider>();
-                      final created = await groups.createGroup(
-                        CreateGroupInput(
-                          name: query.trim(),
-                          groupType: 'machine',
-                          groupStructure: 'hierarchical',
+                  // Each field as wide as what it holds, side by side, wrapping only
+                  // when the row is full — a stack of page-wide bars for answers
+                  // like "2011" and "60" was most of this card's height.
+                  _formStep(
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 12,
+                      crossAxisAlignment: WrapCrossAlignment.start,
+                      children: [
+                        // Every field a dropdown of what this shop has used before,
+                        // which also takes a new answer — the same makes, years and
+                        // figures recur across its machines. No helper lines: the
+                        // labels say enough.
+                        SheetStyle.labelled(
+                          label: 'Machine Type',
+                          child: FitToText(
+                            dropdown: true,
+                            heading: 'Machine Type',
+                            texts: [_typeNameFor(_groupId)],
+                            minWidth: 120,
+                            chrome: 84, // padding, the arrow (48), the border
+                            child: GroupPickerField(
+                              key: const ValueKey<String>(
+                                'quick-entry-machine-type-field',
+                              ),
+                              value: _groupId,
+                              groupType: 'machine',
+                              scope: GroupPickerScope.all,
+                              fieldEnabled: enabled,
+                              dialogTitle: 'Machine Type',
+                              searchHintText:
+                                  'Search or type a new machine type',
+                              decoration: SheetStyle.field(),
+                              onChanged: (id) => setState(() {
+                                _groupId = id;
+                                _rederiveNo();
+                              }),
+                              // There are no machine types on a fresh system, so typing
+                              // a new one is the only way the list ever fills.
+                              canCreateOption: (query, _) =>
+                                  query.trim().isNotEmpty,
+                              createOptionLabelBuilder: (query) =>
+                                  'Add type "$query"',
+                              onCreateOption: (query) async {
+                                final groups = context.read<GroupsProvider>();
+                                final created = await groups.createGroup(
+                                  CreateGroupInput(
+                                    name: query.trim(),
+                                    groupType: 'machine',
+                                    groupStructure: 'hierarchical',
+                                  ),
+                                );
+                                if (created == null) return null;
+                                return SearchableSelectOption<int?>(
+                                  value: created.id,
+                                  label: created.name,
+                                );
+                              },
+                            ),
+                          ),
                         ),
-                      );
-                      if (created == null) return null;
-                      return SearchableSelectOption<int?>(
-                        value: created.id,
-                        label: created.name,
-                      );
-                    },
-                  ),
-                ),
-                ),
-                // A text field, not a dropdown: the number is unique and is
-                // derived from the type, so a list of numbers already taken
-                // would only offer duplicates.
-                SheetStyle.labelled(
-                  label: 'Machine No.',
-                  child: FitToText(
-                  controller: _noController,
-                  heading: 'Machine No.',
-                  child: TextField(
-                    key: const ValueKey<String>('quick-entry-machine-no-field'),
-                    controller: _noController,
-                    enabled: enabled,
-                    textCapitalization: TextCapitalization.characters,
-                    onChanged: (_) => setState(() => _noPinned = true),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+                        // A text field, not a dropdown: the number is unique and is
+                        // derived from the type, so a list of numbers already taken
+                        // would only offer duplicates.
+                        SheetStyle.labelled(
+                          label: 'Machine No.',
+                          child: FitToText(
+                            controller: _noController,
+                            heading: 'Machine No.',
+                            child: TextField(
+                              key: const ValueKey<String>(
+                                'quick-entry-machine-no-field',
+                              ),
+                              controller: _noController,
+                              enabled: enabled,
+                              textCapitalization: TextCapitalization.characters,
+                              onChanged: (_) =>
+                                  setState(() => _noPinned = true),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              decoration: SheetStyle.field(),
+                            ),
+                          ),
+                        ),
+                        // No Name field (user, 2026-11-24): a machine is known by its
+                        // number, which a new one is named after; one already named
+                        // keeps its name (loaded into _nameController, sent back).
+                        _pick(
+                          slug: 'make',
+                          label: 'Machine Make',
+                          controller: _makeController,
+                          options: _suggestions.makes,
+                          enabled: enabled,
+                        ),
+                        // Picked on a calendar (user, 2026-11-24): Enter on it, or
+                        // a click, opens one.
+                        _domField(enabled),
+                        // How hard the machine runs reads as one figure pair, so the
+                        // two never wrap apart.
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _pick(
+                              slug: 'hours',
+                              label: 'Running Hrs',
+                              controller: _hoursController,
+                              options: _suggestions.runningHours,
+                              enabled: enabled,
+                              numeric: true,
+                            ),
+                            const SizedBox(width: 10),
+                            _pick(
+                              slug: 'strokes',
+                              label: 'Stroke / Min',
+                              controller: _strokesController,
+                              options: _suggestions.strokesPerMinute,
+                              enabled: enabled,
+                              numeric: true,
+                            ),
+                          ],
+                        ),
+                        // A figure, a unit and a "free hand" tick: one compact block,
+                        // beside Stroke / Min, as wide as the figure and its unit —
+                        // and its tick's words under them. It was a fixed 340, which
+                        // pushed it onto the next line.
+                        SheetStyle.labelled(
+                          label: 'Capacity',
+                          child: FitToText(
+                            dropdown: true,
+                            controller: _capacityController,
+                            texts: const ['00.0'],
+                            // The figure's box: padding (24), its arrow (48), the
+                            // border; then a gap and the unit picker.
+                            chrome: 24 + 48 + 4 + 8 + unitPickerWidth,
+                            // Its tick says "Free hand" (the rest in a tooltip), so the
+                            // block fits beside Stroke / Min.
+                            minWidth: 220,
+                            maxWidth: 340,
+                            child: ForceCapacityField(
+                              fieldKey: const ValueKey<String>(
+                                'quick-entry-machine-capacity-field',
+                              ),
+                              freeHandKey: const ValueKey<String>(
+                                'quick-entry-machine-free-hand',
+                              ),
+                              controller: _capacityController,
+                              floatLabel: false,
+                              compactFreeHand: true,
+                              unitSymbol: _capacityUnit,
+                              kind: _capacityKind,
+                              enabled: enabled,
+                              errorText: _capacityError,
+                              decoration: SheetStyle.field(),
+                              // Figures used before, read in the unit picked here.
+                              suggestions: [
+                                for (final kgf in _suggestions.capacitiesKgf)
+                                  formatCapacityFromKgf(kgf, _capacityUnit),
+                              ],
+                              onUnitChanged: (symbol) => setState(() {
+                                _capacityUnit = symbol;
+                                _capacityError = null;
+                              }),
+                              onKindChanged: (kind) => setState(() {
+                                _capacityKind = kind;
+                                _capacityError = null;
+                              }),
+                              onChanged: () =>
+                                  setState(() => _capacityError = null),
+                            ),
+                          ),
+                        ),
+                        // Named "make" because everywhere else in this system a
+                        // feeder is an upstream node in a pipeline.
+                        _pick(
+                          slug: 'feeder',
+                          label: 'Feeder make',
+                          controller: _feederController,
+                          options: _suggestions.feederMakes,
+                          enabled: enabled,
+                        ),
+                        _pick(
+                          slug: 'feed',
+                          label: 'Die Type',
+                          controller: _feedTypeController,
+                          options: _suggestions.dieFeedTypes,
+                          enabled: enabled,
+                        ),
+                      ],
                     ),
-                    decoration: SheetStyle.field(),
                   ),
-                ),
-                ),
-                // No Name field (user, 2026-11-24): a machine is known by its
-                // number, which a new one is named after; one already named
-                // keeps its name (loaded into _nameController, sent back).
-                _pick(
-                  slug: 'make',
-                  label: 'Machine Make',
-                  controller: _makeController,
-                  options: _suggestions.makes,
-                  enabled: enabled,
-                ),
-                // Picked on a calendar (user, 2026-11-24): Enter on it, or
-                // a click, opens one.
-                _domField(enabled),
-                // How hard the machine runs reads as one figure pair, so the
-                // two never wrap apart.
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _pick(
-                      slug: 'hours',
-                      label: 'Running Hrs',
-                      controller: _hoursController,
-                      options: _suggestions.runningHours,
-                      enabled: enabled,
-                      numeric: true,
-                    ),
-                    const SizedBox(width: 10),
-                    _pick(
-                      slug: 'strokes',
-                      label: 'Stroke / Min',
-                      controller: _strokesController,
-                      options: _suggestions.strokesPerMinute,
-                      enabled: enabled,
-                      numeric: true,
+                  if (_error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _error!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: SoftErpTheme.warningText,
+                      ),
                     ),
                   ],
-                ),
-                // A figure, a unit and a "free hand" tick: one compact block,
-                // beside Stroke / Min, as wide as the figure and its unit —
-                // and its tick's words under them. It was a fixed 340, which
-                // pushed it onto the next line.
-                SheetStyle.labelled(
-                  label: 'Capacity',
-                  child: FitToText(
-                    dropdown: true,
-                  controller: _capacityController,
-                  texts: const ['00.0'],
-                  // The figure's box: padding (24), its arrow (48), the
-                  // border; then a gap and the unit picker.
-                  chrome: 24 + 48 + 4 + 8 + unitPickerWidth,
-                  // Its tick says "Free hand" (the rest in a tooltip), so the
-                  // block fits beside Stroke / Min.
-                  minWidth: 220,
-                  maxWidth: 340,
-                  child: ForceCapacityField(
-                    fieldKey: const ValueKey<String>(
-                      'quick-entry-machine-capacity-field',
+                  if (_notice != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _notice!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: SoftErpTheme.textSecondary,
+                      ),
                     ),
-                    freeHandKey: const ValueKey<String>(
-                      'quick-entry-machine-free-hand',
+                  ],
+                  const SizedBox(height: 12),
+                  SheetStep.noTab(
+                    SheetSaveRow(
+                      // At the sheet's save column, under Save Part.
+                      children: [
+                        if (editing != null || _editingStagedIndex != null)
+                          TextButton(
+                            key: const ValueKey<String>(
+                              'quick-entry-machine-cancel',
+                            ),
+                            onPressed: enabled
+                                ? () => setState(_resetSheet)
+                                : null,
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        SheetSaveButton(
+                          buttonKey: const ValueKey<String>(
+                            'quick-entry-add-machine',
+                          ),
+                          // One label in every state (owner, 2026-11-25: "instead of
+                          // Add machine … show Save Machine"); what the save does when
+                          // there is no part yet, or when it links one on file, is
+                          // in the tooltip.
+                          label: 'Save Machine',
+                          tooltip: _unlinkedMachineId != null
+                              ? 'Attaches this machine to the part'
+                              : (holding &&
+                                        editing == null &&
+                                        _editingStagedIndex == null
+                                    ? 'Kept with the part: written when the part is saved'
+                                    : null),
+                          isLoading: _saving,
+                          onPressed: enabled ? _saveMachine : null,
+                        ),
+                      ],
                     ),
-                    controller: _capacityController,
-                    floatLabel: false,
-                    compactFreeHand: true,
-                    unitSymbol: _capacityUnit,
-                    kind: _capacityKind,
-                    enabled: enabled,
-                    errorText: _capacityError,
-                    decoration: SheetStyle.field(),
-                    // Figures used before, read in the unit picked here.
-                    suggestions: [
-                      for (final kgf in _suggestions.capacitiesKgf)
-                        formatCapacityFromKgf(kgf, _capacityUnit),
-                    ],
-                    onUnitChanged: (symbol) => setState(() {
-                      _capacityUnit = symbol;
-                      _capacityError = null;
-                    }),
-                    onKindChanged: (kind) => setState(() {
-                      _capacityKind = kind;
-                      _capacityError = null;
-                    }),
-                    onChanged: () => setState(() => _capacityError = null),
                   ),
-                ),
-                ),
-                // Named "make" because everywhere else in this system a
-                // feeder is an upstream node in a pipeline.
-                _pick(
-                  slug: 'feeder',
-                  label: 'Feeder make',
-                  controller: _feederController,
-                  options: _suggestions.feederMakes,
-                  enabled: enabled,
-                ),
-                _pick(
-                  slug: 'feed',
-                  label: 'Die Type',
-                  controller: _feedTypeController,
-                  options: _suggestions.dieFeedTypes,
-                  enabled: enabled,
-                ),
-              ],
-            )),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.warningText,
-                ),
-              ),
-            ],
-            if (_notice != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _notice!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            SheetStep.noTab(Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (editing != null || _editingStagedIndex != null)
-                  TextButton(
-                    key: const ValueKey<String>('quick-entry-machine-cancel'),
-                    onPressed: enabled ? () => setState(_resetSheet) : null,
-                    child: const Text('Cancel', style: TextStyle(fontSize: 14)),
-                  ),
-                const SizedBox(width: 8),
-                AppButton(
-                  key: const ValueKey<String>('quick-entry-add-machine'),
-                  label: _unlinkedMachineId != null
-                      ? 'Attach the machine'
-                      : (editing != null || _editingStagedIndex != null
-                            ? 'Save machine'
-                            : (holding ? 'Hold machine' : 'Add machine')),
-                  icon: Icons.precision_manufacturing_outlined,
-                  // Secondary, like every write on this screen: Cmd/Ctrl+Enter
-                  // fires the last enabled PRIMARY button in the tree, and that
-                  // must stay Done.
-                  variant: AppButtonVariant.secondary,
-                  // The size of Save part and Save contact: one Save size.
-                  dense: true,
-                  isLoading: _saving,
-                  onPressed: enabled ? _saveMachine : null,
-                ),
-              ],
-            )),
                 ],
               ),
             ),
@@ -1017,7 +1038,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// then "New machine" while the form is blank.
   Widget _machineTabs(bool enabled, Widget form) {
     final staged = widget.staged;
-    final held = _editingStagedIndex != null && _editingStagedIndex! < staged.length
+    final held =
+        _editingStagedIndex != null && _editingStagedIndex! < staged.length
         ? _editingStagedIndex
         : null;
     final savedAt = _editingMachineId == null
@@ -1040,11 +1062,15 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       for (final m in _machines)
         TabSpec(
           key: 'machine:${m.id}',
-          title: titleOf(m.assetId, m.name.trim().isEmpty ? 'Machine ${m.id}' : m.name),
+          title: titleOf(
+            m.assetId,
+            m.name.trim().isEmpty ? 'Machine ${m.id}' : m.name,
+          ),
           code: m.machineType.trim(),
           saved: true,
           closeWhy: enabled ? null : busy,
-          closeTip: 'Take off this part — the machine stays in the machines master',
+          closeTip:
+              'Take off this part — the machine stays in the machines master',
           keyName: 'machine_tab_${m.id}',
         ),
       if (blank)
@@ -1058,7 +1084,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
           keyName: 'machine_tab_new',
         ),
     ];
-    final selected = held ?? (savedAt >= 0 ? staged.length + savedAt : tabs.length - 1);
+    final selected =
+        held ?? (savedAt >= 0 ? staged.length + savedAt : tabs.length - 1);
     void open(int i) {
       if (i < staged.length) {
         _editStaged(i);
@@ -1079,7 +1106,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       noun: 'machine',
       plural: 'machines',
       keyPrefix: 'machine',
-      addWhy: !enabled ? busy : (blank ? 'The new machine is open below' : null),
+      addWhy: !enabled
+          ? busy
+          : (blank ? 'The new machine is open below' : null),
       onAdd: () => setState(_resetSheet),
       onClose: (i) async {
         if (i < staged.length) {
@@ -1159,22 +1188,28 @@ class _PartMachineSectionState extends State<PartMachineSection> {
             decoration: SheetStyle.field(
               suffixIcon: enabled && (_builtOn != null || shown.isNotEmpty)
                   // A click's, not a Tab stop.
-                  ? ExcludeFocus(child: IconButton(
-                      key: const ValueKey<String>('quick-entry-machine-dom-clear'),
-                      tooltip: 'Clear D.O.M.',
-                      onPressed: () => setState(() {
-                        _builtOn = null;
-                        _yearController.clear();
-                      }),
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                    ))
+                  ? ExcludeFocus(
+                      child: IconButton(
+                        key: const ValueKey<String>(
+                          'quick-entry-machine-dom-clear',
+                        ),
+                        tooltip: 'Clear D.O.M.',
+                        onPressed: () => setState(() {
+                          _builtOn = null;
+                          _yearController.clear();
+                        }),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                      ),
+                    )
                   : const Icon(Icons.event_outlined, size: 18),
             ),
             child: Text(
               shown.isEmpty ? 'Pick a date' : shown,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: shown.isEmpty ? SheetStyle.muted : const TextStyle(fontSize: 14),
+              style: shown.isEmpty
+                  ? SheetStyle.muted
+                  : const TextStyle(fontSize: 14),
             ),
           ),
         ),
@@ -1187,10 +1222,14 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// with why.
   Widget _machinePhotoTile() {
     final id = _editingMachineId;
-    final machine = id == null ? null : _machines.where((m) => m.id == id).firstOrNull;
+    final machine = id == null
+        ? null
+        : _machines.where((m) => m.id == id).firstOrNull;
     final name = machine == null
         ? 'this machine'
-        : (machine.assetId.trim().isNotEmpty ? machine.assetId.trim() : machine.name);
+        : (machine.assetId.trim().isNotEmpty
+              ? machine.assetId.trim()
+              : machine.name);
     return MiniPhoto(
       key: ValueKey<String>('machine_photos_${machine?.id ?? 'unsaved'}'),
       owner: PhotoOwner.machine,
@@ -1205,7 +1244,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
           : 'Save the machine, then add its photos',
       onOpen: machine == null
           ? null
-          : () => showMachinePhotoGallery(context, machineId: machine.id, machineName: name),
+          : () => showMachinePhotoGallery(
+              context,
+              machineId: machine.id,
+              machineName: name,
+            ),
     );
   }
 
@@ -1223,13 +1266,12 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       flow: widget.flow,
       id: PartMachineSection.step,
       actions: SheetStepActions(
-        title: () => _editingMachineId != null || _editingStagedIndex != null
-            ? 'Save this machine?'
-            : (widget.part == null ? 'Hold this machine?' : 'Add this machine?'),
+        title: () => 'Save this machine?',
         isDirty: () => _hasTyped,
         blockedReason: () {
           if (_groupId == null) return 'Pick the machine type first';
-          if (_noController.text.trim().isEmpty) return 'Give it a machine number';
+          if (_noController.text.trim().isEmpty)
+            return 'Give it a machine number';
           return _numberProblem;
         },
         save: save,
@@ -1293,8 +1335,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// [_heading] for a title bar: the words, then the code they are about.
   ({String label, String? value}) _chipHeading(String? editing) {
     final partCode = widget.partCode.isEmpty ? null : widget.partCode;
-    if (widget.part == null) return (label: 'Item part code: ', value: partCode);
-    if (editing == null) return (label: 'New machine for part code: ', value: partCode);
+    if (widget.part == null)
+      return (label: 'Item part code: ', value: partCode);
+    if (editing == null)
+      return (label: 'New machine for part code: ', value: partCode);
     final no = _noController.text.trim();
     return no.isEmpty
         ? (label: 'Machine for part code: ', value: partCode)
@@ -1318,8 +1362,6 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     if (groupId == null) return '';
     return context.read<GroupsProvider>().findById(groupId)?.name ?? '';
   }
-
-
 }
 
 /// The machine photo tile's side, in the column at the right of its form.
@@ -1328,20 +1370,22 @@ const double _kPhotoSize = 132;
 /// A held draft, shaped like a linked machine so one row (or one summary line)
 /// describes both. [typeName] is its machine group's name, which the draft
 /// holds only as an id.
-ItemMachineLink heldMachineLink(MachineSheetDraft draft, {String typeName = ''}) =>
-    ItemMachineLink(
-      id: '',
-      name: draft.name,
-      assetId: draft.assetId,
-      groupId: draft.groupId,
-      machineType: typeName,
-      machineMake: draft.machineMake,
-      manufacturedYear: draft.manufacturedYear,
-      manufacturedOn: draft.manufacturedOn,
-      feederMake: draft.feederMake,
-      runningHours: draft.runningHours,
-      strokesPerMinute: draft.strokesPerMinute,
-      capacityKind: draft.capacityKind,
-      capacityKgf: draft.capacityKgf,
-      dieFeedType: draft.dieFeedType,
-    );
+ItemMachineLink heldMachineLink(
+  MachineSheetDraft draft, {
+  String typeName = '',
+}) => ItemMachineLink(
+  id: '',
+  name: draft.name,
+  assetId: draft.assetId,
+  groupId: draft.groupId,
+  machineType: typeName,
+  machineMake: draft.machineMake,
+  manufacturedYear: draft.manufacturedYear,
+  manufacturedOn: draft.manufacturedOn,
+  feederMake: draft.feederMake,
+  runningHours: draft.runningHours,
+  strokesPerMinute: draft.strokesPerMinute,
+  capacityKind: draft.capacityKind,
+  capacityKgf: draft.capacityKgf,
+  dieFeedType: draft.dieFeedType,
+);

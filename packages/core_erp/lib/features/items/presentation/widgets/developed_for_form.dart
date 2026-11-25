@@ -108,7 +108,9 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
     final incoming = widget.value.quotationAmount;
     final current = parseRupees(_quotationController.text);
     if (incoming != current) {
-      _quotationController.text = incoming == null ? '' : _plainAmount(incoming);
+      _quotationController.text = incoming == null
+          ? ''
+          : _plainAmount(incoming);
     }
   }
 
@@ -215,7 +217,10 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
           initialName: query.trim(),
         );
         if (created == null) return null;
-        return SearchableSelectOption<int>(value: created.id, label: created.name);
+        return SearchableSelectOption<int>(
+          value: created.id,
+          label: created.name,
+        );
       },
     );
     if (selected == null || !mounted) return;
@@ -403,8 +408,10 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
             if (value.kind != DevelopedForKind.none && enabled)
               TextButton.icon(
                 onPressed: () => _emit(
-                  DevelopedFor(at: value.at, quotationAmount: value.quotationAmount)
-                      .withKind(DevelopedForKind.none),
+                  DevelopedFor(
+                    at: value.at,
+                    quotationAmount: value.quotationAmount,
+                  ).withKind(DevelopedForKind.none),
                 ),
                 icon: const Icon(Icons.close_rounded, size: 16),
                 label: const Text('Clear', style: TextStyle(fontSize: 13)),
@@ -489,7 +496,8 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
       owner: isContractor ? PhotoOwner.subContractor : PhotoOwner.client,
       id: id?.toString(),
       compact: true,
-      disabledReason: 'Pick the ${isContractor ? 'contractor' : 'company'} first',
+      disabledReason:
+          'Pick the ${isContractor ? 'contractor' : 'company'} first',
       note: name.isEmpty ? null : 'for $name',
     );
   }
@@ -528,7 +536,10 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
           if (rows.isEmpty)
             const Text(
               'No contact is recorded against them yet.',
-              style: TextStyle(fontSize: 13.5, color: SoftErpTheme.textSecondary),
+              style: TextStyle(
+                fontSize: 13.5,
+                color: SoftErpTheme.textSecondary,
+              ),
             )
           else
             for (final row in rows)
@@ -568,7 +579,10 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
                 child: Text(
                   'Read from their record, so one correction there fixes every '
                   'part developed for them.',
-                  style: TextStyle(fontSize: 12.5, color: SoftErpTheme.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: SoftErpTheme.textSecondary,
+                  ),
                 ),
               ),
               if (enabled)
@@ -652,8 +666,7 @@ class _DevelopedForFormState extends State<DevelopedForForm> {
               ),
               if (enabled)
                 TextButton(
-                  onPressed: () =>
-                      _emit(value.copyWith(at: DateTime.now())),
+                  onPressed: () => _emit(value.copyWith(at: DateTime.now())),
                   child: const Text('Now', style: TextStyle(fontSize: 13)),
                 ),
               if (enabled && at != null)

@@ -631,11 +631,14 @@ class ApiItemRepository implements ItemRepository {
     if (useMockResponses) {
       return const <ItemSetMembership>[];
     }
-    final response = await _client.get(Uri.parse('$baseUrl/api/items/$itemId/sets'));
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/items/$itemId/sets'),
+    );
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ItemApiException(
-        payload['error'] as String? ?? 'Failed to fetch the sets this part is in.',
+        payload['error'] as String? ??
+            'Failed to fetch the sets this part is in.',
         statusCode: response.statusCode,
       );
     }
@@ -664,7 +667,11 @@ class ApiItemRepository implements ItemRepository {
       final partNo = setPending ? 1 : highest + 1;
       return PartIdentitySuggestion(
         partNo: partNo,
-        partCode: buildPartCode(setName: setName, itemName: name, partNo: partNo),
+        partCode: buildPartCode(
+          setName: setName,
+          itemName: name,
+          partNo: partNo,
+        ),
         scope: setPending ? 'pending-set' : 'group-unfiled',
       );
     }
@@ -684,7 +691,8 @@ class ApiItemRepository implements ItemRepository {
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ItemApiException(
-        payload['error'] as String? ?? 'Failed to work out the next part number.',
+        payload['error'] as String? ??
+            'Failed to work out the next part number.',
         statusCode: response.statusCode,
       );
     }

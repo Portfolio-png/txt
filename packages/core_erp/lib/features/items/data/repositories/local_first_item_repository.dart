@@ -78,14 +78,18 @@ class LocalFirstItemRepository implements ItemRepository {
   Future<void> archiveItem(int id) => _wrote(_remote.archiveItem(id));
 
   @override
-  Future<ItemDefinition> createItem(CreateItemInput input) => _wrote(_remote.createItem(input));
+  Future<ItemDefinition> createItem(CreateItemInput input) =>
+      _wrote(_remote.createItem(input));
 
   @override
-  Future<ItemDefinition> updateItem(UpdateItemInput input) => _wrote(_remote.updateItem(input));
+  Future<ItemDefinition> updateItem(UpdateItemInput input) =>
+      _wrote(_remote.updateItem(input));
 
   @override
-  Future<ItemDefinition> saveSectionTree(int itemId, Map<String, String> tree) =>
-      _wrote(_remote.saveSectionTree(itemId, tree));
+  Future<ItemDefinition> saveSectionTree(
+    int itemId,
+    Map<String, String> tree,
+  ) => _wrote(_remote.saveSectionTree(itemId, tree));
 
   @override
   Future<ItemDefinition> updateShortCode(int id, String shortCode) =>
@@ -94,7 +98,8 @@ class LocalFirstItemRepository implements ItemRepository {
   // The replica holds no set tables at all, so this is remote like the sets
   // list itself.
   @override
-  Future<List<ItemSetMembership>> itemSets(int itemId) => _remote.itemSets(itemId);
+  Future<List<ItemSetMembership>> itemSets(int itemId) =>
+      _remote.itemSets(itemId);
 
   // Not answerable from the replica: the number counts across items, sets and
   // set membership, and a stale local copy would hand out a number already
@@ -122,14 +127,16 @@ class LocalFirstItemRepository implements ItemRepository {
       _wrote(_remote.reassignItemGroup(id, groupId));
 
   @override
-  Future<Uri> createCadFileReadUrl(int itemId) => _remote.createCadFileReadUrl(itemId);
+  Future<Uri> createCadFileReadUrl(int itemId) =>
+      _remote.createCadFileReadUrl(itemId);
 
   @override
   Future<Uri> createAttachmentReadUrl(int itemId, int attachmentId) =>
       _remote.createAttachmentReadUrl(itemId, attachmentId);
 
   @override
-  Future<List<ItemAsset>> getItemAssets(int itemId) => _remote.getItemAssets(itemId);
+  Future<List<ItemAsset>> getItemAssets(int itemId) =>
+      _remote.getItemAssets(itemId);
 
   @override
   Future<ItemAssetUploadIntent> createAssetUploadIntent(
@@ -141,16 +148,19 @@ class LocalFirstItemRepository implements ItemRepository {
       _wrote(_remote.completeAssetUpload(input));
 
   @override
-  Future<ItemAsset> setPrimaryAsset(int assetId) => _wrote(_remote.setPrimaryAsset(assetId));
+  Future<ItemAsset> setPrimaryAsset(int assetId) =>
+      _wrote(_remote.setPrimaryAsset(assetId));
 
   @override
   Future<void> deleteAsset(int assetId) => _wrote(_remote.deleteAsset(assetId));
 
   @override
-  Future<List<ItemUsageRecord>> getItemUsage(int itemId) => _remote.getItemUsage(itemId);
+  Future<List<ItemUsageRecord>> getItemUsage(int itemId) =>
+      _remote.getItemUsage(itemId);
 
   @override
-  Future<List<Map<String, String>>> getPipelineTemplates() => _remote.getPipelineTemplates();
+  Future<List<Map<String, String>>> getPipelineTemplates() =>
+      _remote.getPipelineTemplates();
 
   @override
   Future<Map<String, List<PipelineStageNode>>> getPipelineStageNodes() =>
@@ -195,10 +205,9 @@ class LocalFirstItemRepository implements ItemRepository {
   /// A write just went to the server: until the replica has applied it, reads
   /// of what it touched go to the network, or the refresh that follows a save
   /// shows the row as it was before.
-  Future<T> _wrote<T>(Future<T> write) =>
-      write.whenComplete(() {
-        for (final table in const <String>['local_items']) {
-          _reader.wrote(table);
-        }
-      });
+  Future<T> _wrote<T>(Future<T> write) => write.whenComplete(() {
+    for (final table in const <String>['local_items']) {
+      _reader.wrote(table);
+    }
+  });
 }

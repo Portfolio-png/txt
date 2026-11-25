@@ -12,6 +12,7 @@ class GroupDefinition {
     required this.parentGroupId,
     this.unitId,
     required this.isArchived,
+    this.systemKey,
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
@@ -43,6 +44,16 @@ class GroupDefinition {
   /// own default. Null when the group has no override.
   final ItemFormSections? itemFormSections;
   final bool isArchived;
+
+  /// Set only on a group the app ships — `raw_materials`,
+  /// `raw_materials.rivets`, `raw_materials.springs`. The server refuses to
+  /// delete, archive, rename or move one, and brings it back after a wipe.
+  /// Code that gives a group its own entry form keys on this, never the name.
+  final String? systemKey;
+
+  /// Whether this is one of the groups the app ships (see [systemKey]).
+  bool get isSystem => systemKey != null && systemKey!.isNotEmpty;
+
   final int usageCount;
 
   /// The items whose photos make up this group's card, best first. Empty unless

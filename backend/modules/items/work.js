@@ -24,6 +24,7 @@ const {
   nextPartNo,
 } = require('./part-identity');
 const { buildGroupOverview } = require('./group-overview');
+const { isSystemGroup } = require('./system-groups');
 const { validateSectionTree, reconcileSectionLinks } = require('./section-tree');
 const {
   coversByGroup,
@@ -810,6 +811,13 @@ function createItemsWork({
       if (!group) {
         return answer(404, { success: false, error: 'Not found' });
       }
+      if (isSystemGroup(group)) {
+        return answer(409, {
+          success: false,
+          code: 'system_group',
+          error: `"${group.name}" is a default group and cannot be archived.`,
+        });
+      }
       const usage = await get(`
         SELECT
           (SELECT COUNT(*) FROM groups WHERE parent_group_id = ? AND is_archived = 0) AS childGroups,
@@ -901,7 +909,11 @@ function createItemsWork({
       req.track('delete', 'groups', id, before);
       return answer(200, { success: true, error: null });
     } catch (error) {
-      return answer(500, { success: false, error: error.message });
+      return answer(error.statusCode || 500, {
+        success: false,
+        ...(error.code ? { code: error.code } : {}),
+        error: error.message,
+      });
     }
   }
 

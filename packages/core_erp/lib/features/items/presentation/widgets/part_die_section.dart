@@ -14,7 +14,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../../core/utils/stamp_format.dart';
-import '../../../../core/widgets/app_button.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
@@ -214,8 +214,7 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// Anything typed or picked since the form was last cleared, or a die
   /// open for correcting: something Tab past the form should ask about.
   bool get _hasTyped =>
-      _unlinkedDieId != null ||
-      _snapshot() != (_clean ??= _snapshot());
+      _unlinkedDieId != null || _snapshot() != (_clean ??= _snapshot());
 
   /// What the host was last told.
   bool _reportedDirty = false;
@@ -830,235 +829,249 @@ class _PartDieSectionState extends State<PartDieSection> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-            _formStep(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _typeRow(enabled),
-                  const SizedBox(height: 10),
-                  // Each field as wide as what it holds, side by side, wrapping only
-                  // when the row is full — not a stack of page-wide bars.
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 12,
-                    crossAxisAlignment: WrapCrossAlignment.start,
-                    children: [
-                      SheetStyle.labelled(
-                        label: 'Die Code',
-                        child: FitToText(
-                          controller: _codeController,
-                          heading: 'Die Code',
-                          helper: _codeHelper(),
-                          minWidth: 180,
-                          child: TextField(
-                            key: const ValueKey<String>(
-                              'quick-entry-die-code-field',
+                  _formStep(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _typeRow(enabled),
+                        const SizedBox(height: 10),
+                        // Each field as wide as what it holds, side by side, wrapping only
+                        // when the row is full — not a stack of page-wide bars.
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 12,
+                          crossAxisAlignment: WrapCrossAlignment.start,
+                          children: [
+                            SheetStyle.labelled(
+                              label: 'Die Code',
+                              child: FitToText(
+                                controller: _codeController,
+                                heading: 'Die Code',
+                                helper: _codeHelper(),
+                                minWidth: 180,
+                                child: TextField(
+                                  key: const ValueKey<String>(
+                                    'quick-entry-die-code-field',
+                                  ),
+                                  controller: _codeController,
+                                  enabled: enabled,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  onChanged: (_) =>
+                                      setState(() => _codePinned = true),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  decoration: SheetStyle.field(
+                                    helper: _codeHelper(),
+                                  ),
+                                ),
+                              ),
                             ),
-                            controller: _codeController,
-                            enabled: enabled,
-                            textCapitalization: TextCapitalization.characters,
-                            onChanged: (_) =>
-                                setState(() => _codePinned = true),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                            SheetStyle.labelled(
+                              label: 'Die Made By',
+                              child: FitToText(
+                                dropdown: true,
+                                controller: _madeByController,
+                                heading: 'Die Made By',
+                                helper:
+                                    'Whoever cut it — a fitter here, or an outside toolroom',
+                                minWidth: 240,
+                                chrome:
+                                    84, // padding, the arrow (48), the border
+                                child: _madeByField(enabled),
+                              ),
                             ),
-                            decoration: SheetStyle.field(helper: _codeHelper()),
-                          ),
+                            SheetStyle.labelled(
+                              label: 'Liner Size',
+                              // As wide as the figure, beside its unit picker.
+                              // The figure is a dropdown: its padding, arrow
+                              // and border (84, as Die Made By) — with 30 for
+                              // padding alone a typed 45.8 showed as "4…" (user,
+                              // 2026-11-24).
+                              child: FitToText(
+                                dropdown: true,
+                                controller: _linerController,
+                                texts: const ['0.000'],
+                                chrome: 84 + 8 + unitPickerWidth,
+                                minWidth: 200,
+                                maxWidth: 360,
+                                child: LengthUnitField(
+                                  fieldKey: const ValueKey<String>(
+                                    'quick-entry-die-liner-field',
+                                  ),
+                                  unitKey: const ValueKey<String>(
+                                    'quick-entry-die-liner-unit',
+                                  ),
+                                  controller: _linerController,
+                                  unitSymbol: _linerUnit,
+                                  enabled: enabled,
+                                  label: 'Liner Size',
+                                  floatLabel: false,
+                                  helperText: 'Optional',
+                                  decoration: SheetStyle.field(),
+                                  errorText: _linerError,
+                                  suggestions: _linerSuggestions,
+                                  onUnitChanged: (symbol) => setState(() {
+                                    _linerUnit = symbol;
+                                    _linerError = null;
+                                  }),
+                                  onChanged: () =>
+                                      setState(() => _linerError = null),
+                                ),
+                              ),
+                            ),
+                            // How many sets, and the pieces each makes a stroke: one pair.
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _pick(
+                                  slug: 'sets',
+                                  label: 'No. of Sets',
+                                  controller: _setsController,
+                                  options: _suggestions.noOfSets,
+                                  enabled: enabled,
+                                  numeric: true,
+                                ),
+                                const SizedBox(width: 10),
+                                _pick(
+                                  slug: 'cavity',
+                                  label: 'Cavity',
+                                  controller: _cavityController,
+                                  options: _suggestions.cavities,
+                                  enabled: enabled,
+                                  numeric: true,
+                                ),
+                              ],
+                            ),
+                            // Where the die is kept reads as one place — area, then
+                            // rack — so the two never wrap apart.
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _pick(
+                                  slug: 'area',
+                                  label: 'Store Area',
+                                  controller: _storeAreaController,
+                                  options: _suggestions.storeAreas,
+                                  enabled: enabled,
+                                ),
+                                const SizedBox(width: 10),
+                                _pick(
+                                  slug: 'rack',
+                                  label: 'Rack No.',
+                                  controller: _rackController,
+                                  options: _suggestions.rackNos,
+                                  enabled: enabled,
+                                ),
+                              ],
+                            ),
+                            // The paper sheet calls these "PO-Date" and "Date in", which
+                            // name the columns without saying what they are: the first is
+                            // when the die was ORDERED from the maker, the second when the
+                            // made die ARRIVED.
+                            _momentField(
+                              slug: 'po',
+                              label: 'Ordered (PO)',
+                              value: _poAt,
+                              enabled: enabled,
+                              onPicked: (value) =>
+                                  setState(() => _poAt = value),
+                              onCleared: () => setState(() => _poAt = null),
+                            ),
+                            _momentField(
+                              slug: 'date-in',
+                              label: 'Arrived',
+                              value: _dateInAt,
+                              enabled: enabled,
+                              onPicked: (value) =>
+                                  setState(() => _dateInAt = value),
+                              onCleared: () => setState(() => _dateInAt = null),
+                            ),
+                          ],
                         ),
-                      ),
-                      SheetStyle.labelled(
-                        label: 'Die Made By',
-                        child: FitToText(
-                          dropdown: true,
-                          controller: _madeByController,
-                          heading: 'Die Made By',
-                          helper:
-                              'Whoever cut it — a fitter here, or an outside toolroom',
-                          minWidth: 240,
-                          chrome: 84, // padding, the arrow (48), the border
-                          child: _madeByField(enabled),
-                        ),
-                      ),
-                      SheetStyle.labelled(
-                        label: 'Liner Size',
-                        // As wide as the figure, beside its unit picker.
-                        // The figure is a dropdown: its padding, arrow
-                        // and border (84, as Die Made By) — with 30 for
-                        // padding alone a typed 45.8 showed as "4…" (user,
-                        // 2026-11-24).
-                        child: FitToText(
-                          dropdown: true,
-                          controller: _linerController,
-                          texts: const ['0.000'],
-                          chrome: 84 + 8 + unitPickerWidth,
-                          minWidth: 200,
-                          maxWidth: 360,
-                          child: LengthUnitField(
-                            fieldKey: const ValueKey<String>(
-                              'quick-entry-die-liner-field',
-                            ),
-                            unitKey: const ValueKey<String>(
-                              'quick-entry-die-liner-unit',
-                            ),
-                            controller: _linerController,
-                            unitSymbol: _linerUnit,
-                            enabled: enabled,
-                            label: 'Liner Size',
-                            floatLabel: false,
-                            helperText: 'Optional',
-                            decoration: SheetStyle.field(),
-                            errorText: _linerError,
-                            suggestions: _linerSuggestions,
-                            onUnitChanged: (symbol) => setState(() {
-                              _linerUnit = symbol;
-                              _linerError = null;
-                            }),
-                            onChanged: () => setState(() => _linerError = null),
-                          ),
-                        ),
-                      ),
-                      // How many sets, and the pieces each makes a stroke: one pair.
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _pick(
-                            slug: 'sets',
-                            label: 'No. of Sets',
-                            controller: _setsController,
-                            options: _suggestions.noOfSets,
-                            enabled: enabled,
-                            numeric: true,
-                          ),
-                          const SizedBox(width: 10),
-                          _pick(
-                            slug: 'cavity',
-                            label: 'Cavity',
-                            controller: _cavityController,
-                            options: _suggestions.cavities,
-                            enabled: enabled,
-                            numeric: true,
-                          ),
-                        ],
-                      ),
-                      // Where the die is kept reads as one place — area, then
-                      // rack — so the two never wrap apart.
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _pick(
-                            slug: 'area',
-                            label: 'Store Area',
-                            controller: _storeAreaController,
-                            options: _suggestions.storeAreas,
-                            enabled: enabled,
-                          ),
-                          const SizedBox(width: 10),
-                          _pick(
-                            slug: 'rack',
-                            label: 'Rack No.',
-                            controller: _rackController,
-                            options: _suggestions.rackNos,
-                            enabled: enabled,
-                          ),
-                        ],
-                      ),
-                      // The paper sheet calls these "PO-Date" and "Date in", which
-                      // name the columns without saying what they are: the first is
-                      // when the die was ORDERED from the maker, the second when the
-                      // made die ARRIVED.
-                      _momentField(
-                        slug: 'po',
-                        label: 'Ordered (PO)',
-                        value: _poAt,
-                        enabled: enabled,
-                        onPicked: (value) => setState(() => _poAt = value),
-                        onCleared: () => setState(() => _poAt = null),
-                      ),
-                      _momentField(
-                        slug: 'date-in',
-                        label: 'Arrived',
-                        value: _dateInAt,
-                        enabled: enabled,
-                        onPicked: (value) => setState(() => _dateInAt = value),
-                        onCleared: () => setState(() => _dateInAt = null),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.warningText,
-                ),
-              ),
-            ],
-            if (_notice != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _notice!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: SoftErpTheme.textSecondary,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            SheetStep.noTab(
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  // While any die is held, the part's own Save part sits here
-                  // (it was in each held die's row): saving the part writes
-                  // the held dies with it.
-                  if (widget.staged.isNotEmpty && widget.heldSaveBuilder != null) ...[
-                    widget.heldSaveBuilder!(
-                      _editingStagedIndex != null &&
-                              _editingStagedIndex! < widget.staged.length
-                          ? _editingStagedIndex!
-                          : 0,
+                      ],
                     ),
-                    const SizedBox(width: 8),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _error!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: SoftErpTheme.warningText,
+                      ),
+                    ),
                   ],
-                  if (editing != null || _editingStagedIndex != null)
-                    TextButton(
-                      key: const ValueKey<String>('quick-entry-die-cancel'),
-                      onPressed: enabled ? () => setState(_resetSheet) : null,
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(fontSize: 14),
+                  if (_notice != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _notice!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: SoftErpTheme.textSecondary,
                       ),
                     ),
-                  const SizedBox(width: 8),
-                  AppButton(
-                    key: const ValueKey<String>('quick-entry-add-die'),
-                    label: _unlinkedDieId != null
-                        ? 'Attach the die'
-                        : (editing != null || _editingStagedIndex != null
-                              ? 'Save die'
-                              : (holding ? 'Hold die' : 'Add die')),
-                    icon: Icons.precision_manufacturing_outlined,
-                    // Secondary, like every write on this screen: Cmd/Ctrl+Enter
-                    // fires the last enabled PRIMARY button in the tree, and that
-                    // must stay Done.
-                    variant: AppButtonVariant.secondary,
-                    // The size of Save part and Save contact: one Save size.
-                    dense: true,
-                    isLoading: _saving,
-                    onPressed: enabled ? _saveDie : null,
+                  ],
+                  const SizedBox(height: 12),
+                  SheetStep.noTab(
+                    SheetSaveRow(
+                      // At the sheet's save column, under Save Part.
+                      children: [
+                        // While any die is held, the part's own Save part sits here
+                        // (it was in each held die's row): saving the part writes
+                        // the held dies with it.
+                        if (widget.staged.isNotEmpty &&
+                            widget.heldSaveBuilder != null) ...[
+                          widget.heldSaveBuilder!(
+                            _editingStagedIndex != null &&
+                                    _editingStagedIndex! < widget.staged.length
+                                ? _editingStagedIndex!
+                                : 0,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        if (editing != null || _editingStagedIndex != null)
+                          TextButton(
+                            key: const ValueKey<String>(
+                              'quick-entry-die-cancel',
+                            ),
+                            onPressed: enabled
+                                ? () => setState(_resetSheet)
+                                : null,
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        SheetSaveButton(
+                          buttonKey: const ValueKey<String>(
+                            'quick-entry-add-die',
+                          ),
+                          // One label in every state (owner, 2026-11-25: "instead of
+                          // Add die … show Save Die"); what the save does when
+                          // there is no part yet, or when it links one on file, is
+                          // in the tooltip.
+                          label: 'Save Die',
+                          tooltip: _unlinkedDieId != null
+                              ? 'Attaches this die to the part'
+                              : (holding &&
+                                        editing == null &&
+                                        _editingStagedIndex == null
+                                    ? 'Kept with the part: written when the part is saved'
+                                    : null),
+                          isLoading: _saving,
+                          onPressed: enabled ? _saveDie : null,
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
                 ],
               ),
             ),
@@ -1075,7 +1088,8 @@ class _PartDieSectionState extends State<PartDieSection> {
   /// about to write), then the part's, then "New die" while the form is blank.
   Widget _dieTabs(bool enabled, Widget form) {
     final staged = widget.staged;
-    final held = _editingStagedIndex != null && _editingStagedIndex! < staged.length
+    final held =
+        _editingStagedIndex != null && _editingStagedIndex! < staged.length
         ? _editingStagedIndex
         : null;
     final savedAt = _editingDieId == null
@@ -1090,7 +1104,12 @@ class _PartDieSectionState extends State<PartDieSection> {
         TabSpec(
           key: staged[i],
           title: titleOf(staged[i].toolCode, 'Held die ${i + 1}'),
-          code: DieTypeChoice.fromStored(staged[i].dieType, staged[i].dieTypeLabel)?.label ?? '',
+          code:
+              DieTypeChoice.fromStored(
+                staged[i].dieType,
+                staged[i].dieTypeLabel,
+              )?.label ??
+              '',
           closeWhy: enabled ? null : busy,
           closeTip: 'Drop this held die — nothing was written for it',
           keyName: 'die_tab_held_$i',
@@ -1099,7 +1118,9 @@ class _PartDieSectionState extends State<PartDieSection> {
         TabSpec(
           key: 'die:${die.id}',
           title: titleOf(die.toolCode, 'Die ${die.id}'),
-          code: DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label ?? '',
+          code:
+              DieTypeChoice.fromStored(die.dieType, die.dieTypeLabel)?.label ??
+              '',
           saved: true,
           closeWhy: enabled ? null : busy,
           closeTip: 'Take off this part — the die stays in the dies master',
@@ -1116,7 +1137,8 @@ class _PartDieSectionState extends State<PartDieSection> {
           keyName: 'die_tab_new',
         ),
     ];
-    final selected = held ?? (savedAt >= 0 ? staged.length + savedAt : tabs.length - 1);
+    final selected =
+        held ?? (savedAt >= 0 ? staged.length + savedAt : tabs.length - 1);
     void open(int i) {
       if (i < staged.length) {
         _editStaged(i);
@@ -1322,7 +1344,6 @@ class _PartDieSectionState extends State<PartDieSection> {
     return 'Built from the type and this part: ${widget.partCode}';
   }
 
-
   /// Asks for a die type in the shop's own words.
   ///
   /// The four built-ins are the common ones, not the only ones — a press shop
@@ -1357,9 +1378,7 @@ class _PartDieSectionState extends State<PartDieSection> {
       flow: widget.flow,
       id: PartDieSection.step,
       actions: SheetStepActions(
-        title: () => _editingDieId != null || _editingStagedIndex != null
-            ? 'Save this die?'
-            : (widget.part == null ? 'Hold this die?' : 'Add this die?'),
+        title: () => 'Save this die?',
         isDirty: () => _hasTyped,
         blockedReason: () {
           if (_type == null) return 'Pick a type — the code is built from it.';

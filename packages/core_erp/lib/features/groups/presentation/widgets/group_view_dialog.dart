@@ -9,6 +9,14 @@ import '../../domain/group_overview.dart';
 import '../providers/groups_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../raw_materials/data/rivet_repository.dart';
+import '../../../raw_materials/domain/rivet.dart';
+import '../../../raw_materials/presentation/rivet_form_dialog.dart';
+import '../../../raw_materials/presentation/rivets_section.dart';
+import '../../../raw_materials/data/spring_repository.dart';
+import '../../../raw_materials/domain/spring.dart';
+import '../../../raw_materials/presentation/spring_form_dialog.dart';
+import '../../../raw_materials/presentation/springs_section.dart';
 
 /// What a group is, rather than how to change it.
 ///
@@ -46,10 +54,7 @@ Future<void> showGroupViewDialog(
           child: Padding(
             padding: const EdgeInsets.only(top: 12, right: 12, bottom: 12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 560,
-                minWidth: 420,
-              ),
+              constraints: const BoxConstraints(maxWidth: 560, minWidth: 420),
               child: _GroupViewSheet(
                 group: group,
                 onEdit: onEdit,
@@ -93,10 +98,103 @@ class _GroupViewSheetState extends State<_GroupViewSheet> {
   bool _loading = true;
   String? _error;
 
+  /// Raw Materials › Rivets has its own form: an Add rivet button and the
+  /// rivets listed with their codes and vendors. Keyed on the group's
+  /// system key, never its name.
+  bool get _isRivets => widget.group.systemKey == rivetsGroupSystemKey;
+  List<RivetDefinition>? _rivets;
+  String? _rivetsError;
+
+  /// Raw Materials › Springs, the same way: Add spring and the springs.
+  bool get _isSprings => widget.group.systemKey == springsGroupSystemKey;
+  List<SpringDefinition>? _springs;
+  String? _springsError;
+
+  /// Either raw-material form: its Add is the window's main action.
+  bool get _isRawForm => _isRivets || _isSprings;
+
   @override
   void initState() {
     super.initState();
     _load();
+    if (_isRivets) _loadRivets();
+    if (_isSprings) _loadSprings();
+  }
+
+  Future<void> _loadSprings() async {
+    SpringRepository? repository;
+    try {
+      repository = context.read<SpringRepository>();
+    } on ProviderNotFoundException {
+      setState(
+        () => _springsError = 'Springs are not available in this window.',
+      );
+      return;
+    }
+    try {
+      final springs = await repository.list();
+      if (!mounted) return;
+      setState(() {
+        _springs = springs;
+        _springsError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _springsError = 'Could not load the springs: $error');
+    }
+  }
+
+  Future<void> _openSpringForm([SpringDefinition? spring]) async {
+    final saved = await SpringFormDialog.open(context, spring: spring);
+    if (saved == null || !mounted) return;
+    await Future.wait<void>(<Future<void>>[_loadSprings(), _load()]);
+    if (!mounted) return;
+    try {
+      await context.read<ItemsProvider>().refresh();
+    } on ProviderNotFoundException {
+      // A window without the items list has nothing to refresh.
+    }
+  }
+
+  RivetRepository? get _rivetRepository {
+    try {
+      return context.read<RivetRepository>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  Future<void> _loadRivets() async {
+    final repository = _rivetRepository;
+    if (repository == null) {
+      setState(() => _rivetsError = 'Rivets are not available in this window.');
+      return;
+    }
+    try {
+      final rivets = await repository.list();
+      if (!mounted) return;
+      setState(() {
+        _rivets = rivets;
+        _rivetsError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _rivetsError = 'Could not load the rivets: $error');
+    }
+  }
+
+  /// Opens the rivet form; after a save, the rivets, the group's items and
+  /// the items list all show it.
+  Future<void> _openRivetForm([RivetDefinition? rivet]) async {
+    final saved = await RivetFormDialog.open(context, rivet: rivet);
+    if (saved == null || !mounted) return;
+    await Future.wait<void>(<Future<void>>[_loadRivets(), _load()]);
+    if (!mounted) return;
+    try {
+      await context.read<ItemsProvider>().refresh();
+    } on ProviderNotFoundException {
+      // A window without the items list has nothing to refresh.
+    }
   }
 
   Future<void> _load() async {
@@ -143,6 +241,32 @@ class _GroupViewSheetState extends State<_GroupViewSheet> {
             )
           : overview == null
           ? const SizedBox.shrink()
+          : _isRivets
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                RivetsSection(
+                  rivets: _rivets,
+                  error: _rivetsError,
+                  onOpen: _openRivetForm,
+                ),
+                const SizedBox(height: 16),
+                _Body(overview: overview, onOpenGroup: widget.onOpenGroup),
+              ],
+            )
+          : _isSprings
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SpringsSection(
+                  springs: _springs,
+                  error: _springsError,
+                  onOpen: _openSpringForm,
+                ),
+                const SizedBox(height: 16),
+                _Body(overview: overview, onOpenGroup: widget.onOpenGroup),
+              ],
+            )
           : _Body(overview: overview, onOpenGroup: widget.onOpenGroup),
       footer: Row(
         children: <Widget>[
@@ -152,10 +276,32 @@ class _GroupViewSheetState extends State<_GroupViewSheet> {
             variant: AppButtonVariant.secondary,
             onPressed: () => Navigator.of(context).pop(),
           ),
+          if (_isRivets) ...<Widget>[
+            const SizedBox(width: 12),
+            AppButton(
+              key: const ValueKey<String>('group-add-rivet'),
+              label: 'Add rivet',
+              icon: Icons.add_rounded,
+              onPressed: () => _openRivetForm(),
+            ),
+          ],
+          if (_isSprings) ...<Widget>[
+            const SizedBox(width: 12),
+            AppButton(
+              key: const ValueKey<String>('group-add-spring'),
+              label: 'Add spring',
+              icon: Icons.add_rounded,
+              onPressed: () => _openSpringForm(),
+            ),
+          ],
           if (widget.onEdit != null) ...<Widget>[
             const SizedBox(width: 12),
             AppButton(
               label: 'Edit Group',
+              // On Rivets and Springs, their Add is the main action.
+              variant: _isRawForm
+                  ? AppButtonVariant.secondary
+                  : AppButtonVariant.primary,
               icon: Icons.edit_outlined,
               onPressed: () async {
                 Navigator.of(context).pop();
@@ -784,7 +930,9 @@ class _ComponentWorkflowTable extends StatelessWidget {
               padding: const EdgeInsets.only(top: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: items.map((item) => _WorkflowItemHierarchy(item: item)).toList(),
+                children: items
+                    .map((item) => _WorkflowItemHierarchy(item: item))
+                    .toList(),
               ),
             ),
     );
@@ -793,7 +941,7 @@ class _ComponentWorkflowTable extends StatelessWidget {
 
 class _WorkflowItemHierarchy extends StatelessWidget {
   const _WorkflowItemHierarchy({required this.item});
-  
+
   final ItemDefinition item;
 
   @override
@@ -825,7 +973,7 @@ class _WorkflowItemHierarchy extends StatelessWidget {
               ),
             ),
           ),
-          
+
           if (hasPipeline || hasAttachments)
             _WorkflowTimelineNode(
               icon: Icons.route_outlined,
@@ -833,7 +981,9 @@ class _WorkflowItemHierarchy extends StatelessWidget {
               content: Text(
                 hasPipeline ? item.defaultPipelineName!.trim() : 'Unrouted',
                 style: TextStyle(
-                  color: hasPipeline ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
+                  color: hasPipeline
+                      ? SoftErpTheme.textPrimary
+                      : SoftErpTheme.textSecondary,
                   fontSize: 13,
                   fontWeight: hasPipeline ? FontWeight.w600 : FontWeight.w400,
                   fontStyle: hasPipeline ? FontStyle.normal : FontStyle.italic,
@@ -918,17 +1068,21 @@ class _AttachmentList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: items.map((name) => Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
-          name,
-          style: const TextStyle(
-            color: SoftErpTheme.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      )).toList(),
+      children: items
+          .map(
+            (name) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                name,
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 }

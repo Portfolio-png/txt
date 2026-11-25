@@ -12,7 +12,7 @@ import '../../domain/sheet_property.dart';
 /// another window arrives as `item_sheet_properties_changed`.
 class SheetPropertiesProvider extends ChangeNotifier {
   SheetPropertiesProvider({required SheetPropertyRepository repository})
-      : _repository = repository {
+    : _repository = repository {
     SocketService.instance.on('item_sheet_properties_changed', _onRemoteChange);
   }
 
@@ -66,7 +66,11 @@ class SheetPropertiesProvider extends ChangeNotifier {
     List<String> options = const [],
   }) async {
     try {
-      final made = await _repository.create(name: name, kind: kind, options: options);
+      final made = await _repository.create(
+        name: name,
+        kind: kind,
+        options: options,
+      );
       _put(made);
       // The server answered, so the read that failed earlier can be had now —
       // and with it the columns this window never saw.
@@ -101,7 +105,10 @@ class SheetPropertiesProvider extends ChangeNotifier {
   Future<bool> remove(int id) async {
     try {
       await _repository.remove(id);
-      _properties = [for (final p in _properties) if (p.id != id) p];
+      _properties = [
+        for (final p in _properties)
+          if (p.id != id) p,
+      ];
       _notify();
       return true;
     } catch (error) {
@@ -123,7 +130,8 @@ class SheetPropertiesProvider extends ChangeNotifier {
   void _put(SheetProperty property) {
     final at = _properties.indexWhere((p) => p.id == property.id);
     _properties = at < 0
-        ? ([..._properties, property]..sort((a, b) => a.position.compareTo(b.position)))
+        ? ([..._properties, property]
+            ..sort((a, b) => a.position.compareTo(b.position)))
         : [for (final p in _properties) p.id == property.id ? property : p];
     _errorMessage = null;
     _notify();
@@ -142,7 +150,10 @@ class SheetPropertiesProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    SocketService.instance.off('item_sheet_properties_changed', _onRemoteChange);
+    SocketService.instance.off(
+      'item_sheet_properties_changed',
+      _onRemoteChange,
+    );
     super.dispose();
   }
 }
