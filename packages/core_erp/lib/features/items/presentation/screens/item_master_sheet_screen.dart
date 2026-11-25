@@ -3692,8 +3692,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     final conflictError = errors.values
         .where(
           (e) =>
-              e.code == 'seq_used' ||
-              e.code == 'duplicate_item' ||
               e.code == 'code_used',
         )
         .firstOrNull;
@@ -3716,19 +3714,12 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       } catch (_) {}
     }
 
-    // Determine next available Part No if there is a sequence conflict
+    // The next Part No, offered for an existing part. A Part No already used
+    // is no conflict on its own (owner, 2026-11-25): it is a die generation,
+    // not a key.
     int? nextPartNo;
-    if (conflictError != null && conflictError.code == 'seq_used') {
-      final match = RegExp(
-        r'The last one is (\d+)',
-      ).firstMatch(conflictError.message);
-      if (match != null) {
-        final last = int.tryParse(match.group(1) ?? '');
-        if (last != null) nextPartNo = last + 1;
-      }
-    }
     final existNo = existingPart?.partNo;
-    if (nextPartNo == null && existNo != null) {
+    if (existNo != null) {
       final seqCol = sheet.sheetDef.columns
           .where((c) => c.kind == ColumnKind.seq)
           .firstOrNull;

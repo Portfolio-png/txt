@@ -414,30 +414,14 @@ function createSave(deps, api) {
         };
     }
 
-    // Another Alloy or Thickness under the same name is another part (B):
-    // the duplicate is the same name AND the same alloy and thickness.
-    const duplicate = await findItemDuplicate({
-      name: trimmedName,
-      groupId: normalizedGroupId,
-      unitId: normalizedUnitId,
-      excludeId: id,
-      identity: partIdentity.identityOfTree(variationTree),
-    });
-    if (duplicate) {
-      // Named rather than generic, because the rule surprises people: the key is
-      // name + group + unit + alloy + thickness, and the SET is not in it.
-      // Someone filing "Patti" under Dolly and again under Chakri reads the type
-      // as the thing that tells them apart, and it is not.
-      const described = partIdentity.describeIdentity(variationTree);
-      const error = new Error(
-        `"${trimmedName}"${described ? ` with ${described}` : ''} already exists in this group. ` +
-          'A part with the same name needs at least one property that differs (alloy, thickness or any other), even across types — ' +
-          'change one, or pick the existing part from the list.',
-      );
-      error.statusCode = 409;
-      error.code = 'item_name_duplicate';
-      throw error;
-    }
+    // Duplicates are ALLOWED for now (owner, 2026-11-25: "allow user for
+    // duplicates, I'll collect data and then observe for difference and then
+    // we will restrict rules"). Two parts with the same name and the same
+    // properties — a new die for the same Patti, say — both save. The sheet
+    // tells the user when one matches a part already on file; it does not
+    // stop them. The rule this replaced refused name + alloy + thickness (and
+    // later any property) with 409 item_name_duplicate; findItemDuplicate is
+    // kept for when it comes back. The Part CODE stays unique per group.
 
     // Checked here so the refusal can name the part that holds the code; the
     // unique index below is the real guard and catches the race this cannot.
@@ -542,6 +526,36 @@ function createSave(deps, api) {
           autoPartCode = candidateCode;
           break;
         }
+      }
+    } else if (id == null && normalizedPartNo != null && partCode === undefined) {
+      // A number was given and the code was not: the code is built from THAT
+      // number (owner, 2026-11-25 — Part No is the die generation a part was
+      // made from, "not uniqueness", so the shop sets it). Without this the
+      // part was saved with no code, and the sheet stopped sending a typed
+      // number. A code another part holds is left off rather than refusing
+      // the create — an automatic code must never block a save.
+      const valueCodes = [];
+      for (const property of sanitizedTree) {
+        const value = (property?.children || [])[0];
+        if (!value) continue;
+        const explicit = String(value.code || '').trim();
+        const code = explicit || propertyCodeFor(value.name);
+        if (code) valueCodes.push(code);
+      }
+      const lineage = await groupLineage(normalizedGroupId, { get });
+      const candidateCode = buildVariantPartCode({
+        groupName: lineage.slice(0, -1).join(' '),
+        setName: lineage.length ? lineage[lineage.length - 1] : '',
+        itemName: trimmedName,
+        valueCodes,
+        partNo: normalizedPartNo,
+      });
+      if (candidateCode) {
+        const taken = await get(
+          'SELECT id FROM items WHERE group_id = ? AND part_code = ?',
+          [normalizedGroupId, candidateCode],
+        );
+        if (!taken) autoPartCode = candidateCode;
       }
     } else if (id == null && partNo === undefined && normalizedPartCode) {
       // A code was typed and the number was not: the code is the caller's, the

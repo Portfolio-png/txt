@@ -383,10 +383,11 @@ void main() {
       expect(groupRepo.created, isEmpty);
     });
 
-    test('a typed code is sent alone; a number alone is not', () async {
+    test('a typed code is sent alone, and so is a typed number', () async {
       // A code typed without a number is the user's code — the server keeps
-      // it and stamps the number. A number alone would leave the part with
-      // no code at all, so nothing is said and the server stamps both.
+      // it and stamps the number. A number typed without a code is the
+      // shop's too (owner, 2026-11-25: Part No is the die generation a part
+      // was made from): sent alone, the server builds the code from it.
       final h = _harness();
       final groups = GroupsProvider(repository: h.groupRepo);
       await groups.refresh();
@@ -412,14 +413,11 @@ void main() {
       expect(created[2].partCode, 'SADP50', reason: 'the typed code was dropped');
       expect(created[2].partNo, isNull, reason: 'the server stamps the number');
 
-      for (final partial in [created[1], created[3]]) {
-        expect(partial.partNo, isNull);
-        expect(
-          partial.partCode,
-          isNull,
-          reason: 'half an identity must become none, so the server stamps',
-        );
-      }
+      expect(created[1].partNo, 49, reason: 'the number typed, kept');
+      expect(created[1].partCode, isNull, reason: 'the server builds it from the number');
+
+      expect(created[3].partNo, isNull, reason: 'nothing typed: the server stamps both');
+      expect(created[3].partCode, isNull);
     });
 
     test('the recipe columns become variation properties with the right types',

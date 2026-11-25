@@ -28,6 +28,7 @@ import 'dart:convert';
 import 'package:core_erp/core/network/sitting_scope.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 import 'package:core_erp/sheet/sheet.dart';
+import 'package:core_erp/features/items/presentation/widgets/existing_part_conflict_dialog.dart';
 import 'package:core_erp/core/widgets/pick_or_type_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1614,6 +1615,74 @@ void main() {
         );
       },
     );
+
+    // Owner, 2026-11-25: "Part No 1 is already used within action › dolly ›
+    // patti. The last one is 1 — here in this second instance alloy was
+    // changed, then also it was hard to save it."
+    testWidgets('another alloy on an opened Patti, "Make a new part": it takes the next Part No and saves', (
+      tester,
+    ) async {
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        variationTree: [
+          ItemVariationNodeDefinition(
+            id: 10,
+            itemId: 500,
+            parentNodeId: null,
+            kind: ItemVariationNodeKind.property,
+            name: 'Alloy',
+            displayName: 'Alloy',
+            inputType: 'Material',
+            position: 0,
+            isArchived: false,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+            children: [
+              ItemVariationNodeDefinition(
+                id: 11,
+                itemId: 500,
+                parentNodeId: 10,
+                kind: ItemVariationNodeKind.value,
+                name: 'Brass',
+                displayName: 'Brass',
+                position: 0,
+                isArchived: false,
+                createdAt: DateTime(2026),
+                updatedAt: DateTime(2026),
+                children: const [],
+              ),
+            ],
+          ),
+        ],
+      );
+      final repo = _FakeItemRepository([patti]);
+      await _pumpScreen(tester, initialItems: [patti], repository: repo, size: const Size(1700, 3200));
+      final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+      final alloy = sheet.sheetDef.columnBoundTo(SheetBindsTo.variation('Alloy'))!;
+      // Opened for editing, as a person does, then another alloy.
+      await tester.ensureVisible(find.byKey(const ValueKey('row_edit_0')));
+      await tester.tap(find.byKey(const ValueKey('row_edit_0')));
+      await tester.pump();
+      sheet.updateValue(alloy.id, CellValue(columnId: alloy.id, optionLabel: 'Steel', textValue: 'Steel'));
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      expect(find.byKey(const Key('identity_make_new_part')), findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('identity_make_new_part')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+      expect(repo.created, hasLength(1), reason: 'the second Patti is saved, first time');
+      expect(repo.created.single.partNo, anyOf(isNull, 49),
+          reason: 'the next number, or none for the server to stamp — never the opened one\'s 48');
+    });
 
     testWidgets(
       'a property can be cleared on its line, and the save takes it off',
@@ -3444,6 +3513,68 @@ void main() {
       for (final column in PartRowsForm.lineColumns(sheet.sheetDef))
         'cell_item_${row}_${column.id}',
     ];
+
+    // Owner, 2026-11-25: Part No is a die generation, not a key ("part number
+    // has nothing to do with uniqueness"). A second Patti (another alloy) on
+    // the number the first one has is saved with that number — no error, no
+    // dialog, nothing changed behind the user's back.
+    Future<SheetController> secondPatti(WidgetTester tester, _FakeItemRepository repo) async {
+      final sheet = await openNew(tester, repo: repo);
+      final def = sheet.sheetDef;
+      final group = def.groupColumn!;
+      final trunk = sheet.options.firstWhere(
+        (o) => o.columnId == group.id && o.label.toLowerCase().contains('switch'),
+      );
+      sheet.updateValue(group.id, CellValue(columnId: group.id, optionId: trunk.id, optionLabel: trunk.label));
+      final type = def.columns.firstWhere((c) => c.parentId == group.id);
+      final dolly = sheet.options.firstWhere(
+        (o) => o.columnId == type.id && o.parentOptionId == trunk.id && o.label == 'Dolly',
+      );
+      sheet.updateValue(type.id, CellValue(columnId: type.id, optionId: dolly.id, optionLabel: dolly.label));
+      final name = def.itemColumn!;
+      final patti = sheet.options.firstWhere((o) => o.columnId == name.id && o.label == 'Patti');
+      sheet.updateValue(name.id, CellValue(columnId: name.id, optionId: patti.id, optionLabel: 'Patti'));
+      final alloy = def.columnBoundTo(SheetBindsTo.variation('Alloy'))!;
+      sheet.updateValue(alloy.id, CellValue(columnId: alloy.id, optionLabel: 'Steel', textValue: 'Steel'));
+      // The number the first Patti has, in the box as if typed.
+      final partNo = def.columnBoundTo(SheetBindsTo.partNo)!;
+      sheet.updateTextValue(partNo.id, '48');
+      await tester.pump();
+      expect(sheet.draft.get(partNo.id)?.mode, ValueMode.edit);
+      return sheet;
+    }
+
+    testWidgets('a second Patti on a Part No already used saves with it (Save Part)', (tester) async {
+      final repo = _FakeItemRepository([_item(id: 500, name: 'Patti', groupId: 11)]);
+      await secondPatti(tester, repo);
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('row_save_0')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+
+      expect(find.byType(ExistingPartConflictDialog), findsNothing, reason: 'a shared Part No is no conflict');
+      expect(repo.created, hasLength(1), reason: 'saved, first time');
+      expect(repo.created.single.partNo, 48, reason: 'the number typed, kept');
+      expect(find.textContaining('already used'), findsNothing);
+    });
+
+    testWidgets('the same through the keyboard\'s save (commitRow)', (tester) async {
+      final repo = _FakeItemRepository([_item(id: 500, name: 'Patti', groupId: 11)]);
+      await secondPatti(tester, repo);
+      // The sheet's controller, as the company card holds it.
+      final controller = tester
+          .widget<DealPeopleForm>(find.byType(DealPeopleForm, skipOffstage: false))
+          .controller;
+      late bool saved;
+      await tester.runAsync(() async {
+        saved = await controller.commitRow(0);
+      });
+      await tester.pump();
+      expect(saved, isTrue);
+      expect(repo.created.single.partNo, 48);
+    });
 
     // Enter twice means next, as Tab does (user, 2026-11-24).
     testWidgets(

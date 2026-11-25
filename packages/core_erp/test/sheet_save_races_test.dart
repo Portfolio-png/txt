@@ -182,7 +182,10 @@ void main() {
     c.setOption(1, const ColumnOption(id: 10, columnId: 1, label: 'Switch Action'));
     c.setOption(2, const ColumnOption(id: 101, columnId: 2, parentOptionId: 10, label: 'Dolly'));
     c.setOption(3, const ColumnOption(id: 201, columnId: 3, parentOptionId: 101, label: 'Patti'));
-    expect(c.errors[3]?.code, 'duplicate_item');
+    // Allowed since 2026-11-25 (duplicates while the owner collects data):
+    // not an error, but still recognised — whatever its case — and told.
+    expect(c.errors[3], isNull);
+    expect(SheetEngine.duplicateNotice(c.sheetDef, c.draft, c.existingPaths), contains('already exists'));
   });
 
   test('a part straight under a Group finds its names without a Type', () {

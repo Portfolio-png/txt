@@ -162,6 +162,32 @@ abstract final class SheetEngine {
   }
 
   /// [identityKey] for a row, from its own cells.
+  /// What the old duplicate rule said — "Patti with Alloy MS already exists
+  /// under Switch Action › Dolly" — as a notice, not an error: duplicates are
+  /// allowed while the shop's real data is collected (2026-11-25). Null when
+  /// the row matches no part on file (or is not an item row).
+  static String? duplicateNotice(
+    SheetDef sheet,
+    SheetDraft draft,
+    Set<String> existingPaths,
+  ) {
+    final col = sheet.itemColumn;
+    if (col == null) return null;
+    final value = draft.get(col.id);
+    if (value == null || value.isEmpty) return null;
+    if (!existingPaths.contains(identityKeyOf(sheet, draft, col.id))) return null;
+    final itemLabel = value.optionLabel ?? value.textValue ?? '';
+    final path = groupPathString(sheet, draft, col.id);
+    final identity = [
+      for (final column in sheet.columns)
+        if (column.identity && cellLabel(draft, column.id).isNotEmpty)
+          '${column.label} ${cellLabel(draft, column.id)}',
+    ];
+    return identity.isEmpty
+        ? 'Another $itemLabel already exists under $path.'
+        : 'Another $itemLabel with ${identity.join(', ')} already exists under $path.';
+  }
+
   static String identityKeyOf(SheetDef sheet, SheetDraft draft, int nameColumnId) {
     final path = groupPathString(sheet, draft, nameColumnId);
     final name = cellLabel(draft, nameColumnId);
@@ -429,45 +455,18 @@ abstract final class SheetEngine {
         }
       }
 
-      // Rule 9 & duplicate_item
-      if (col.isItem) {
-        final path = groupPathString(sheet, draft, col.id);
-        final itemLabel = val.optionLabel ?? val.textValue ?? '';
-        // Name AND alloy and thickness: another of either is another part.
-        if (existingPaths.contains(identityKeyOf(sheet, draft, col.id))) {
-          final identity = [
-            for (final column in sheet.columns)
-              if (column.identity && cellLabel(draft, column.id).isNotEmpty)
-                '${column.label} ${cellLabel(draft, column.id)}',
-          ];
-          errors[col.id] = ValidationError(
-            columnId: col.id,
-            code: 'duplicate_item',
-            message: identity.isEmpty
-                ? '$itemLabel already exists under $path.'
-                : '$itemLabel with ${identity.join(', ')} already exists under $path. '
-                      'Change one of its properties, or pick that part from the list.',
-          );
-          continue;
-        }
-      }
+      // Rule 9 — duplicate_item is no longer a refusal (owner, 2026-11-25:
+      // "allow user for duplicates, I'll collect data and then observe …
+      // then we will restrict rules"). The same match is told, not enforced:
+      // see [duplicateNotice], which the save adds to its status line.
 
-      // Rule 10 & seq_used
-      if (col.kind == ColumnKind.seq &&
-          val.mode == ValueMode.edit &&
-          val.intValue != null) {
-        final scope = groupPathString(sheet, draft, col.id);
-        final last = counters[scope] ?? 0;
-        if (val.intValue! <= last) {
-          errors[col.id] = ValidationError(
-            columnId: col.id,
-            code: 'seq_used',
-            message:
-                '${col.label} ${val.intValue} is already used within $scope. The last one is $last.',
-          );
-          continue;
-        }
-      }
+      // Rule 10 — gone (owner, 2026-11-25): Part No is not a uniqueness key.
+      // It says which die generation a part was made from ("after ten years
+      // a new die … they include that in the name as part number"), so two
+      // parts may carry the same one, and a number typed is kept as typed.
+      // The running number still suggests the next one; nothing refuses a
+      // number already used. Uniqueness is the part's identity (name and
+      // properties) and its code, checked elsewhere.
 
       // Rule 11 & code_used — only for a code somebody TYPED.
       //

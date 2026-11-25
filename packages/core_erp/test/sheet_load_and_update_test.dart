@@ -297,11 +297,9 @@ void main() {
       });
 
       controller.replaceRows([row.clone()]);
-      expect(
-        controller.errors[3]?.code,
-        'duplicate_item',
-        reason: 'replaceRows is for new rows — this is the trap being guarded',
-      );
+      // A duplicate name is no longer an error (2026-11-25), only told; the
+      // trap guarded here is the typed code below, which still collides.
+      expect(controller.errors[3], isNull);
       expect(
         controller.errors[5]?.code,
         'code_used',

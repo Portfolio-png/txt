@@ -187,13 +187,16 @@ void main() {
       expect(ctrl.groupItemController.draft.get(5)?.textValue, 'SADP48');
     });
 
-    test('Vector 8: Edit running number at or below last used is refused; above is accepted', () {
+    // Owner, 2026-11-25: Part No is a die generation, not a key — a number
+    // already used is kept as typed, never refused.
+    test('Vector 8: a running number at or below the last used is kept as typed', () {
       // Last used for scope is 47
       masterCtrl.groupItemController.updateValue(
         4,
         const CellValue(columnId: 4, intValue: 40, mode: ValueMode.edit),
       );
-      expect(masterCtrl.groupItemController.errors[4]?.code, 'seq_used');
+      expect(masterCtrl.groupItemController.errors[4], isNull);
+      expect(masterCtrl.groupItemController.draft.get(4)?.intValue, 40);
 
       // Greater than last used
       masterCtrl.groupItemController.updateValue(

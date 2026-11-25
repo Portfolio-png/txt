@@ -196,7 +196,7 @@ void main() {
       expect(identical(sent.rowKey, rowKey), isTrue, reason: 'same row: held dies and machines go with it');
     });
 
-    test('an edit that repeats a part already on file is refused on the sheet, before anything is asked', () async {
+    test('an edit that repeats a part already on file is saved, and the save says so', () async {
       final s = _opened(storedAlloy: 'Titanium Gr 9');
       addTearDown(s.ctrl.dispose);
       final sheet = s.ctrl.groupItemController;
@@ -210,11 +210,15 @@ void main() {
         return IdentityChangeChoice.makeNewPart;
       };
 
-      expect(await s.ctrl.commitRow(0), isFalse);
-      expect(s.writer.written, isEmpty);
-      expect(asked, 0, reason: 'a duplicate is refused outright; there is nothing to choose');
-      expect(sheet.firstErrorOn(0), contains('already exists'));
-      expect(sheet.firstErrorOn(0), contains('Alloy'));
+      // Duplicates are allowed while the owner collects data (2026-11-25):
+      // the alloy change is asked about as ever, the new part is written, and
+      // the status line notes the part it repeats.
+      expect(await s.ctrl.commitRow(0), isTrue);
+      expect(s.writer.written, isNotEmpty);
+      expect(asked, 1);
+      expect(sheet.firstErrorOn(0), isNull);
+      expect(s.ctrl.statusBarMessage, contains('already exists'));
+      expect(s.ctrl.statusBarMessage, contains('Alloy'));
     });
 
     test('two rows, one name, different alloys: neither is a duplicate; same alloy and thickness is', () {
@@ -231,9 +235,11 @@ void main() {
 
       Map<int, ValidationError> errorsWith(Set<String> taken, SheetDraft draft) =>
           SheetEngine.validate(sheet, draft, allOptions: probe.groupItemController.options, existingPaths: taken);
-      expect(errorsWith({key}, other)[name.id]?.code, isNot('duplicate_item'));
-      expect(errorsWith({key}, row)[name.id]?.code, 'duplicate_item');
-      expect(errorsWith({key}, row)[name.id]?.message, contains('Alloy'));
+      // Never an error since 2026-11-25 — duplicates are allowed while the
+      // owner collects data — but the same match is still told.
+      expect(errorsWith({key}, row)[name.id], isNull);
+      expect(SheetEngine.duplicateNotice(sheet, other, {key}), isNull);
+      expect(SheetEngine.duplicateNotice(sheet, row, {key}), contains('Alloy'));
       expect(SheetEngine.identityKey('A › Washer', ['', '']), 'a › washer', reason: 'no alloy or thickness: keyed as before');
     });
 
@@ -249,8 +255,10 @@ void main() {
       // ...and the reference data reloads: the sibling's key is taken, as is
       // the opened part's own (which is withdrawn for its own row).
       sheet.applyReferenceData(SheetReferenceData(options: sheet.options, existingPaths: {asOpened, sibling}));
-      expect(sheet.errorsForRow(0)[name.id]?.code, 'duplicate_item',
-          reason: 'the edit repeats the sibling; withdrawing the edited key used to hide that');
+      // Not an error any more, but the sibling's key must still be known:
+      // withdrawing the edited key used to hide that the edit repeats it.
+      expect(sheet.errorsForRow(0)[name.id], isNull);
+      expect(sheet.existingPaths, contains(sibling));
     });
   });
 

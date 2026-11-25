@@ -955,10 +955,12 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
     final code = codeTyped ? (codeCell?.textValue ?? '').trim() : null;
     if (existing == null) {
       // A create. A code is sent with or without its number — the server
-      // stamps the number a code arrives without. A number alone is not: the
-      // server would then build no code, and the part could not be looked up.
+      // stamps the number a code arrives without — and a number is sent on
+      // its own too: the server builds the code from it (2026-11-25). Part
+      // No is the die generation the part was made from, so a number typed
+      // is the shop's, kept as typed, even one another part already has.
       final sayCode = (code ?? '').isEmpty ? null : code;
-      if (sayCode == null) return null;
+      if (sayCode == null && no == null) return null;
       return (no: no, code: sayCode, both: false);
     }
     if (noTyped && codeTyped) return (no: no, code: code, both: true);

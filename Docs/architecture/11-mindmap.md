@@ -33,7 +33,9 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c129["⟳ Change 129 (app): raw form guard rail — PenPaperBaseline.formChosen; a new plan opens with no form picked, steps replaced by 'pick the form', Save/Next/Review held, keyboard + leave-time saves refuse; die Liner Size Width lands only on the picked form; legacy plans with lastForm count as picked; tiles Tab-reachable until picked"]
+      c131["⟳ Change 131: duplicates allowed while the owner collects data — backend 409 item_name_duplicate removed, sheet duplicate_item now a note on the save (SheetEngine.duplicateNotice); Part Code stays unique"]
+      c130["Change 130: Part No is a die generation, not a key — sheet Part No uniqueness check (seq_used) removed, conflict dialog ignores a shared Part No, typed number kept and sent alone on create, backend builds the code from a given number"]
+      c129["Change 129 (app): raw form guard rail — PenPaperBaseline.formChosen; a new plan opens with no form picked, steps replaced by 'pick the form', Save/Next/Review held, keyboard + leave-time saves refuse; die Liner Size Width lands only on the picked form; legacy plans with lastForm count as picked; tiles Tab-reachable until picked"]
       c128["⟳ Change 128 (app): Draft beside a ticked person's Email ID → DealMessageDialog (Email / WhatsApp, To/From/Subject/Message prefilled from the deal, Send hands off to mail app via mailto: or WhatsApp via wa.me — no server send)"]
       c127["Change 127: one save look on the sheet (SheetSaveButton 'Save X', outlined; SheetSaveRow = the Save Part column) for Part, Company, Die, Machine, Route, Raw Sheet; Routing minimised card + Minimise; Springs on a shared raw-forms engine (raw-forms.js; items.springs.*)"]
       c126["Change 126 (app): Developed For card has ONE save — Save company writes quotation, ticks and every typed/changed person; per-person Save contact removed ('Not saved yet' tag); shown beside Edit when a person waits on a saved company"]

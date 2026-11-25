@@ -1642,6 +1642,17 @@ class ItemMasterController extends ChangeNotifier {
       }
     }
 
+    // A new part matching one on file is saved anyway — duplicates are
+    // allowed while the shop's data is collected (owner, 2026-11-25) — and
+    // the save says so. Only for a new part: a saved one would match itself.
+    final duplicateNote = draft.entityId == null
+        ? SheetEngine.duplicateNotice(
+            groupItemController.sheetDef,
+            draft,
+            groupItemController.existingPaths,
+          )
+        : null;
+
     if (ownsDeal && _isExternal) {
       for (var row = 0; row < clientVendorController.rowCount; row += 1) {
         final deal = clientVendorController.draftAt(row);
@@ -1747,6 +1758,9 @@ class ItemMasterController extends ChangeNotifier {
     _statusBarMessage = code == null
         ? 'Saved $label as item #$id.'
         : 'Saved $label as $code (item #$id).';
+    if (duplicateNote != null) {
+      _statusBarMessage = '$_statusBarMessage Note: $duplicateNote';
+    }
     notifyListeners();
     return true;
   }

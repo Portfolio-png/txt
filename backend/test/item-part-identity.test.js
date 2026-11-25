@@ -707,7 +707,8 @@ test('a part number has to be a whole number above zero', async () => {
       );
     }
 
-    // The name duplicate is the more fundamental refusal and fires first.
+    // The same name again — once refused first of all; allowed since
+    // 2026-11-25.
     // A part with no properties, repeated exactly: every property counts
     // now, so the seeded sample (which has some) would not be a duplicate of
     // a bare name.
@@ -734,8 +735,9 @@ test('a part number has to be a whole number above zero', async () => {
         partCode: 'ZZZ999',
       }),
     });
-    assert.equal(dupName.status, 409);
-    assert.match((await dupName.json()).error, /already exists in this group/);
+    // A second Plain Washer saves: duplicates are allowed while the owner
+    // collects data (2026-11-25). Its own code, as given.
+    assert.equal(dupName.status, 201, JSON.stringify(await dupName.clone().json()));
   } finally {
     await closeServer(ctx.server);
     await ctx.backend.closeDb();

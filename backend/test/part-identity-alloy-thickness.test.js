@@ -7,7 +7,10 @@ const { makeTempDir } = require('./helpers/temp-dir');
 const { identityValue, identityOfTree } = require('../modules/items/part-identity');
 
 // Same group and name, another Alloy or Thickness: another part, with its own
-// part number. The duplicate rule is name + alloy + thickness.
+// part number. The SAME name and properties again used to be refused (409
+// item_name_duplicate); since 2026-11-25 duplicates are allowed while the
+// owner collects real data ("then we will restrict rules"), so those cases
+// below now save — kept as they were, to become refusals again in one place.
 
 const tree = (alloy, thickness) => [
   ...(alloy ? [{ kind: 'property', name: 'Alloy', children: [{ kind: 'value', name: alloy, children: [] }] }] : []),
@@ -49,7 +52,7 @@ async function refusal(promise) {
   assert.fail('expected the save to be refused');
 }
 
-test('two Pattis with different alloys are two parts with their own numbers; the same alloy and thickness is refused', async () => {
+test('two Pattis with different alloys are two parts with their own numbers; the same alloy and thickness is allowed for now', async () => {
   const { backend, save } = await boot();
   const ms = await save('Patti', tree('MS', '1.2'));
   const ss = await save('Patti', tree('SS', '1.5'));
@@ -61,34 +64,31 @@ test('two Pattis with different alloys are two parts with their own numbers; the
   const thicker = await save('Patti', tree('MS', '2.0'));
   assert.ok(thicker.id, 'the same alloy at another thickness is another part too');
 
-  const again = await refusal(save('patti ', tree('ms', '1.20')));
-  assert.equal(again.statusCode, 409);
-  assert.equal(again.code, 'item_name_duplicate');
-  assert.match(again.message, /"patti" with Alloy ms, Thickness 1\.20 already exists/);
+  const again = await save('patti ', tree('ms', '1.20'));
+  assert.ok(again.id && again.id !== ms.id, 'a duplicate saves, as its own part');
 });
 
-test('without alloy or thickness the name alone still decides, as before', async () => {
+test('without alloy or thickness the same name saves again too, for now', async () => {
   const { save } = await boot();
-  await save('Washer', []);
-  const again = await refusal(save('Washer', []));
-  assert.equal(again.statusCode, 409);
-  assert.match(again.message, /"Washer" already exists in this group/);
+  const first = await save('Washer', []);
+  const again = await save('Washer', []);
+  assert.notEqual(again.id, first.id);
   const withAlloy = await save('Washer', tree('Brass', null));
   assert.ok(withAlloy.id, 'one with an alloy is told apart from the one without');
 });
 
-test('changing a part onto a sibling\'s alloy and thickness is refused; its own save is not a duplicate of itself', async () => {
+test('changing a part onto a sibling\'s alloy and thickness is allowed for now; its own save is fine', async () => {
   const { save } = await boot();
   await save('Bracket', tree('MS', '1.2'));
   const ss = await save('Bracket', tree('SS', '1.2'));
   const resaved = await save('Bracket', tree('SS', '1.2'), { id: ss.id });
   assert.equal(resaved.id, ss.id, 'saving it unchanged is fine');
-  const clash = await refusal(save('Bracket', tree('MS', '1.2'), { id: ss.id }));
-  assert.equal(clash.statusCode, 409, 'it would become the MS 1.2 Bracket that already exists');
+  const moved = await save('Bracket', tree('MS', '1.2'), { id: ss.id });
+  assert.equal(moved.id, ss.id, 'it becomes a second MS 1.2 Bracket');
 });
 
 // Every property counts (user, 2026-11-23): all must match to be the same part.
-test('any other property tells two parts apart too; all the same is refused; an empty one is the same as none', async () => {
+test('any other property tells two parts apart too; all the same saves too, for now', async () => {
   const { save } = await boot();
   const withMore = (alloy, thickness, extra) => [
     ...tree(alloy, thickness),
@@ -102,9 +102,27 @@ test('any other property tells two parts apart too; all the same is refused; an 
   const none = await save('Clip', withMore('MS', '1.2', { Grade: '2nd' }));
   assert.ok(none.id, 'so is one with no hardness at all');
 
-  const again = await refusal(save('Clip', withMore('ms', '1.20', { grade: '2ND', hardness: 'soft' })));
-  assert.equal(again.statusCode, 409);
-  assert.match(again.message, /hardness soft/);
-  const empty = await refusal(save('Clip', withMore('MS', '1.2', { Grade: '2nd', Hardness: null })));
-  assert.equal(empty.statusCode, 409, 'a property left empty is the same as one not there');
+  const again = await save('Clip', withMore('ms', '1.20', { grade: '2ND', hardness: 'soft' }));
+  assert.ok(again.id && again.id !== soft.id, 'all the same: saved as another part');
+  const empty = await save('Clip', withMore('MS', '1.2', { Grade: '2nd', Hardness: null }));
+  assert.ok(empty.id, 'a property left empty: saved too');
+});
+
+// Owner, 2026-11-25: Part No is the die generation a part was made from, not a
+// key ("part number has nothing to do with uniqueness"). The shop sets it;
+// two parts may share it; a part given one gets its code from it.
+test('a Part No given is kept — shared by two Pattis of different alloys — and the code is built from it', async () => {
+  const { backend, save } = await boot();
+  const ms = await save('Patti', tree('MS', '1.2'), { partNo: 2 });
+  const ss = await save('Patti', tree('SS', '1.2'), { partNo: 2 });
+  const rows = await backend.all(
+    'SELECT id, part_no, part_code FROM items WHERE id IN (?, ?) ORDER BY id',
+    [ms.id, ss.id],
+  );
+  assert.deepEqual(rows.map((r) => r.part_no), [2, 2], 'the number given, on both');
+  for (const row of rows) {
+    assert.ok(row.part_code, 'a code, built from the number — not none');
+    assert.match(row.part_code, /2/);
+  }
+  assert.notEqual(rows[0].part_code, rows[1].part_code, 'told apart by the alloy');
 });
