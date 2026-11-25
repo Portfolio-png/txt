@@ -10795,6 +10795,12 @@ desk.register('items', {
       desk: desk.as('items'),
       saveItem,
     }),
+    dieRawPlans: require('./modules/items/die-raw-plans').createDieRawPlanWork({
+      get,
+      all,
+      run,
+      desk: desk.as('items'),
+    }),
   }),
 });
 registerItemsModuleRoutes({
@@ -11287,6 +11293,8 @@ registerItemSheetPropertyRoutes({ app, desk, requirePermission, trackCreate, tra
 require('./modules/items/rivets').registerRivetRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
 // And the spring form, on the same engine (modules/items/raw-forms.js).
 require('./modules/items/springs').registerSpringRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
+// Raw material per die (modules/items/die-raw-plans.js).
+require('./modules/items/die-raw-plans').registerDieRawPlanRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
 
 // --- the routes outside the fifteen business modules ----------------------
 //

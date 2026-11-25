@@ -91,6 +91,18 @@ class LocalFirstItemRepository implements ItemRepository {
     Map<String, String> tree,
   ) => _wrote(_remote.saveSectionTree(itemId, tree));
 
+  // Not in the replica: read from, and written to, the server.
+  @override
+  Future<Map<int, PenPaperBaseline>> getDieRawPlans(int itemId) =>
+      _remote.getDieRawPlans(itemId);
+
+  @override
+  Future<PenPaperBaseline> saveDieRawPlan(
+    int itemId,
+    int dieId,
+    PenPaperBaseline baseline,
+  ) => _remote.saveDieRawPlan(itemId, dieId, baseline);
+
   @override
   Future<ItemDefinition> updateShortCode(int id, String shortCode) =>
       _wrote(_remote.updateShortCode(id, shortCode));

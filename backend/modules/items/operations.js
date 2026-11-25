@@ -67,15 +67,15 @@ const OLD_WRITE_GATE = {
   anyPermission: ['config.write', 'inventory.update'],
 };
 
-module.exports = function itemsOperations({ all, get, run, ports, core, masterData, materialTypes, sheetProperties, rivets, springs }) {
+module.exports = function itemsOperations({ all, get, run, ports, core, masterData, materialTypes, sheetProperties, rivets, springs, dieRawPlans }) {
   return joinOperations(
     operationsFromAsks('items', ASKS, ports),
     internalOperations({ all, get, run }),
-    userOperations({ core, masterData, materialTypes, sheetProperties, rivets, springs }),
+    userOperations({ core, masterData, materialTypes, sheetProperties, rivets, springs, dieRawPlans }),
   );
 };
 
-function userOperations({ core, masterData, materialTypes, sheetProperties, rivets, springs }) {
+function userOperations({ core, masterData, materialTypes, sheetProperties, rivets, springs, dieRawPlans }) {
   return {
     'items.groups.list': {
       permission: 'items.read',
@@ -425,6 +425,20 @@ function userOperations({ core, masterData, materialTypes, sheetProperties, rive
       summary: 'Change a spring’s spec, code or vendor prices.',
       input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(springs.updateSpring, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'items.dieRawPlans.list': {
+      permission: 'items.read',
+      summary: 'A part’s raw plan for each die it is made on.',
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
+      run: (input, ctx) => runMoved(dieRawPlans.listDieRawPlans, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'items.dieRawPlans.save': {
+      permission: 'items.update',
+      summary: 'Write the raw plan of one die a part is made on.',
+      input: { fields: { id: F.id, dieId: F.id, query: F.none, data: F.obj({ baseline: F.none }) } },
+      run: (input, ctx) => runMoved(dieRawPlans.saveDieRawPlan, ctx, { params: { id: input.id, dieId: input.dieId }, query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.delete': {

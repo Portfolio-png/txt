@@ -1856,7 +1856,12 @@ void _dieSectionTests() {
       await tester.ensureVisible(find.textContaining(RegExp(r'^(Dies for |New die for |Die )')).first);
       expect(addDie(), findsOneWidget);
       expect(
-        find.descendant(of: addDie(), matching: find.text('Hold die')),
+        find.descendant(of: addDie(), matching: find.text('Save Die')),
+        findsOneWidget,
+      );
+      // Held, not written: one label (owner, 2026-11-25), the tooltip says so.
+      expect(
+        find.byTooltip('Kept with the part: written when the part is saved'),
         findsOneWidget,
       );
     });
@@ -2039,8 +2044,13 @@ void _dieSectionTests() {
       expect(find.textContaining('could not be attached'), findsOneWidget);
       // The button says what it will do now, and it is not "make another die".
       expect(
-        find.descendant(of: addDie(), matching: find.text('Attach the die')),
+        find.descendant(of: addDie(), matching: find.text('Save Die')),
         findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Attaches this die to the part'),
+        findsOneWidget,
+        reason: 'one label; the tooltip says it attaches',
       );
 
       harness.itemRepo.throwOnUpdate = false;
@@ -2236,7 +2246,7 @@ void _manyDiesTests() {
         );
       }
       expect(
-        find.descendant(of: addDie(), matching: find.text('Save die')),
+        find.descendant(of: addDie(), matching: find.text('Save Die')),
         findsOneWidget,
       );
 
@@ -2284,7 +2294,7 @@ void _manyDiesTests() {
       expect(drafts, hasLength(1), reason: 'nothing was written');
       expect(find.text('New die for ATP48'), findsOneWidget);
       expect(
-        find.descendant(of: addDie(), matching: find.text('Add die')),
+        find.descendant(of: addDie(), matching: find.text('Save Die')),
         findsOneWidget,
       );
     });
@@ -2401,7 +2411,12 @@ void _machineSectionTests() {
       await tester.ensureVisible(find.textContaining(RegExp(r'^(Machines for |New machine for |Machine )')).first);
       expect(addMachine(), findsOneWidget);
       expect(
-        find.descendant(of: addMachine(), matching: find.text('Hold machine')),
+        find.descendant(of: addMachine(), matching: find.text('Save Machine')),
+        findsOneWidget,
+      );
+      // Held, not written: one label (owner, 2026-11-25), the tooltip says so.
+      expect(
+        find.byTooltip('Kept with the part: written when the part is saved'),
         findsOneWidget,
       );
     });
@@ -2591,9 +2606,14 @@ void _machineSectionTests() {
       expect(
         find.descendant(
           of: addMachine(),
-          matching: find.text('Attach the machine'),
+          matching: find.text('Save Machine'),
         ),
         findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Attaches this machine to the part'),
+        findsOneWidget,
+        reason: 'one label; the tooltip says it attaches',
       );
 
       harness.itemRepo.throwOnUpdate = false;
@@ -2663,7 +2683,7 @@ void _machineSectionTests() {
       expect(find.text('Machine PP-1'), findsOneWidget);
       expect(showsIn('make', 'Mayank'), isTrue);
       expect(
-        find.descendant(of: addMachine(), matching: find.text('Save machine')),
+        find.descendant(of: addMachine(), matching: find.text('Save Machine')),
         findsOneWidget,
       );
       await _tapVisible(tester, addMachine());
@@ -2834,7 +2854,7 @@ void _stagedCreateTests() {
       expect(find.text('Developed For · Patti'), findsOneWidget);
       expect(find.text('New die for ATP48'), findsOneWidget);
       expect(
-        find.descendant(of: addDie(), matching: find.text('Add die')),
+        find.descendant(of: addDie(), matching: find.text('Save Die')),
         findsOneWidget,
         reason: 'it writes immediately now that the part exists',
       );

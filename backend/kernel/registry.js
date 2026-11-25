@@ -195,7 +195,7 @@ const MODULES = {
       'item_variation_dimensions', 'item_property_schema', 'item_unit_conversions',
       'item_bom_lines', 'variation_stock',
       'item_deal_contacts', 'item_deals', 'item_deal_people', 'item_sheet_properties',
-      'raw_material_specs', 'item_vendor_prices',
+      'raw_material_specs', 'item_vendor_prices', 'item_die_raw_plans',
       // Claimed 2026-11-18; nobody declared them. item_dies and item_machines
       // are the part's own record of its tools (the legacy pair entity_links
       // did not replace); material_types is the Material input type's master.

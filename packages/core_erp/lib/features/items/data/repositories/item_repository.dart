@@ -22,6 +22,18 @@ abstract class ItemRepository {
   /// Saves how the part's item sheet is nested (section → parent). The server
   /// re-links the part's client, dies and machines to match (migration 057).
   Future<ItemDefinition> saveSectionTree(int itemId, Map<String, String> tree);
+
+  /// The part's raw plan for each die it is made on, by die id — beside its
+  /// own plan (ItemDefinition.penPaperBaseline). Every die a part is made on
+  /// has its own raw material data (owner, 2026-11-25).
+  Future<Map<int, PenPaperBaseline>> getDieRawPlans(int itemId);
+
+  /// Writes one die's raw plan for the part; answers it as stored.
+  Future<PenPaperBaseline> saveDieRawPlan(
+    int itemId,
+    int dieId,
+    PenPaperBaseline baseline,
+  );
   Future<ItemDefinition> updateShortCode(int id, String shortCode);
 
   /// Which sets hold this part, one row per line.

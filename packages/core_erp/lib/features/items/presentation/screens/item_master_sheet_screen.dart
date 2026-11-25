@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/network/sitting_scope.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
+import '../../../../core/widgets/length_unit_field.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/services/entity_photos.dart';
@@ -184,6 +185,14 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// so moving to another part does not carry edit mode across to it.
   bool _rawSaving = false;
   int? _rawPartId;
+
+  /// Which die's raw plan the panel shows — null for the part's own. Every
+  /// die a part is made on has its own raw material data (owner,
+  /// 2026-11-25); the ⋯ beside "Raw material" picks one.
+  int? _rawDieId;
+
+  /// The open part's raw plan per die, by die id; null until read.
+  Map<int, PenPaperBaseline>? _diePlans;
   static const double _rawPanelWidth = 520;
 
   /// Raw material rolled up to its heading by its chevron. The right column
@@ -1322,14 +1331,24 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       // threw the edits away; they are written to the part they were made on,
       // the way a part line saves when it is left.
       final leftId = _rawPartId;
+      final leftDie = _rawDieId;
       final read = _rawDraft;
       if (_rawEditing && _rawDirty && leftId != null && read != null) {
         final draft = read();
         WidgetsBinding.instance.addPostFrameCallback(
-          (_) => unawaited(_saveRawSheetOn(leftId, draft)),
+          (_) => unawaited(_saveRawSheetOn(leftId, draft, dieId: leftDie)),
         );
       }
       _rawPartId = part?.id;
+      // Another part: its own plan first, and its dies' plans read afresh.
+      _rawDieId = null;
+      _diePlans = null;
+      final opened = part?.id;
+      if (opened != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => unawaited(_loadDiePlans(opened)),
+        );
+      }
       _rawEditing = part != null && part.id == _rawEditFor;
       if (_rawEditing) _rawEditFor = null;
       _rawDirty = false;
@@ -1345,10 +1364,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       }
     }
     final route = _route;
-    final baseline = part?.penPaperBaseline ?? PenPaperBaseline.blank();
+    final dieId = _rawDieId;
+    final baseline = dieId == null
+        ? part?.penPaperBaseline ?? PenPaperBaseline.blank()
+        // A die with no plan yet starts empty — and asks for its form.
+        : _diePlans?[dieId] ?? PenPaperBaseline.blank();
     final panel = MasterDataPanel(
-      // Bumped on Cancel, so the edits are thrown away with the old state.
-      key: ValueKey<String>('raw_${part?.id ?? 0}_$_rawEpoch'),
+      // Bumped on Cancel, so the edits are thrown away with the old state;
+      // keyed by die too, so another die's plan is a fresh panel.
+      key: ValueKey<String>('raw_${part?.id ?? 0}_${dieId ?? 0}_$_rawEpoch'),
       baseline: baseline,
       embedded: true,
       showHeader: false,
@@ -1393,8 +1417,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ? null
           : _cellNow(SheetBindsTo.variation('Thickness')),
       onThicknessChanged: _setThickness,
-      // The die's Liner Size is the raw material's Width (user, 2026-11-24).
-      linerWidth: _linerWidthNow,
+      // The die's Liner Size is the raw material's Width (user, 2026-11-24):
+      // the chosen die's, when the plan is a die's.
+      linerWidth: dieId == null ? _linerWidthNow : _linerWidthOfDie(dieId),
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
@@ -1509,9 +1534,17 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 children: [
                   SheetStyle.iconTile(Icons.grid_on_rounded),
                   const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('Raw material', style: SheetStyle.sectionTitle),
+                  Expanded(
+                    child: Text(
+                      _rawDieId == null
+                          ? 'Raw material'
+                          : 'Raw material · ${_dieLabel(_rawDieId!).replaceFirst('die', 'Die')}',
+                      key: const ValueKey<String>('raw_title'),
+                      overflow: TextOverflow.ellipsis,
+                      style: SheetStyle.sectionTitle,
+                    ),
                   ),
+                  _rawDieMenu(part),
                   if (_rawEditing && _rawDirty) ...[
                     Tooltip(
                       message:
@@ -1689,7 +1722,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   /// Writes a raw sheet left unsaved on [partId] when the cursor moved off
   /// that part, and says so — the panel on screen is the new part's now.
-  Future<void> _saveRawSheetOn(int partId, PenPaperBaseline baseline) async {
+  Future<void> _saveRawSheetOn(
+    int partId,
+    PenPaperBaseline baseline, {
+    int? dieId,
+  }) async {
     if (!mounted) return;
     final items = context.read<ItemsProvider>();
     final part = items.findById(partId);
@@ -1701,6 +1738,18 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       _toast(
         'The raw sheet for $name was not saved: no form was picked.',
         isError: true,
+      );
+      return;
+    }
+    if (dieId != null) {
+      final plan = await items.saveDieRawPlan(partId, dieId, baseline);
+      if (!mounted) return;
+      _toast(
+        plan == null
+            ? 'The die\'s raw sheet for $name did not save: '
+                  '${items.errorMessage ?? 'try again from that part'}.'
+            : 'Raw material saved for the die on $name.',
+        isError: plan == null,
       );
       return;
     }
@@ -1770,6 +1819,27 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       _toast(
         'Made a new ${part.name}. Its raw sheet starts empty — the one '
         'shown was ${opened.name}\'s and stays with it.',
+      );
+      return;
+    }
+    final dieId = _rawDieId;
+    if (dieId != null) {
+      // A die's plan: written for that die, the part's own left as it is.
+      final plan = await items.saveDieRawPlan(part.id, dieId, baseline);
+      if (!mounted) return;
+      setState(() {
+        _rawSaving = false;
+        if (plan != null) {
+          _diePlans = {...?_diePlans, dieId: plan};
+          _rawEditing = false;
+          _rawDirty = false;
+        }
+      });
+      _toast(
+        plan == null
+            ? (items.errorMessage ?? 'The die\'s raw sheet did not save.')
+            : 'Raw material saved for ${_dieLabel(dieId)} on ${part.name}.',
+        isError: plan == null,
       );
       return;
     }
@@ -3019,6 +3089,184 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     return null;
   }
 
+  /// The open part's saved die with this id, or null.
+  ItemDieLink? _savedDie(int dieId) {
+    for (final die in _livePart?.dies ?? const <ItemDieLink>[]) {
+      if (int.tryParse(die.id.trim()) == dieId) return die;
+    }
+    return null;
+  }
+
+  /// "die PT-2024", or "the die" when it has no code.
+  String _dieLabel(int dieId) {
+    final code = _savedDie(dieId)?.toolCode.trim() ?? '';
+    return code.isEmpty ? 'the die' : 'die $code';
+  }
+
+  /// A die's own Liner Size as the Width, for that die's plan; null when it
+  /// has none, so Width is typed.
+  RawWidthFromDie? _linerWidthOfDie(int dieId) {
+    final die = _savedDie(dieId);
+    final nm = die?.linerSizeNm;
+    if (die == null || nm == null || nm <= 0) return null;
+    return RawWidthFromDie(
+      nm: nm,
+      unit: die.linerSizeUnit,
+      dieLabel: _dieLabel(dieId),
+    );
+  }
+
+  /// Reads every die's raw plan for the part — unless the sheet has moved on.
+  Future<void> _loadDiePlans(int partId) async {
+    final items = context.read<ItemsProvider>();
+    final plans = await items.dieRawPlansFor(partId);
+    if (!mounted || _rawPartId != partId) return;
+    setState(() => _diePlans = plans);
+  }
+
+  /// Shows another die's plan (null = the part's own). Edits not saved are
+  /// asked about first, never dropped quietly.
+  Future<void> _pickRawDie(int? dieId) async {
+    if (dieId == _rawDieId) return;
+    if (_rawEditing && _rawDirty) {
+      final sure = await showConfirmDialog(
+        context,
+        title: 'Leave this raw sheet unsaved?',
+        message:
+            'What was typed here is not saved. Save raw sheet first to keep '
+            'it, or leave it to drop it.',
+        confirmLabel: 'Leave it',
+      );
+      if (!sure || !mounted) return;
+    }
+    setState(() {
+      _rawDieId = dieId;
+      _rawEditing = false;
+      _rawDirty = false;
+      _rawEpoch++;
+    });
+  }
+
+  /// The ⋯ beside "Raw material": the part's own plan, then one per die the
+  /// part is made on — every die cuts its own raw material (owner,
+  /// 2026-11-25). A die still held, not saved, is shown but not pickable.
+  Widget _rawDieMenu(ItemDefinition? part) {
+    final saved = [
+      for (final die in part?.dies ?? const <ItemDieLink>[])
+        if (int.tryParse(die.id.trim()) != null) die,
+    ];
+    final held = part == null
+        ? const <ItemDieLink>[]
+        : [for (final draft in _stagedDies) heldDieLink(draft)];
+    final none = part == null || (saved.isEmpty && held.isEmpty);
+    final plans = _diePlans;
+    String liner(ItemDieLink die) {
+      final nm = die.linerSizeNm;
+      if (nm == null || nm <= 0) return 'no liner size';
+      return 'liner ${formatLengthFromNanometres(nm, die.linerSizeUnit)} '
+          '${die.linerSizeUnit}';
+    }
+
+    PopupMenuItem<int> row({
+      required int value,
+      required String title,
+      required String note,
+      bool chosen = false,
+      bool enabled = true,
+    }) {
+      return PopupMenuItem<int>(
+        key: ValueKey<String>('raw_die_option_$value'),
+        value: value,
+        enabled: enabled,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              child: chosen ? const Icon(Icons.check_rounded, size: 18) : null,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    note,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return PopupMenuButton<int>(
+      key: const ValueKey<String>('raw_die_menu'),
+      enabled: !none,
+      tooltip: none
+          ? (part == null
+                ? 'Save the part, then add its dies: each die gets its own '
+                      'raw sheet here.'
+                : 'Add a die to the part: each die gets its own raw sheet '
+                      'here.')
+          : 'Raw sheet per die',
+      icon: const Icon(Icons.more_horiz_rounded),
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 360),
+      onSelected: (value) => unawaited(_pickRawDie(value == 0 ? null : value)),
+      itemBuilder: (_) => [
+        row(
+          value: 0,
+          title: 'Part — no die',
+          note: 'The plan production reads',
+          chosen: _rawDieId == null,
+        ),
+        const PopupMenuDivider(),
+        for (final die in saved)
+          () {
+            final id = int.parse(die.id.trim());
+            final code = die.toolCode.trim();
+            final planned = plans?.containsKey(id) ?? false;
+            return row(
+              value: id,
+              title: code.isEmpty ? 'Die (no code)' : code,
+              note:
+                  '${liner(die)} · '
+                  '${plans == null
+                      ? 'reading…'
+                      : planned
+                      ? 'planned'
+                      : 'not planned yet'}',
+              chosen: _rawDieId == id,
+            );
+          }(),
+        for (final (i, die) in held.indexed)
+          row(
+            // Negative, so it never meets a die id.
+            value: -1 - i,
+            title: die.toolCode.trim().isEmpty
+                ? 'Die being added'
+                : die.toolCode.trim(),
+            note: 'Save the die first',
+            enabled: false,
+          ),
+      ],
+    );
+  }
+
   /// A thickness typed in the raw material panel, into the part's Thickness
   /// cell: the gauge option itself when it is one ("23 Gauge"), else the
   /// measurement as text, the way a typed thickness is kept.
@@ -3690,10 +3938,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
     final otherTabRow = _findOtherOpenTabFor(row);
     final conflictError = errors.values
-        .where(
-          (e) =>
-              e.code == 'code_used',
-        )
+        .where((e) => e.code == 'code_used')
         .firstOrNull;
 
     if (otherTabRow == null && conflictError == null) {

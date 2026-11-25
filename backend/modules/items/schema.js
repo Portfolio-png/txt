@@ -148,6 +148,20 @@ async function createSchema({ run, all, get }) {
     )
   `);
 
+  // A raw plan per (part, die): each die a part is made on has its own raw
+  // material data (modules/items/die-raw-plans.js). The part's own plan stays
+  // in items.pen_paper_baseline.
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_die_raw_plans (
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      die_id INTEGER NOT NULL,
+      baseline_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (item_id, die_id)
+    )
+  `);
+
   await run(`
     CREATE TABLE IF NOT EXISTS item_dies (
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

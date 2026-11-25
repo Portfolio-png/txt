@@ -347,6 +347,60 @@ class ApiItemRepository implements ItemRepository {
     return parsed.item!.toDomain();
   }
 
+  /// Demo mode's die plans, by part then die.
+  static final Map<int, Map<int, PenPaperBaseline>> _mockDiePlans = {};
+
+  @override
+  Future<Map<int, PenPaperBaseline>> getDieRawPlans(int itemId) async {
+    if (useMockResponses) return Map.of(_mockDiePlans[itemId] ?? const {});
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/items/$itemId/die-raw-plans'),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Could not read the die raw plans.',
+      );
+    }
+    return {
+      for (final row in (payload['plans'] as List<dynamic>? ?? const []))
+        if (row is Map<String, dynamic> && row['baseline'] is Map<String, dynamic>)
+          (row['dieId'] as num).toInt():
+              PenPaperBaseline.fromJson(row['baseline'] as Map<String, dynamic>),
+    };
+  }
+
+  @override
+  Future<PenPaperBaseline> saveDieRawPlan(
+    int itemId,
+    int dieId,
+    PenPaperBaseline baseline,
+  ) async {
+    if (useMockResponses) {
+      (_mockDiePlans[itemId] ??= {})[dieId] = baseline;
+      return baseline;
+    }
+    final response = await _client.put(
+      Uri.parse('$baseUrl/api/items/$itemId/die-raw-plans/$dieId'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'baseline': baseline.toJson()}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    final plan = payload['plan'];
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        plan is! Map<String, dynamic> ||
+        plan['baseline'] is! Map<String, dynamic>) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Could not save the die\'s raw plan.',
+      );
+    }
+    return PenPaperBaseline.fromJson(plan['baseline'] as Map<String, dynamic>);
+  }
+
   @override
   Future<Uri> createCadFileReadUrl(int itemId) async {
     if (useMockResponses) {

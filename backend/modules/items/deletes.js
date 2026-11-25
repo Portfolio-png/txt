@@ -40,6 +40,7 @@ function createDeletes(deps, api) {
     await run('DELETE FROM item_property_schema WHERE item_id = ?', [id]);
     await run('DELETE FROM raw_material_specs WHERE item_id = ?', [id]);
     await run('DELETE FROM item_vendor_prices WHERE item_id = ?', [id]);
+    await run('DELETE FROM item_die_raw_plans WHERE item_id = ?', [id]);
     await run('DELETE FROM item_bom_lines WHERE item_id = ?', [id]);
     // The part's sheet nesting (057) is client↔die and die↔machine links that
     // carry the part only in their relation, so the purge below — which matches

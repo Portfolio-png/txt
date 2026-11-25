@@ -10,6 +10,7 @@ import 'package:core_erp/features/items/domain/developed_for.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/production_pipelines/presentation/widgets/master_data_dialog.dart';
+import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
 import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/services/entity_photos.dart';
@@ -135,6 +136,25 @@ class _FakeItemRepository implements ItemRepository {
     );
     stored[at] = updated;
     return updated;
+  }
+
+  /// Each die's raw plan, by part then die.
+  final Map<int, Map<int, PenPaperBaseline>> diePlans = {};
+  final List<(int, int, PenPaperBaseline)> savedDiePlans = [];
+
+  @override
+  Future<Map<int, PenPaperBaseline>> getDieRawPlans(int itemId) async =>
+      Map.of(diePlans[itemId] ?? const {});
+
+  @override
+  Future<PenPaperBaseline> saveDieRawPlan(
+    int itemId,
+    int dieId,
+    PenPaperBaseline baseline,
+  ) async {
+    savedDiePlans.add((itemId, dieId, baseline));
+    (diePlans[itemId] ??= {})[dieId] = baseline;
+    return baseline;
   }
 
   @override
@@ -1398,6 +1418,166 @@ void main() {
       await tester.pump();
       expect(panel().linerWidth?.nm, 120 * 1000000);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'the ⋯ beside Raw material lists the dies: each die has its own raw sheet',
+      (tester) async {
+        final patti = _item(
+          id: 500,
+          name: 'Patti',
+          groupId: 11,
+          dies: const [
+            ItemDieLink(id: '30', toolCode: 'OLD', linerSizeNm: 80 * 1000000),
+            ItemDieLink(id: '31', toolCode: 'NEW', linerSizeNm: 120 * 1000000),
+          ],
+        );
+        final repo = _FakeItemRepository([patti]);
+        repo.diePlans[500] = {
+          31: PenPaperBaseline.blank().copyWith(
+            materialGrade: 'D-NEW',
+            formChosen: true,
+          ),
+        };
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: repo,
+          size: const Size(1700, 3200),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+        MasterDataPanel panel() =>
+            tester.widget<MasterDataPanel>(find.byType(MasterDataPanel));
+        expect(
+          panel().baseline.materialGrade,
+          '',
+          reason: 'the part\'s own first',
+        );
+        expect(panel().linerWidth?.nm, 80 * 1000000);
+
+        Future<void> pick(int value) async {
+          await tester.tap(find.byKey(const ValueKey('raw_die_menu')));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+          await tester.tap(find.byKey(ValueKey('raw_die_option_$value')));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+
+        // The menu lists both dies, and which has a plan.
+        await tester.tap(find.byKey(const ValueKey('raw_die_menu')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('OLD'), findsWidgets);
+        expect(find.textContaining('not planned yet'), findsOneWidget);
+        expect(find.textContaining('planned'), findsNWidgets(2));
+
+        // The new die: its own plan, and its own liner as the Width.
+        await tester.tap(find.byKey(const ValueKey('raw_die_option_31')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(panel().baseline.materialGrade, 'D-NEW');
+        expect(panel().linerWidth?.nm, 120 * 1000000);
+        expect(panel().linerWidth?.dieLabel, 'die NEW');
+        expect(find.text('Raw material · Die NEW'), findsOneWidget);
+
+        // The old die has no plan yet: a blank one, asking for its form.
+        await pick(30);
+        expect(panel().baseline.materialGrade, '');
+        expect(panel().baseline.formChosen, isFalse);
+        await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+        await tester.pump();
+        await _pickSheetForm(tester);
+        await tester.runAsync(() async {
+          panel().onSave(
+            panel().baseline.copyWith(materialGrade: 'D-OLD', formChosen: true),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pump();
+        expect(repo.savedDiePlans.single.$1, 500);
+        expect(repo.savedDiePlans.single.$2, 30);
+        expect(repo.savedDiePlans.single.$3.materialGrade, 'D-OLD');
+        expect(
+          repo.updated,
+          isEmpty,
+          reason: 'the part\'s own plan is left alone',
+        );
+
+        // Back to the part's own.
+        await pick(0);
+        expect(find.text('Raw material'), findsOneWidget);
+        expect(panel().baseline.materialGrade, '');
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('switching die with unsaved raw edits asks first', (
+      tester,
+    ) async {
+      final patti = _item(
+        id: 500,
+        name: 'Patti',
+        groupId: 11,
+        dies: const [ItemDieLink(id: '31', toolCode: 'NEW')],
+      );
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.byKey(const ValueKey('master-data-edit')));
+      await tester.pump();
+      tester
+          .widget<MasterDataPanel>(find.byType(MasterDataPanel))
+          .onDirtyChanged!(true);
+      await tester.pump();
+
+      Future<void> pick() async {
+        await tester.tap(find.byKey(const ValueKey('raw_die_menu')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(find.byKey(const ValueKey('raw_die_option_31')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      await pick();
+      expect(find.text('Leave this raw sheet unsaved?'), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Raw material'), findsOneWidget, reason: 'stayed put');
+      expect(find.byKey(const ValueKey('raw_unsaved')), findsOneWidget);
+
+      await pick();
+      await tester.tap(find.text('Leave it'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Raw material · Die NEW'), findsOneWidget);
+      expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing);
+    });
+
+    testWidgets('a part with no dies draws the ⋯ disabled, saying why', (
+      tester,
+    ) async {
+      final patti = _item(id: 500, name: 'Patti', groupId: 11);
+      await _pumpScreen(
+        tester,
+        initialItems: [patti],
+        repository: _FakeItemRepository([patti]),
+        size: const Size(1700, 3200),
+      );
+      final menu = tester.widget<PopupMenuButton<int>>(
+        find.byKey(const ValueKey('raw_die_menu')),
+      );
+      expect(menu.enabled, isFalse);
+      expect(menu.tooltip, contains('Add a die'));
     });
 
     testWidgets('the part\'s die Liner Size is handed to the raw panel as its Width',

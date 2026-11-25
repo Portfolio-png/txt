@@ -6357,6 +6357,64 @@
       ]
     },
     {
+      "name": "items.dieRawPlans.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A part’s raw plan for each die it is made on.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.dieRawPlans.save",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Write the raw plan of one die a part is made on.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "dieId": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
+        },
+        "data": {
+          "type": "object",
+          "fields": {
+            "baseline": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
       "name": "items.dies.forget",
       "module": "items",
       "permission": null,

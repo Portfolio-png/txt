@@ -1249,6 +1249,33 @@ class ItemsProvider extends ChangeNotifier {
     );
   }
 
+  /// The part's raw plan for each die it is made on, by die id. Empty when
+  /// it has none or the read fails (the error is kept in [errorMessage]).
+  Future<Map<int, PenPaperBaseline>> dieRawPlansFor(int itemId) async {
+    try {
+      return await _repository.getDieRawPlans(itemId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      return const {};
+    }
+  }
+
+  /// Writes one die's raw plan for the part; the plan as stored, or null when
+  /// it did not save ([errorMessage] says why).
+  Future<PenPaperBaseline?> saveDieRawPlan(
+    int itemId,
+    int dieId,
+    PenPaperBaseline baseline,
+  ) async {
+    try {
+      return await _repository.saveDieRawPlan(itemId, dieId, baseline);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
   /// Saves how the part's item sheet is nested. The server re-links the
   /// part's client, dies and machines to match, so this is a data write, not
   /// a layout preference.
