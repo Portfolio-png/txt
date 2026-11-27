@@ -98,6 +98,7 @@ jobs:
             test/features/items/item_expression_view_test.dart \
             test/features/items/searchable_select_inline_panel_test.dart \
             test/features/items/set_overview_dialog_test.dart \
+            test/features/machines/arrangeable_field_grid_test.dart \
             test/features/pm/node_configurator_screen_test.dart \
             test/features/pm/pm_group_item_cascade_section_test.dart \
             test/features/pm/pm_item_master_detail_screen_test.dart \

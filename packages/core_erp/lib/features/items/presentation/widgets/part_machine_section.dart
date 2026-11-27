@@ -160,6 +160,84 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// it instead of making a second one.
   String? _unlinkedMachineId;
 
+  /// A machine already in the Machines master, picked from Machine No. to
+  /// attach (owner, 2026-11-27): its fields are shown to decide by, read
+  /// only, and Save attaches it as it is — the sheet never rewrites the
+  /// master's record. Null while a new machine is being typed.
+  String? _pickedId;
+
+  /// That type's machines in the master that this part does not have yet.
+  List<MachineSheetDraft> get _masterOfType {
+    if (_groupId == null) return const [];
+    final onPart = {for (final m in _machines) m.id};
+    final held = {
+      for (final d in widget.staged) d.assetId.trim().toUpperCase(),
+    };
+    return [
+      for (final m in _suggestions.machines)
+        if (m.groupId == _groupId &&
+            !onPart.contains(m.machineId) &&
+            !held.contains(m.assetId.trim().toUpperCase()))
+          m,
+    ];
+  }
+
+  /// Machine No. typed or picked: one the master has is that machine,
+  /// loaded to decide on; anything else is a new machine, typed as usual.
+  void _onNumberChanged() {
+    final typed = _noController.text.trim().toUpperCase();
+    final match = _masterOfType
+        .where((m) => m.assetId.trim().toUpperCase() == typed)
+        .firstOrNull;
+    setState(() {
+      _noPinned = true;
+      if (match != null) {
+        _pickMachine(match);
+      } else if (_pickedId != null) {
+        _unpick();
+      }
+    });
+  }
+
+  void _pickMachine(MachineSheetDraft machine) {
+    _pickedId = machine.machineId;
+    _error = null;
+    _capacityError = null;
+    _noController.text = machine.assetId;
+    _nameController.text = machine.name;
+    _makeController.text = machine.machineMake;
+    _yearController.text = machine.manufacturedYear?.toString() ?? '';
+    _builtOn = machine.manufacturedOn;
+    _feederController.text = machine.feederMake;
+    _hoursController.text = machine.runningHours?.toString() ?? '';
+    _strokesController.text = machine.strokesPerMinute?.toString() ?? '';
+    _capacityKind = CapacityKind.fromWire(machine.capacityKind);
+    _capacityController.text = formatCapacityFromKgf(
+      machine.capacityKgf,
+      _capacityUnit,
+    );
+    _feedTypeController.text = machine.dieFeedType;
+    _notice =
+        'Machine ${machine.assetId} is in the Machines master — Attach it to '
+        'this part, or type another number for a new machine.';
+  }
+
+  /// Back to a new machine: what was loaded from the picked one goes.
+  void _unpick() {
+    _pickedId = null;
+    _notice = null;
+    _nameController.clear();
+    _makeController.clear();
+    _yearController.clear();
+    _builtOn = null;
+    _feederController.clear();
+    _hoursController.clear();
+    _strokesController.clear();
+    _capacityController.clear();
+    _capacityKind = CapacityKind.unknown;
+    _feedTypeController.clear();
+  }
+
   /// What was last filled into Die Type from the die form.
   String _filledDieType = '';
 
@@ -228,7 +306,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   /// the sheet (type, maker, dates…) stays after each save on purpose, so it
   /// alone is not unsaved work.
   bool get isDirty {
-    if (_unlinkedMachineId != null) return true;
+    if (_unlinkedMachineId != null || _pickedId != null) return true;
     // Open for correcting (its tab chosen): unsaved only once changed.
     // Opening a tab is looking at it, and counted as work it held the sheet
     // open on leaving.
@@ -389,6 +467,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     _editingMachineId = null;
     _editingStagedIndex = null;
     _unlinkedMachineId = null;
+    if (_pickedId != null) _unpick();
     _error = null;
     _notice = null;
     _capacityError = null;
@@ -438,6 +517,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
 
   void _editMachine(ItemMachineLink machine) {
     setState(() {
+      _pickedId = null;
       _editingStagedIndex = null;
       _editingMachineId = machine.id;
       _unlinkedMachineId = null;
@@ -478,15 +558,22 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     if (group == null) return '';
     // Held machines count too, or two presses waiting on the same part would
     // both be offered PP-1.
-    final sameType =
-        _machines.where((m) => m.groupId == _groupId).length +
-        widget.staged.where((m) => m.groupId == _groupId).length;
+    final sameType = {
+      for (final m in _suggestions.machines)
+        if (m.groupId == _groupId) m.assetId.trim().toUpperCase(),
+      for (final m in _machines)
+        if (m.groupId == _groupId) m.assetId.trim().toUpperCase(),
+      for (final m in widget.staged)
+        if (m.groupId == _groupId) m.assetId.trim().toUpperCase(),
+    }.length;
     final base = buildMachineNo(
       typeName: group.name,
       nextNumber: sameType + (_editingStagedIndex == null ? 1 : 0),
     );
     if (base.isEmpty) return '';
     return nextFreeMachineNo(base, <String>[
+      // The whole master: a new machine is never offered a number one has.
+      for (final machine in _suggestions.machines) machine.assetId,
       for (final machine in _machines)
         if (machine.id != _editingMachineId) machine.assetId,
       for (var i = 0; i < widget.staged.length; i += 1)
@@ -561,7 +648,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
 
   /// Holds the sheet for a part that does not exist yet.
   void _stageMachine() {
-    final draft = _draftFromSheet();
+    // A machine picked from the master is held as that machine — attached,
+    // not made again, when the part is.
+    final draft = _draftFromSheet(machineId: _pickedId);
     if (draft == null) return;
     final replacing = _editingStagedIndex;
     setState(() {
@@ -611,7 +700,9 @@ class _PartMachineSectionState extends State<PartMachineSection> {
 
     // A machine that exists and is not linked yet is retried as a LINK, never
     // as a second create.
-    var machineId = _unlinkedMachineId;
+    // A machine picked from the master, or one made and not linked yet, is
+    // only attached — never made again.
+    var machineId = _unlinkedMachineId ?? _pickedId;
     final editing = _editingMachineId;
     if (machineId == null) {
       // Free hand wins over a figure left in the box: the two would be two
@@ -727,6 +818,8 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     final part = widget.part;
     // Open with no part: everything Add does is held until the part is made.
     final enabled = !widget.busy && !_saving;
+    // A machine picked from the master is shown, not edited here.
+    final fieldsOpen = enabled && _pickedId == null;
     final editing = _editingMachineId;
     final holding = part == null;
 
@@ -802,6 +895,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                               decoration: SheetStyle.field(),
                               onChanged: (id) => setState(() {
                                 _groupId = id;
+                                // Another type: another set of machines.
+                                if (_pickedId != null) {
+                                  _unpick();
+                                  _noPinned = false;
+                                }
                                 _rederiveNo();
                               }),
                               // There are no machine types on a fresh system, so typing
@@ -828,28 +926,32 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                             ),
                           ),
                         ),
-                        // A text field, not a dropdown: the number is unique and is
-                        // derived from the type, so a list of numbers already taken
-                        // would only offer duplicates.
+                        // A dropdown of this type's machines in the Machines master
+                        // (owner, 2026-11-27): pick one to attach — its fields fill
+                        // in, read only, to decide by — or keep the free number
+                        // offered (or type one) for a new machine, which Save
+                        // makes in the master.
                         SheetStyle.labelled(
                           label: 'Machine No.',
                           child: FitToText(
+                            dropdown: true,
                             controller: _noController,
                             heading: 'Machine No.',
-                            child: TextField(
-                              key: const ValueKey<String>(
+                            minWidth: 120,
+                            chrome: 84,
+                            child: PickOrTypeField(
+                              fieldKey: const ValueKey<String>(
                                 'quick-entry-machine-no-field',
                               ),
                               controller: _noController,
-                              enabled: enabled,
-                              textCapitalization: TextCapitalization.characters,
-                              onChanged: (_) =>
-                                  setState(() => _noPinned = true),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              label: 'Machine No.',
+                              floatLabel: false,
+                              options: [
+                                for (final m in _masterOfType) m.assetId,
+                              ],
+                              enabled: enabled && _groupId != null,
                               decoration: SheetStyle.field(),
+                              onChanged: _onNumberChanged,
                             ),
                           ),
                         ),
@@ -861,11 +963,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                           label: 'Machine Make',
                           controller: _makeController,
                           options: _suggestions.makes,
-                          enabled: enabled,
+                          enabled: fieldsOpen,
                         ),
                         // Picked on a calendar (user, 2026-11-24): Enter on it, or
                         // a click, opens one.
-                        _domField(enabled),
+                        _domField(fieldsOpen),
                         // How hard the machine runs reads as one figure pair, so the
                         // two never wrap apart.
                         Row(
@@ -877,7 +979,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                               label: 'Running Hrs',
                               controller: _hoursController,
                               options: _suggestions.runningHours,
-                              enabled: enabled,
+                              enabled: fieldsOpen,
                               numeric: true,
                             ),
                             const SizedBox(width: 10),
@@ -886,7 +988,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                               label: 'Stroke / Min',
                               controller: _strokesController,
                               options: _suggestions.strokesPerMinute,
-                              enabled: enabled,
+                              enabled: fieldsOpen,
                               numeric: true,
                             ),
                           ],
@@ -920,7 +1022,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                               compactFreeHand: true,
                               unitSymbol: _capacityUnit,
                               kind: _capacityKind,
-                              enabled: enabled,
+                              enabled: fieldsOpen,
                               errorText: _capacityError,
                               decoration: SheetStyle.field(),
                               // Figures used before, read in the unit picked here.
@@ -941,15 +1043,10 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                             ),
                           ),
                         ),
-                        // Named "make" because everywhere else in this system a
-                        // feeder is an upstream node in a pipeline.
-                        _pick(
-                          slug: 'feeder',
-                          label: 'Feeder make',
-                          controller: _feederController,
-                          options: _suggestions.feederMakes,
-                          enabled: enabled,
-                        ),
+                        // No Feeder make on a machine (owner, 2026-11-27): it is
+                        // recorded on the raw material, for a coil or roll —
+                        // the feeder feeds the coil. A machine that has one
+                        // keeps it (loaded, sent back unchanged).
                         SaveRowAnchorMark(
                           anchor: _lastFieldAnchor,
                           child: _pick(
@@ -957,7 +1054,7 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                             label: 'Die Type',
                             controller: _feedTypeController,
                             options: _suggestions.dieFeedTypes,
-                            enabled: enabled,
+                            enabled: fieldsOpen,
                           ),
                         ),
                       ],
@@ -1011,8 +1108,13 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       // Add machine … show Save Machine"); what the save does when
                       // there is no part yet, or when it links one on file, is
                       // in the tooltip.
-                      label: 'Save Machine',
-                      tooltip: _unlinkedMachineId != null
+                      label: _pickedId != null
+                          ? 'Attach Machine'
+                          : 'Save Machine',
+                      tooltip: _pickedId != null
+                          ? 'Attaches machine ${_noController.text.trim()} to '
+                                'the part, as the Machines master has it'
+                          : _unlinkedMachineId != null
                           ? 'Attaches this machine to the part'
                           : (holding &&
                                     editing == null &&
@@ -1242,15 +1344,19 @@ class _PartMachineSectionState extends State<PartMachineSection> {
     final machine = id == null
         ? null
         : _machines.where((m) => m.id == id).firstOrNull;
+    // A machine picked from the master shows its own photos too: they are
+    // part of deciding whether it is the one.
+    final picked = _pickedId;
+    final shownId = machine?.id ?? picked;
     final name = machine == null
-        ? 'this machine'
+        ? (picked == null ? 'this machine' : _noController.text.trim())
         : (machine.assetId.trim().isNotEmpty
               ? machine.assetId.trim()
               : machine.name);
     return MiniPhoto(
-      key: ValueKey<String>('machine_photos_${machine?.id ?? 'unsaved'}'),
+      key: ValueKey<String>('machine_photos_${shownId ?? 'unsaved'}'),
       owner: PhotoOwner.machine,
-      id: machine?.id,
+      id: shownId,
       size: _kPhotoSize,
       label: 'Machine photos',
       what: 'machine photo',
@@ -1259,11 +1365,11 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       disabledReason: _editingStagedIndex != null
           ? 'Held for the part — save the part, then add this machine’s photos'
           : 'Save the machine, then add its photos',
-      onOpen: machine == null
+      onOpen: shownId == null
           ? null
           : () => showMachinePhotoGallery(
               context,
-              machineId: machine.id,
+              machineId: shownId,
               machineName: name,
             ),
     );

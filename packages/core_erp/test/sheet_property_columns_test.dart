@@ -184,6 +184,23 @@ ItemDefinition _partPlated(int id, String plating, {String property = 'Plating'}
   );
 }
 
+/// The first part line's box for the column named [label] — by name, not by
+/// id: Grade and Hardness are on every sheet now, so a column added here is
+/// no longer the first after the fixed ones.
+Finder _cellOf(WidgetTester tester, String label) {
+  final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;
+  final column = sheet.sheetDef.columns.firstWhere((c) => c.label == label);
+  return find.byKey(ValueKey('cell_item_0_${column.id}'));
+}
+
+/// Grade is on every sheet (owner, 2026-11-27): a test needing its options
+/// gives them to the one there, rather than making a second.
+Future<void> _gradeOptions(List<String> options) async {
+  final repo = ApiSheetPropertyRepository(useMockResponses: true);
+  final grade = (await repo.list()).firstWhere((p) => p.key == 'grade');
+  await repo.update(grade.id, options: options);
+}
+
 Future<SheetPropertiesProvider> _pump(
   WidgetTester tester, {
   SheetPropertyRepository? repository,
@@ -223,6 +240,26 @@ Future<SheetPropertiesProvider> _pump(
 void main() {
   setUp(ApiSheetPropertyRepository.debugResetMockStore);
   tearDown(SittingScope.reset);
+
+  testWidgets('Grade and Hardness are on every sheet, and cannot be deleted',
+      (tester) async {
+    // Owner, 2026-11-27: "give hardness and grade in item master". The
+    // server makes both at boot and after a wipe; the demo store mirrors it.
+    final props = await _pump(tester);
+    expect(props.byKey('grade')?.isDefault, isTrue);
+    expect(props.byKey('hardness')?.isDefault, isTrue);
+    expect(find.text('Grade'), findsWidgets);
+    expect(find.text('Hardness'), findsWidgets);
+
+    // Their lists are edited like any column's; the columns stay.
+    final why = 'Grade is on every part sheet — it cannot be deleted';
+    expect(find.byTooltip(why), findsWidgets);
+    expect(find.byTooltip('Edit Grade'), findsWidgets);
+    final delete = tester.widget<IconButton>(
+      find.descendant(of: find.byTooltip(why).first, matching: find.byType(IconButton)),
+    );
+    expect(delete.onPressed, isNull, reason: 'drawn, disabled, saying why');
+  });
 
   testWidgets('a column saved earlier is on the sheet when it opens',
       (tester) async {
@@ -352,8 +389,7 @@ void main() {
         .create(name: 'Plating', kind: 'text', options: const ['Nickel']);
     final props = await _pump(tester);
 
-    // Plating is the first column after the ten fixed ones.
-    await tester.tap(find.byKey(const ValueKey('cell_item_0_11')));
+    await tester.tap(_cellOf(tester, 'Plating'));
     await tester.pumpAndSettle();
     // The saved option is offered.
     expect(find.text('Nickel'), findsWidgets);
@@ -371,7 +407,7 @@ void main() {
         .create(name: 'Plating', kind: 'text', options: const ['Nickel', 'Gold']);
     final props = await _pump(tester);
 
-    await tester.tap(find.byKey(const ValueKey('cell_item_0_11')));
+    await tester.tap(_cellOf(tester, 'Plating'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('sheet_option_delete_Gold')));
     await tester.pumpAndSettle();
@@ -395,7 +431,7 @@ void main() {
       parts: [_partPlated(1, 'Nickel'), _partPlated(2, 'nickel')],
     );
 
-    await tester.tap(find.byKey(const ValueKey('cell_item_0_11')));
+    await tester.tap(_cellOf(tester, 'Plating'));
     await tester.pumpAndSettle();
     final held = tester.widget<IconButton>(
       find.byKey(const ValueKey('sheet_option_delete_Nickel')),
@@ -465,8 +501,7 @@ void main() {
   // The report (2026-11-24): a part saved, opened again with Edit, Hardness
   // added with "+" — and its Grade was gone, from the sheet and from the save.
   testWidgets('adding a property to a saved part keeps its other properties', (tester) async {
-    await ApiSheetPropertyRepository(useMockResponses: true)
-        .create(name: 'Grade', kind: 'text', options: const ['1st', '2nd']);
+    await _gradeOptions(const ['1st', '2nd']);
     final part = _partPlated(500, '2nd', property: 'Grade');
     final repo = _Items([part]);
     await _pump(tester, parts: [part], open: [part], itemRepo: repo);
@@ -516,8 +551,7 @@ void main() {
   });
 
   testWidgets('"Make a new part" after adding a property keeps the other properties', (tester) async {
-    await ApiSheetPropertyRepository(useMockResponses: true)
-        .create(name: 'Grade', kind: 'text', options: const ['1st', '2nd']);
+    await _gradeOptions(const ['1st', '2nd']);
     final part = _partPlated(500, '2nd', property: 'Grade');
     final repo = _Items([part]);
     await _pump(tester, parts: [part], open: [part], itemRepo: repo);
@@ -551,8 +585,7 @@ void main() {
   });
 
   testWidgets('a part made with Ctrl+Enter, opened again, keeps Grade when Hardness is added', (tester) async {
-    await ApiSheetPropertyRepository(useMockResponses: true)
-        .create(name: 'Grade', kind: 'text', options: const ['1st', '2nd']);
+    await _gradeOptions(const ['1st', '2nd']);
     final repo = _Items();
     await _pump(tester, itemRepo: repo);
     final sheet = tester.widget<PartRowsForm>(find.byType(PartRowsForm)).sheet;

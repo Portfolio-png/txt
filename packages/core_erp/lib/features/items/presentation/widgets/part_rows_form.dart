@@ -1067,7 +1067,8 @@ class _PropertyActions extends StatelessWidget {
     final (removable, removeWhy) = sheet.sheetDef.canRemove(column.id);
     final String? deleteWhy = !stored
         ? builtIn
-        : (removable ? null : removeWhy);
+        : (sheet.keepColumnBecause?.call(column) ??
+              (removable ? null : removeWhy));
 
     Widget action({
       required String key,

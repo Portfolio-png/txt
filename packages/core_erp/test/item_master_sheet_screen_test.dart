@@ -2500,7 +2500,6 @@ void main() {
         ('quick-entry-machine-hours-field', '125000'),
         ('quick-entry-machine-strokes-field', '110'),
         ('quick-entry-machine-capacity-field', '250.5'),
-        ('quick-entry-machine-feeder-field', 'Jay Shanti'),
       ]) {
         await _pickOrType(tester, field, value);
         final cut = <String>[];

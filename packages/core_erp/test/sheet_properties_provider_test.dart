@@ -24,7 +24,8 @@ void main() {
     final first = await provider.create(name: 'Plating', kind: 'list');
     final again = await provider.create(name: ' plating ', kind: 'text');
     expect(again!.id, first!.id);
-    expect(provider.properties, hasLength(1));
+    // Grade and Hardness are every sheet's own; one Plating, not two.
+    expect(provider.properties.where((p) => !p.isDefault), hasLength(1));
   });
 
   test('a value added joins the list once', () async {
@@ -40,7 +41,7 @@ void main() {
   test('a change in another window is picked up from the stream', () async {
     final provider = make();
     await provider.ensureLoaded();
-    expect(provider.properties, isEmpty);
+    expect(provider.properties.where((p) => !p.isDefault), isEmpty);
 
     // Another window adds one; the server announces it.
     await ApiSheetPropertyRepository(useMockResponses: true)

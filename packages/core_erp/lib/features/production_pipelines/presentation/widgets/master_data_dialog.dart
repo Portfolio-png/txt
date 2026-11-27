@@ -1,3 +1,5 @@
+import '../../../../core/widgets/pick_or_type_field.dart';
+import '../../../../core/app_flow_hooks.dart';
 import 'dart:async' show unawaited;
 import 'dart:convert' show jsonEncode;
 import 'dart:math' as math;
@@ -116,6 +118,7 @@ class MasterDataPanel extends StatefulWidget {
     this.grade,
     this.thickness,
     this.onThicknessChanged,
+    this.feederMakeOptions = const <String>[],
   });
 
   /// The baseline the panel opens on. Edits are made to a working copy, so the
@@ -203,6 +206,10 @@ class MasterDataPanel extends StatefulWidget {
   final String? thickness;
   final ValueChanged<String>? onThicknessChanged;
 
+  /// Feeder makes already in use — on other parts' coils and rolls — to
+  /// offer in a coil's or roll's FEEDER MAKE beside any the machines have.
+  final List<String> feederMakeOptions;
+
   /// Whether the Sheet form shows its shear plan — Shear into, the region
   /// cuts, the yield. Off for now (owner, 2026-11-27: "we will have this
   /// afterwards"); its tests turn it on, so it is kept working for when it
@@ -276,6 +283,12 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   final TextEditingController _bandLengthController = TextEditingController();
   final TextEditingController _bandPitchController = TextEditingController();
 
+  /// A coil's or roll's feeder make, in the Operation section.
+  final TextEditingController _feederController = TextEditingController();
+
+  /// Feeder makes the machines master already has, offered first.
+  List<String> _feederMakes = const <String>[];
+
   /// Forms whose length was set to Known but not typed yet: the field stays
   /// open rather than snapping back to Undefined while it is empty.
   final Set<RawForm> _lengthOpen = <RawForm>{};
@@ -315,6 +328,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
   void initState() {
     super.initState();
     _baseline = _withoutSheetPitch(widget.baseline);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeederMakes());
     widget.onDraftSource?.call(_readDraft, true);
     widget.onPagerSource?.call(_turnPage, true);
     _widthController = TextEditingController();
@@ -510,6 +524,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     _bandWidthController.dispose();
     _bandLengthController.dispose();
     _bandPitchController.dispose();
+    _feederController.dispose();
     for (final list in _bandControllers.values) {
       for (final band in list) {
         band.dispose();
@@ -1146,6 +1161,68 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
     _bandPitchController.text = formatLengthFromNanometres(
       plan.pitchNm,
       plan.pitchUnit,
+    );
+    _feederController.text = plan.feederMake;
+  }
+
+  /// The feeder makes typed on machines before — the same feeders feed the
+  /// coils. Asked once; none when the host gives no machines.
+  Future<void> _loadFeederMakes() async {
+    final hook = AppFlowHooks.machineSheetSuggestions;
+    if (hook == null || !mounted) return;
+    try {
+      final suggestions = await hook(context);
+      if (!mounted) return;
+      setState(() => _feederMakes = suggestions.feederMakes);
+    } catch (_) {
+      // Typed instead.
+    }
+  }
+
+  /// FEEDER MAKE, for a coil or roll: what feeds it into the press (owner,
+  /// 2026-11-27: "include feeder make when roll and coil is selected").
+  /// What FEEDER MAKE offers: the ones on other parts' coils and rolls, then
+  /// any the machines carry, each once.
+  List<String> get _feederMakeChoices {
+    final seen = <String>{};
+    return [
+      for (final make in [...widget.feederMakeOptions, ..._feederMakes])
+        if (make.trim().isNotEmpty && seen.add(make.trim().toLowerCase()))
+          make.trim(),
+    ];
+  }
+
+  Widget _feederMakeRow() {
+    return Row(
+      children: [
+        const SizedBox(
+          width: _labelWidth,
+          child: Text('FEEDER MAKE', style: _rowLabel),
+        ),
+        Expanded(
+          // Read only it does nothing when clicked, so it says why rather
+          // than looking broken.
+          child: Tooltip(
+            message: !widget.readOnly
+                ? ''
+                : (widget.onEdit != null
+                      ? 'Press Edit to change the feeder make'
+                      : 'Save the part first — then its raw sheet can be edited'),
+            child: PickOrTypeField(
+              fieldKey: ValueKey<String>('${_form.name}-feeder'),
+              controller: _feederController,
+              label: 'Feeder make',
+              options: _feederMakeChoices,
+              enabled: !widget.readOnly,
+              floatLabel: false,
+              onChanged: () => _updateBand(
+                (plan) =>
+                    plan.copyWith(feederMake: _feederController.text.trim()),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2033,6 +2110,7 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           // The sheet is sheared into strips and blanks; a strip, coil or
           // roll is fed through the press, one part every pitch.
           if (_form.isBand) ...[
+            if (_form.isFed) ...[_feederMakeRow(), const SizedBox(height: 10)],
             _bandPitchRow(),
             const SizedBox(height: 10),
             _bandYield(),

@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/features/materials/domain/material_definition.dart';
 import 'package:core_erp/features/production_pipelines/domain/pen_paper_baseline.dart';
 import 'package:core_erp/features/production_pipelines/domain/raw_stock_form.dart';
@@ -100,6 +102,7 @@ void main() {
     String? thickness,
     ValueChanged<String>? onThicknessChanged,
     VendorsProvider? vendors,
+    List<String> feederMakeOptions = const [],
   }) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
@@ -125,6 +128,7 @@ void main() {
                     grade: grade,
                     thickness: thickness,
                     onThicknessChanged: onThicknessChanged,
+                    feederMakeOptions: feederMakeOptions,
                     // These tests are about a plan whose form was picked (the pick itself is
                     // tested on its own: 'no form is the form until one is picked').
                     baseline: baseline.copyWith(formChosen: true),
@@ -737,6 +741,102 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets('a coil or roll records its feeder make in Operation; a '
+        'sheet or strip has none', (tester) async {
+      // Owner, 2026-11-27: "include feeder make when roll and coil is
+      // selected in raw material. add feeder make in operations".
+      AppFlowHooks.machineSheetSuggestions = (context) async =>
+          const MachineSheetSuggestions(feederMakes: ['Kaiser', 'Vasant']);
+      addTearDown(() => AppFlowHooks.machineSheetSuggestions = null);
+      PenPaperBaseline? saved;
+      await mount(tester, onSave: (b) => saved = b);
+
+      for (final form in [RawForm.sheet, RawForm.strip]) {
+        await tester.tap(find.byKey(ValueKey<String>('raw-form-${form.name}')));
+        await tester.pumpAndSettle();
+        expect(find.text('FEEDER MAKE'), findsNothing, reason: form.label);
+      }
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-roll')));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'roll-feeder');
+      expect(find.text('FEEDER MAKE'), findsOneWidget, reason: 'a roll is fed');
+
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-coil')));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'coil-feeder');
+      expect(find.text('FEEDER MAKE'), findsOneWidget);
+      // In Operation, above the pitch.
+      await reveal(tester, 'coil-pitch');
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('coil-feeder'))).dy,
+        lessThan(tester.getTopLeft(find.byKey(const ValueKey('coil-pitch'))).dy),
+      );
+
+      // The machines' feeder makes are offered.
+      await tester.tap(find.byKey(const ValueKey('coil-feeder')));
+      await tester.pumpAndSettle();
+      expect(find.text('Vasant'), findsWidgets);
+      await tester.tap(find.text('Kaiser').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save Raw Sheet'));
+      await tester.pump();
+      expect(saved!.formOf(RawForm.coil).feederMake, 'Kaiser');
+      expect(saved!.formOf(RawForm.roll).feederMake, '');
+      // Kept through the record.
+      final back = PenPaperBaseline.fromJson(saved!.toJson());
+      expect(back.formOf(RawForm.coil).feederMake, 'Kaiser');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a coil\'s feeder make offers those on other parts\' coils, '
+        'and read only it says why it cannot be changed', (tester) async {
+      // Feeder make left the machine (owner, 2026-11-27): what other parts'
+      // coils and rolls use is what is offered, then any machine's.
+      AppFlowHooks.machineSheetSuggestions = (context) async =>
+          const MachineSheetSuggestions(feederMakes: ['Vasant']);
+      addTearDown(() => AppFlowHooks.machineSheetSuggestions = null);
+      await mount(tester, feederMakeOptions: const ['Jay Shanti', 'vasant']);
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-coil')));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'coil-feeder');
+      await tester.tap(find.byKey(const ValueKey('coil-feeder')));
+      await tester.pumpAndSettle();
+      expect(find.text('Jay Shanti'), findsWidgets);
+      expect(find.text('vasant'), findsWidgets);
+      expect(find.text('Vasant'), findsNothing, reason: 'the same make, once');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      // Read only (before Edit): drawn, and saying why.
+      await mount(tester, readOnly: true, onEdit: () {});
+      await tester.tap(find.byKey(const ValueKey<String>('raw-form-coil')));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Press Edit to change the feeder make'), findsOneWidget);
+    });
+
+    test('the review names a coil\'s feeder make; a strip has none to name', () {
+      final plan = PenPaperBaseline.blank()
+          .copyWith(lastForm: RawForm.coil, formChosen: true)
+          .withForm(
+            RawForm.coil,
+            const RawStockForm(widthNm: 250000000, feederMake: 'Kaiser'),
+          )
+          .withForm(
+            RawForm.strip,
+            const RawStockForm(widthNm: 40000000, feederMake: 'Kaiser'),
+          );
+      final sections = rawSheetReviewSections(
+        baseline: plan,
+        partName: 'Patti',
+        sheetLabel: '',
+      );
+      final coil = sections.firstWhere((s) => s.title == 'Coil');
+      expect(coil.rows, contains(('Feeder make', 'Kaiser')));
+      final strip = sections.firstWhere((s) => s.title == 'Strip');
+      expect(strip.rows.map((r) => r.$1), isNot(contains('Feeder make')));
+    });
 
     testWidgets('a coil is laid out like the sheet: width, an undefined '
         'length, the thickness, and an operation', (tester) async {

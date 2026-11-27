@@ -396,6 +396,11 @@ class SheetController extends ChangeNotifier {
   /// Offered on a column's menu as "Edit options…" when the host can edit
   /// that column's list; null hides it.
   bool Function(ColumnDef column)? canEditOptions;
+
+  /// Why the host keeps [column] on the sheet whatever is asked — a column
+  /// every part sheet has — or null when it may go. Its delete is drawn
+  /// disabled with this as the reason.
+  String? Function(ColumnDef column)? keepColumnBecause;
   void Function(ColumnDef column)? onEditOptions;
 
   void applyContact(int columnId, Contact contact, {int? row}) {
@@ -889,6 +894,12 @@ class SheetController extends ChangeNotifier {
     final (allowed, _) = _sheetDef.canRemove(columnId);
     if (!allowed) {
       removeColumn(columnId); // says why, as before
+      return;
+    }
+    final kept = keepColumnBecause?.call(col);
+    if (kept != null) {
+      _lastActionResult = kept;
+      notifyListeners();
       return;
     }
     final confirm = confirmRemoveColumn;

@@ -270,7 +270,13 @@ class MachineSheetSuggestions {
     this.runningHours = const <String>[],
     this.strokesPerMinute = const <String>[],
     this.capacitiesKgf = const <int>[],
+    this.machines = const <MachineSheetDraft>[],
   });
+
+  /// Every machine in the master, each with its id in
+  /// [MachineSheetDraft.machineId]: the item sheet's Machine No. lists a
+  /// type's machines to attach (owner, 2026-11-27).
+  final List<MachineSheetDraft> machines;
 
   final List<String> makes;
   final List<String> feederMakes;

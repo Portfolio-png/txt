@@ -3853,6 +3853,9 @@ async function initDb() {
   // this, which is why payroll and the client portal existed only on
   // databases where someone had applied them by hand.
   await runPendingMigrations({ db, run, all });
+  // The default Grade and Hardness columns, once their table (061) exists —
+  // ensurePrimaryGroupAndUnit ran before it on a new database.
+  await require('./modules/items/sheet-properties').ensureDefaultSheetProperties({ get, run });
 
   // Start the live push at the current head, so booting the server does not
   // replay the entire changelog at whoever happens to connect. A client that
@@ -3918,6 +3921,9 @@ async function ensurePrimaryGroupAndUnit() {
   await seedStandardUnitFamilies({ run, get, all });
   const piece = await get("SELECT id FROM units WHERE LOWER(name) = 'piece' OR symbol = 'Pc' ORDER BY is_base DESC, id LIMIT 1");
   await ensureSystemGroups({ run, get }, { primary: unit.id, piece: piece?.id ?? unit.id });
+  // Grade and Hardness on every item sheet (beside the built-in Alloy and
+  // Thickness), back after a wipe like the default groups.
+  await require('./modules/items/sheet-properties').ensureDefaultSheetProperties({ get, run });
   let scrapGroup = await get('SELECT id FROM groups WHERE name = "Scrap" AND parent_group_id IS NULL');
   if (!scrapGroup) {
     await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Scrap', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);

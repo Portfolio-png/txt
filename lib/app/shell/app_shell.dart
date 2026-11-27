@@ -883,6 +883,25 @@ void _registerAppFlowHooks() {
       strokesPerMinute:
           distinct((machine) => '${machine.strokesPerMinute ?? ''}'),
       capacitiesKgf: capacities.toList(),
+      // The machines themselves, for the sheet's Machine No. to pick from.
+      machines: [
+        for (final machine in machines)
+          MachineSheetDraft(
+            machineId: machine.id,
+            assetId: machine.assetId,
+            name: machine.name,
+            groupId: machine.groupId,
+            machineMake: machine.machineMake,
+            manufacturedYear: machine.manufacturedYear,
+            manufacturedOn: machine.manufacturedOn,
+            feederMake: machine.feederMake,
+            runningHours: machine.runningHours,
+            strokesPerMinute: machine.strokesPerMinute,
+            capacityKind: machine.capacityKind,
+            capacityKgf: machine.capacityKgf,
+            dieFeedType: machine.dieFeedType,
+          ),
+      ],
     );
   };
   // Unread today — see the note on `dieEditor` above.

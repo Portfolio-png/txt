@@ -106,6 +106,7 @@ List<RawSheetReviewSection> rawSheetReviewSections({
     if (plan.lengthKnown) add(rows, 'Length', length(plan.lengthNm, plan.lengthUnit));
     add(rows, 'Thickness', length(plan.thicknessNm, plan.thicknessUnit));
     add(rows, 'Pitch', length(plan.pitchNm, plan.pitchUnit));
+    if (band.isFed) add(rows, 'Feeder make', given(plan.feederMake));
     if (fromLength != null && fromLength > 0) {
       rows.add(('Parts from the length', '$fromLength'));
     }

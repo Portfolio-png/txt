@@ -25,6 +25,7 @@ import '../../../process_routes/data/process_route_service.dart';
 import '../../../process_routes/domain/part_route.dart';
 import '../../../process_routes/presentation/widgets/route_creation_panel.dart';
 import '../../../production_pipelines/domain/pen_paper_baseline.dart';
+import '../../../production_pipelines/domain/raw_stock_form.dart';
 import '../../../production_pipelines/domain/pipeline_stage_node.dart';
 import '../../../production_pipelines/domain/sheet_part.dart';
 import '../../../production_pipelines/presentation/widgets/master_data_dialog.dart';
@@ -478,6 +479,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       ..onColumnRemoved = _onColumnRemoved
       ..onColumnRenamed = _onColumnRenamed
       ..canEditOptions = ((column) => _storedFor(column) != null)
+      // Grade and Hardness are on every part sheet: their lists are edited,
+      // the columns are not deleted (owner, 2026-11-27).
+      ..keepColumnBecause = ((column) => _storedFor(column)?.isDefault == true
+          ? '${column.label} is on every part sheet — it cannot be deleted'
+          : null)
       ..onEditOptions = _editOptions
       ..onRowLeft = (row) => unawaited(_commitOnLeave(row));
 
@@ -1454,6 +1460,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           ? null
           : _cellNow(SheetBindsTo.variation('Thickness')),
       onThicknessChanged: _setThickness,
+      feederMakeOptions: _feederMakesInUse(),
       saving: _rawSaving,
       onEdit: part != null && !_rawEditing
           ? () => setState(() => _rawEditing = true)
@@ -3125,6 +3132,25 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       return _cellNow(binds);
     }
     return '';
+  }
+
+  /// Every feeder make typed on a coil or roll of any part, the most
+  /// recently changed part first — what a coil's FEEDER MAKE offers (it moved
+  /// there from the machine, owner 2026-11-27).
+  List<String> _feederMakesInUse() {
+    final parts = [...context.read<ItemsProvider>().items]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final seen = <String>{};
+    final makes = <String>[];
+    for (final part in parts) {
+      final plan = part.penPaperBaseline;
+      if (plan == null) continue;
+      for (final form in [RawForm.coil, RawForm.roll]) {
+        final make = plan.formOf(form).feederMake.trim();
+        if (make.isNotEmpty && seen.add(make.toLowerCase())) makes.add(make);
+      }
+    }
+    return makes;
   }
 
   /// The open part's saved die with this id, or null.

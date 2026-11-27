@@ -104,7 +104,11 @@ test('a property column is kept with its options until it is removed', async () 
     assert.deepEqual(renamed.body.property.options, ['Chrome', 'Nickel']);
 
     const listed = await call('GET', '/api/item-sheet-properties');
-    assert.deepEqual(listed.body.properties.map((p) => p.key), ['plating', 'temper']);
+    // Grade and Hardness are every sheet's own; these are the ones added here.
+    assert.deepEqual(
+      listed.body.properties.filter((p) => !p.isDefault).map((p) => p.key),
+      ['plating', 'temper'],
+    );
 
     // It reaches other windows: the change is in the log.
     const logged = await ctx.backend.get(
@@ -116,7 +120,10 @@ test('a property column is kept with its options until it is removed', async () 
     const removed = await call('DELETE', `/api/item-sheet-properties/${plating.id}`);
     assert.equal(removed.status, 200);
     const after = await call('GET', '/api/item-sheet-properties');
-    assert.deepEqual(after.body.properties.map((p) => p.key), ['temper']);
+    assert.deepEqual(
+      after.body.properties.filter((p) => !p.isDefault).map((p) => p.key),
+      ['temper'],
+    );
   } finally {
     await closeServer(ctx.server);
   }
@@ -164,6 +171,52 @@ test('only someone who may change items may change the sheet columns', async () 
     assert.equal(
       (await reader('POST', '/api/item-sheet-properties', { name: 'Plating' })).status,
       403,
+    );
+  } finally {
+    await closeServer(ctx.server);
+  }
+});
+
+test('Grade and Hardness are on every sheet, come back after a wipe, and stay', async () => {
+  // Owner, 2026-11-27: "give hardness and grade in item master". They were
+  // "+" columns someone added, so a new or wiped workspace had neither.
+  const ctx = await boot('paper-sheet-default-props-', 'sheet-default-props@paper.local');
+  const { call, backend } = ctx;
+  try {
+    const names = async () =>
+      (await call('GET', '/api/item-sheet-properties')).body.properties;
+    let listed = await names();
+    const grade = listed.find((p) => p.key === 'grade');
+    const hardness = listed.find((p) => p.key === 'hardness');
+    assert.ok(grade && hardness, 'both there on a fresh workspace');
+    assert.equal(grade.isDefault, true);
+    assert.equal(hardness.isDefault, true);
+    assert.ok(grade.position < hardness.position, 'Grade before Hardness');
+
+    // Typed values join their lists as for any column.
+    const added = await call('POST', `/api/item-sheet-properties/${hardness.id}/options`, { label: 'Half Hard' });
+    assert.equal(added.status, 200);
+    assert.deepEqual(added.body.property.options, ['Half Hard']);
+
+    // Not deleted.
+    const refused = await call('DELETE', `/api/item-sheet-properties/${grade.id}`);
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.code, 'default_property');
+    assert.ok((await names()).some((p) => p.key === 'grade'));
+
+    // A column of one's own is still removable, and not marked default.
+    const own = await call('POST', '/api/item-sheet-properties', { name: 'Plating' });
+    assert.equal(own.body.property.isDefault, false);
+    assert.equal((await call('DELETE', `/api/item-sheet-properties/${own.body.property.id}`)).status, 200);
+
+    // Wiped, they are made again — boot (and Clear Data / Factory Reset,
+    // through ensurePrimaryGroupAndUnit) put back what is missing.
+    await backend.run('DELETE FROM item_sheet_properties');
+    await backend.initDb();
+    listed = await names();
+    assert.deepEqual(
+      listed.filter((p) => p.isDefault).map((p) => p.name),
+      ['Grade', 'Hardness'],
     );
   } finally {
     await closeServer(ctx.server);

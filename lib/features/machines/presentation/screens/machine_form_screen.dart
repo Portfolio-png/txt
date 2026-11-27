@@ -17,6 +17,7 @@ import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart
 import '../../domain/machine.dart';
 import '../../domain/machine_capability.dart';
 import '../providers/machine_provider.dart';
+import '../widgets/arrangeable_field_grid.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
@@ -535,115 +536,101 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                     title: 'Identity & Details',
                     subtitle:
                         'Core information for identifying the machine on the floor.',
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _nameController,
-                                label: 'Machine Name',
-                                helper: 'E.g. Komatsu 100T Press',
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _assetIdController,
-                                label: 'Asset ID / Eq. Code',
-                                helper: 'Unique factory identifier',
-                              ),
-                            ),
-                          ],
+                    child: ArrangeableFieldGrid(
+                      storeKey: 'machine_dialog.identity',
+                      fields: [
+                        // No Machine Name (owner, 2026-11-27: "remove machine
+                        // name field"): a machine is known by its Asset ID,
+                        // which names a new one — as on the item sheet.
+                        ArrangeableField(
+                          id: 'asset',
+                          label: 'Asset ID / Eq. Code',
+                          child: _MachineTextField(
+                            controller: _assetIdController,
+                            label: 'Asset ID / Eq. Code',
+                            helper: 'Unique factory identifier',
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: SearchableSelectField<int>(
-                                tapTargetKey: const ValueKey<String>(
-                                  'machine-group-field',
-                                ),
-                                value: _groupId,
-                                decoration: InputDecoration(
-                                  labelText: 'Machine Group',
-                                  helperText:
-                                      'Categorization from Group Master',
-                                  suffixIcon: TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                      try {
-                                        context.read<AppNavigation>().select(
-                                          'configurator_machine_groups',
-                                        );
-                                      } catch (_) {}
-                                    },
-                                    child: const Text('Manage'),
+                        ArrangeableField(
+                          id: 'group',
+                          label: 'Machine Group',
+                          child: SearchableSelectField<int>(
+                            tapTargetKey: const ValueKey<String>(
+                              'machine-group-field',
+                            ),
+                            value: _groupId,
+                            decoration: InputDecoration(
+                              labelText: 'Machine Group',
+                              helperText: 'Categorization from Group Master',
+                              suffixIcon: TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  try {
+                                    context.read<AppNavigation>().select(
+                                      'configurator_machine_groups',
+                                    );
+                                  } catch (_) {}
+                                },
+                                child: const Text('Manage'),
+                              ),
+                            ),
+                            dialogTitle: 'Machine Group',
+                            searchHintText: 'Search machine groups',
+                            options: groups
+                                .map(
+                                  (g) => SearchableSelectOption<int>(
+                                    value: g.id,
+                                    label: g.name,
+                                    highlightColor: const Color(0xFFE4C17C),
                                   ),
-                                ),
-                                dialogTitle: 'Machine Group',
-                                searchHintText: 'Search machine groups',
-                                options: groups
-                                    .map(
-                                      (g) => SearchableSelectOption<int>(
-                                        value: g.id,
-                                        label: g.name,
-                                        highlightColor: const Color(0xFFE4C17C),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (val) =>
-                                    setState(() => _groupId = val),
-                                validator: (val) =>
-                                    val == null ? 'Required' : null,
-                                onCreateOption: (query) async {
-                                  final created = await GroupsScreen.openEditor(
-                                    context,
-                                    groupType: 'machine',
-                                    initialName: query,
-                                  );
-                                  if (!context.mounted || created == null) {
-                                    return null;
-                                  }
-                                  await context
-                                      .read<GroupsProvider>()
-                                      .refresh();
-                                  return SearchableSelectOption<int>(
-                                    value: created.id,
-                                    label: created.name,
-                                  );
-                                },
-                                createOptionLabelBuilder: (query) =>
-                                    'Create group "$query"',
-                              ),
+                                )
+                                .toList(),
+                            onChanged: (val) => setState(() => _groupId = val),
+                            validator: (val) => val == null ? 'Required' : null,
+                            onCreateOption: (query) async {
+                              final created = await GroupsScreen.openEditor(
+                                context,
+                                groupType: 'machine',
+                                initialName: query,
+                              );
+                              if (!context.mounted || created == null) {
+                                return null;
+                              }
+                              await context.read<GroupsProvider>().refresh();
+                              return SearchableSelectOption<int>(
+                                value: created.id,
+                                label: created.name,
+                              );
+                            },
+                            createOptionLabelBuilder: (query) =>
+                                'Create group "$query"',
+                          ),
+                        ),
+                        ArrangeableField(
+                          id: 'status',
+                          label: 'Status',
+                          child: SearchableSelectField<MachineStatus>(
+                            tapTargetKey: const ValueKey<String>(
+                              'machine-status-field',
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: SearchableSelectField<MachineStatus>(
-                                tapTargetKey: const ValueKey<String>(
-                                  'machine-status-field',
-                                ),
-                                value: _status,
-                                decoration: const InputDecoration(
-                                  labelText: 'Status',
-                                  helperText: 'Current operational state',
-                                ),
-                                dialogTitle: 'Status',
-                                options: MachineStatus.values.map((s) {
-                                  return SearchableSelectOption(
-                                    value: s,
-                                    label: s.name.toUpperCase(),
-                                  );
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() => _status = val);
-                                  }
-                                },
-                              ),
+                            value: _status,
+                            decoration: const InputDecoration(
+                              labelText: 'Status',
+                              helperText: 'Current operational state',
                             ),
-                          ],
+                            dialogTitle: 'Status',
+                            options: MachineStatus.values.map((s) {
+                              return SearchableSelectOption(
+                                value: s,
+                                label: s.name.toUpperCase(),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _status = val);
+                              }
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -661,61 +648,63 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                     title: 'Report Defaults',
                     subtitle:
                         'Non-financial assumptions used to print order reports.',
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _reportOutputPerHourController,
-                                label: 'Output / Hour',
-                                helper: 'Typical production speed',
-                                required: false,
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _setupMinutesController,
-                                label: 'Setup Minutes',
-                                helper: 'Default setup time',
-                                required: false,
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                          ],
+                    child: ArrangeableFieldGrid(
+                      storeKey: 'machine_dialog.report',
+                      fields: [
+                        ArrangeableField(
+                          id: 'output',
+                          label: 'Output / Hour',
+                          child: _MachineTextField(
+                            controller: _reportOutputPerHourController,
+                            label: 'Output / Hour',
+                            helper: 'Typical production speed',
+                            required: false,
+                            keyboardType: TextInputType.number,
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _laborCountController,
-                                label: 'Labor Count',
-                                helper: 'Operators normally required',
-                                required: false,
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _powerKwController,
-                                label: 'Power kW',
-                                helper: 'Connected load or estimate',
-                                required: false,
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                          ],
+                        ArrangeableField(
+                          id: 'setup',
+                          label: 'Setup Minutes',
+                          child: _MachineTextField(
+                            controller: _setupMinutesController,
+                            label: 'Setup Minutes',
+                            helper: 'Default setup time',
+                            required: false,
+                            keyboardType: TextInputType.number,
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        _MachineTextField(
-                          controller: _reportNotesController,
+                        ArrangeableField(
+                          id: 'labor',
+                          label: 'Labor Count',
+                          child: _MachineTextField(
+                            controller: _laborCountController,
+                            label: 'Labor Count',
+                            helper: 'Operators normally required',
+                            required: false,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        ArrangeableField(
+                          id: 'power',
+                          label: 'Power kW',
+                          child: _MachineTextField(
+                            controller: _powerKwController,
+                            label: 'Power kW',
+                            helper: 'Connected load or estimate',
+                            required: false,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        ArrangeableField(
+                          id: 'notes',
                           label: 'Report Notes',
-                          helper: 'Setup notes printed with formulas',
-                          required: false,
+                          wide: true,
+                          child: _MachineTextField(
+                            controller: _reportNotesController,
+                            label: 'Report Notes',
+                            helper: 'Setup notes printed with formulas',
+                            required: false,
+                          ),
                         ),
                       ],
                     ),
@@ -1521,113 +1510,108 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     );
   }
 
-
   /// The "Machine in Plant" sheet the floor keeps: who built it, when, what
   /// feeds it, how fast and how hard it presses, and what tooling it takes.
   /// Added with migration 049 — a machine entered from the Quick entry wizard
   /// fills these in, and this is where they get corrected.
   Widget _machineSheetFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _MachineTextField(
-                controller: _machineMakeController,
-                label: 'Machine Make',
-                helper: 'Who built it',
-                required: false,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _MachineTextField(
-                controller: _manufacturedYearController,
-                label: 'D.O.M.',
-                // A year, because that is all anyone knows about a machine
-                // this old — and not the same fact as when it was installed.
-                helper: 'Year it was built',
-                required: false,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-          ],
+    return ArrangeableFieldGrid(
+      storeKey: 'machine_dialog.plant',
+      fields: [
+        ArrangeableField(
+          id: 'make',
+          label: 'Machine Make',
+          child: _MachineTextField(
+            controller: _machineMakeController,
+            label: 'Machine Make',
+            helper: 'Who built it',
+            required: false,
+          ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _MachineTextField(
-                controller: _runningHoursController,
-                label: 'Running Hrs',
-                helper: 'The meter now',
-                required: false,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _MachineTextField(
-                controller: _strokesPerMinuteController,
-                label: 'Stroke / Min',
-                helper: 'Rated strokes per minute',
-                required: false,
-                keyboardType: TextInputType.number,
-              ),
-            ),
-          ],
+        ArrangeableField(
+          id: 'dom',
+          label: 'D.O.M.',
+          child: _MachineTextField(
+            controller: _manufacturedYearController,
+            label: 'D.O.M.',
+            // A year, because that is all anyone knows about a machine
+            // this old — and not the same fact as when it was installed.
+            helper: 'Year it was built',
+            required: false,
+            keyboardType: TextInputType.number,
+          ),
         ),
-        const SizedBox(height: 12),
-        ForceCapacityField(
-          controller: _capacityController,
-          unitSymbol: _capacityUnit,
-          kind: _capacityKind,
-          errorText: _capacityError,
-          onUnitChanged: (symbol) => setState(() {
-            _capacityUnit = symbol;
-            _capacityError = null;
-          }),
-          onKindChanged: (kind) => setState(() {
-            _capacityKind = kind;
-            _capacityError = null;
-          }),
-          onChanged: () {
-            final parsed = parseCapacityToKgf(
-              _capacityController.text,
-              _capacityUnit,
-            );
-            if (parsed.error != _capacityError) {
-              setState(() => _capacityError = parsed.error);
-            }
-          },
+        ArrangeableField(
+          id: 'hours',
+          label: 'Running Hrs',
+          child: _MachineTextField(
+            controller: _runningHoursController,
+            label: 'Running Hrs',
+            helper: 'The meter now',
+            required: false,
+            keyboardType: TextInputType.number,
+          ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _MachineTextField(
-                controller: _feederMakeController,
-                label: 'Feeder make',
-                // "Make" because everywhere else here a feeder is an upstream
-                // node in a pipeline, and the sheet uses the word for both.
-                helper: 'The feeder on this machine, if it has one',
-                required: false,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _MachineTextField(
-                controller: _dieFeedTypeController,
-                label: 'Die Type',
-                helper: 'Manual, Semi Prog, Progressive — what tooling it takes',
-                required: false,
-              ),
-            ),
-          ],
+        ArrangeableField(
+          id: 'strokes',
+          label: 'Stroke / Min',
+          child: _MachineTextField(
+            controller: _strokesPerMinuteController,
+            label: 'Stroke / Min',
+            helper: 'Rated strokes per minute',
+            required: false,
+            keyboardType: TextInputType.number,
+          ),
+        ),
+        ArrangeableField(
+          id: 'capacity',
+          label: 'Capacity',
+          wide: true,
+          child: ForceCapacityField(
+            controller: _capacityController,
+            unitSymbol: _capacityUnit,
+            kind: _capacityKind,
+            errorText: _capacityError,
+            onUnitChanged: (symbol) => setState(() {
+              _capacityUnit = symbol;
+              _capacityError = null;
+            }),
+            onKindChanged: (kind) => setState(() {
+              _capacityKind = kind;
+              _capacityError = null;
+            }),
+            onChanged: () {
+              final parsed = parseCapacityToKgf(
+                _capacityController.text,
+                _capacityUnit,
+              );
+              if (parsed.error != _capacityError) {
+                setState(() => _capacityError = parsed.error);
+              }
+            },
+          ),
+        ),
+        // No Feeder make here (owner, 2026-11-27: "remove feeder make from
+        // form"). A machine that has one keeps it: the value is still loaded
+        // and sent back unchanged.
+        ArrangeableField(
+          id: 'feed',
+          label: 'Die Type',
+          child: _MachineTextField(
+            controller: _dieFeedTypeController,
+            label: 'Die Type',
+            helper: 'Manual, Semi Prog, Progressive — what tooling it takes',
+            required: false,
+          ),
         ),
       ],
     );
+  }
+
+  String _savedName() {
+    final kept = _nameController.text.trim();
+    final existing = (widget.machine?.id ?? '').trim().isNotEmpty;
+    return existing && kept.isNotEmpty ? kept : _assetIdController.text.trim();
   }
 
   void _submit() async {
@@ -1709,7 +1693,9 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
 
     final newMachine = Machine(
       id: id,
-      name: _nameController.text.trim(),
+      // A machine already named keeps its name; a new one, or a copy, is
+      // named by its Asset ID (there is no name field to type it in).
+      name: _savedName(),
       assetId: _assetIdController.text.trim(),
       primaryPhotoUrl: _photoUrlController.text.trim(),
       groupId: _groupId,
@@ -1730,10 +1716,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       strokesPerMinute: _optionalInt(_strokesPerMinuteController),
       capacityKind: _capacityKind == CapacityKind.freeHand
           ? CapacityKind.freeHand.wire
-          : (parseCapacityToKgf(
-                      _capacityController.text,
-                      _capacityUnit,
-                    ).kgf ==
+          : (parseCapacityToKgf(_capacityController.text, _capacityUnit).kgf ==
                     null
                 ? ''
                 : CapacityKind.rated.wire),

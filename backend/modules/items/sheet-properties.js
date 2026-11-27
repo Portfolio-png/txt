@@ -18,6 +18,18 @@ const { answer, deskRoutes } = require('../../kernel/desk-kit');
 // ---------------------------------------------------------------------------
 
 const KINDS = ['list', 'text', 'material', 'gauge'];
+
+/// Columns every item sheet has, beside the built-in Alloy and Thickness
+/// (owner, 2026-11-27: "give hardness and grade in item master"). They were
+/// "+" columns someone added, so a new or wiped workspace had neither. Made at
+/// boot and after Clear Data / Factory Reset (ensureDefaultSheetProperties,
+/// from ensurePrimaryGroupAndUnit), in this order; never deleted. Their option
+/// lists stay the users' own: nothing is put in them.
+const DEFAULT_SHEET_PROPERTIES = [
+  { name: 'Grade', kind: 'list' },
+  { name: 'Hardness', kind: 'list' },
+];
+const DEFAULT_KEYS = new Set(DEFAULT_SHEET_PROPERTIES.map((p) => p.name.toLowerCase()));
 const MAX_NAME = 60;
 const MAX_OPTION = 80;
 const MAX_OPTIONS = 200;
@@ -83,6 +95,8 @@ function rowToDto(row) {
     kind: row.kind,
     position: Number(row.position || 0),
     options: parseOptions(row.options_json),
+    // On every sheet, and not to be deleted.
+    isDefault: DEFAULT_KEYS.has(String(row.property_key || '').toLowerCase()),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -256,6 +270,13 @@ function createSheetPropertyWork({ get, all, run }) {
   async function deleteSheetProperty(req) {
     try {
       const before = await load(req.params.id);
+      if (DEFAULT_KEYS.has(String(before.property_key || '').toLowerCase())) {
+        return answer(409, {
+          success: false,
+          code: 'default_property',
+          error: `"${before.display_name}" is on every part sheet and cannot be deleted.`,
+        });
+      }
       await run('DELETE FROM item_sheet_properties WHERE id = ?', [before.id]);
       req.track('delete', 'item_sheet_properties', before.id, before);
       return answer(200, { success: true });
@@ -297,6 +318,35 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
     send('items.sheetProperties.delete', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
 };
 
+/// Adds the default columns a workspace is missing, after any it has.
+/// Idempotent; one already there (added by hand, or renamed) is left as it is.
+async function ensureDefaultSheetProperties({ get, run }) {
+  // Boot reaches here before the numbered migrations: on a new database the
+  // table (061) is not there yet, and the call after them makes the columns.
+  const table = await get(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'item_sheet_properties'",
+  );
+  if (!table) return;
+  for (const def of DEFAULT_SHEET_PROPERTIES) {
+    const key = propertyKeyOf(def.name);
+    const existing = await get(
+      'SELECT id FROM item_sheet_properties WHERE property_key = ? COLLATE NOCASE',
+      [key],
+    );
+    if (existing) continue;
+    const last = await get('SELECT COALESCE(MAX(position), 0) AS position FROM item_sheet_properties');
+    const now = new Date().toISOString();
+    await run(
+      `INSERT INTO item_sheet_properties
+         (property_key, property_name, display_name, kind, position, options_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, '[]', ?, ?)`,
+      [key, def.name, def.name, def.kind, Number(last?.position || 0) + 1, now, now],
+    );
+  }
+}
+
 module.exports.rowToDto = rowToDto;
+module.exports.DEFAULT_SHEET_PROPERTIES = DEFAULT_SHEET_PROPERTIES;
+module.exports.ensureDefaultSheetProperties = ensureDefaultSheetProperties;
 module.exports.propertyKeyOf = propertyKeyOf;
 module.exports.createSheetPropertyWork = createSheetPropertyWork;

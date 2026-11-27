@@ -13,6 +13,7 @@ class SheetProperty {
     required this.kind,
     this.position = 0,
     this.options = const <String>[],
+    this.isDefault = false,
   });
 
   factory SheetProperty.fromJson(Map<String, dynamic> json) => SheetProperty(
@@ -26,6 +27,7 @@ class SheetProperty {
     options: [
       for (final option in (json['options'] as List? ?? const [])) '$option',
     ],
+    isDefault: json['isDefault'] == true,
   );
 
   final int id;
@@ -41,6 +43,10 @@ class SheetProperty {
   final int position;
   final List<String> options;
 
+  /// On every part sheet — Grade, Hardness (owner, 2026-11-27) — and not to
+  /// be deleted. Its options are edited like any other column's.
+  final bool isDefault;
+
   SheetProperty copyWith({String? name, List<String>? options}) =>
       SheetProperty(
         id: id,
@@ -50,6 +56,7 @@ class SheetProperty {
         kind: kind,
         position: position,
         options: options ?? this.options,
+        isDefault: isDefault,
       );
 }
 

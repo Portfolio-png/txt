@@ -47,6 +47,28 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
     _mockNextId = 1;
   }
 
+  /// The columns every sheet has, as the server makes them at boot and after
+  /// a wipe (owner, 2026-11-27): put back whenever the demo store lacks them.
+  static const List<String> defaultColumns = ['Grade', 'Hardness'];
+
+  static void _ensureMockDefaults() {
+    for (final name in defaultColumns) {
+      final key = name.toLowerCase();
+      if (_mock.any((p) => p.key == key)) continue;
+      _mock.add(
+        SheetProperty(
+          id: _mockNextId++,
+          key: key,
+          propertyName: name,
+          name: name,
+          kind: 'list',
+          position: _mock.length + 1,
+          isDefault: true,
+        ),
+      );
+    }
+  }
+
   Uri _uri(String path) => Uri.parse('$baseUrl/api/item-sheet-properties$path');
 
   SheetProperty _read(http.Response response) {
@@ -82,7 +104,10 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
 
   @override
   Future<List<SheetProperty>> list() async {
-    if (useMockResponses) return List.of(_mock);
+    if (useMockResponses) {
+      _ensureMockDefaults();
+      return List.of(_mock);
+    }
     final response = await _client.get(_uri(''));
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic> ||
@@ -108,6 +133,7 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
     List<String> options = const [],
   }) async {
     if (useMockResponses) {
+      _ensureMockDefaults();
       final key = name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
       final existing = _mock.where((p) => p.key == key).firstOrNull;
       if (existing != null) {
@@ -211,6 +237,13 @@ class ApiSheetPropertyRepository implements SheetPropertyRepository {
   @override
   Future<void> remove(int id) async {
     if (useMockResponses) {
+      final gone = _mock.where((p) => p.id == id).firstOrNull;
+      if (gone != null && gone.isDefault) {
+        throw SheetPropertyException(
+          '"${gone.name}" is on every part sheet and cannot be deleted.',
+          code: 'default_property',
+        );
+      }
       _mock.removeWhere((p) => p.id == id);
       return;
     }

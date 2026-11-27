@@ -1,3 +1,5 @@
+import 'package:core_erp/core/widgets/pick_or_type_field.dart';
+import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
 import 'package:core_erp/features/clients/domain/client_definition.dart';
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
@@ -2356,6 +2358,18 @@ void _machineSectionTests() {
     Finder machineRow(String id) =>
         find.byKey(ValueKey<String>('machine_tab_$id'));
 
+    /// The Machine No. as it stands — a dropdown of the type's machines
+    /// now (2026-11-27), so its text is its field's controller.
+    String machineNo(WidgetTester tester) => tester
+        .widget<PickOrTypeField>(
+          find.ancestor(
+            of: machineField('no'),
+            matching: find.byType(PickOrTypeField),
+          ),
+        )
+        .controller
+        .text;
+
     /// A part on screen, with a machine type to pick.
     Future<_Harness> partReady(WidgetTester tester) async {
       final harness = await _pumpWizard(
@@ -2421,6 +2435,84 @@ void _machineSectionTests() {
       );
     });
 
+    testWidgets('Machine No. lists the type\'s machines in the master; one '
+        'picked is shown read only and attached, never made again', (
+      tester,
+    ) async {
+      // Owner, 2026-11-27: "when machine type is selected, also show machine
+      // no. as dropdown and selection from there will auto populate the other
+      // fields to make a decision — if to attach or not".
+      AppFlowHooks.machineSheetSuggestions = (context) async =>
+          const MachineSheetSuggestions(
+            machines: [
+              MachineSheetDraft(
+                machineId: '31',
+                assetId: 'PP-1',
+                name: 'PP-1',
+                groupId: 60,
+                machineMake: 'Kaiser',
+                runningHours: 900,
+                dieFeedType: 'Progressive',
+              ),
+            ],
+          );
+      final harness = await partReady(tester);
+      await pickType(tester, 'Power Press');
+      expect(machineNo(tester), 'PP-2', reason: 'a new one is offered a free number');
+
+      // Picked from the dropdown: its fields fill in, to decide by.
+      await _tapVisible(tester, machineField('no'));
+      await tester.tap(find.text('PP-1').last);
+      await tester.pumpAndSettle();
+      expect(showsIn('make', 'Kaiser'), isTrue);
+      expect(find.textContaining('is in the Machines master'), findsOneWidget);
+      // Read only: the sheet never rewrites the master's record.
+      final make = tester.widget<SearchableSelectField<String>>(machineField('make'));
+      expect(make.fieldEnabled, isFalse);
+      expect(
+        find.descendant(of: addMachine(), matching: find.text('Attach Machine')),
+        findsOneWidget,
+      );
+
+      await _tapVisible(tester, addMachine());
+      expect(drafts, isEmpty, reason: 'attached, not made again');
+      expect(harness.itemRepo.updated.single.machineIds, contains('31'));
+    });
+
+    testWidgets('a number the master does not have is a new machine again', (
+      tester,
+    ) async {
+      AppFlowHooks.machineSheetSuggestions = (context) async =>
+          const MachineSheetSuggestions(
+            machines: [
+              MachineSheetDraft(
+                machineId: '31',
+                assetId: 'PP-1',
+                name: 'PP-1',
+                groupId: 60,
+                machineMake: 'Kaiser',
+              ),
+            ],
+          );
+      await partReady(tester);
+      await pickType(tester, 'Power Press');
+      await _tapVisible(tester, machineField('no'));
+      await tester.tap(find.text('PP-1').last);
+      await tester.pumpAndSettle();
+      expect(showsIn('make', 'Kaiser'), isTrue);
+
+      await pickOrType(tester, 'no', 'PP-9');
+      expect(showsIn('make', 'Kaiser'), isFalse, reason: 'the picked one let go');
+      expect(
+        tester.widget<SearchableSelectField<String>>(machineField('make')).fieldEnabled,
+        isTrue,
+      );
+      expect(
+        find.descendant(of: addMachine(), matching: find.text('Save Machine')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the number is built from the type and counts up', (
       tester,
     ) async {
@@ -2428,7 +2520,7 @@ void _machineSectionTests() {
 
       await pickType(tester, 'Power Press');
       // The first press of its type on this part.
-      expect(_textIn(tester, 'machine-no'), 'PP-1');
+      expect(machineNo(tester), 'PP-1');
     });
 
     testWidgets('a number typed over is pinned against a later type change', (
@@ -2437,13 +2529,12 @@ void _machineSectionTests() {
       await partReady(tester);
 
       await pickType(tester, 'Power Press');
-      await tester.enterText(machineField('no'), 'LATHE-7');
-      await tester.pumpAndSettle();
-      expect(_textIn(tester, 'machine-no'), 'LATHE-7');
+      await pickOrType(tester, 'no', 'LATHE-7');
+      expect(machineNo(tester), 'LATHE-7');
       // No note under the field any more — the pin itself is what matters:
       // picking the type again does not take the number back.
       await pickType(tester, 'Power Press');
-      expect(_textIn(tester, 'machine-no'), 'LATHE-7');
+      expect(machineNo(tester), 'LATHE-7');
     });
 
     testWidgets('Add hands the sheet over once, then links it to the part', (
@@ -2457,7 +2548,9 @@ void _machineSectionTests() {
       await pickOrType(tester, 'hours', '5001');
       await pickOrType(tester, 'strokes', '110');
       await pickOrType(tester, 'capacity', '35');
-      await pickOrType(tester, 'feeder', 'Jay Shanti');
+      // No Feeder make on a machine (2026-11-27): it is on the raw
+      // material's coil or roll now.
+      expect(machineField('feeder'), findsNothing);
       await pickOrType(tester, 'feed', 'Progressive');
       await _tapVisible(tester, addMachine());
 
@@ -2474,7 +2567,7 @@ void _machineSectionTests() {
       // for.
       expect(draft.capacityKind, 'rated');
       expect(draft.capacityKgf, 35000);
-      expect(draft.feederMake, 'Jay Shanti');
+      expect(draft.feederMake, '');
       expect(draft.dieFeedType, 'Progressive');
       // A machine with no name of its own is known by its number.
       expect(draft.name, 'PP-1');
@@ -2588,7 +2681,7 @@ void _machineSectionTests() {
       await _tapVisible(tester, addMachine());
 
       expect(drafts, hasLength(1), reason: 'refused once, never retried');
-      expect(_textIn(tester, 'machine-no'), 'PP-2');
+      expect(machineNo(tester), 'PP-2');
       expect(find.textContaining('already used by machine'), findsOneWidget);
     });
 

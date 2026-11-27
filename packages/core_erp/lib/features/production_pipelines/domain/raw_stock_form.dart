@@ -16,6 +16,10 @@ enum RawForm {
   /// known — it comes off the coil as it comes.
   bool get isBand => this != RawForm.sheet;
 
+  /// A coil or roll: fed into the press by a feeder, whose make the plan
+  /// records (owner, 2026-11-27). A strip is pushed through by hand.
+  bool get isFed => this == RawForm.coil || this == RawForm.roll;
+
   static RawForm? fromName(String? name) {
     for (final form in RawForm.values) {
       if (form.name == name) return form;
@@ -48,6 +52,7 @@ class RawStockForm {
     this.vendorId,
     this.vendorName = '',
     this.grade = '',
+    this.feederMake = '',
     this.reconciliation = PenPaperStageReconciliation.empty,
   });
 
@@ -74,6 +79,10 @@ class RawStockForm {
   /// The part's grade, as it was when the plan was saved.
   final String grade;
 
+  /// The feeder that feeds this coil or roll into the press — its make.
+  /// Empty on a strip, which no feeder feeds.
+  final String feederMake;
+
   /// Weight in, pieces out — typed, never derived.
   final PenPaperStageReconciliation reconciliation;
 
@@ -87,6 +96,7 @@ class RawStockForm {
       (pitchNm ?? 0) > 0 ||
       vendorId != null ||
       vendorName.trim().isNotEmpty ||
+      feederMake.trim().isNotEmpty ||
       reconciliation.inputKg > 0 ||
       reconciliation.outputKg > 0 ||
       reconciliation.piecesOut > 0 ||
@@ -124,6 +134,7 @@ class RawStockForm {
     Object? vendorId = _keep,
     String? vendorName,
     String? grade,
+    String? feederMake,
     PenPaperStageReconciliation? reconciliation,
   }) =>
       RawStockForm(
@@ -139,6 +150,7 @@ class RawStockForm {
         vendorId: identical(vendorId, _keep) ? this.vendorId : vendorId as int?,
         vendorName: vendorName ?? this.vendorName,
         grade: grade ?? this.grade,
+        feederMake: feederMake ?? this.feederMake,
         reconciliation: reconciliation ?? this.reconciliation,
       );
 
@@ -154,6 +166,7 @@ class RawStockForm {
         if (vendorId != null) 'vendorId': vendorId,
         if (vendorName.isNotEmpty) 'vendorName': vendorName,
         if (grade.isNotEmpty) 'grade': grade,
+        if (feederMake.isNotEmpty) 'feederMake': feederMake,
         'reconciliation': reconciliation.toJson(),
       };
 
@@ -179,6 +192,7 @@ class RawStockForm {
       vendorId: whole(json['vendorId']),
       vendorName: '${json['vendorName'] ?? ''}',
       grade: '${json['grade'] ?? ''}'.trim(),
+      feederMake: '${json['feederMake'] ?? ''}'.trim(),
       reconciliation: recon is Map<String, dynamic>
           ? PenPaperStageReconciliation.fromJson(recon)
           : PenPaperStageReconciliation.empty,
