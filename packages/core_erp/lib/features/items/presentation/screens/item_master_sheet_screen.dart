@@ -395,13 +395,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     } else if (key == LogicalKeyboardKey.keyD) {
       _addProperty();
       return true;
-    } else if (key == LogicalKeyboardKey.keyX) {
-      final row = sheet.row;
-      final id = sheet.draftAt(row).entityId;
-      if (id != null) _archivePart(id);
-      return true;
     } else if (key == LogicalKeyboardKey.keyM) {
       setState(() => _rawPanelOpen = !_rawPanelShown);
+      return true;
+    } else if (key == LogicalKeyboardKey.keyF) {
+      unawaited(_startFresh());
       return true;
     } else if (key == LogicalKeyboardKey.keyE) {
       _controller.setExternal(!_controller.isExternal);
@@ -969,12 +967,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// Asks whether to leave with unsaved work — Keep editing, Discard, or
   /// Save and close — and answers whether leaving is now all right. Back and
   /// quitting the app both ask through here.
-  Future<bool> _askToLeave() async {
+  ///
+  /// [fresh]: asked by Refresh, which leaves for a clear sheet rather than
+  /// closing — the same three answers, worded for that.
+  Future<bool> _askToLeave({bool fresh = false}) async {
     // One question at a time: Back and then Cmd+Q put two on screen.
     if (_askingToLeave) return false;
     _askingToLeave = true;
     try {
-      return await _askToLeaveOnce();
+      return await _askToLeaveOnce(fresh: fresh);
     } finally {
       _askingToLeave = false;
     }
@@ -982,11 +983,13 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
 
   bool _askingToLeave = false;
 
-  Future<bool> _askToLeaveOnce() async {
+  Future<bool> _askToLeaveOnce({bool fresh = false}) async {
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Leave with unsaved work?'),
+        title: Text(
+          fresh ? 'Start fresh with unsaved work?' : 'Leave with unsaved work?',
+        ),
         content: Text(
           'Not saved yet: ${_unsavedWork().join(', ')}.',
           style: const TextStyle(fontSize: 14),
@@ -1004,7 +1007,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           FilledButton(
             key: const ValueKey<String>('leave_save'),
             onPressed: () => Navigator.of(dialogContext).pop('save'),
-            child: const Text('Save and close', style: TextStyle(fontSize: 14)),
+            child: Text(
+              fresh ? 'Save and start fresh' : 'Save and close',
+              style: const TextStyle(fontSize: 14),
+            ),
           ),
         ],
       ),
@@ -1039,6 +1045,39 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   Future<void> _confirmLeave() async {
     if (await _askToLeave() && mounted) Navigator.of(context).pop();
   }
+
+  /// Refresh: a clear sheet with one new part to start on (owner,
+  /// 2026-11-25). Anything not saved is asked about first, as Back asks.
+  /// The screen is replaced by a new one rather than reset field by field,
+  /// so nothing can carry over: the part tabs, held dies and machines, the
+  /// raw sheet, the route, the die picked for the raw sheet. Saved parts
+  /// stay saved; they reopen from the Items list.
+  Future<void> _startFresh() async {
+    if (_controller.isSavingNow) return;
+    if (_hasUnsavedWork && !await _askToLeave(fresh: true)) return;
+    if (!mounted) return;
+    _leaving = true;
+    final folded = widget.foldedOnOpen;
+    await Navigator.of(context).pushReplacement<void, void>(
+      PageRouteBuilder<void>(
+        // In place, no slide: it is the same screen, emptied.
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, _, _) => ItemMasterSheetScreen(foldedOnOpen: folded),
+      ),
+    );
+  }
+
+  Widget _refreshButton() => SheetActionButton(
+    buttonKey: const ValueKey<String>('sheet_refresh_btn'),
+    label: 'Refresh',
+    icon: Icons.refresh_rounded,
+    tooltip: _controller.isSavingNow
+        ? 'Still saving'
+        : 'Start fresh: a clear sheet with one new part. Saved parts stay '
+              'saved; anything not saved is asked about first (Alt+F)',
+    onPressed: _controller.isSavingNow ? null : () => unawaited(_startFresh()),
+  );
 
   late final AppLifecycleListener _exitListener;
 
@@ -1245,10 +1284,10 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _archiveButton(),
+                _refreshButton(),
                 if (_altPressed) ...[
                   const SizedBox(width: 4),
-                  const KeyTipBadge(label: 'Alt+X'),
+                  const KeyTipBadge(label: 'Alt+F'),
                 ],
               ],
             ),
@@ -2494,8 +2533,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           onPressed: above == null ? null : () => _nest(id, above),
         ),
       ],
-      // Not on the part itself: it was never pressable there, and the part
-      // goes through Archive part in the top bar, not a bin on its section.
+      // Not on the part itself: it was never pressable there. (The top bar's
+      // Archive part was taken off the sheet too, owner 2026-11-25.)
       if (!root)
         action(
           key: 'section_clear_$id',
@@ -2518,13 +2557,20 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Checkbox(
-                  key: const ValueKey<String>('developed_for_external'),
-                  value: _controller.isExternal,
-                  activeColor: SoftErpTheme.accent,
-                  onChanged: (val) {
-                    if (val != null) _controller.setExternal(val);
-                  },
+                // A fixed box: the title bar sizes the heading by its
+                // intrinsic width, and a bare Checkbox lays out a little
+                // wider than it says — which sent the tick onto a second
+                // line, and now would overflow the one line.
+                SizedBox.square(
+                  dimension: 40,
+                  child: Checkbox(
+                    key: const ValueKey<String>('developed_for_external'),
+                    value: _controller.isExternal,
+                    activeColor: SoftErpTheme.accent,
+                    onChanged: (val) {
+                      if (val != null) _controller.setExternal(val);
+                    },
+                  ),
                 ),
                 const Flexible(
                   child: Text(
@@ -2550,20 +2596,40 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           id: 'client_vendor',
           icon: Icons.storefront_rounded,
           heading: 'Developed For',
+          // One line, the tick on it (owner, 2026-11-25). Unticked it reads
+          // as a statement — "Developed For Self" — and there is nothing
+          // under it, so the section takes one line. A Wrap, so a narrow
+          // window puts the tick under rather than overflowing.
+          // The gap is the tick's own padding, not the Wrap's spacing: a
+          // Wrap leaves its spacing out of the width it asks for, so the
+          // title bar gave it 12 px too few and the tick always wrapped.
           headingWidget: Wrap(
-            spacing: 10,
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text(
-                'Developed For',
+              Text.rich(
+                TextSpan(
+                  text: 'Developed For',
+                  children: [
+                    if (!_controller.isExternal)
+                      const TextSpan(
+                        text: ' Self',
+                        style: TextStyle(color: SoftErpTheme.accent),
+                      ),
+                  ],
+                ),
                 key: _titleKey('client_vendor'),
                 style: SheetStyle.sectionTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              tick,
+              Padding(padding: const EdgeInsets.only(left: 12), child: tick),
             ],
           ),
           collapsed: collapsed,
+          // The tick is on the title's line: room for it. Unticked there are
+          // no chips at all, so the whole bar.
+          titleShare: _controller.isExternal ? 0.7 : 1.0,
           trailing: _controller.isExternal
               ? MarginHealthBadge(
                   quotation: _moneyBoundTo(SheetBindsTo.developedForQuotation),
@@ -2571,7 +2637,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                 )
               : null,
           trailingEnd: _controller.isExternal ? _dealStampChip() : null,
-          child: _partySheet(),
+          child: _controller.isExternal ? _partySheet() : null,
         );
       case 'die_master':
         return _section(
@@ -3841,8 +3907,11 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
             ? (_controller.rowError(row) ??
                   'This part is no longer in the catalogue.')
             : _savedLine(row),
-        child: OutlinedButton.icon(
-          key: ValueKey<String>('row_edit_$row'),
+        // Drawn as the Save Part it stands in for.
+        child: SheetActionButton(
+          buttonKey: ValueKey<String>('row_edit_$row'),
+          label: 'Edit',
+          icon: Icons.edit_outlined,
           onPressed: gone
               ? null
               : () {
@@ -3850,8 +3919,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                   sheet.selectRow(row);
                   setState(() {});
                 },
-          icon: const Icon(Icons.edit_outlined, size: 18),
-          label: const Text('Edit', style: TextStyle(fontSize: 14)),
         ),
       );
     }
@@ -4284,49 +4351,6 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// Archive for the part on the selected row. Drawn always, disabled with
   /// why when there is nothing to archive — the sheet could create and edit a
   /// part but never retire one, and "Remove row" only took it off the screen.
-  Widget _archiveButton() {
-    final sheet = _controller.groupItemController;
-    final row = sheet.row;
-    final id = sheet.draftAt(row).entityId;
-    final String? why = id == null
-        ? 'Select a saved part to archive it'
-        : (_controller.isRowGone(row)
-              ? _controller.rowError(row)
-              : (_controller.isSavingNow ? 'Still saving' : null));
-    return Tooltip(
-      message:
-          why ?? 'Archive item #$id — kept, restorable from the Items screen',
-      child: OutlinedButton.icon(
-        key: const ValueKey('archive_part_btn'),
-        onPressed: why == null ? () => _archivePart(id!) : null,
-        icon: const Icon(Icons.archive_outlined, size: 18),
-        label: const Text('Archive part', style: TextStyle(fontSize: 14)),
-      ),
-    );
-  }
-
-  Future<void> _archivePart(int id) async {
-    final label = _partCodeNow.trim().isEmpty ? 'this part' : _partCodeNow;
-    final ok = await showConfirmDialog(
-      context,
-      title: 'Archive $label?',
-      message:
-          'It leaves every picker and list but is kept, and can be '
-          'restored from the Items screen.',
-      confirmLabel: 'Archive',
-    );
-    if (!ok || !mounted) return;
-    final items = context.read<ItemsProvider>();
-    final done = await items.archiveItem(id);
-    if (!mounted) return;
-    _toast(
-      done
-          ? 'Archived $label.'
-          : (items.errorMessage ?? 'The part could not be archived.'),
-      isError: !done,
-    );
-  }
-
   /// One row's Save: write it, carry the held dies and machines and the
   /// nesting with it, then close it until its Edit.
   /// [openRaw]: once saved, its raw material is set to editing, ready for
@@ -4451,17 +4475,9 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
   /// The deal and the people at that company, as ordinary text fields. The
   /// spreadsheet cells here ate keystrokes (each rebuild re-selected the cell,
   /// so 85000 became 0) and were cramped pills; see [DealPeopleForm].
+  /// The companies — drawn only with External party ticked; unticked, the
+  /// heading reads "Developed For Self" and there is no body.
   Widget _partySheet() {
-    if (!_controller.isExternal) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: Text(
-          'In-house production — tick “External party” above to record customer quotations and contacts.',
-          style: TextStyle(fontSize: 14, color: SoftErpTheme.textSecondary),
-        ),
-      );
-    }
-
     final controller = _controller;
     final deals = controller.clientVendorController;
     final partyColumn = deals.sheetDef.columnBoundTo(
@@ -4507,7 +4523,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       onAdd: controller.addDeal,
       onClose: _closeDealTab,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        padding: SheetSaveRow.framedPadding,
         child: DealPeopleForm(
           controller: controller,
           lineKey: _cursorRowKey,
@@ -4721,7 +4737,8 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     required String id,
     required IconData icon,
     required String heading,
-    required Widget child,
+    // Null: the heading says it all (Developed For Self) — no body.
+    required Widget? child,
     Widget? headingWidget,
     Widget? trailing,
 
@@ -4729,6 +4746,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     /// gives way: a date and time.
     Widget? trailingEnd,
     bool collapsed = false,
+    double titleShare = _TitleBar.titleShare,
   }) {
     // Saving and editing are per row now (each row's own Save, then Edit), so
     // the section itself is never locked.
@@ -4819,6 +4837,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                         ),
                     chips: trailing ?? const SizedBox.shrink(),
                     tail: trailingEnd ?? const SizedBox.shrink(),
+                    share: titleShare,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -4829,7 +4848,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
               ],
             ),
           ),
-          if (collapsed)
+          if (collapsed && body != null)
             // Folded: one row of what is in it. Tap to open.
             // Tab into a folded section unfolds it (the keyboard flow does).
             SheetStep.noTab(
@@ -4846,14 +4865,15 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
           // Folded is hidden, not thrown away: a route being laid out, a die
           // half typed, a raw sheet being edited all live in the body, and
           // building it only when open disposed them on every fold.
-          Visibility(
-            visible: !collapsed,
-            maintainState: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [const SizedBox(height: 12), body],
+          if (body != null)
+            Visibility(
+              visible: !collapsed,
+              maintainState: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [const SizedBox(height: 12), body],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -5665,14 +5685,25 @@ class _TitleBar extends MultiChildRenderObjectWidget {
     required Widget title,
     required Widget chips,
     required Widget tail,
+    this.share = titleShare,
   }) : super(children: [title, chips, tail]);
+
+  /// The most of the bar the title may take; [titleShare] unless a section
+  /// says otherwise.
+  final double share;
 
   static const double gap = 12;
   static const double tailGap = 8;
   static const double titleShare = 0.55;
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _RenderTitleBar();
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderTitleBar()..share = share;
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderTitleBar renderObject) {
+    renderObject.share = share;
+  }
 }
 
 class _TitleBarParentData extends ContainerBoxParentData<RenderBox> {}
@@ -5681,6 +5712,15 @@ class _RenderTitleBar extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _TitleBarParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _TitleBarParentData> {
+  double _share = _TitleBar.titleShare;
+  set share(double value) {
+    if (value == _share) return;
+    _share = value;
+    markNeedsLayout();
+  }
+
+  double get share => _share;
+
   @override
   void setupParentData(RenderBox child) {
     if (child.parentData is! _TitleBarParentData) {
@@ -5696,7 +5736,7 @@ class _RenderTitleBar extends RenderBox
     final width = constraints.maxWidth;
     final wanted = title.getMaxIntrinsicWidth(double.infinity);
     title.layout(
-      BoxConstraints(maxWidth: math.min(wanted, width * _TitleBar.titleShare)),
+      BoxConstraints(maxWidth: math.min(wanted, width * share)),
       parentUsesSize: true,
     );
     var room = math.max(0.0, width - title.size.width - _TitleBar.gap);
@@ -5877,6 +5917,8 @@ class _RouteCard extends StatelessWidget {
           dense: true,
           onPressed: onAction,
         ),
+        // In the sheet's save column, with Save Part and Save Die.
+        ...SheetSaveRow.end(unframed: true),
       ],
     );
   }

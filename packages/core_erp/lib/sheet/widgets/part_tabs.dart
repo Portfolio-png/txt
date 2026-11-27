@@ -84,7 +84,7 @@ class _SheetParts implements TabStrip {
   String? closeWhyAt(int i) {
     // The line's own rule: a saved part is not taken off the sheet by an ×.
     if (savedAt(i))
-      return 'Saved parts stay in the catalogue — use Archive part';
+      return 'Saved parts stay in the catalogue — Refresh starts a clear sheet';
     if (sheet.rowCount <= 1) return 'A sheet always keeps one part';
     return null;
   }

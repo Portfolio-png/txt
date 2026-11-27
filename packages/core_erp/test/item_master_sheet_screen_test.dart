@@ -29,6 +29,7 @@ import 'dart:convert';
 import 'package:core_erp/core/network/sitting_scope.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 import 'package:core_erp/sheet/sheet.dart';
+import 'package:core_erp/sheet/widgets/tucked_save_row.dart';
 import 'package:core_erp/features/items/presentation/widgets/existing_part_conflict_dialog.dart';
 import 'package:core_erp/core/widgets/pick_or_type_field.dart';
 import 'package:flutter/material.dart';
@@ -873,6 +874,84 @@ void main() {
       },
     );
 
+    testWidgets(
+      'Refresh: a clear sheet with one new part, the open part let go',
+      (tester) async {
+        final patti = _item(
+          id: 500,
+          name: 'Patti',
+          groupId: 11,
+          dies: const [ItemDieLink(id: '31', toolCode: 'NEW')],
+        );
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: _FakeItemRepository([patti]),
+          size: const Size(1700, 3200),
+        );
+        final before = tester.state(find.byType(ItemMasterSheetScreen));
+        expect(find.byKey(const ValueKey('row_edit_0')), findsOneWidget);
+
+        // Nothing unsaved: no question, straight to a clear sheet.
+        await tester.tap(find.byKey(const ValueKey('sheet_refresh_btn')));
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('Start fresh with unsaved work?'), findsNothing);
+        // Archive part is off the sheet (owner, 2026-11-25).
+        expect(find.byKey(const ValueKey('archive_part_btn')), findsNothing);
+        expect(find.text('Archive part'), findsNothing);
+        final screen = find.byType(ItemMasterSheetScreen);
+        expect(screen, findsOneWidget);
+        expect(tester.state(screen), isNot(same(before)), reason: 'a new one');
+        expect(tester.widget<ItemMasterSheetScreen>(screen).initialItems, isEmpty);
+        expect(find.byKey(const ValueKey('row_save_0')), findsOneWidget,
+            reason: 'one new part, not saved');
+        expect(find.byKey(const ValueKey('row_save_1')), findsNothing);
+        expect(find.byKey(const ValueKey('row_edit_0')), findsNothing);
+        expect(find.text('NEW'), findsNothing, reason: 'Patti\'s die went with it');
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('Refresh with unsaved work asks first, and Keep editing stays', (
+      tester,
+    ) async {
+      await _pumpScreen(tester, size: const Size(1700, 3200));
+      final before = tester.state(find.byType(ItemMasterSheetScreen));
+      tester
+          .widget<PartDieSection>(find.byType(PartDieSection))
+          .onDirtyChanged!(true);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('sheet_refresh_btn')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Start fresh with unsaved work?'), findsOneWidget);
+      expect(find.textContaining('a die being typed'), findsOneWidget);
+      expect(find.text('Save and start fresh'), findsOneWidget);
+      await tester.tap(find.text('Keep editing'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        tester.state(find.byType(ItemMasterSheetScreen)),
+        same(before),
+        reason: 'nothing thrown away',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sheet_refresh_btn')));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('leave_discard')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        tester.state(find.byType(ItemMasterSheetScreen)),
+        isNot(same(before)),
+        reason: 'Discard: a clear sheet',
+      );
+      expect(find.text('Start fresh with unsaved work?'), findsNothing);
+    });
+
     testWidgets('an edited raw sheet folded away is kept, not thrown out', (
       tester,
     ) async {
@@ -1026,8 +1105,7 @@ void main() {
             reason: id,
           );
         }
-        // Never pressable on the part itself, so not drawn: the part is retired
-        // with Archive part in the top bar.
+        // Never pressable on the part itself, so not drawn.
         expect(
           find.byKey(const ValueKey('section_clear_group_item')),
           findsNothing,
@@ -1523,6 +1601,157 @@ void main() {
       expect(find.descendant(of: find.byKey(const ValueKey('raw_die_chip')), matching: find.text('NEW')), findsOneWidget, reason: 'the die being typed for');
       expect(find.byKey(const ValueKey('raw_unsaved')), findsNothing);
     });
+
+    testWidgets(
+      'Save Part, Company, Die and Machine end at one column, photos shown',
+      (tester) async {
+        // Owner, 2026-11-25 (a screenshot with a line drawn down it): Save Die
+        // sat left of the die's photo tile, out of line with Save Company.
+        AppFlowHooks.createDieFromSheet = (context, draft) async =>
+            const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
+        AppFlowHooks.createMachineFromSheet = (context, draft) async =>
+            const MachineCreateOutcome.created(
+              CreatedRecord(id: '41', title: 'M'),
+            );
+        addTearDown(() {
+          AppFlowHooks.createDieFromSheet = null;
+          AppFlowHooks.createMachineFromSheet = null;
+        });
+        final routes = ProcessRouteService(baseUrl: '', useMockResponses: true);
+        await routes.save(500, const [
+          RouteStep(stageId: 1, seq: 1, stageCode: 'die', stageName: 'Die'),
+        ]);
+        final photos = EntityPhotosProvider(
+          repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+        );
+        addTearDown(photos.dispose);
+        final patti = _item(
+          id: 500,
+          name: 'Patti',
+          groupId: 11,
+          dies: const [ItemDieLink(id: '31', toolCode: 'NEW')],
+          developedFor: DevelopedFor(
+            kind: DevelopedForKind.client,
+            clientId: 5,
+            companyName: 'Gold Medal',
+            at: DateTime(2026, 5, 15),
+          ),
+        );
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: _FakeItemRepository([patti]),
+          size: const Size(1700, 3200),
+          photos: photos,
+          routes: routes,
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+        expect(find.text('Die photos'), findsOneWidget);
+        expect(find.text('Machine photos'), findsOneWidget);
+
+        double right(String key) =>
+            tester.getTopRight(find.byKey(ValueKey<String>(key))).dx;
+        // A saved part shows Edit where its Save Part is, in the same place.
+        final part = right('row_edit_0');
+        for (final key in [
+          'deal_edit',
+          'quick-entry-add-die',
+          'quick-entry-add-machine',
+          'route_card_open',
+        ]) {
+          expect(right(key), closeTo(part, 1), reason: key);
+        }
+        // Open, the route's Save in the same column.
+        await tester.ensureVisible(
+          find.byKey(const ValueKey<String>('route_card_open')),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('route_card_open')));
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+        expect(right('route_save'), closeTo(part, 1), reason: 'route_save');
+      },
+    );
+
+    testWidgets(
+      'Save Die and Save Machine go up onto their last line of fields',
+      (tester) async {
+        // Owner, 2026-11-25: "shift Save Die and Save Machine a little above
+        // to save space" — beside Arrived, beside Die Type.
+        AppFlowHooks.createDieFromSheet = (context, draft) async =>
+            const DieCreateOutcome.created(CreatedRecord(id: '31', title: 'D'));
+        AppFlowHooks.createMachineFromSheet = (context, draft) async =>
+            const MachineCreateOutcome.created(
+              CreatedRecord(id: '41', title: 'M'),
+            );
+        addTearDown(() {
+          AppFlowHooks.createDieFromSheet = null;
+          AppFlowHooks.createMachineFromSheet = null;
+        });
+        final photos = EntityPhotosProvider(
+          repository: EntityPhotoRepository(baseUrl: '', useMockResponses: true),
+        );
+        addTearDown(photos.dispose);
+        final patti = _item(id: 500, name: 'Patti', groupId: 11);
+        await _pumpScreen(
+          tester,
+          initialItems: [patti],
+          repository: _FakeItemRepository([patti]),
+          size: const Size(1700, 3200),
+          photos: photos,
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+        final rows = tester
+            .renderObjectList<RenderTuckedSaveRow>(
+              find.byType(TuckedSaveRow),
+            )
+            .toList();
+        expect(rows, hasLength(2));
+        // The die's last line (… Ordered, Arrived) leaves room: up beside it.
+        final die = find.byKey(const ValueKey('quick-entry-add-die'));
+        final arrived = find
+            .byKey(const ValueKey('quick-entry-die-date-in-field'))
+            .first;
+        expect(rows.first.tucked, isTrue, reason: 'room after Arrived');
+        expect(
+          tester.getCenter(die).dy,
+          closeTo(tester.getCenter(arrived).dy, 4),
+          reason: 'Save Die on the Arrived line',
+        );
+        expect(
+          tester.getTopLeft(die).dx,
+          greaterThan(tester.getTopRight(arrived).dx),
+        );
+        // Whichever way each went, it is never drawn over its last field.
+        for (final (save, last) in [
+          ('quick-entry-add-die', 'quick-entry-die-date-in-field'),
+          ('quick-entry-add-machine', 'quick-entry-machine-feed-field'),
+        ]) {
+          final a = tester.getRect(find.byKey(ValueKey<String>(save)));
+          final b = tester.getRect(find.byKey(ValueKey<String>(last)).first);
+          expect(a.overlaps(b), isFalse, reason: '$save clear of $last');
+        }
+
+        // A narrow window: no room beside — under the fields, never on them.
+        tester.view.physicalSize = const Size(1000, 3200);
+        await tester.pump();
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        for (final (save, last) in [
+          ('quick-entry-add-die', 'quick-entry-die-date-in-field'),
+          ('quick-entry-add-machine', 'quick-entry-machine-feed-field'),
+        ]) {
+          final a = tester.getRect(find.byKey(ValueKey<String>(save)));
+          final b = tester.getRect(find.byKey(ValueKey<String>(last)).first);
+          expect(a.overlaps(b), isFalse, reason: '$save clear of $last, narrow');
+        }
+      },
+    );
 
     testWidgets('a part with no dies draws Select die disabled, saying why', (
       tester,
@@ -3325,12 +3554,16 @@ void main() {
 
     testWidgets('the external tick is in the Developed For card; unticking '
         'hides the deal, not the card', (tester) async {
-      await _pumpScreen(tester);
+      // Wide: the test font draws every letter 14 px, so "External party"
+      // takes twice the room it does on screen; at 1600 the bar cannot hold
+      // the heading and the tick on one line in it (narrow windows wrap the
+      // tick under — the narrow-window tests check nothing overflows).
+      await _pumpScreen(tester, size: const Size(2000, 1000));
       final tick = find.byKey(const ValueKey('developed_for_external'));
       expect(tick, findsOneWidget);
       // In the card's title bar, completing "Developed For External party".
       final card = find.byKey(const ValueKey('section_toggle_client_vendor'));
-      expect(tester.getTopLeft(tick).dy, closeTo(tester.getTopLeft(card).dy, 12));
+      expect(tester.getCenter(tick).dy, closeTo(tester.getCenter(card).dy, 6));
       expect(tester.getTopLeft(tick).dx, greaterThan(tester.getTopLeft(card).dx));
       expect(find.text('People'), findsOneWidget);
 
@@ -3342,10 +3575,26 @@ void main() {
       expect(tick, findsOneWidget);
       expect(find.text('People'), findsNothing,
           reason: 'an in-house part has no development deal to record');
+      // Unticked it reads as one statement on one line, the tick on it,
+      // and nothing under it (owner, 2026-11-25).
+      final title = find.text('Developed For Self');
+      expect(title, findsOneWidget);
+      expect(
+        tester.getCenter(tick).dy,
+        closeTo(tester.getCenter(title).dy, 4),
+        reason: 'the tick on the heading\'s line',
+      );
+      expect(find.textContaining('In-house production'), findsNothing);
 
       await tester.tap(tick);
       await tester.pump();
       expect(find.text('People'), findsOneWidget, reason: 'and back');
+      expect(find.text('Developed For Self'), findsNothing);
+      expect(
+        tester.getCenter(tick).dy,
+        closeTo(tester.getCenter(card).dy, 6),
+        reason: 'ticked, still one line',
+      );
     });
 
     testWidgets('a sitting is open while the screen is, and closed after', (
@@ -3514,7 +3763,7 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const ValueKey('row_gone_0')), findsOneWidget);
-      final edit = tester.widget<OutlinedButton>(
+      final edit = tester.widget<AppButton>(
         find.byKey(const ValueKey('row_edit_0')),
       );
       expect(edit.onPressed, isNull);
@@ -4417,7 +4666,7 @@ void main() {
       expect(remove.onPressed, isNull);
       // Said by the line's × and by the tab's.
       expect(
-        find.byTooltip('Saved parts stay in the catalogue — use Archive part'),
+        find.byTooltip('Saved parts stay in the catalogue — Refresh starts a clear sheet'),
         findsNWidgets(2),
       );
     });

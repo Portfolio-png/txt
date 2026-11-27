@@ -9,6 +9,7 @@ import '../../../../core/utils/dropdown_intents.dart';
 import '../../../../core/utils/typed_character.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../sheet/widgets/sheet_save_button.dart';
 import '../../../production_pipelines/domain/thickness_label.dart';
 import '../../../units/domain/global_length_units.dart';
 import '../../../../sheet/sheet.dart';
@@ -255,6 +256,8 @@ class PartRowsForm extends StatelessWidget {
         const SizedBox(width: 10),
         actionBuilder(row),
         partRemoveButton(sheet, row, onRemoveRow),
+        // In line with the framed sections' Saves below.
+        const SizedBox(width: SheetSaveRow.unframedInset),
       ],
     );
   }
@@ -269,7 +272,7 @@ Widget partRemoveButton(
 ) {
   final saved = sheet.draftAt(row).entityId != null;
   final String? why = saved
-      ? 'Saved parts stay in the catalogue — use Archive part'
+      ? 'Saved parts stay in the catalogue — Refresh starts a clear sheet'
       : (sheet.rowCount <= 1 ? 'A sheet always keeps one part' : null);
   return Tooltip(
     message: why ?? 'Remove this line',

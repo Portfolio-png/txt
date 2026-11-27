@@ -568,20 +568,23 @@ class RouteCreationPanelState extends State<RouteCreationPanel> {
         // under Save Part (owner, 2026-11-25). On its own: as it was.
         if (widget.sheetStyle)
           SheetSaveRow(
+            // Routing has no tab frame round it.
+            unframed: true,
             children: [
               if (widget.onMinimise != null) ...[
-                TextButton.icon(
-                  key: const ValueKey<String>('route_minimise'),
+                SheetActionButton(
+                  buttonKey: const ValueKey<String>('route_minimise'),
+                  label: 'Minimise',
+                  icon: Icons.unfold_less_rounded,
                   onPressed: widget.onMinimise,
-                  icon: const Icon(Icons.unfold_less_rounded, size: 18),
-                  label: const Text('Minimise', style: TextStyle(fontSize: 14)),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 8),
               ],
-              TextButton(
-                key: const ValueKey<String>('route_cancel'),
+              SheetActionButton(
+                buttonKey: const ValueKey<String>('route_cancel'),
+                label: 'Cancel',
+                icon: Icons.close_rounded,
                 onPressed: widget.onCancel,
-                child: const Text('Cancel', style: TextStyle(fontSize: 14)),
               ),
               const SizedBox(width: 8),
               SheetSaveButton(

@@ -158,6 +158,10 @@ const double _margin = 8;
 /// colour. The line fades to the next tab's colour when the tab changes, so a
 /// change is seen.
 class ColouredTabs extends StatefulWidget {
+  /// How far the open tab's content sits in from the frame's outer edge:
+  /// the margin, the colour's line and its white coat.
+  static const double contentInset = _margin + _ring + _coat;
+
   const ColouredTabs({
     super.key,
     required this.strip,

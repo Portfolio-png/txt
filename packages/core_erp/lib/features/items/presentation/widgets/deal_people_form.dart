@@ -520,11 +520,11 @@ class _DealPeopleFormState extends State<DealPeopleForm> {
   /// this Save beside it too when a person waits to be saved, so a person
   /// added later is never left with no way to save them.
   Widget _dealAction(bool locked) {
-    final edit = OutlinedButton.icon(
-      key: const ValueKey<String>('deal_edit'),
+    final edit = SheetActionButton(
+      buttonKey: const ValueKey<String>('deal_edit'),
+      label: 'Edit',
+      icon: Icons.edit_outlined,
       onPressed: () => setState(() => _dealEditing = true),
-      icon: const Icon(Icons.edit_outlined, size: 18),
-      label: const Text('Edit', style: TextStyle(fontSize: 14)),
     );
     if (locked && !widget.controller.peopleUnsaved) return edit;
     final save = _saveCompanyButton();

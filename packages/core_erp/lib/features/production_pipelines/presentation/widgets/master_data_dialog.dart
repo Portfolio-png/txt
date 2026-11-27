@@ -2878,34 +2878,62 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
           : next == null
           ? 'Review is the last step'
           : 'On to ${next.title}',
-      child: AppButton(
-        key: const ValueKey<String>('master-data-next'),
-        label: 'Next',
-        icon: Icons.arrow_forward_rounded,
-        variant: AppButtonVariant.secondary,
-        onPressed: next == null ? null : () => setState(() => _step = next),
-      ),
+      // Inside the item sheet, drawn as the sheet's Save is.
+      child: widget.embedded
+          ? SheetActionButton(
+              buttonKey: const ValueKey<String>('master-data-next'),
+              label: 'Next',
+              icon: Icons.arrow_forward_rounded,
+              onPressed: next == null
+                  ? null
+                  : () => setState(() => _step = next),
+            )
+          : AppButton(
+              key: const ValueKey<String>('master-data-next'),
+              label: 'Next',
+              icon: Icons.arrow_forward_rounded,
+              variant: AppButtonVariant.secondary,
+              onPressed: next == null
+                  ? null
+                  : () => setState(() => _step = next),
+            ),
     );
   }
 
   Widget _footer(double width) {
     final buttons = <Widget>[
       if (widget.onCancel != null)
-        AppButton(
-          label: 'Cancel',
-          variant: AppButtonVariant.secondary,
-          onPressed: widget.onCancel,
-        ),
+        widget.embedded
+            ? SheetActionButton(
+                buttonKey: const ValueKey<String>('master-data-cancel'),
+                label: 'Cancel',
+                icon: Icons.close_rounded,
+                onPressed: widget.onCancel,
+              )
+            : AppButton(
+                label: 'Cancel',
+                variant: AppButtonVariant.secondary,
+                onPressed: widget.onCancel,
+              ),
       // Read only with somewhere to go, the footer offers the way in where
       // the Save would be: a greyed Save with "Read only." beside it was the
       // whole of the old answer to "how do I save this", and it read as broken.
       if (widget.readOnly && widget.onEdit != null)
-        AppButton(
-          key: const ValueKey<String>('master-data-edit'),
-          label: 'Edit',
-          icon: Icons.edit_outlined,
-          onPressed: widget.onEdit,
-        )
+        // Inside the sheet, outlined like its Saves: a filled Edit there was
+        // the odd one out, and would take the sheet's Cmd/Ctrl+Enter.
+        widget.embedded
+            ? SheetActionButton(
+                buttonKey: const ValueKey<String>('master-data-edit'),
+                label: 'Edit',
+                icon: Icons.edit_outlined,
+                onPressed: widget.onEdit,
+              )
+            : AppButton(
+                key: const ValueKey<String>('master-data-edit'),
+                label: 'Edit',
+                icon: Icons.edit_outlined,
+                onPressed: widget.onEdit,
+              )
       // Inside the item sheet, the sheet's own Save ("Save Raw Sheet",
       // outlined) so every Save there looks alike and Cmd/Ctrl+Enter stays
       // the sheet's Done; on its own, the dialog's filled one.

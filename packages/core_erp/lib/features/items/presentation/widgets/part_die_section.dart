@@ -15,6 +15,7 @@ import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../../core/utils/stamp_format.dart';
 import '../../../../sheet/widgets/sheet_save_button.dart';
+import '../../../../sheet/widgets/tucked_save_row.dart';
 import '../../../../core/widgets/length_unit_field.dart';
 import '../../../../core/widgets/fit_to_text.dart';
 import '../../../../core/widgets/pick_or_type_field.dart';
@@ -973,14 +974,18 @@ class _PartDieSectionState extends State<PartDieSection> {
                                   setState(() => _poAt = value),
                               onCleared: () => setState(() => _poAt = null),
                             ),
-                            _momentField(
-                              slug: 'date-in',
-                              label: 'Arrived',
-                              value: _dateInAt,
-                              enabled: enabled,
-                              onPicked: (value) =>
-                                  setState(() => _dateInAt = value),
-                              onCleared: () => setState(() => _dateInAt = null),
+                            SaveRowAnchorMark(
+                              anchor: _lastFieldAnchor,
+                              child: _momentField(
+                                slug: 'date-in',
+                                label: 'Arrived',
+                                value: _dateInAt,
+                                enabled: enabled,
+                                onPicked: (value) =>
+                                    setState(() => _dateInAt = value),
+                                onCleared: () =>
+                                    setState(() => _dateInAt = null),
+                              ),
                             ),
                           ],
                         ),
@@ -1009,61 +1014,56 @@ class _PartDieSectionState extends State<PartDieSection> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  SheetStep.noTab(
-                    SheetSaveRow(
-                      // At the sheet's save column, under Save Part.
-                      children: [
-                        // While any die is held, the part's own Save part sits here
-                        // (it was in each held die's row): saving the part writes
-                        // the held dies with it.
-                        if (widget.staged.isNotEmpty &&
-                            widget.heldSaveBuilder != null) ...[
-                          widget.heldSaveBuilder!(
-                            _editingStagedIndex != null &&
-                                    _editingStagedIndex! < widget.staged.length
-                                ? _editingStagedIndex!
-                                : 0,
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        if (editing != null || _editingStagedIndex != null)
-                          TextButton(
-                            key: const ValueKey<String>(
-                              'quick-entry-die-cancel',
-                            ),
-                            onPressed: enabled
-                                ? () => setState(_resetSheet)
-                                : null,
-                            child: const Text(
-                              'Cancel',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        const SizedBox(width: 8),
-                        SheetSaveButton(
-                          buttonKey: const ValueKey<String>(
-                            'quick-entry-add-die',
-                          ),
-                          // One label in every state (owner, 2026-11-25: "instead of
-                          // Add die … show Save Die"); what the save does when
-                          // there is no part yet, or when it links one on file, is
-                          // in the tooltip.
-                          label: 'Save Die',
-                          tooltip: _unlinkedDieId != null
-                              ? 'Attaches this die to the part'
-                              : (holding &&
-                                        editing == null &&
-                                        _editingStagedIndex == null
-                                    ? 'Kept with the part: written when the part is saved'
-                                    : null),
-                          isLoading: _saving,
-                          onPressed: enabled ? _saveDie : null,
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
+              ),
+              SheetStep.noTab(
+                SheetSaveRow(
+                  // Up on the last line of fields when there is room.
+                  shrinkWrap: true,
+                  // At the sheet's save column, under Save Part.
+                  children: [
+                    // While any die is held, the part's own Save part sits here
+                    // (it was in each held die's row): saving the part writes
+                    // the held dies with it.
+                    if (widget.staged.isNotEmpty &&
+                        widget.heldSaveBuilder != null) ...[
+                      widget.heldSaveBuilder!(
+                        _editingStagedIndex != null &&
+                                _editingStagedIndex! < widget.staged.length
+                            ? _editingStagedIndex!
+                            : 0,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    if (editing != null || _editingStagedIndex != null)
+                      SheetActionButton(
+                        buttonKey: const ValueKey<String>(
+                          'quick-entry-die-cancel',
+                        ),
+                        label: 'Cancel',
+                        icon: Icons.close_rounded,
+                        onPressed: enabled ? () => setState(_resetSheet) : null,
+                      ),
+                    const SizedBox(width: 8),
+                    SheetSaveButton(
+                      buttonKey: const ValueKey<String>('quick-entry-add-die'),
+                      // One label in every state (owner, 2026-11-25: "instead of
+                      // Add die … show Save Die"); what the save does when
+                      // there is no part yet, or when it links one on file, is
+                      // in the tooltip.
+                      label: 'Save Die',
+                      tooltip: _unlinkedDieId != null
+                          ? 'Attaches this die to the part'
+                          : (holding &&
+                                    editing == null &&
+                                    _editingStagedIndex == null
+                                ? 'Kept with the part: written when the part is saved'
+                                : null),
+                      isLoading: _saving,
+                      onPressed: enabled ? _saveDie : null,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1073,11 +1073,19 @@ class _PartDieSectionState extends State<PartDieSection> {
   }
 
   final PartTabColors _tabColors = PartTabColors(offset: 1);
+
+  /// The last field and the photo, for the save row to go beside the one
+  /// without landing on the other.
+  final SaveRowAnchor _lastFieldAnchor = SaveRowAnchor();
+  final SaveRowAnchor _photoAnchor = SaveRowAnchor();
   final Object _newTabKey = Object();
 
   /// The dies as tabs round [form]: held ones first (what this screen is
   /// about to write), then the part's, then "New die" while the form is blank.
-  Widget _dieTabs(bool enabled, Widget form) {
+  /// [actions] is the save row: under the photo column too, not beside
+  /// it, so Save Die ends at the sheet's save column with Save Company
+  /// and Save Part (owner, 2026-11-25).
+  Widget _dieTabs(bool enabled, Widget form, Widget actions) {
     final staged = widget.staged;
     final held =
         _editingStagedIndex != null && _editingStagedIndex! < staged.length
@@ -1164,16 +1172,24 @@ class _PartDieSectionState extends State<PartDieSection> {
       // The die's photos in the column at the right, as the part's are on
       // its line (user, 2026-11-24).
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: form),
-            if (MiniPhoto.isAvailable(context)) ...[
-              const SizedBox(width: 16),
-              SheetStep.noTab(_diePhotoTile()),
+        padding: SheetSaveRow.framedPadding,
+        child: TuckedSaveRow(
+          anchor: _lastFieldAnchor,
+          avoid: [_photoAnchor],
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: form),
+              if (MiniPhoto.isAvailable(context)) ...[
+                const SizedBox(width: 16),
+                SaveRowAnchorMark(
+                  anchor: _photoAnchor,
+                  child: SheetStep.noTab(_diePhotoTile()),
+                ),
+              ],
             ],
-          ],
+          ),
+          actions: actions,
         ),
       ),
     );

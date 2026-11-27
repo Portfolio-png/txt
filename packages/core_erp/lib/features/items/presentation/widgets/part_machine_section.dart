@@ -14,6 +14,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/services/entity_photos.dart';
 import '../../../../core/widgets/mini_photo.dart';
 import '../../../../sheet/widgets/sheet_save_button.dart';
+import '../../../../sheet/widgets/tucked_save_row.dart';
 import '../../../../core/widgets/force_capacity_field.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/fit_to_text.dart';
@@ -949,12 +950,15 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                           options: _suggestions.feederMakes,
                           enabled: enabled,
                         ),
-                        _pick(
-                          slug: 'feed',
-                          label: 'Die Type',
-                          controller: _feedTypeController,
-                          options: _suggestions.dieFeedTypes,
-                          enabled: enabled,
+                        SaveRowAnchorMark(
+                          anchor: _lastFieldAnchor,
+                          child: _pick(
+                            slug: 'feed',
+                            label: 'Die Type',
+                            controller: _feedTypeController,
+                            options: _suggestions.dieFeedTypes,
+                            enabled: enabled,
+                          ),
                         ),
                       ],
                     ),
@@ -981,48 +985,45 @@ class _PartMachineSectionState extends State<PartMachineSection> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  SheetStep.noTab(
-                    SheetSaveRow(
-                      // At the sheet's save column, under Save Part.
-                      children: [
-                        if (editing != null || _editingStagedIndex != null)
-                          TextButton(
-                            key: const ValueKey<String>(
-                              'quick-entry-machine-cancel',
-                            ),
-                            onPressed: enabled
-                                ? () => setState(_resetSheet)
-                                : null,
-                            child: const Text(
-                              'Cancel',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        const SizedBox(width: 8),
-                        SheetSaveButton(
-                          buttonKey: const ValueKey<String>(
-                            'quick-entry-add-machine',
-                          ),
-                          // One label in every state (owner, 2026-11-25: "instead of
-                          // Add machine … show Save Machine"); what the save does when
-                          // there is no part yet, or when it links one on file, is
-                          // in the tooltip.
-                          label: 'Save Machine',
-                          tooltip: _unlinkedMachineId != null
-                              ? 'Attaches this machine to the part'
-                              : (holding &&
-                                        editing == null &&
-                                        _editingStagedIndex == null
-                                    ? 'Kept with the part: written when the part is saved'
-                                    : null),
-                          isLoading: _saving,
-                          onPressed: enabled ? _saveMachine : null,
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
+              ),
+              SheetStep.noTab(
+                SheetSaveRow(
+                  // Up on the last line of fields when there is room.
+                  shrinkWrap: true,
+                  // At the sheet's save column, under Save Part.
+                  children: [
+                    if (editing != null || _editingStagedIndex != null)
+                      SheetActionButton(
+                        buttonKey: const ValueKey<String>(
+                          'quick-entry-machine-cancel',
+                        ),
+                        label: 'Cancel',
+                        icon: Icons.close_rounded,
+                        onPressed: enabled ? () => setState(_resetSheet) : null,
+                      ),
+                    const SizedBox(width: 8),
+                    SheetSaveButton(
+                      buttonKey: const ValueKey<String>(
+                        'quick-entry-add-machine',
+                      ),
+                      // One label in every state (owner, 2026-11-25: "instead of
+                      // Add machine … show Save Machine"); what the save does when
+                      // there is no part yet, or when it links one on file, is
+                      // in the tooltip.
+                      label: 'Save Machine',
+                      tooltip: _unlinkedMachineId != null
+                          ? 'Attaches this machine to the part'
+                          : (holding &&
+                                    editing == null &&
+                                    _editingStagedIndex == null
+                                ? 'Kept with the part: written when the part is saved'
+                                : null),
+                      isLoading: _saving,
+                      onPressed: enabled ? _saveMachine : null,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1032,11 +1033,19 @@ class _PartMachineSectionState extends State<PartMachineSection> {
   }
 
   final PartTabColors _tabColors = PartTabColors(offset: 2);
+
+  /// The last field and the photo, for the save row to go beside the one
+  /// without landing on the other.
+  final SaveRowAnchor _lastFieldAnchor = SaveRowAnchor();
+  final SaveRowAnchor _photoAnchor = SaveRowAnchor();
   final Object _newTabKey = Object();
 
   /// The machines as tabs round [form]: held ones first, then the part's,
   /// then "New machine" while the form is blank.
-  Widget _machineTabs(bool enabled, Widget form) {
+  /// [actions] is the save row: under the photo column too, not beside
+  /// it, so Save Machine ends at the sheet's save column with Save Company
+  /// and Save Part (owner, 2026-11-25).
+  Widget _machineTabs(bool enabled, Widget form, Widget actions) {
     final staged = widget.staged;
     final held =
         _editingStagedIndex != null && _editingStagedIndex! < staged.length
@@ -1122,16 +1131,24 @@ class _PartMachineSectionState extends State<PartMachineSection> {
       // The machine's photos in the column at the right, as the part's and
       // the die's are (user, 2026-11-24).
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: form),
-            if (MiniPhoto.isAvailable(context)) ...[
-              const SizedBox(width: 16),
-              SheetStep.noTab(_machinePhotoTile()),
+        padding: SheetSaveRow.framedPadding,
+        child: TuckedSaveRow(
+          anchor: _lastFieldAnchor,
+          avoid: [_photoAnchor],
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: form),
+              if (MiniPhoto.isAvailable(context)) ...[
+                const SizedBox(width: 16),
+                SaveRowAnchorMark(
+                  anchor: _photoAnchor,
+                  child: SheetStep.noTab(_machinePhotoTile()),
+                ),
+              ],
             ],
-          ],
+          ),
+          actions: actions,
         ),
       ),
     );
