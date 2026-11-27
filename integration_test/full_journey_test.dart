@@ -4,6 +4,7 @@ import 'package:core_erp/core/widgets/mini_photo.dart';
 import 'package:core_erp/features/items/presentation/widgets/part_photo_gallery.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/harness.dart';
@@ -385,8 +386,11 @@ void main() {
       for (var i = 0; i < 4; i += 1) {
         await _tapVisible(tester, find.byKey(const ValueKey<String>('route_add_step')));
         await tester.pump(const Duration(milliseconds: 250));
+        // The new step opens its stage list; Escape keeps the stage it got.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump(const Duration(milliseconds: 250));
       }
-      await _tapVisible(tester, find.text('Save route'));
+      await _tapVisible(tester, find.text('Save Route'));
       await pumpUntil(tester, find.textContaining(' pipeline v'), reason: 'the route should save');
     });
 

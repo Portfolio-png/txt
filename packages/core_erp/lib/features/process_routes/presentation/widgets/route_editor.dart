@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/app_flow_hooks.dart';
@@ -111,6 +113,11 @@ class RouteEditor extends StatefulWidget {
 
 class _RouteEditorState extends State<RouteEditor> {
   late List<RouteStep> _steps = [...widget.steps];
+
+  /// The step Add step just made: its box opens its stage list as it
+  /// appears, so the next stage is typed, not clicked for (owner,
+  /// 2026-11-27). Cleared once it has opened.
+  int? _openStepAt;
 
   @override
   void didUpdateWidget(RouteEditor old) {
@@ -228,6 +235,9 @@ class _RouteEditorState extends State<RouteEditor> {
             allStages: widget.stages,
             onCreate: widget.onCreateStage,
             onDelete: widget.onDeleteStage,
+            openStepAt: _openStepAt,
+            onStepAdded: (index) => _openStepAt = index,
+            onStepOpened: () => _openStepAt = null,
           ),
           RouteLens.list => _ListLens(
             steps: _steps,
@@ -261,7 +271,16 @@ class _ClassicLens extends StatelessWidget {
     required this.allStages,
     required this.onCreate,
     required this.onDelete,
+    this.openStepAt,
+    this.onStepAdded,
+    this.onStepOpened,
   });
+
+  /// The step whose stage list opens as its box appears — the one Add step
+  /// just made — and the calls that set and clear it.
+  final int? openStepAt;
+  final ValueChanged<int>? onStepAdded;
+  final VoidCallback? onStepOpened;
 
   final List<RouteStep> steps;
   final List<ProcessStage> Function(int? keepStageId) optionsFor;
@@ -318,6 +337,8 @@ class _ClassicLens extends StatelessWidget {
               onEmit(next);
             },
             onRemove: () => onEmit([...steps]..removeAt(i)),
+            openOnMount: i == openStepAt,
+            onOpened: onStepOpened,
           ),
           const Icon(
             Icons.chevron_right,
@@ -333,6 +354,7 @@ class _ClassicLens extends StatelessWidget {
             onPressed: editable && canAdd
                 ? () {
                     final stage = optionsFor(null).first;
+                    onStepAdded?.call(steps.length);
                     onEmit([
                       ...steps,
                       RouteStep(
@@ -376,6 +398,8 @@ class _StepBox extends StatefulWidget {
     required this.onPick,
     required this.onCustomNameChanged,
     required this.onRemove,
+    this.openOnMount = false,
+    this.onOpened,
   });
 
   static const double width = 252;
@@ -393,6 +417,10 @@ class _StepBox extends StatefulWidget {
   final ValueChanged<String> onCustomNameChanged;
   final VoidCallback onRemove;
 
+  /// Opens the stage list as soon as the box is drawn (a step just added).
+  final bool openOnMount;
+  final VoidCallback? onOpened;
+
   @override
   State<_StepBox> createState() => _StepBoxState();
 }
@@ -407,6 +435,30 @@ class _StepBoxState extends State<_StepBox> {
     super.initState();
     _controller = TextEditingController(text: widget.step.notes);
     _focusNode = FocusNode()..addListener(_onFocusChange);
+    if (widget.openOnMount && widget.editable) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final anchor = _anchorKey.currentContext;
+        if (!mounted || anchor == null) return;
+        widget.onOpened?.call();
+        unawaited(_openStages(anchor));
+      });
+    }
+  }
+
+  /// The stage dropdown's anchor, for opening it without a click.
+  final GlobalKey _anchorKey = GlobalKey();
+
+  Future<void> _openStages(BuildContext anchor) async {
+    final stage = await _pickStage(
+      anchor,
+      options: widget.options,
+      allStages: widget.allStages,
+      onCreate: widget.onCreate,
+      onDelete: widget.onDelete,
+      inRoute: widget.inRoute,
+      selectedId: widget.step.stageId,
+    );
+    if (stage != null && mounted) widget.onPick(stage);
   }
 
   void _onFocusChange() {
@@ -477,23 +529,11 @@ class _StepBoxState extends State<_StepBox> {
           const SizedBox(width: 6),
           // Stage type picker (Die, Assembly, Shearing...)
           Builder(
+            key: _anchorKey,
             builder: (anchor) => InkWell(
               key: ValueKey<String>('route_step_dropdown_${widget.index}'),
               borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
-              onTap: widget.editable
-                  ? () async {
-                      final stage = await _pickStage(
-                        anchor,
-                        options: widget.options,
-                        allStages: widget.allStages,
-                        onCreate: widget.onCreate,
-                        onDelete: widget.onDelete,
-                        inRoute: widget.inRoute,
-                        selectedId: widget.step.stageId,
-                      );
-                      if (stage != null) widget.onPick(stage);
-                    }
-                  : null,
+              onTap: widget.editable ? () => _openStages(anchor) : null,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 82),
                 child: Padding(

@@ -987,6 +987,11 @@ void cutTests() {
   });
 
   group('the operation panel', () {
+    // The shear plan is off the Sheet form for now (owner, 2026-11-27);
+    // these keep it working for when it comes back.
+    setUp(() => MasterDataPanel.shearPlanShown = true);
+    tearDown(() => MasterDataPanel.shearPlanShown = false);
+
     Future<void> open(
       WidgetTester tester, {
       PenPaperBaseline baseline = const PenPaperBaseline(
@@ -1038,6 +1043,24 @@ void cutTests() {
       await tester.tap(regionRow(index));
       await tester.pumpAndSettle();
     }
+
+    testWidgets('the Sheet form leaves the shear plan out for now', (
+      tester,
+    ) async {
+      // Owner, 2026-11-27: "remove this from up here, we will have this
+      // afterwards" — Shear into, the region cuts and the yield.
+      MasterDataPanel.shearPlanShown = false;
+      await open(tester);
+      expect(find.text('SHEAR INTO'), findsNothing);
+      expect(find.text('THEN CUT A REGION'), findsNothing);
+      expect(find.text('THIS SHEET YIELDS'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('sheet-width')),
+        findsOneWidget,
+        reason: 'the sheet itself is there',
+      );
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('opens asking how to shear, with the sheet whole', (
       tester,

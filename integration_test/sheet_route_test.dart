@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/harness.dart';
@@ -98,13 +99,16 @@ void main() {
       await tester.pump();
       await tester.tap(addStep);
       await tester.pump(const Duration(milliseconds: 250));
+      // The new step opens its stage list; Escape keeps the stage it got.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 250));
     }
     expect(find.text('Die'), findsWidgets);
 
     dumpVisibleText(tester, 'E2E before saving the route');
-    await tester.ensureVisible(find.text('Save route'));
+    await tester.ensureVisible(find.text('Save Route'));
     await tester.pump();
-    await tester.tap(find.text('Save route'));
+    await tester.tap(find.text('Save Route'));
 
     await pumpUntil(
       tester,

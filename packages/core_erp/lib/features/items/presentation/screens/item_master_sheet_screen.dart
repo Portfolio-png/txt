@@ -402,7 +402,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
       unawaited(_startFresh());
       return true;
     } else if (key == LogicalKeyboardKey.keyE) {
-      _controller.setExternal(!_controller.isExternal);
+      _setExternal(!_controller.isExternal);
       return true;
     }
 
@@ -2246,6 +2246,16 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
     );
   }
 
+  /// The External party tick, by click or Alt+E. Ticked, the section opens
+  /// at once on its companies (owner, 2026-11-27: "it needs to expand
+  /// directly") — folded, the tick changed nothing anyone could see.
+  void _setExternal(bool external) {
+    _controller.setExternal(external);
+    if (external && _collapsed.contains('client_vendor')) {
+      setState(() => _collapsed.remove('client_vendor'));
+    }
+  }
+
   void _toggle(String id) => setState(() {
     if (!_collapsed.remove(id)) _collapsed.add(id);
   });
@@ -2568,7 +2578,7 @@ class _ItemMasterSheetScreenState extends State<ItemMasterSheetScreen> {
                     value: _controller.isExternal,
                     activeColor: SoftErpTheme.accent,
                     onChanged: (val) {
-                      if (val != null) _controller.setExternal(val);
+                      if (val != null) _setExternal(val);
                     },
                   ),
                 ),

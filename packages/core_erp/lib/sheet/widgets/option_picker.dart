@@ -24,6 +24,10 @@ void showColumnOptionPicker(
   String initialQuery = '',
   ValueChanged<bool>? onTabOut,
   VoidCallback? onClosed,
+  // Given: a "Clear" row tops the list while the cell holds something and
+  // nothing is typed — the way to empty a box whose × was taken off
+  // (owner, 2026-11-27).
+  VoidCallback? onClear,
 }) {
   // Anchored under the cell, not a modal sheet.
   //
@@ -77,6 +81,13 @@ void showColumnOptionPicker(
         controller: controller,
         rowIndex: row,
         initialQuery: initialQuery,
+        onClear: onClear == null
+            ? null
+            : () {
+                Navigator.of(ctx).pop();
+                onClear();
+                onDone?.call();
+              },
         onTabOut: onTabOut == null
             ? null
             : (back) {
@@ -220,7 +231,11 @@ class _OptionsPickerSheet extends StatefulWidget {
     this.onAddContact,
     this.initialQuery = '',
     this.onTabOut,
+    this.onClear,
   });
+
+  /// Empties the cell; null leaves the "Clear" row out.
+  final VoidCallback? onClear;
 
   /// What was typed on the closed box that opened this — the first letters
   /// of the search.
@@ -681,7 +696,35 @@ class _OptionsPickerSheetState extends State<_OptionsPickerSheet> {
           ),
       ];
     }
+    final cell = _cell;
+    final holds =
+        cell != null &&
+        (cell.optionId != null ||
+            (cell.optionLabel ?? cell.textValue ?? '').trim().isNotEmpty);
+    final clear = widget.onClear;
     return [
+      if (clear != null && holds && _query.isEmpty)
+        _PickerRow(
+          take: clear,
+          build: (on) => tile(
+            key: ValueKey<String>('sheet_option_clear_${widget.column.id}'),
+            highlighted: on,
+            leading: const Icon(
+              Icons.backspace_outlined,
+              size: 18,
+              color: SoftErpTheme.textSecondary,
+            ),
+            title: Text(
+              'Clear ${widget.column.label}',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+            onTap: clear,
+          ),
+        ),
       for (final opt in filteredOptions)
         _PickerRow(
           exact: opt.label.toLowerCase() == _query,

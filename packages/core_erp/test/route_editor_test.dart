@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:core_erp/features/process_routes/domain/part_route.dart';
 import 'package:core_erp/features/process_routes/domain/process_stage.dart';
 import 'package:core_erp/features/process_routes/presentation/widgets/route_editor.dart';
@@ -27,6 +28,48 @@ Widget _host(Widget child) => MaterialApp(
 
 void main() {
   group('RouteEditor', () {
+    testWidgets(
+      'Add step opens the new step\'s stage list, typed into at once',
+      (tester) async {
+        // Owner, 2026-11-27: "let the node open dropdown so use of keyboard
+        // becomes seamless".
+        List<RouteStep> steps = const [];
+        await tester.pumpWidget(_host(RouteEditor(
+          stages: _stages,
+          steps: const [],
+          lens: RouteLens.classic,
+          onChanged: (next) => steps = next,
+        )));
+        await tester.tap(find.byKey(const ValueKey('route_add_step')));
+        await tester.pumpAndSettle();
+        expect(steps.single.stageId, 1, reason: 'given the first stage');
+        expect(
+          find.text('Find a stage, or type a new one'),
+          findsOneWidget,
+          reason: 'its stage list is open',
+        );
+
+        // No click: the search has the keyboard. Type, Enter.
+        await tester.enterText(find.byType(TextField).last, 'Shear');
+        await tester.pumpAndSettle();
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(steps.single.stageId, 2, reason: 'Shearing, picked by typing');
+        expect(find.text('Find a stage, or type a new one'), findsNothing);
+
+        // Steps already there do not open when the route is shown again.
+        await tester.pumpWidget(_host(RouteEditor(
+          key: const ValueKey('again'),
+          stages: _stages,
+          steps: steps,
+          lens: RouteLens.classic,
+          onChanged: (_) {},
+        )));
+        await tester.pumpAndSettle();
+        expect(find.text('Find a stage, or type a new one'), findsNothing);
+      },
+    );
+
     testWidgets('both lenses produce the same ordered stage ids', (tester) async {
       // Classic: add three steps and set each dropdown.
       List<RouteStep> classic = const [];
@@ -43,6 +86,9 @@ void main() {
 
       for (var i = 0; i < 3; i += 1) {
         await tester.tap(find.byKey(const ValueKey('route_add_step')));
+        await tester.pumpAndSettle();
+        // Its stage list opened by itself; Escape keeps the stage given.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
       }
       // Appending takes the first still-available stage each time, which with

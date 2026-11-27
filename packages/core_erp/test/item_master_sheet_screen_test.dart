@@ -1833,6 +1833,10 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('route_add_step')));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
+        // The new step's stage list opened by itself; Escape keeps its stage.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
         await tester.tap(find.byKey(const ValueKey('section_toggle_routing')));
         await tester.pump();
@@ -2076,14 +2080,16 @@ void main() {
           repository: repo,
           size: const Size(1700, 3200),
         );
-        expect(
-          find.byKey(const ValueKey('property_clear_6_0')),
-          findsNothing,
-          reason: 'a saved line is read only until its Edit',
-        );
+        // No × in the box (owner, 2026-11-27): Alloy is emptied from its own
+        // list, "Clear Alloy" at the top.
+        expect(find.byKey(const ValueKey('property_clear_6_0')), findsNothing);
         await tester.tap(find.byKey(const ValueKey('row_edit_0')));
         await tester.pump();
-        await tester.tap(find.byKey(const ValueKey('property_clear_6_0')));
+        expect(find.byKey(const ValueKey('property_clear_6_0')), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('cell_item_0_6')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.tap(find.byKey(const ValueKey('sheet_option_clear_6')));
         await tester.pump();
 
         await tester.runAsync(() async {
@@ -3589,6 +3595,16 @@ void main() {
       await tester.tap(tick);
       await tester.pump();
       expect(find.text('People'), findsOneWidget, reason: 'and back');
+
+      // Folded, a tick opens it on its companies at once (owner, 2026-11-27).
+      await tester.tap(tick);
+      await tester.pump();
+      await tester.tap(card);
+      await tester.pump();
+      expect(find.text('People'), findsNothing, reason: 'folded');
+      await tester.tap(tick);
+      await tester.pump();
+      expect(find.text('People'), findsOneWidget, reason: 'ticked: open');
       expect(find.text('Developed For Self'), findsNothing);
       expect(
         tester.getCenter(tick).dy,

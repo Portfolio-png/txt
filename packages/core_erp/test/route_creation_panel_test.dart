@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:core_erp/core/app_flow_hooks.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
@@ -176,6 +177,9 @@ class _NullRepo implements ItemRepository {
 /// route_editor_test.dart; what matters here is the panel around them.
 Future<void> _addStep(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('route_add_step')));
+  await tester.pumpAndSettle();
+  // The new step opens its stage list; Escape keeps the stage it was given.
+  await tester.sendKeyEvent(LogicalKeyboardKey.escape);
   await tester.pumpAndSettle();
 }
 

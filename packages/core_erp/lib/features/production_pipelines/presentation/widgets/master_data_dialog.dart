@@ -203,6 +203,13 @@ class MasterDataPanel extends StatefulWidget {
   final String? thickness;
   final ValueChanged<String>? onThicknessChanged;
 
+  /// Whether the Sheet form shows its shear plan — Shear into, the region
+  /// cuts, the yield. Off for now (owner, 2026-11-27: "we will have this
+  /// afterwards"); its tests turn it on, so it is kept working for when it
+  /// comes back.
+  @visibleForTesting
+  static bool shearPlanShown = false;
+
   @override
   State<MasterDataPanel> createState() => _MasterDataPanelState();
 }
@@ -2031,10 +2038,17 @@ class _MasterDataPanelState extends State<MasterDataPanel> {
             _bandYield(),
           ] else ...[
             _machineRow(),
-            const SizedBox(height: 10),
-            _primaryBlock(),
-            _regionBlocks(),
-            _yieldBlock(),
+            // Shear into → cut a region → this sheet yields: off the Sheet
+            // form for now (owner, 2026-11-27: "remove this from up here, we
+            // will have this afterwards"). Only hidden — a plan's bands and
+            // cuts are kept as saved, and turning
+            // [MasterDataPanel.shearPlanShown] on brings all three back.
+            if (MasterDataPanel.shearPlanShown) ...[
+              const SizedBox(height: 10),
+              _primaryBlock(),
+              _regionBlocks(),
+              _yieldBlock(),
+            ],
           ],
         ],
       ),

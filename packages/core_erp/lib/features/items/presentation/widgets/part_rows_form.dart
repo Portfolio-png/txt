@@ -623,6 +623,11 @@ class _PartFieldState extends State<_PartField> {
       controller: _sheet,
       row: widget.row,
       initialQuery: initialQuery,
+      // A property is emptied from its own list ("Clear Alloy"), not by an ×
+      // in the box (owner, 2026-11-27: "remove this x").
+      onClear: _isProperty && !_locked
+          ? () => _sheet.clearCell(_column.id, row: widget.row)
+          : null,
       // However it closes — a pick, Escape, a click outside, Tab. The flag was
       // set here and never cleared, so after a field's first pick neither a
       // click nor a key could open its list again.
@@ -920,7 +925,6 @@ class _PartFieldState extends State<_PartField> {
     final isNew = value?.isNew ?? false;
     // A property can be taken off the part: × empties the box, and the save
     // takes the value off. Group, Type and the name are not optional.
-    final clearable = _isProperty && !_locked && label.isNotEmpty;
     return Builder(
       // Tab landing on the box (the sheet's keyboard flow) opens its list.
       builder: (anchor) => Actions(
@@ -1005,30 +1009,6 @@ class _PartFieldState extends State<_PartField> {
                               ),
                       ),
                     ),
-                    if (clearable)
-                      SheetStep.noTab(
-                        Tooltip(
-                          message: 'Clear ${_column.label}',
-                          child: InkWell(
-                            key: ValueKey<String>(
-                              'property_clear_${_column.id}_${widget.row}',
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              SoftErpTheme.radiusXs,
-                            ),
-                            onTap: () =>
-                                _sheet.clearCell(_column.id, row: widget.row),
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.close_rounded,
-                                size: 18,
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     if (isNew) ...[
                       const SizedBox(width: 6),
                       Container(
